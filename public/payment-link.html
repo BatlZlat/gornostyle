@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создание ссылки на оплату - Ski-instruktor</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Создание ссылки на оплату</h1>
+            <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
+        </header>
+        
+        <div class="admin-content">
+            <main class="admin-main">
+                <div class="page-content">
+                    <form id="payment-link-form" class="form-container">
+                        <div class="form-group">
+                            <label for="payment-amount">Сумма (₽)</label>
+                            <input type="number" id="payment-amount" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="payment-description">Описание</label>
+                            <input type="text" id="payment-description" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="payment-expires">Срок действия (часов)</label>
+                            <input type="number" id="payment-expires" min="1" max="72" value="24">
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">Создать ссылку</button>
+                            <a href="admin.html" class="btn-secondary">Отмена</a>
+                        </div>
+                    </form>
+                    <div id="payment-link-result" class="payment-link-result" style="display: none;">
+                        <h3>Ссылка на оплату:</h3>
+                        <div class="link-container">
+                            <input type="text" id="payment-link" readonly>
+                            <button class="btn-secondary" onclick="copyPaymentLink()">Копировать</button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="js/payment-link.js"></script>
+</body>
+</html> 

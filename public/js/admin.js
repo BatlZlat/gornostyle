@@ -13,10 +13,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // Инициализация навигации
 function initializeNavigation() {
     const menuItems = document.querySelectorAll('.menu-item');
+    const pages = document.querySelectorAll('.page-content');
+
     menuItems.forEach(item => {
         item.addEventListener('click', () => {
-            const page = item.dataset.page;
-            switchPage(page);
+            const targetPage = item.dataset.page;
+            
+            // Обновляем активный пункт меню
+            menuItems.forEach(mi => mi.classList.remove('active'));
+            item.classList.add('active');
+            
+            // Показываем нужную страницу
+            pages.forEach(page => {
+                page.style.display = page.id === `${targetPage}-page` ? 'block' : 'none';
+            });
         });
     });
 }
@@ -35,20 +45,22 @@ function initializeDatePicker() {
     const prevDateBtn = document.getElementById('prev-date');
     const nextDateBtn = document.getElementById('next-date');
     
-    if (prevDateBtn) {
+    if (prevDateBtn && nextDateBtn && datePicker) {
         prevDateBtn.addEventListener('click', () => {
+            const currentDate = new Date(datePicker.value);
             currentDate.setDate(currentDate.getDate() - 1);
-            datePicker.valueAsDate = currentDate;
-            loadPageContent(currentPage);
+            datePicker.value = currentDate.toISOString().split('T')[0];
+            loadSchedule();
         });
-    }
-    
-    if (nextDateBtn) {
+
         nextDateBtn.addEventListener('click', () => {
+            const currentDate = new Date(datePicker.value);
             currentDate.setDate(currentDate.getDate() + 1);
-            datePicker.valueAsDate = currentDate;
-            loadPageContent(currentPage);
+            datePicker.value = currentDate.toISOString().split('T')[0];
+            loadSchedule();
         });
+
+        datePicker.addEventListener('change', loadSchedule);
     }
 }
 
@@ -66,7 +78,7 @@ function initializeEventListeners() {
     const createTrainerBtn = document.getElementById('create-trainer');
     if (createTrainerBtn) {
         createTrainerBtn.addEventListener('click', () => {
-            showModal('create-trainer-modal');
+            window.location.href = 'create-trainer.html';
         });
     }
 
@@ -179,6 +191,21 @@ function initializeEventListeners() {
             loadArchiveTrainings();
         });
     }
+
+    // Обработчики для страницы финансов
+    const createPaymentLinkBtn = document.getElementById('create-payment-link');
+    if (createPaymentLinkBtn) {
+        createPaymentLinkBtn.addEventListener('click', () => {
+            window.location.href = 'payment-link.html';
+        });
+    }
+
+    const dismissedTrainersBtn = document.getElementById('dismissed-trainers');
+    if (dismissedTrainersBtn) {
+        dismissedTrainersBtn.addEventListener('click', () => {
+            window.location.href = 'dismissed-trainers.html';
+        });
+    }
 }
 
 // Переключение страниц
@@ -269,33 +296,9 @@ async function loadTrainings() {
 
 // Загрузка расписания
 async function loadSchedule() {
-    try {
-        const date = formatDate(currentDate);
-        const response = await fetch(`/api/schedule?date=${date}`);
-        const schedule = await response.json();
-        
-        const scheduleList = document.querySelector('.schedule-list');
-        if (scheduleList) {
-            scheduleList.innerHTML = schedule.map(slot => `
-                <div class="schedule-slot ${slot.is_booked ? 'booked' : ''}">
-                    <div class="slot-time">${slot.start_time} - ${slot.end_time}</div>
-                    <div class="slot-info">
-                        <p>Тренажер: ${slot.simulator_name}</p>
-                        ${slot.is_booked ? `
-                            <p>Клиент: ${slot.client_name}</p>
-                            <p>Телефон: ${slot.client_phone}</p>
-                        ` : ''}
-                    </div>
-                    ${!slot.is_booked ? `
-                        <button class="btn-primary" onclick="bookSlot(${slot.id})">Забронировать</button>
-                    ` : ''}
-                </div>
-            `).join('');
-        }
-    } catch (error) {
-        console.error('Ошибка при загрузке расписания:', error);
-        showError('Не удалось загрузить расписание');
-    }
+    const date = datePicker.value;
+    // Здесь будет код для загрузки расписания с сервера
+    console.log('Loading schedule for date:', date);
 }
 
 // Загрузка тренажеров
