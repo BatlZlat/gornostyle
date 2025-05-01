@@ -61,12 +61,174 @@
                     </div>
                 </div>
 
-                <!-- Остальные страницы будут добавлены позже -->
+                <!-- Страница тренажеров -->
+                <div class="page-content" id="simulators-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Тренажеры</h2>
+                    </div>
+                    <div class="simulators-list">
+                        <div class="simulator-item">
+                            <h3>Тренажер 1</h3>
+                            <div class="simulator-status">
+                                <span class="status-label">Статус:</span>
+                                <select id="simulator1-status" class="status-select">
+                                    <option value="available">В работе</option>
+                                    <option value="maintenance">Не работает</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="simulator-item">
+                            <h3>Тренажер 2</h3>
+                            <div class="simulator-status">
+                                <span class="status-label">Статус:</span>
+                                <select id="simulator2-status" class="status-select">
+                                    <option value="available">В работе</option>
+                                    <option value="maintenance">Не работает</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница тренеров -->
+                <div class="page-content" id="trainers-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Тренера</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="create-trainer">Создать тренера</button>
+                            <button class="btn-secondary" id="view-dismissed">Уволенные тренера</button>
+                        </div>
+                    </div>
+                    <div class="trainers-list">
+                        <!-- Список тренеров будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница клиентов -->
+                <div class="page-content" id="clients-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Клиенты</h2>
+                        <div class="page-actions">
+                            <select id="sort-clients" class="sort-select">
+                                <option value="created">По дате создания</option>
+                                <option value="name">По ФИО</option>
+                                <option value="age">По возрасту</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="clients-list">
+                        <!-- Список клиентов будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница прайса -->
+                <div class="page-content" id="prices-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Прайс</h2>
+                    </div>
+                    <div class="prices-container">
+                        <div class="price-section">
+                            <h3>Индивидуальные занятия с тренером</h3>
+                            <div class="price-item">
+                                <span>30 минут</span>
+                                <input type="number" value="3000" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>60 минут</span>
+                                <input type="number" value="6000" class="price-input">
+                            </div>
+                        </div>
+                        <div class="price-section">
+                            <h3>Индивидуальные занятия без тренера</h3>
+                            <div class="price-item">
+                                <span>30 минут</span>
+                                <input type="number" value="2500" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>60 минут</span>
+                                <input type="number" value="5000" class="price-input">
+                            </div>
+                        </div>
+                        <div class="price-section">
+                            <h3>Групповые занятия с тренером (60 минут)</h3>
+                            <div class="price-item">
+                                <span>2 человека</span>
+                                <input type="number" value="3500" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>3 человека</span>
+                                <input type="number" value="3000" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>4 человека</span>
+                                <input type="number" value="2500" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>5 человек</span>
+                                <input type="number" value="2200" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>6 человек</span>
+                                <input type="number" value="1700" class="price-input">
+                            </div>
+                        </div>
+                        <div class="price-section">
+                            <h3>Групповые занятия без тренера (60 минут)</h3>
+                            <div class="price-item">
+                                <span>2 человека</span>
+                                <input type="number" value="3000" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>3 человека</span>
+                                <input type="number" value="2500" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>4 человека</span>
+                                <input type="number" value="2000" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>5 человек</span>
+                                <input type="number" value="1500" class="price-input">
+                            </div>
+                            <div class="price-item">
+                                <span>6 человек</span>
+                                <input type="number" value="1300" class="price-input">
+                            </div>
+                        </div>
+                        <div class="price-actions">
+                            <button class="btn-primary" id="save-prices">Сохранить изменения</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница сертификатов -->
+                <div class="page-content" id="certificates-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Сертификаты</h2>
+                    </div>
+                    <div class="certificates-list">
+                        <!-- Список сертификатов будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница финансов -->
+                <div class="page-content" id="finances-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Финансы</h2>
+                        <div class="page-actions">
+                            <a href="#" class="btn-primary" id="payment-link">Ссылка для оплаты</a>
+                        </div>
+                    </div>
+                    <div class="finances-list">
+                        <!-- Список платежей будет загружен динамически -->
+                    </div>
+                </div>
             </main>
         </div>
     </div>
 
     <!-- Модальные окна -->
+    <!-- Модальное окно создания тренировки -->
     <div class="modal" id="create-training-modal">
         <div class="modal-content">
             <h3>Создать тренировку</h3>
@@ -105,6 +267,110 @@
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Создать</button>
                     <button type="button" class="btn-secondary" onclick="closeModal('create-training-modal')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания тренера -->
+    <div class="modal" id="create-trainer-modal">
+        <div class="modal-content">
+            <h3>Создать тренера</h3>
+            <form id="create-trainer-form">
+                <div class="form-group">
+                    <label for="trainer-name">ФИО</label>
+                    <input type="text" id="trainer-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="trainer-birth-date">Дата рождения</label>
+                    <input type="date" id="trainer-birth-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="trainer-sport">Вид спорта</label>
+                    <select id="trainer-sport" required>
+                        <option value="ski">Горные лыжи</option>
+                        <option value="snowboard">Сноуборд</option>
+                        <option value="both">Горные лыжи и сноуборд</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="trainer-phone">Телефон</label>
+                    <input type="tel" id="trainer-phone" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Создать</button>
+                    <button type="button" class="btn-secondary" onclick="closeModal('create-trainer-modal')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания расписания -->
+    <div class="modal" id="create-schedule-modal">
+        <div class="modal-content">
+            <h3>Создать расписание</h3>
+            <form id="create-schedule-form">
+                <div class="form-group">
+                    <label for="schedule-start-date">Дата начала</label>
+                    <input type="date" id="schedule-start-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="schedule-end-date">Дата окончания</label>
+                    <input type="date" id="schedule-end-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Рабочие дни</label>
+                    <div class="weekdays-select">
+                        <label><input type="checkbox" value="1" checked> Пн</label>
+                        <label><input type="checkbox" value="2" checked> Вт</label>
+                        <label><input type="checkbox" value="3" checked> Ср</label>
+                        <label><input type="checkbox" value="4" checked> Чт</label>
+                        <label><input type="checkbox" value="5" checked> Пт</label>
+                        <label><input type="checkbox" value="6" checked> Сб</label>
+                        <label><input type="checkbox" value="0" checked> Вс</label>
+                    </div>
+                </div>
+                <div class="simulator-schedule">
+                    <h4>Тренажер 1</h4>
+                    <div class="form-group">
+                        <label for="simulator1-start">Начало рабочего дня</label>
+                        <input type="time" id="simulator1-start" value="10:00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="simulator1-end">Окончание рабочего дня</label>
+                        <input type="time" id="simulator1-end" value="21:00" required>
+                    </div>
+                </div>
+                <div class="simulator-schedule">
+                    <h4>Тренажер 2</h4>
+                    <div class="form-group">
+                        <label for="simulator2-start">Начало рабочего дня</label>
+                        <input type="time" id="simulator2-start" value="10:00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="simulator2-end">Окончание рабочего дня</label>
+                        <input type="time" id="simulator2-end" value="21:00" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="auto-schedule">
+                        Создавать расписание на следующий месяц
+                    </label>
+                </div>
+                <div class="auto-schedule-settings" style="display: none;">
+                    <div class="form-group">
+                        <label for="schedule-day">День месяца</label>
+                        <input type="number" id="schedule-day" min="1" max="31" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="schedule-time">Время</label>
+                        <input type="time" id="schedule-time" value="00:00">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Создать расписание</button>
+                    <button type="button" class="btn-secondary" onclick="closeModal('create-schedule-modal')">Отмена</button>
                 </div>
             </form>
         </div>

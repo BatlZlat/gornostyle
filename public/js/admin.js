@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeNavigation();
     initializeDatePicker();
     loadPageContent(currentPage);
+    initializeEventListeners();
 });
 
 // Инициализация навигации
@@ -23,29 +24,106 @@ function initializeNavigation() {
 // Инициализация выбора даты
 function initializeDatePicker() {
     const datePicker = document.getElementById('schedule-date');
+    if (datePicker) {
+        datePicker.valueAsDate = currentDate;
+        datePicker.addEventListener('change', () => {
+            currentDate = datePicker.valueAsDate;
+            loadPageContent(currentPage);
+        });
+    }
+
     const prevDateBtn = document.getElementById('prev-date');
     const nextDateBtn = document.getElementById('next-date');
+    
+    if (prevDateBtn) {
+        prevDateBtn.addEventListener('click', () => {
+            currentDate.setDate(currentDate.getDate() - 1);
+            datePicker.valueAsDate = currentDate;
+            loadPageContent(currentPage);
+        });
+    }
+    
+    if (nextDateBtn) {
+        nextDateBtn.addEventListener('click', () => {
+            currentDate.setDate(currentDate.getDate() + 1);
+            datePicker.valueAsDate = currentDate;
+            loadPageContent(currentPage);
+        });
+    }
+}
 
-    // Установка текущей даты
-    datePicker.valueAsDate = currentDate;
+// Инициализация обработчиков событий
+function initializeEventListeners() {
+    // Обработчики для страницы тренировок
+    const createTrainingBtn = document.getElementById('create-training');
+    if (createTrainingBtn) {
+        createTrainingBtn.addEventListener('click', () => {
+            showModal('create-training-modal');
+        });
+    }
 
-    // Обработчики событий
-    datePicker.addEventListener('change', (e) => {
-        currentDate = new Date(e.target.value);
-        loadSchedule();
+    // Обработчики для страницы тренеров
+    const createTrainerBtn = document.getElementById('create-trainer');
+    if (createTrainerBtn) {
+        createTrainerBtn.addEventListener('click', () => {
+            showModal('create-trainer-modal');
+        });
+    }
+
+    // Обработчики для страницы расписания
+    const createScheduleBtn = document.getElementById('create-schedule');
+    if (createScheduleBtn) {
+        createScheduleBtn.addEventListener('click', () => {
+            showModal('create-schedule-modal');
+        });
+    }
+
+    // Обработчики для страницы прайса
+    const savePricesBtn = document.getElementById('save-prices');
+    if (savePricesBtn) {
+        savePricesBtn.addEventListener('click', savePrices);
+    }
+
+    // Обработчики для страницы тренажеров
+    const simulatorStatuses = document.querySelectorAll('.status-select');
+    simulatorStatuses.forEach(select => {
+        select.addEventListener('change', (e) => {
+            updateSimulatorStatus(e.target.id, e.target.value);
+        });
     });
 
-    prevDateBtn.addEventListener('click', () => {
-        currentDate.setDate(currentDate.getDate() - 1);
-        datePicker.valueAsDate = currentDate;
-        loadSchedule();
-    });
+    // Обработчики для страницы клиентов
+    const sortClientsSelect = document.getElementById('sort-clients');
+    if (sortClientsSelect) {
+        sortClientsSelect.addEventListener('change', () => {
+            loadClients(sortClientsSelect.value);
+        });
+    }
 
-    nextDateBtn.addEventListener('click', () => {
-        currentDate.setDate(currentDate.getDate() + 1);
-        datePicker.valueAsDate = currentDate;
-        loadSchedule();
-    });
+    // Обработчики для форм
+    const createTrainingForm = document.getElementById('create-training-form');
+    if (createTrainingForm) {
+        createTrainingForm.addEventListener('submit', handleCreateTraining);
+    }
+
+    const createTrainerForm = document.getElementById('create-trainer-form');
+    if (createTrainerForm) {
+        createTrainerForm.addEventListener('submit', handleCreateTrainer);
+    }
+
+    const createScheduleForm = document.getElementById('create-schedule-form');
+    if (createScheduleForm) {
+        createScheduleForm.addEventListener('submit', handleCreateSchedule);
+    }
+
+    // Обработчик для автоматического создания расписания
+    const autoScheduleCheckbox = document.getElementById('auto-schedule');
+    if (autoScheduleCheckbox) {
+        autoScheduleCheckbox.addEventListener('change', (e) => {
+            const settings = document.querySelector('.auto-schedule-settings');
+            settings.style.display = e.target.checked ? 'block' : 'none';
+        });
+    }
 }
 
 // Переключение страниц
@@ -54,48 +132,51 @@ function switchPage(page) {
     document.querySelectorAll('.page-content').forEach(content => {
         content.style.display = 'none';
     });
-
+    
     // Показать выбранную страницу
     const selectedPage = document.getElementById(`${page}-page`);
     if (selectedPage) {
         selectedPage.style.display = 'block';
     }
-
+    
     // Обновить активный пункт меню
     document.querySelectorAll('.menu-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.page === page);
+        item.classList.remove('active');
+        if (item.dataset.page === page) {
+            item.classList.add('active');
+        }
     });
-
-    // Загрузить контент страницы
+    
+    currentPage = page;
     loadPageContent(page);
 }
 
 // Загрузка контента страницы
-function loadPageContent(page) {
+async function loadPageContent(page) {
     switch (page) {
         case 'training':
-            loadTrainings();
+            await loadTrainings();
             break;
         case 'schedule':
-            loadSchedule();
+            await loadSchedule();
             break;
         case 'simulators':
-            loadSimulators();
+            await loadSimulators();
             break;
         case 'trainers':
-            loadTrainers();
+            await loadTrainers();
             break;
         case 'clients':
-            loadClients();
+            await loadClients();
             break;
         case 'prices':
-            loadPrices();
+            await loadPrices();
             break;
         case 'certificates':
-            loadCertificates();
+            await loadCertificates();
             break;
         case 'finances':
-            loadFinances();
+            await loadFinances();
             break;
     }
 }
@@ -107,22 +188,27 @@ async function loadTrainings() {
         const trainings = await response.json();
         
         const trainingList = document.querySelector('.training-list');
-        trainingList.innerHTML = trainings.map(training => `
-            <div class="training-item">
-                <div class="training-info">
-                    <h3>${training.group_name}</h3>
-                    <p>Дата: ${formatDate(training.date)}</p>
-                    <p>Время: ${training.start_time}</p>
-                    <p>Участников: ${training.participants_count}/${training.max_participants}</p>
+        if (trainingList) {
+            trainingList.innerHTML = trainings.map(training => `
+                <div class="training-item">
+                    <div class="training-info">
+                        <h3>${training.name}</h3>
+                        <p>Дата: ${formatDate(training.date)}</p>
+                        <p>Время: ${training.start_time} - ${training.end_time}</p>
+                        <p>Тренер: ${training.trainer_name}</p>
+                        <p>Участники: ${training.participants_count}/${training.max_participants}</p>
+                    </div>
+                    <div class="training-actions">
+                        <button class="btn-secondary" onclick="viewTraining(${training.id})">Просмотр</button>
+                        <button class="btn-secondary" onclick="editTraining(${training.id})">Редактировать</button>
+                        <button class="btn-danger" onclick="deleteTraining(${training.id})">Удалить</button>
+                    </div>
                 </div>
-                <div class="training-actions">
-                    <button class="btn-secondary" onclick="viewTraining(${training.id})">Посмотреть</button>
-                    <button class="btn-secondary" onclick="deleteTraining(${training.id})">Удалить</button>
-                </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
     } catch (error) {
         console.error('Ошибка при загрузке тренировок:', error);
+        showError('Не удалось загрузить тренировки');
     }
 }
 
@@ -134,80 +220,293 @@ async function loadSchedule() {
         const schedule = await response.json();
         
         const scheduleList = document.querySelector('.schedule-list');
-        scheduleList.innerHTML = schedule.map(booking => `
-            <div class="schedule-item">
-                <div class="schedule-info">
-                    <p>${booking.client_name}</p>
-                    <p>${booking.phone}</p>
-                    <p>${booking.start_time}</p>
-                    <p>${booking.training_type}</p>
-                    <p>${booking.equipment}</p>
-                    <p>${booking.trainer_name || 'Без тренера'}</p>
+        if (scheduleList) {
+            scheduleList.innerHTML = schedule.map(slot => `
+                <div class="schedule-slot ${slot.is_booked ? 'booked' : ''}">
+                    <div class="slot-time">${slot.start_time} - ${slot.end_time}</div>
+                    <div class="slot-info">
+                        <p>Тренажер: ${slot.simulator_name}</p>
+                        ${slot.is_booked ? `
+                            <p>Клиент: ${slot.client_name}</p>
+                            <p>Телефон: ${slot.client_phone}</p>
+                        ` : ''}
+                    </div>
+                    ${!slot.is_booked ? `
+                        <button class="btn-primary" onclick="bookSlot(${slot.id})">Забронировать</button>
+                    ` : ''}
                 </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
     } catch (error) {
         console.error('Ошибка при загрузке расписания:', error);
+        showError('Не удалось загрузить расписание');
     }
 }
 
-// Создание тренировки
-async function createTraining(formData) {
+// Загрузка тренажеров
+async function loadSimulators() {
+    try {
+        const response = await fetch('/api/simulators');
+        const simulators = await response.json();
+        
+        const simulatorsList = document.querySelector('.simulators-list');
+        if (simulatorsList) {
+            simulatorsList.innerHTML = simulators.map(simulator => `
+                <div class="simulator-item">
+                    <h3>${simulator.name}</h3>
+                    <div class="simulator-status">
+                        <span class="status-label">Статус:</span>
+                        <select id="simulator${simulator.id}-status" class="status-select" 
+                                onchange="updateSimulatorStatus(${simulator.id}, this.value)">
+                            <option value="available" ${simulator.status === 'available' ? 'selected' : ''}>В работе</option>
+                            <option value="maintenance" ${simulator.status === 'maintenance' ? 'selected' : ''}>Не работает</option>
+                        </select>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке тренажеров:', error);
+        showError('Не удалось загрузить тренажеры');
+    }
+}
+
+// Загрузка тренеров
+async function loadTrainers() {
+    try {
+        const response = await fetch('/api/trainers');
+        const trainers = await response.json();
+        
+        const trainersList = document.querySelector('.trainers-list');
+        if (trainersList) {
+            trainersList.innerHTML = trainers.map(trainer => `
+                <div class="trainer-item">
+                    <div class="trainer-info">
+                        <h3>${trainer.full_name}</h3>
+                        <p>Вид спорта: ${trainer.sport_type}</p>
+                        <p>Телефон: ${trainer.phone}</p>
+                        <p>Статус: ${trainer.is_active ? 'Работает' : 'Уволен'}</p>
+                    </div>
+                    <div class="trainer-actions">
+                        <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                        <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
+                        ${trainer.is_active ? 
+                            `<button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>` :
+                            `<button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>`
+                        }
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить тренеров');
+    }
+}
+
+// Загрузка клиентов
+async function loadClients(sortBy = 'created') {
+    try {
+        const response = await fetch(`/api/clients?sort=${sortBy}`);
+        const clients = await response.json();
+        
+        const clientsList = document.querySelector('.clients-list');
+        if (clientsList) {
+            clientsList.innerHTML = clients.map(client => `
+                <div class="client-item">
+                    <div class="client-info">
+                        <h3>${client.full_name}</h3>
+                        <p>Телефон: ${client.phone}</p>
+                        <p>Дата рождения: ${formatDate(client.birth_date)}</p>
+                        ${client.has_child ? `
+                            <p>Ребенок: ${client.child_name}</p>
+                            <p>Возраст ребенка: ${client.child_birth_date}</p>
+                        ` : ''}
+                    </div>
+                    <div class="client-actions">
+                        <button class="btn-secondary" onclick="viewClient(${client.id})">Просмотр</button>
+                        <button class="btn-secondary" onclick="editClient(${client.id})">Редактировать</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке клиентов:', error);
+        showError('Не удалось загрузить клиентов');
+    }
+}
+
+// Загрузка прайса
+async function loadPrices() {
+    try {
+        const response = await fetch('/api/prices');
+        const prices = await response.json();
+        
+        // Обновляем значения в полях ввода
+        Object.entries(prices).forEach(([key, value]) => {
+            const input = document.querySelector(`[data-price="${key}"]`);
+            if (input) {
+                input.value = value;
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке прайса:', error);
+        showError('Не удалось загрузить прайс');
+    }
+}
+
+// Загрузка сертификатов
+async function loadCertificates() {
+    try {
+        const response = await fetch('/api/certificates');
+        const certificates = await response.json();
+        
+        const certificatesList = document.querySelector('.certificates-list');
+        if (certificatesList) {
+            certificatesList.innerHTML = certificates.map(cert => `
+                <div class="certificate-item">
+                    <div class="certificate-info">
+                        <h3>Сертификат #${cert.certificate_number}</h3>
+                        <p>Сумма: ${cert.amount} ₽</p>
+                        <p>Статус: ${cert.status}</p>
+                        <p>Срок действия: ${formatDate(cert.expiry_date)}</p>
+                    </div>
+                    <div class="certificate-actions">
+                        <button class="btn-secondary" onclick="viewCertificate(${cert.id})">Просмотр</button>
+                        <button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>
+                        <button class="btn-danger" onclick="deleteCertificate(${cert.id})">Удалить</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке сертификатов:', error);
+        showError('Не удалось загрузить сертификаты');
+    }
+}
+
+// Загрузка финансов
+async function loadFinances() {
+    try {
+        const response = await fetch('/api/finances');
+        const finances = await response.json();
+        
+        const financesList = document.querySelector('.finances-list');
+        if (financesList) {
+            financesList.innerHTML = finances.map(transaction => `
+                <div class="finance-item">
+                    <div class="finance-info">
+                        <h3>Транзакция #${transaction.id}</h3>
+                        <p>Сумма: ${transaction.amount} ₽</p>
+                        <p>Тип: ${transaction.type}</p>
+                        <p>Дата: ${formatDate(transaction.created_at)}</p>
+                        <p>Описание: ${transaction.description}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке финансов:', error);
+        showError('Не удалось загрузить финансовые данные');
+    }
+}
+
+// Обработчики форм
+async function handleCreateTraining(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
     try {
         const response = await fetch('/api/trainings', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(formData)
+            body: JSON.stringify(data)
         });
-
+        
         if (response.ok) {
             closeModal('create-training-modal');
             loadTrainings();
+            showSuccess('Тренировка успешно создана');
         } else {
             throw new Error('Ошибка при создании тренировки');
         }
     } catch (error) {
-        console.error('Ошибка:', error);
+        console.error('Ошибка при создании тренировки:', error);
+        showError('Не удалось создать тренировку');
     }
 }
 
-// Просмотр тренировки
-async function viewTraining(id) {
+async function handleCreateTrainer(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
     try {
-        const response = await fetch(`/api/trainings/${id}`);
-        const training = await response.json();
+        const response = await fetch('/api/trainers', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
         
-        // Показать модальное окно с информацией о тренировке
-        // TODO: Реализовать отображение информации о тренировке
+        if (response.ok) {
+            closeModal('create-trainer-modal');
+            loadTrainers();
+            showSuccess('Тренер успешно создан');
+        } else {
+            throw new Error('Ошибка при создании тренера');
+        }
     } catch (error) {
-        console.error('Ошибка при загрузке информации о тренировке:', error);
+        console.error('Ошибка при создании тренера:', error);
+        showError('Не удалось создать тренера');
     }
 }
 
-// Удаление тренировки
-async function deleteTraining(id) {
-    if (confirm('Вы уверены, что хотите удалить эту тренировку?')) {
-        try {
-            const response = await fetch(`/api/trainings/${id}`, {
-                method: 'DELETE'
-            });
-
-            if (response.ok) {
-                loadTrainings();
-            } else {
-                throw new Error('Ошибка при удалении тренировки');
-            }
-        } catch (error) {
-            console.error('Ошибка:', error);
+async function handleCreateSchedule(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    // Добавляем выбранные дни недели
+    data.weekdays = Array.from(document.querySelectorAll('.weekdays-select input:checked'))
+        .map(input => input.value);
+    
+    try {
+        const response = await fetch('/api/schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            closeModal('create-schedule-modal');
+            loadSchedule();
+            showSuccess('Расписание успешно создано');
+        } else {
+            throw new Error('Ошибка при создании расписания');
         }
+    } catch (error) {
+        console.error('Ошибка при создании расписания:', error);
+        showError('Не удалось создать расписание');
     }
 }
 
 // Вспомогательные функции
 function formatDate(date) {
-    return date.toISOString().split('T')[0];
+    return new Date(date).toLocaleDateString('ru-RU');
+}
+
+function showModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'block';
+    }
 }
 
 function closeModal(modalId) {
@@ -217,17 +516,19 @@ function closeModal(modalId) {
     }
 }
 
-// Обработчики событий для модальных окон
-document.getElementById('create-training')?.addEventListener('click', () => {
-    const modal = document.getElementById('create-training-modal');
-    if (modal) {
-        modal.style.display = 'block';
-    }
-});
+function showError(message) {
+    // Реализация показа ошибок
+    alert(message);
+}
 
-document.getElementById('create-training-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData.entries());
-    createTraining(data);
-}); 
+function showSuccess(message) {
+    // Реализация показа успешных сообщений
+    alert(message);
+}
+
+// Закрытие модальных окон при клике вне их области
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.style.display = 'none';
+    }
+} 
