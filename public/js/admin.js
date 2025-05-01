@@ -116,7 +116,52 @@ function initializeEventListeners() {
         createScheduleForm.addEventListener('submit', handleCreateSchedule);
     }
 
-    // Обработчик для автоматического создания расписания
+    // Обработчики для страницы тренировок
+    const manageGroupsBtn = document.getElementById('manage-groups');
+    if (manageGroupsBtn) {
+        manageGroupsBtn.addEventListener('click', async () => {
+            try {
+                await loadGroups();
+                showModal('groups-modal');
+            } catch (error) {
+                console.error('Ошибка при загрузке групп:', error);
+                showError('Не удалось загрузить группы');
+            }
+        });
+    }
+
+    const createGroupBtn = document.getElementById('create-group-btn');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', () => {
+            closeModal('groups-modal');
+            showModal('create-group-modal');
+        });
+    }
+
+    // Обработчики для форм
+    const createGroupForm = document.getElementById('create-group-form');
+    if (createGroupForm) {
+        createGroupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                name: document.getElementById('group-name').value,
+                description: document.getElementById('group-description').value
+            };
+
+            try {
+                await createGroup(formData);
+                createGroupForm.reset();
+                showModal('groups-modal');
+                await loadGroups();
+                showNotification('Группа успешно создана', 'success');
+            } catch (error) {
+                showNotification('Ошибка при создании группы', 'error');
+            }
+        });
+    }
+
+    // Обработчик автоматического создания расписания
     const autoScheduleCheckbox = document.getElementById('auto-schedule');
     if (autoScheduleCheckbox) {
         autoScheduleCheckbox.addEventListener('change', (e) => {
@@ -132,26 +177,6 @@ function initializeEventListeners() {
             showModal('archive-modal');
             loadArchiveTrainings();
         });
-    }
-
-    const manageGroupsBtn = document.getElementById('manage-groups');
-    if (manageGroupsBtn) {
-        manageGroupsBtn.addEventListener('click', () => {
-            showModal('groups-modal');
-            loadGroups();
-        });
-    }
-
-    const createGroupBtn = document.getElementById('create-group');
-    if (createGroupBtn) {
-        createGroupBtn.addEventListener('click', () => {
-            showModal('create-group-modal');
-        });
-    }
-
-    const createGroupForm = document.getElementById('create-group-form');
-    if (createGroupForm) {
-        createGroupForm.addEventListener('submit', handleCreateGroup);
     }
 }
 
@@ -498,11 +523,26 @@ async function handleCreateTrainer(event) {
 async function handleCreateSchedule(event) {
     event.preventDefault();
     const formData = new FormData(event.target);
-    const data = Object.fromEntries(formData.entries());
-    
-    // Добавляем выбранные дни недели
-    data.weekdays = Array.from(document.querySelectorAll('.weekdays-select input:checked'))
-        .map(input => input.value);
+    const data = {
+        start_date: formData.get('schedule-start-date'),
+        end_date: formData.get('schedule-end-date'),
+        weekdays: Array.from(document.querySelectorAll('.weekdays-select input:checked'))
+            .map(input => input.value),
+        simulator1: {
+            start_time: formData.get('simulator1-start'),
+            end_time: formData.get('simulator1-end')
+        },
+        simulator2: {
+            start_time: formData.get('simulator2-start'),
+            end_time: formData.get('simulator2-end')
+        },
+        auto_schedule: {
+            enabled: formData.get('auto-schedule') === 'on',
+            day: formData.get('schedule-day'),
+            time: formData.get('schedule-time'),
+            timezone: 'Asia/Yekaterinburg'
+        }
+    };
     
     try {
         const response = await fetch('/api/schedule', {
@@ -608,7 +648,11 @@ async function loadGroups() {
         const groupsList = document.querySelector('.groups-list');
         if (groupsList) {
             if (groups.length === 0) {
-                groupsList.innerHTML = '<p class="no-data">Группы не найдены</p>';
+                groupsList.innerHTML = `
+                    <div class="no-groups-message">
+                        <p>Группы не найдены</p>
+                        <button class="btn-primary" onclick="showModal('create-group-modal')">Создать группу</button>
+                    </div>`;
             } else {
                 groupsList.innerHTML = groups.map(group => `
                     <div class="group-item">
@@ -630,43 +674,21 @@ async function loadGroups() {
     }
 }
 
-// Обработчик создания группы
-async function handleCreateGroup(event) {
-    event.preventDefault();
-    const formData = new FormData(event.target);
-    const data = Object.fromEntries(formData.entries());
-    
-    try {
-        const response = await fetch('/api/groups', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        
-        if (response.ok) {
-            closeModal('create-group-modal');
-            loadGroups();
-            showSuccess('Группа успешно создана');
-        } else {
-            throw new Error('Ошибка при создании группы');
-        }
-    } catch (error) {
-        console.error('Ошибка при создании группы:', error);
-        showError('Не удалось создать группу');
-    }
-}
-
 // Редактирование группы
 async function editGroup(groupId) {
     try {
         const response = await fetch(`/api/groups/${groupId}`);
         const group = await response.json();
         
-        // Заполняем форму данными группы
         document.getElementById('group-name').value = group.name;
         document.getElementById('group-description').value = group.description || '';
+        
+        // Изменяем заголовок и текст кнопки
+        const modalTitle = document.querySelector('#create-group-modal h3');
+        const submitButton = document.querySelector('#create-group-form button[type="submit"]');
+        
+        modalTitle.textContent = 'Редактировать группу';
+        submitButton.textContent = 'Сохранить';
         
         showModal('create-group-modal');
     } catch (error) {
@@ -730,4 +752,11 @@ window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none';
     }
-} 
+}
+
+// Закрытие модальных окон при клике вне их области
+window.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
+}); 
