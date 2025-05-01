@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Личный кабинет - ГорноStyle</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/profile.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <h1>ГорноStyle</h1>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Главная</a></li>
+                <li><a href="/simulators.html">Тренажеры</a></li>
+                <li><a href="/schedule.html">Расписание</a></li>
+                <li><a href="/booking.html">Бронирование</a></li>
+                <li><a href="/profile.html" class="active">Личный кабинет</a></li>
+                <li><a href="#" id="logoutBtn">Выйти</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <div class="profile-container">
+            <div class="profile-sidebar">
+                <div class="profile-info">
+                    <div class="profile-avatar">
+                        <img src="/images/default-avatar.png" alt="Аватар пользователя" id="userAvatar">
+                    </div>
+                    <h2 id="userName">Загрузка...</h2>
+                    <p id="userRole">Загрузка...</p>
+                </div>
+                <ul class="profile-menu">
+                    <li><a href="#bookings" class="active">Мои бронирования</a></li>
+                    <li><a href="#settings">Настройки профиля</a></li>
+                    <li id="adminMenuItem" style="display: none;">
+                        <a href="/admin.html">Панель администратора</a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="profile-content">
+                <section id="bookings" class="profile-section active">
+                    <h3>Мои бронирования</h3>
+                    <div class="bookings-filter">
+                        <button class="filter-btn active" data-filter="upcoming">Предстоящие</button>
+                        <button class="filter-btn" data-filter="past">Прошедшие</button>
+                        <button class="filter-btn" data-filter="cancelled">Отмененные</button>
+                    </div>
+                    <div class="bookings-list" id="bookingsList">
+                        <!-- Бронирования будут добавлены динамически -->
+                    </div>
+                </section>
+
+                <section id="settings" class="profile-section">
+                    <h3>Настройки профиля</h3>
+                    <form id="profileForm" class="settings-form">
+                        <div class="form-group">
+                            <label for="name">Имя:</label>
+                            <input type="text" id="name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email:</label>
+                            <input type="email" id="email" name="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="phone">Телефон:</label>
+                            <input type="tel" id="phone" name="phone" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="currentPassword">Текущий пароль:</label>
+                            <input type="password" id="currentPassword" name="currentPassword">
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword">Новый пароль:</label>
+                            <input type="password" id="newPassword" name="newPassword">
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">Подтверждение пароля:</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword">
+                        </div>
+                        <button type="submit" class="save-button">Сохранить изменения</button>
+                    </form>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакты</h4>
+                <p>Телефон: +7 (999) 123-45-67</p>
+                <p>Email: info@gornostyle.ru</p>
+                <p>Адрес: г. Москва, ул. Спортивная, 1</p>
+            </div>
+            <div class="footer-section">
+                <h4>Режим работы</h4>
+                <p>Пн-Пт: 9:00 - 22:00</p>
+                <p>Сб-Вс: 10:00 - 20:00</p>
+            </div>
+            <div class="footer-section">
+                <h4>Социальные сети</h4>
+                <div class="social-links">
+                    <a href="#" target="_blank">VK</a>
+                    <a href="#" target="_blank">Telegram</a>
+                    <a href="#" target="_blank">WhatsApp</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 ГорноStyle. Все права защищены.</p>
+        </div>
+    </footer>
+
+    <div id="confirmationModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Подтверждение действия</h2>
+            <p id="confirmationMessage"></p>
+            <div class="modal-buttons">
+                <button id="confirmBtn" class="confirm-button">Подтвердить</button>
+                <button id="cancelBtn" class="cancel-button">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/main.js"></script>
+    <script src="/js/profile.js"></script>
+</body>
+</html> 

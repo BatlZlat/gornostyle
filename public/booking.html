@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бронирование - ГорноStyle</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/booking.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <h1>ГорноStyle</h1>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Главная</a></li>
+                <li><a href="/simulators.html">Тренажеры</a></li>
+                <li><a href="/schedule.html">Расписание</a></li>
+                <li><a href="/booking.html" class="active">Бронирование</a></li>
+                <li><a href="/profile.html" id="profileLink" style="display: none;">Личный кабинет</a></li>
+                <li><a href="#" id="loginBtn">Войти</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="booking-section">
+            <h2>Бронирование тренажера</h2>
+            <div class="booking-container">
+                <form id="bookingForm" class="booking-form">
+                    <div class="form-group">
+                        <label for="simulator">Выберите тренажер:</label>
+                        <select id="simulator" name="simulator" required>
+                            <option value="">Выберите тренажер</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="date">Выберите дату:</label>
+                        <input type="date" id="date" name="date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="time">Выберите время:</label>
+                        <select id="time" name="time" required>
+                            <option value="">Выберите время</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="duration">Длительность:</label>
+                        <select id="duration" name="duration" required>
+                            <option value="60">1 час</option>
+                            <option value="90">1.5 часа</option>
+                            <option value="120">2 часа</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="trainer">Тренер (опционально):</label>
+                        <select id="trainer" name="trainer">
+                            <option value="">Без тренера</option>
+                        </select>
+                    </div>
+
+                    <div class="price-info">
+                        <p>Стоимость: <span id="totalPrice">0</span> ₽</p>
+                    </div>
+
+                    <button type="submit" class="book-button">Забронировать</button>
+                </form>
+
+                <div class="booking-info">
+                    <h3>Информация о бронировании</h3>
+                    <div class="info-content">
+                        <p><strong>Правила бронирования:</strong></p>
+                        <ul>
+                            <li>Бронирование осуществляется минимум за 2 часа</li>
+                            <li>Отмена бронирования возможна не позднее чем за 12 часов</li>
+                            <li>При опоздании более чем на 15 минут бронь может быть отменена</li>
+                            <li>Оплата производится перед началом занятия</li>
+                        </ul>
+
+                        <p><strong>Стоимость:</strong></p>
+                        <ul>
+                            <li>1 час - 2000₽</li>
+                            <li>1.5 часа - 2800₽</li>
+                            <li>2 часа - 3500₽</li>
+                            <li>Услуги тренера - от 1500₽/час</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакты</h4>
+                <p>Телефон: +7 (999) 123-45-67</p>
+                <p>Email: info@gornostyle.ru</p>
+                <p>Адрес: г. Москва, ул. Спортивная, 1</p>
+            </div>
+            <div class="footer-section">
+                <h4>Режим работы</h4>
+                <p>Пн-Пт: 9:00 - 22:00</p>
+                <p>Сб-Вс: 10:00 - 20:00</p>
+            </div>
+            <div class="footer-section">
+                <h4>Социальные сети</h4>
+                <div class="social-links">
+                    <a href="#" target="_blank">VK</a>
+                    <a href="#" target="_blank">Telegram</a>
+                    <a href="#" target="_blank">WhatsApp</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 ГорноStyle. Все права защищены.</p>
+        </div>
+    </footer>
+
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Вход в систему</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Пароль:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit">Войти</button>
+            </form>
+            <p>Нет аккаунта? <a href="/register.html">Зарегистрироваться</a></p>
+        </div>
+    </div>
+
+    <script src="/js/main.js"></script>
+    <script src="/js/booking.js"></script>
+</body>
+</html> 

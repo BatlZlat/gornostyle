@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель администратора - ГорноStyle</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <h1>ГорноStyle</h1>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Главная</a></li>
+                <li><a href="/simulators.html">Тренажеры</a></li>
+                <li><a href="/schedule.html">Расписание</a></li>
+                <li><a href="/booking.html">Бронирование</a></li>
+                <li><a href="/profile.html">Личный кабинет</a></li>
+                <li><a href="/admin.html" class="active">Админ панель</a></li>
+                <li><a href="#" id="logoutBtn">Выйти</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <div class="admin-container">
+            <div class="admin-sidebar">
+                <ul class="admin-menu">
+                    <li><a href="#dashboard" class="active">Дашборд</a></li>
+                    <li><a href="#users">Пользователи</a></li>
+                    <li><a href="#simulators">Тренажеры</a></li>
+                    <li><a href="#bookings">Бронирования</a></li>
+                    <li><a href="#schedule">Расписание</a></li>
+                    <li><a href="#reports">Отчеты</a></li>
+                </ul>
+            </div>
+
+            <div class="admin-content">
+                <section id="dashboard" class="admin-section active">
+                    <h2>Дашборд</h2>
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <h3>Пользователи</h3>
+                            <p class="count" id="usersCount">0</p>
+                            <p class="label">Всего пользователей</p>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Тренажеры</h3>
+                            <p class="count" id="simulatorsCount">0</p>
+                            <p class="label">Активных тренажеров</p>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Бронирования</h3>
+                            <p class="count" id="bookingsCount">0</p>
+                            <p class="label">Сегодня</p>
+                        </div>
+                        <div class="dashboard-card">
+                            <h3>Доход</h3>
+                            <p class="count" id="income">0 ₽</p>
+                            <p class="label">За текущий месяц</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="users" class="admin-section">
+                    <h2>Управление пользователями</h2>
+                    <div class="section-actions">
+                        <button class="add-button" id="addUserBtn">Добавить пользователя</button>
+                        <div class="search-box">
+                            <input type="text" id="userSearch" placeholder="Поиск пользователей...">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Имя</th>
+                                    <th>Email</th>
+                                    <th>Телефон</th>
+                                    <th>Роль</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTable">
+                                <!-- Данные будут добавлены динамически -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="simulators" class="admin-section">
+                    <h2>Управление тренажерами</h2>
+                    <div class="section-actions">
+                        <button class="add-button" id="addSimulatorBtn">Добавить тренажер</button>
+                        <div class="search-box">
+                            <input type="text" id="simulatorSearch" placeholder="Поиск тренажеров...">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Название</th>
+                                    <th>Описание</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="simulatorsTable">
+                                <!-- Данные будут добавлены динамически -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="bookings" class="admin-section">
+                    <h2>Управление бронированиями</h2>
+                    <div class="section-actions">
+                        <div class="date-filter">
+                            <input type="date" id="bookingDateFilter">
+                        </div>
+                        <div class="search-box">
+                            <input type="text" id="bookingSearch" placeholder="Поиск бронирований...">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Клиент</th>
+                                    <th>Тренажер</th>
+                                    <th>Дата</th>
+                                    <th>Время</th>
+                                    <th>Тренер</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bookingsTable">
+                                <!-- Данные будут добавлены динамически -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="schedule" class="admin-section">
+                    <h2>Управление расписанием</h2>
+                    <div class="section-actions">
+                        <select id="simulatorSelect">
+                            <option value="">Выберите тренажер</option>
+                        </select>
+                    </div>
+                    <div class="schedule-grid" id="scheduleGrid">
+                        <!-- Расписание будет добавлено динамически -->
+                    </div>
+                </section>
+
+                <section id="reports" class="admin-section">
+                    <h2>Отчеты</h2>
+                    <div class="reports-grid">
+                        <div class="report-card">
+                            <h3>Загруженность тренажеров</h3>
+                            <div class="report-actions">
+                                <select id="simulatorReportPeriod">
+                                    <option value="week">За неделю</option>
+                                    <option value="month">За месяц</option>
+                                    <option value="year">За год</option>
+                                </select>
+                                <button class="generate-button">Сформировать</button>
+                            </div>
+                            <div class="report-content" id="simulatorReportContent"></div>
+                        </div>
+                        <div class="report-card">
+                            <h3>Финансовый отчет</h3>
+                            <div class="report-actions">
+                                <select id="financialReportPeriod">
+                                    <option value="week">За неделю</option>
+                                    <option value="month">За месяц</option>
+                                    <option value="year">За год</option>
+                                </select>
+                                <button class="generate-button">Сформировать</button>
+                            </div>
+                            <div class="report-content" id="financialReportContent"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <!-- Модальное окно для добавления/редактирования пользователя -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="userModalTitle">Добавить пользователя</h2>
+            <form id="userForm">
+                <div class="form-group">
+                    <label for="userName">Имя:</label>
+                    <input type="text" id="userName" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="userEmail">Email:</label>
+                    <input type="email" id="userEmail" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="userPhone">Телефон:</label>
+                    <input type="tel" id="userPhone" name="phone" required>
+                </div>
+                <div class="form-group">
+                    <label for="userRole">Роль:</label>
+                    <select id="userRole" name="role" required>
+                        <option value="client">Клиент</option>
+                        <option value="trainer">Тренер</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="userPassword">Пароль:</label>
+                    <input type="password" id="userPassword" name="password">
+                </div>
+                <button type="submit" class="save-button">Сохранить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно для добавления/редактирования тренажера -->
+    <div id="simulatorModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="simulatorModalTitle">Добавить тренажер</h2>
+            <form id="simulatorForm">
+                <div class="form-group">
+                    <label for="simulatorName">Название:</label>
+                    <input type="text" id="simulatorName" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="simulatorDescription">Описание:</label>
+                    <textarea id="simulatorDescription" name="description" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="simulatorStatus">Статус:</label>
+                    <select id="simulatorStatus" name="status" required>
+                        <option value="available">Доступен</option>
+                        <option value="maintenance">На обслуживании</option>
+                        <option value="inactive">Неактивен</option>
+                    </select>
+                </div>
+                <button type="submit" class="save-button">Сохранить</button>
+            </form>
+        </div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакты</h4>
+                <p>Телефон: +7 (999) 123-45-67</p>
+                <p>Email: info@gornostyle.ru</p>
+                <p>Адрес: г. Москва, ул. Спортивная, 1</p>
+            </div>
+            <div class="footer-section">
+                <h4>Режим работы</h4>
+                <p>Пн-Пт: 9:00 - 22:00</p>
+                <p>Сб-Вс: 10:00 - 20:00</p>
+            </div>
+            <div class="footer-section">
+                <h4>Социальные сети</h4>
+                <div class="social-links">
+                    <a href="#" target="_blank">VK</a>
+                    <a href="#" target="_blank">Telegram</a>
+                    <a href="#" target="_blank">WhatsApp</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 ГорноStyle. Все права защищены.</p>
+        </div>
+    </footer>
+
+    <script src="/js/main.js"></script>
+    <script src="/js/admin.js"></script>
+</body>
+</html> 
