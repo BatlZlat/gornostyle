@@ -163,10 +163,11 @@ function initializeEventListeners() {
 
     // Обработчик автоматического создания расписания
     const autoScheduleCheckbox = document.getElementById('auto-schedule');
-    if (autoScheduleCheckbox) {
+    const autoScheduleSettings = document.querySelector('.auto-schedule-settings');
+    
+    if (autoScheduleCheckbox && autoScheduleSettings) {
         autoScheduleCheckbox.addEventListener('change', (e) => {
-            const settings = document.querySelector('.auto-schedule-settings');
-            settings.style.display = e.target.checked ? 'block' : 'none';
+            autoScheduleSettings.style.display = e.target.checked ? 'block' : 'none';
         });
     }
 

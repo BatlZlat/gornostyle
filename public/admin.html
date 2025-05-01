@@ -353,10 +353,10 @@
                     </div>
                 </div>
                 <div class="auto-schedule-section">
-                    <div class="form-group">
+                    <div class="form-group auto-schedule-checkbox">
                         <label class="checkbox-label">
                             <input type="checkbox" id="auto-schedule">
-                            Создавать расписание на следующий месяц
+                            Автоматически создавать расписание каждый месяц
                         </label>
                     </div>
                     <div class="auto-schedule-settings" style="display: none;">
@@ -368,12 +368,7 @@
                             <label for="schedule-time">Время</label>
                             <input type="time" id="schedule-time" value="00:10">
                         </div>
-                        <div class="form-group">
-                            <label for="timezone">Часовой пояс</label>
-                            <select id="timezone" required>
-                                <option value="Asia/Yekaterinburg" selected>Азия/Екатеринбург</option>
-                            </select>
-                        </div>
+                        <input type="hidden" id="timezone" value="Asia/Yekaterinburg">
                     </div>
                 </div>
                 <div class="form-actions">
