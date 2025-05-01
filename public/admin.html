@@ -352,25 +352,87 @@
                         <input type="time" id="simulator2-end" value="21:00" required>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="auto-schedule">
-                        Создавать расписание на следующий месяц
-                    </label>
-                </div>
-                <div class="auto-schedule-settings" style="display: none;">
+                <div class="auto-schedule-section">
                     <div class="form-group">
-                        <label for="schedule-day">День месяца</label>
-                        <input type="number" id="schedule-day" min="1" max="31" value="1">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="auto-schedule">
+                            Создавать расписание на следующий месяц
+                        </label>
                     </div>
-                    <div class="form-group">
-                        <label for="schedule-time">Время</label>
-                        <input type="time" id="schedule-time" value="00:00">
+                    <div class="auto-schedule-settings" style="display: none;">
+                        <div class="form-group">
+                            <label for="schedule-day">День месяца</label>
+                            <input type="number" id="schedule-day" min="1" max="31" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-time">Время</label>
+                            <input type="time" id="schedule-time" value="00:10">
+                        </div>
+                        <div class="form-group">
+                            <label for="timezone">Часовой пояс</label>
+                            <select id="timezone" required>
+                                <option value="Asia/Yekaterinburg" selected>Азия/Екатеринбург</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Создать расписание</button>
                     <button type="button" class="btn-secondary" onclick="closeModal('create-schedule-modal')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно архива тренировок -->
+    <div class="modal" id="archive-modal">
+        <div class="modal-content">
+            <h3>Архив тренировок</h3>
+            <div class="archive-list">
+                <!-- Список архивных тренировок будет загружен динамически -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно просмотра тренировки -->
+    <div class="modal" id="view-training-modal">
+        <div class="modal-content">
+            <h3>Информация о тренировке</h3>
+            <div class="training-details">
+                <!-- Детали тренировки будут загружены динамически -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно управления группами -->
+    <div class="modal" id="groups-modal">
+        <div class="modal-content">
+            <h3>Управление группами</h3>
+            <div class="groups-list">
+                <!-- Список групп будет загружен динамически -->
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" id="create-group">Создать группу</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания группы -->
+    <div class="modal" id="create-group-modal">
+        <div class="modal-content">
+            <h3>Создать группу</h3>
+            <form id="create-group-form">
+                <div class="form-group">
+                    <label for="group-name">Название группы</label>
+                    <input type="text" id="group-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="group-description">Описание</label>
+                    <textarea id="group-description" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Создать</button>
+                    <button type="button" class="btn-secondary" onclick="closeModal('create-group-modal')">Отмена</button>
                 </div>
             </form>
         </div>

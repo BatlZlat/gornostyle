@@ -191,4 +191,154 @@ function calculateEndTime(startTime, duration) {
 }
 
 // Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', initializeForm); 
+document.addEventListener('DOMContentLoaded', () => {
+    initializeForm();
+    loadPrices();
+});
+
+// Загрузка доступных слотов
+async function loadAvailableSlots() {
+    const date = document.getElementById('training-date').value;
+    const duration = document.getElementById('duration').value;
+    const isGroupTraining = document.getElementById('group-training').checked;
+    const simulator1 = document.getElementById('simulator1-slots');
+    const simulator2 = document.getElementById('simulator2-slots');
+    
+    if (!date || !duration) return;
+    
+    try {
+        const response = await fetch(`/api/slots?date=${date}&duration=${duration}&group=${isGroupTraining}`);
+        const slots = await response.json();
+        
+        // Обновляем слоты для тренажера 1
+        simulator1.innerHTML = '<option value="">Выберите время</option>';
+        slots.filter(slot => slot.simulator_id === 1).forEach(slot => {
+            simulator1.innerHTML += `<option value="${slot.id}">${slot.start_time}</option>`;
+        });
+        
+        // Обновляем слоты для тренажера 2
+        simulator2.innerHTML = '<option value="">Выберите время</option>';
+        slots.filter(slot => slot.simulator_id === 2).forEach(slot => {
+            simulator2.innerHTML += `<option value="${slot.id}">${slot.start_time}</option>`;
+        });
+        
+        // Обновляем стоимость
+        updatePrice();
+    } catch (error) {
+        console.error('Ошибка при загрузке слотов:', error);
+        showError('Не удалось загрузить доступное время');
+    }
+}
+
+// Загрузка прайса
+async function loadPrices() {
+    try {
+        const response = await fetch('/api/prices');
+        const prices = await response.json();
+        
+        const priceTable = document.getElementById('price-table');
+        priceTable.innerHTML = `
+            <div class="price-section">
+                <h4>Индивидуальные занятия с тренером</h4>
+                <p>30 минут - ${prices.individual_with_trainer_30} ₽</p>
+                <p>60 минут - ${prices.individual_with_trainer_60} ₽</p>
+            </div>
+            <div class="price-section">
+                <h4>Индивидуальные занятия без тренера</h4>
+                <p>30 минут - ${prices.individual_without_trainer_30} ₽</p>
+                <p>60 минут - ${prices.individual_without_trainer_60} ₽</p>
+            </div>
+            <div class="price-section">
+                <h4>Групповые занятия с тренером (60 минут)</h4>
+                <p>2 человека - ${prices.group_with_trainer_2} ₽</p>
+                <p>3 человека - ${prices.group_with_trainer_3} ₽</p>
+                <p>4 человека - ${prices.group_with_trainer_4} ₽</p>
+                <p>5 человек - ${prices.group_with_trainer_5} ₽</p>
+                <p>6 человек - ${prices.group_with_trainer_6} ₽</p>
+            </div>
+            <div class="price-section">
+                <h4>Групповые занятия без тренера (60 минут)</h4>
+                <p>2 человека - ${prices.group_without_trainer_2} ₽</p>
+                <p>3 человека - ${prices.group_without_trainer_3} ₽</p>
+                <p>4 человека - ${prices.group_without_trainer_4} ₽</p>
+                <p>5 человек - ${prices.group_without_trainer_5} ₽</p>
+                <p>6 человек - ${prices.group_without_trainer_6} ₽</p>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Ошибка при загрузке прайса:', error);
+        showError('Не удалось загрузить прайс');
+    }
+}
+
+// Обновление стоимости
+async function updatePrice() {
+    const duration = document.getElementById('duration').value;
+    const isGroupTraining = document.getElementById('group-training').checked;
+    const hasChild = document.getElementById('has-child').checked;
+    
+    try {
+        const response = await fetch('/api/prices');
+        const prices = await response.json();
+        
+        let price = 0;
+        if (isGroupTraining) {
+            // Для групповых занятий берем минимальную цену
+            price = duration === '30' ? 
+                Math.min(prices.group_with_trainer_2, prices.group_without_trainer_2) :
+                Math.min(prices.group_with_trainer_2, prices.group_without_trainer_2);
+        } else {
+            // Для индивидуальных занятий
+            price = duration === '30' ? 
+                prices.individual_without_trainer_30 :
+                prices.individual_without_trainer_60;
+        }
+        
+        // Если есть ребенок, умножаем на 2
+        if (hasChild) {
+            price *= 2;
+        }
+        
+        document.getElementById('training-price').textContent = price;
+    } catch (error) {
+        console.error('Ошибка при обновлении цены:', error);
+        showError('Не удалось рассчитать стоимость');
+    }
+}
+
+// Обработка отправки формы
+async function handleFormSubmit(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/api/bookings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            showSuccess('Запись успешно создана');
+            event.target.reset();
+        } else {
+            throw new Error('Ошибка при создании записи');
+        }
+    } catch (error) {
+        console.error('Ошибка при создании записи:', error);
+        showError('Не удалось создать запись');
+    }
+}
+
+// Вспомогательные функции
+function showError(message) {
+    alert(message);
+}
+
+function showSuccess(message) {
+    alert(message);
+} 

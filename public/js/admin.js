@@ -124,6 +124,35 @@ function initializeEventListeners() {
             settings.style.display = e.target.checked ? 'block' : 'none';
         });
     }
+
+    // Обработчики для страницы тренировок
+    const viewArchiveBtn = document.getElementById('view-archive');
+    if (viewArchiveBtn) {
+        viewArchiveBtn.addEventListener('click', () => {
+            showModal('archive-modal');
+            loadArchiveTrainings();
+        });
+    }
+
+    const manageGroupsBtn = document.getElementById('manage-groups');
+    if (manageGroupsBtn) {
+        manageGroupsBtn.addEventListener('click', () => {
+            showModal('groups-modal');
+            loadGroups();
+        });
+    }
+
+    const createGroupBtn = document.getElementById('create-group');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', () => {
+            showModal('create-group-modal');
+        });
+    }
+
+    const createGroupForm = document.getElementById('create-group-form');
+    if (createGroupForm) {
+        createGroupForm.addEventListener('submit', handleCreateGroup);
+    }
 }
 
 // Переключение страниц
@@ -494,6 +523,176 @@ async function handleCreateSchedule(event) {
     } catch (error) {
         console.error('Ошибка при создании расписания:', error);
         showError('Не удалось создать расписание');
+    }
+}
+
+// Загрузка архивных тренировок
+async function loadArchiveTrainings() {
+    try {
+        const response = await fetch('/api/trainings/archive');
+        const trainings = await response.json();
+        
+        const archiveList = document.querySelector('.archive-list');
+        if (archiveList) {
+            archiveList.innerHTML = trainings.map(training => `
+                <div class="training-item">
+                    <div class="training-info">
+                        <h3>${training.name}</h3>
+                        <p>Дата: ${formatDate(training.date)}</p>
+                        <p>Время: ${training.start_time} - ${training.end_time}</p>
+                        <p>Группа: ${training.group_name}</p>
+                        <p>Участники: ${training.participants_count}/${training.max_participants}</p>
+                    </div>
+                    <div class="training-actions">
+                        <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">Посмотреть тренировку</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке архивных тренировок:', error);
+        showError('Не удалось загрузить архивные тренировки');
+    }
+}
+
+// Просмотр деталей тренировки
+async function viewTrainingDetails(trainingId) {
+    try {
+        const response = await fetch(`/api/trainings/${trainingId}`);
+        const training = await response.json();
+        
+        const trainingDetails = document.querySelector('.training-details');
+        if (trainingDetails) {
+            trainingDetails.innerHTML = `
+                <div class="detail-item">
+                    <strong>Дата:</strong> ${formatDate(training.date)}
+                </div>
+                <div class="detail-item">
+                    <strong>Начало:</strong> ${training.start_time}
+                </div>
+                <div class="detail-item">
+                    <strong>Окончание:</strong> ${training.end_time}
+                </div>
+                <div class="detail-item">
+                    <strong>Группа:</strong> ${training.group_name}
+                </div>
+                <div class="detail-item">
+                    <strong>Уровень:</strong> ${training.skill_level}
+                </div>
+                <div class="detail-item">
+                    <strong>Максимальное количество участников:</strong> ${training.max_participants}
+                </div>
+                <div class="detail-item">
+                    <strong>Участники:</strong>
+                    <ul>
+                        ${training.participants.map(participant => `
+                            <li>${participant.full_name}</li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+        showModal('view-training-modal');
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        showError('Не удалось загрузить детали тренировки');
+    }
+}
+
+// Загрузка групп
+async function loadGroups() {
+    try {
+        const response = await fetch('/api/groups');
+        const groups = await response.json();
+        
+        const groupsList = document.querySelector('.groups-list');
+        if (groupsList) {
+            if (groups.length === 0) {
+                groupsList.innerHTML = '<p class="no-data">Группы не найдены</p>';
+            } else {
+                groupsList.innerHTML = groups.map(group => `
+                    <div class="group-item">
+                        <div class="group-info">
+                            <h3>${group.name}</h3>
+                            <p>${group.description || ''}</p>
+                        </div>
+                        <div class="group-actions">
+                            <button class="btn-secondary" onclick="editGroup(${group.id})">Редактировать</button>
+                            <button class="btn-danger" onclick="deleteGroup(${group.id})">Удалить</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке групп:', error);
+        showError('Не удалось загрузить группы');
+    }
+}
+
+// Обработчик создания группы
+async function handleCreateGroup(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch('/api/groups', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            closeModal('create-group-modal');
+            loadGroups();
+            showSuccess('Группа успешно создана');
+        } else {
+            throw new Error('Ошибка при создании группы');
+        }
+    } catch (error) {
+        console.error('Ошибка при создании группы:', error);
+        showError('Не удалось создать группу');
+    }
+}
+
+// Редактирование группы
+async function editGroup(groupId) {
+    try {
+        const response = await fetch(`/api/groups/${groupId}`);
+        const group = await response.json();
+        
+        // Заполняем форму данными группы
+        document.getElementById('group-name').value = group.name;
+        document.getElementById('group-description').value = group.description || '';
+        
+        showModal('create-group-modal');
+    } catch (error) {
+        console.error('Ошибка при загрузке данных группы:', error);
+        showError('Не удалось загрузить данные группы');
+    }
+}
+
+// Удаление группы
+async function deleteGroup(groupId) {
+    if (confirm('Вы уверены, что хотите удалить эту группу?')) {
+        try {
+            const response = await fetch(`/api/groups/${groupId}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                loadGroups();
+                showSuccess('Группа успешно удалена');
+            } else {
+                throw new Error('Ошибка при удалении группы');
+            }
+        } catch (error) {
+            console.error('Ошибка при удалении группы:', error);
+            showError('Не удалось удалить группу');
+        }
     }
 }
 
