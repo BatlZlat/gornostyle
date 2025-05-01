@@ -1,67 +1,328 @@
-# Горнолыжный тренажерный комплекс - Планирование проекта
+# Проект Ski-instruktor
 
-## Фон и мотивация
-Проект направлен на создание системы управления горнолыжными тренажерами, включающей веб-интерфейс и ботов для клиентов и тренеров. Система должна обеспечить эффективное управление расписанием, тренировками и клиентами.
+## Текущий статус
+- Выполнен переход с модальных окон на отдельные страницы
+- Созданы базовые страницы для всех основных функций
+- Реализованы основные JavaScript обработчики
 
-## Ключевые задачи и анализ
-1. Создание информационного сайта
-2. Разработка административной панели
-3. Создание ботов для клиентов и тренеров
-4. Интеграция с базой данных PostgreSQL
-5. Реализация системы управления расписанием
-6. Система управления клиентами и тренерами
-7. Система управления сертификатами
+## Анализ структуры данных
 
-## Разбивка задач высокого уровня
+### Тренеры (trainers)
+```sql
+CREATE TABLE trainers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    sport_type VARCHAR(100) NOT NULL,
+    experience INTEGER NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    dismissed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### 1. Настройка проекта
-- [ ] Инициализация проекта
-- [ ] Настройка базы данных
-- [ ] Настройка окружения разработки
-- [ ] Создание базовой структуры проекта
+### Группы (groups)
+```sql
+CREATE TABLE groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### 2. Разработка информационного сайта
-- [ ] Создание главной страницы
-- [ ] Разработка страницы отзывов
-- [ ] Интеграция с социальными сетями
-- [ ] Создание страницы контактов
+### Тренировки (trainings)
+```sql
+CREATE TABLE trainings (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    group_id INTEGER REFERENCES groups(id),
+    trainer_id INTEGER REFERENCES trainers(id),
+    simulator_id INTEGER NOT NULL,
+    max_participants INTEGER NOT NULL,
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    status VARCHAR(20) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### 3. Разработка административной панели
-- [ ] Система аутентификации
-- [ ] Управление расписанием
-- [ ] Управление тренировками
-- [ ] Управление тренажерами
-- [ ] Управление тренерами
-- [ ] Управление прайс-листом
-- [ ] Управление клиентами
-- [ ] Управление сертификатами
+### Участники тренировок (training_participants)
+```sql
+CREATE TABLE training_participants (
+    id SERIAL PRIMARY KEY,
+    training_id INTEGER REFERENCES trainings(id),
+    client_id INTEGER REFERENCES clients(id),
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### 4. Разработка ботов
-- [ ] Бот тренера
-  - [ ] Личная информация
-  - [ ] Создание тренировок
-  - [ ] Просмотр расписания
-- [ ] Бот клиента
-  - [ ] Запись на тренировку
-  - [ ] Просмотр записей
-  - [ ] Управление личной информацией
-  - [ ] Управление сертификатами
-  - [ ] Управление кошельком
+### Клиенты (clients)
+```sql
+CREATE TABLE clients (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(255),
+    birth_date DATE,
+    has_child BOOLEAN DEFAULT false,
+    child_name VARCHAR(255),
+    child_birth_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-## Текущий статус / Отслеживание прогресса
-- Проект находится на стадии планирования
-- Создана базовая структура документации
+### Платежи (payments)
+```sql
+CREATE TABLE payments (
+    id SERIAL PRIMARY KEY,
+    amount DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    payment_link VARCHAR(255),
+    expires_at TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'pending',
+    client_id INTEGER REFERENCES clients(id),
+    training_id INTEGER REFERENCES trainings(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-## Обратная связь или запросы на помощь
-- Требуется подтверждение технического стека
-- Необходимо уточнить требования к безопасности
+### Расписание (schedules)
+```sql
+CREATE TABLE schedules (
+    id SERIAL PRIMARY KEY,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    weekdays INTEGER[] NOT NULL,
+    simulator_id INTEGER NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    auto_schedule BOOLEAN DEFAULT false,
+    auto_schedule_day INTEGER,
+    auto_schedule_time TIME,
+    timezone VARCHAR(50) DEFAULT 'Asia/Yekaterinburg',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-## Уроки
-- Пока нет
+## Необходимые доработки
 
-## Критерии успеха
-1. Функционирующая система бронирования с учетом временных ограничений
-2. Удобный интерфейс для администраторов и тренеров
-3. Эффективная система управления клиентами
-4. Надежная система управления сертификатами
-5. Интеграция всех компонентов системы 
+### 1. Система уведомлений
+- Добавить таблицу для уведомлений
+```sql
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    user_type VARCHAR(20) NOT NULL, -- client/trainer/admin
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL, -- info/warning/error
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 2. Система сертификатов
+- Добавить таблицу для сертификатов
+```sql
+CREATE TABLE certificates (
+    id SERIAL PRIMARY KEY,
+    certificate_number VARCHAR(50) UNIQUE NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',
+    client_id INTEGER REFERENCES clients(id),
+    expiry_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used_at TIMESTAMP
+);
+```
+
+### 3. Доработка страниц
+
+#### Страница тренеров
+- Добавить фильтрацию по статусу (активные/уволенные)
+  ```javascript
+  // Пример реализации фильтрации
+  const filterTrainers = (status) => {
+    const url = new URL('/api/trainers');
+    url.searchParams.append('status', status);
+    return fetch(url).then(res => res.json());
+  };
+  ```
+- Добавить поиск по имени
+  ```javascript
+  // Пример реализации поиска
+  const searchTrainers = (query) => {
+    const url = new URL('/api/trainers/search');
+    url.searchParams.append('q', query);
+    return fetch(url).then(res => res.json());
+  };
+  ```
+- Добавить сортировку по опыту работы
+  ```javascript
+  // Пример реализации сортировки
+  const sortTrainers = (field, order) => {
+    const url = new URL('/api/trainers');
+    url.searchParams.append('sort', field);
+    url.searchParams.append('order', order);
+    return fetch(url).then(res => res.json());
+  };
+  ```
+
+#### Страница клиентов
+- Добавить фильтрацию по возрасту
+  ```sql
+  -- SQL для фильтрации по возрасту
+  SELECT * FROM clients 
+  WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) BETWEEN $1 AND $2;
+  ```
+- Добавить поиск по имени и телефону
+  ```sql
+  -- SQL для поиска
+  SELECT * FROM clients 
+  WHERE full_name ILIKE $1 OR phone LIKE $2;
+  ```
+- Добавить историю тренировок клиента
+  ```sql
+  -- SQL для истории тренировок
+  SELECT t.*, tp.status
+  FROM trainings t
+  JOIN training_participants tp ON t.id = tp.training_id
+  WHERE tp.client_id = $1
+  ORDER BY t.date DESC, t.start_time DESC;
+  ```
+
+#### Страница расписания
+- Добавить календарь на месяц
+  ```javascript
+  // Пример компонента календаря
+  const Calendar = {
+    init() {
+      this.loadMonthData();
+      this.bindEvents();
+    },
+    
+    async loadMonthData(year, month) {
+      const url = new URL('/api/schedule/month');
+      url.searchParams.append('year', year);
+      url.searchParams.append('month', month);
+      const data = await fetch(url).then(res => res.json());
+      this.renderCalendar(data);
+    }
+  };
+  ```
+- Добавить фильтрацию по тренажерам
+  ```javascript
+  // Пример фильтрации по тренажерам
+  const filterBySimulator = (simulatorId) => {
+    const url = new URL('/api/schedule/simulator');
+    url.searchParams.append('simulator_id', simulatorId);
+    return fetch(url).then(res => res.json());
+  };
+  ```
+- Добавить статистику загруженности
+  ```sql
+  -- SQL для статистики загруженности
+  SELECT 
+    date,
+    COUNT(*) as total_trainings,
+    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+    AVG(participants_count::float / max_participants) as occupancy_rate
+  FROM trainings
+  WHERE date BETWEEN $1 AND $2
+  GROUP BY date
+  ORDER BY date;
+  ```
+
+#### Страница финансов
+- Добавить фильтрацию по периоду
+  ```sql
+  -- SQL для фильтрации платежей по периоду
+  SELECT * FROM payments
+  WHERE created_at BETWEEN $1 AND $2;
+  ```
+- Добавить статистику по типам оплат
+  ```sql
+  -- SQL для статистики платежей
+  SELECT 
+    DATE_TRUNC('month', created_at) as month,
+    COUNT(*) as total_payments,
+    SUM(amount) as total_amount,
+    AVG(amount) as avg_amount
+  FROM payments
+  WHERE created_at BETWEEN $1 AND $2
+  GROUP BY DATE_TRUNC('month', created_at)
+  ORDER BY month;
+  ```
+- Добавить экспорт в Excel
+  ```javascript
+  // Пример функции экспорта
+  const exportToExcel = async (filters) => {
+    const response = await fetch('/api/finance/export', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(filters)
+    });
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'finance-report.xlsx';
+    a.click();
+  };
+  ```
+
+## План следующих действий
+
+1. Создание системы уведомлений
+   - Создать таблицу notifications
+   - Разработать API для работы с уведомлениями
+   - Интегрировать уведомления в интерфейс
+
+2. Разработка системы сертификатов
+   - Создать таблицу certificates
+   - Разработать интерфейс управления сертификатами
+   - Интегрировать сертификаты в систему оплаты
+
+3. Улучшение пользовательского интерфейса
+   - Добавить фильтры и поиск на все основные страницы
+   - Улучшить отображение статистики
+   - Добавить интерактивный календарь
+
+4. Оптимизация производительности
+   - Добавить индексы в базу данных
+   - Оптимизировать запросы
+   - Реализовать кэширование данных
+
+5. Тестирование
+   - Написать unit-тесты
+   - Провести нагрузочное тестирование
+   - Проверить безопасность
+
+## Текущие проблемы и риски
+
+1. Безопасность
+   - Необходимо реализовать систему ролей и прав доступа
+   - Добавить защиту от SQL-инъекций
+   - Реализовать логирование действий пользователей
+
+2. Масштабируемость
+   - Подготовить систему к увеличению нагрузки
+   - Оптимизировать работу с базой данных
+   - Реализовать систему кэширования
+
+3. Интеграция
+   - Необходимо интегрировать платежную систему
+   - Добавить интеграцию с календарями (Google Calendar, iCal)
+   - Реализовать API для мобильного приложения 
