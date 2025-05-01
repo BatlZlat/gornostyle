@@ -1,0 +1,16 @@
+{
+    "permissions": {
+        "create_hidden_files": true,
+        "modify_hidden_files": true,
+        "create_env_files": true,
+        "modify_env_files": true,
+        "create_dot_files": true,
+        "modify_dot_files": true
+    },
+    "project_settings": {
+        "language": "javascript",
+        "database": "postgresql",
+        "frontend": ["html", "css", "javascript"],
+        "version_control": "git"
+    }
+} 
