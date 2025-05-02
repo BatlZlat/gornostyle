@@ -416,58 +416,100 @@ body {
 }
 
 .groups-list {
-    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px 0;
 }
 
-.group-item {
-    background-color: var(--background-color);
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.group-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .group-info {
-    flex: 1;
+    margin-bottom: 15px;
 }
 
 .group-info h3 {
-    margin: 0 0 0.5rem 0;
-    color: var(--primary-color);
+    margin: 0 0 10px 0;
+    color: #333;
 }
 
 .group-info p {
     margin: 0;
-    color: var(--text-color);
+    color: #666;
+    font-size: 0.9em;
 }
 
 .group-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 10px;
 }
 
-.no-groups-message {
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+}
+
+.no-data {
     text-align: center;
-    padding: 2rem;
-    color: var(--text-color);
-    background-color: var(--background-color);
-    border-radius: 4px;
-    margin-bottom: 1.5rem;
+    color: #666;
+    padding: 20px;
+    grid-column: 1 / -1;
 }
 
-#create-group-form textarea {
+/* Стили для формы создания/редактирования группы */
+.form-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #333;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group textarea {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
+    padding: 8px;
+    border: 1px solid #ddd;
     border-radius: 4px;
-    resize: vertical;
+    font-size: 1em;
 }
 
-#create-group-form textarea:focus {
-    outline: none;
-    border-color: var(--secondary-color);
+.form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
 }
 
 .simulators-list {

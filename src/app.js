@@ -5,18 +5,29 @@ const { setupBot } = require('./bot/admin-bot');
 const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-next-month-schedule');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
+const groupsRouter = require('./routes/groups');
 const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+console.log('Инициализация приложения...');
+console.log('Загруженные маршруты:', {
+    schedule: !!scheduleRouter,
+    simulators: !!simulatorsRouter,
+    groups: !!groupsRouter
+});
+
 // Настройка middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Маршруты
+// Маршруты API
+console.log('Регистрация маршрутов API...');
 app.use('/api/schedule', scheduleRouter);
 app.use('/api/simulators', simulatorsRouter);
+app.use('/api/groups', groupsRouter);
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;
@@ -62,10 +73,22 @@ const task = cron.schedule(cronExpression, async () => {
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error('Ошибка сервера:', err);
     res.status(500).json({ 
         success: false, 
-        error: 'Внутренняя ошибка сервера' 
+        error: 'Внутренняя ошибка сервера',
+        details: err.message 
+    });
+});
+
+// Обработка 404 ошибок
+app.use((req, res) => {
+    console.log('404 - Маршрут не найден:', req.method, req.url);
+    res.status(404).json({ 
+        success: false, 
+        error: 'Маршрут не найден',
+        path: req.url,
+        method: req.method
     });
 });
 
