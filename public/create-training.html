@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создание тренировки - Ski-instruktor</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Создание тренировки</h1>
+            <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
+        </header>
+        
+        <div class="admin-content">
+            <main class="admin-main">
+                <div class="page-content">
+                    <form id="create-training-form" class="form-container">
+                        <div class="form-group">
+                            <label for="training-date">Дата</label>
+                            <input type="date" id="training-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="training-group">Группа</label>
+                            <select id="training-group" required>
+                                <!-- Группы будут загружены динамически -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="max-participants">Максимальное количество участников</label>
+                            <input type="number" id="max-participants" min="1" max="6" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="skill-level">Уровень сложности</label>
+                            <input type="number" id="skill-level" min="1" max="5">
+                        </div>
+                        <div class="form-group">
+                            <label for="simulator">Тренажер</label>
+                            <select id="simulator" required>
+                                <option value="1">Тренажер 1</option>
+                                <option value="2">Тренажер 2</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="time-slot">Время</label>
+                            <select id="time-slot" required>
+                                <!-- Временные слоты будут загружены динамически -->
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">Создать тренировку</button>
+                            <a href="admin.html" class="btn-secondary">Отмена</a>
+                        </div>
+                    </form>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="js/create-training.js"></script>
+</body>
+</html> 

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Детали тренировки - Ski-instruktor</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Детали тренировки</h1>
+            <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
+        </header>
+        
+        <div class="admin-content">
+            <main class="admin-main">
+                <div class="page-content">
+                    <div class="training-details">
+                        <div class="detail-section">
+                            <h3>Основная информация</h3>
+                            <div class="detail-item">
+                                <span class="detail-label">Дата:</span>
+                                <span class="detail-value" id="training-date"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Время:</span>
+                                <span class="detail-value" id="training-time"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Тренажер:</span>
+                                <span class="detail-value" id="training-simulator"></span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Группа:</span>
+                                <span class="detail-value" id="training-group"></span>
+                            </div>
+                        </div>
+
+                        <div class="detail-section">
+                            <h3>Участники</h3>
+                            <div class="participants-list" id="participants-list">
+                                <!-- Список участников будет загружен динамически -->
+                            </div>
+                        </div>
+
+                        <div class="detail-section">
+                            <h3>Действия</h3>
+                            <div class="detail-actions">
+                                <button class="btn-primary" id="edit-training">Редактировать</button>
+                                <button class="btn-secondary" id="cancel-training">Отменить тренировку</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="js/training-details.js"></script>
+</body>
+</html> 

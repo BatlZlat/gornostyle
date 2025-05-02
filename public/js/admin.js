@@ -312,13 +312,32 @@ async function loadSimulators() {
             simulatorsList.innerHTML = simulators.map(simulator => `
                 <div class="simulator-item">
                     <h3>${simulator.name}</h3>
-                    <div class="simulator-status">
-                        <span class="status-label">Статус:</span>
-                        <select id="simulator${simulator.id}-status" class="status-select" 
-                                onchange="updateSimulatorStatus(${simulator.id}, this.value)">
-                            <option value="available" ${simulator.status === 'available' ? 'selected' : ''}>В работе</option>
-                            <option value="maintenance" ${simulator.status === 'maintenance' ? 'selected' : ''}>Не работает</option>
-                        </select>
+                    <div class="simulator-details">
+                        <div class="simulator-status">
+                            <span class="status-label">Статус:</span>
+                            <select id="simulator${simulator.id}-status" class="status-select" 
+                                    onchange="updateSimulatorStatus(${simulator.id}, this.value)">
+                                <option value="available" ${simulator.status === 'available' ? 'selected' : ''}>В работе</option>
+                                <option value="maintenance" ${simulator.status === 'maintenance' ? 'selected' : ''}>Не работает</option>
+                                <option value="inactive" ${simulator.status === 'inactive' ? 'selected' : ''}>Неактивен</option>
+                            </select>
+                        </div>
+                        <div class="simulator-hours">
+                            <div class="hours-group">
+                                <label>Начало работы:</label>
+                                <input type="time" 
+                                       id="simulator${simulator.id}-start" 
+                                       value="${simulator.working_hours_start}"
+                                       onchange="updateSimulatorHours(${simulator.id})">
+                            </div>
+                            <div class="hours-group">
+                                <label>Окончание работы:</label>
+                                <input type="time" 
+                                       id="simulator${simulator.id}-end" 
+                                       value="${simulator.working_hours_end}"
+                                       onchange="updateSimulatorHours(${simulator.id})">
+                            </div>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -742,13 +761,19 @@ function closeModal(modalId) {
 }
 
 function showError(message) {
-    // Реализация показа ошибок
-    alert(message);
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = message;
+    document.querySelector('.admin-content').insertBefore(errorDiv, document.querySelector('.admin-content').firstChild);
+    setTimeout(() => errorDiv.remove(), 3000);
 }
 
 function showSuccess(message) {
-    // Реализация показа успешных сообщений
-    alert(message);
+    const successDiv = document.createElement('div');
+    successDiv.className = 'alert alert-success';
+    successDiv.textContent = message;
+    document.querySelector('.admin-content').insertBefore(successDiv, document.querySelector('.admin-content').firstChild);
+    setTimeout(() => successDiv.remove(), 3000);
 }
 
 // Закрытие модальных окон при клике вне их области
@@ -763,4 +788,58 @@ window.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal')) {
         e.target.style.display = 'none';
     }
-}); 
+});
+
+// Обновление статуса тренажера
+async function updateSimulatorStatus(simulatorId, status) {
+    try {
+        const response = await fetch(`/api/simulators/${simulatorId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showSuccess(`Статус тренажера успешно обновлен`);
+        } else {
+            throw new Error(result.error || 'Ошибка при обновлении статуса');
+        }
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса тренажера:', error);
+        showError(error.message || 'Не удалось обновить статус тренажера');
+    }
+}
+
+// Обновление рабочего времени тренажера
+async function updateSimulatorHours(simulatorId) {
+    try {
+        const startTime = document.getElementById(`simulator${simulatorId}-start`).value;
+        const endTime = document.getElementById(`simulator${simulatorId}-end`).value;
+
+        const response = await fetch(`/api/simulators/${simulatorId}/hours`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                working_hours_start: startTime,
+                working_hours_end: endTime
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showSuccess(`Рабочее время тренажера успешно обновлено`);
+        } else {
+            throw new Error(result.error || 'Ошибка при обновлении рабочего времени');
+        }
+    } catch (error) {
+        console.error('Ошибка при обновлении рабочего времени тренажера:', error);
+        showError(error.message || 'Не удалось обновить рабочее время тренажера');
+    }
+} 

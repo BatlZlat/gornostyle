@@ -30,9 +30,9 @@
                     <div class="page-header">
                         <h2>Тренировки</h2>
                         <div class="page-actions">
-                            <button class="btn-primary" id="create-training">Создать тренировку</button>
-                            <button class="btn-secondary" id="view-archive">Архив тренировок</button>
-                            <button class="btn-secondary" id="manage-groups">Группы</button>
+                            <a href="create-training.html" class="btn-primary">Создать тренировку</a>
+                            <a href="archive.html" class="btn-secondary">Архив тренировок</a>
+                            <a href="groups.html" class="btn-secondary">Группы</a>
                         </div>
                     </div>
                     <div class="training-list">
@@ -45,7 +45,7 @@
                     <div class="page-header">
                         <h2>Расписание</h2>
                         <div class="page-actions">
-                            <button class="btn-primary" id="create-schedule">Создать расписание</button>
+                            <a href="create-schedule.html" class="btn-primary">Создать расписание</a>
                             <button class="btn-secondary" id="edit-schedule">Редактировать расписание</button>
                         </div>
                     </div>
@@ -224,212 +224,6 @@
                     </div>
                 </div>
             </main>
-        </div>
-    </div>
-
-    <!-- Модальные окна -->
-    <!-- Модальное окно создания тренировки -->
-    <div class="modal" id="create-training-modal">
-        <div class="modal-content">
-            <h3>Создать тренировку</h3>
-            <form id="create-training-form">
-                <div class="form-group">
-                    <label for="training-date">Дата</label>
-                    <input type="date" id="training-date" required>
-                </div>
-                <div class="form-group">
-                    <label for="training-group">Группа</label>
-                    <select id="training-group" required>
-                        <!-- Группы будут загружены динамически -->
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="max-participants">Максимальное количество участников</label>
-                    <input type="number" id="max-participants" min="1" max="6" required>
-                </div>
-                <div class="form-group">
-                    <label for="skill-level">Уровень сложности</label>
-                    <input type="number" id="skill-level" min="1" max="5">
-                </div>
-                <div class="form-group">
-                    <label for="simulator">Тренажер</label>
-                    <select id="simulator" required>
-                        <option value="1">Тренажер 1</option>
-                        <option value="2">Тренажер 2</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="time-slot">Время</label>
-                    <select id="time-slot" required>
-                        <!-- Временные слоты будут загружены динамически -->
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Создать</button>
-                    <button type="button" class="btn-secondary" onclick="closeModal('create-training-modal')">Отмена</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Модальное окно создания тренера -->
-    <div class="modal" id="create-trainer-modal">
-        <div class="modal-content">
-            <h3>Создать тренера</h3>
-            <form id="create-trainer-form">
-                <div class="form-group">
-                    <label for="trainer-name">ФИО</label>
-                    <input type="text" id="trainer-name" required>
-                </div>
-                <div class="form-group">
-                    <label for="trainer-birth-date">Дата рождения</label>
-                    <input type="date" id="trainer-birth-date" required>
-                </div>
-                <div class="form-group">
-                    <label for="trainer-sport">Вид спорта</label>
-                    <select id="trainer-sport" required>
-                        <option value="ski">Горные лыжи</option>
-                        <option value="snowboard">Сноуборд</option>
-                        <option value="both">Горные лыжи и сноуборд</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="trainer-phone">Телефон</label>
-                    <input type="tel" id="trainer-phone" required>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Создать</button>
-                    <button type="button" class="btn-secondary" onclick="closeModal('create-trainer-modal')">Отмена</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Модальное окно создания расписания -->
-    <div class="modal" id="create-schedule-modal">
-        <div class="modal-content">
-            <h3>Создать расписание</h3>
-            <form id="create-schedule-form">
-                <div class="form-group">
-                    <label for="schedule-start-date">Дата начала</label>
-                    <input type="date" id="schedule-start-date" required>
-                </div>
-                <div class="form-group">
-                    <label for="schedule-end-date">Дата окончания</label>
-                    <input type="date" id="schedule-end-date" required>
-                </div>
-                <div class="form-group">
-                    <label>Рабочие дни</label>
-                    <div class="weekdays-select">
-                        <label><input type="checkbox" value="1" checked> Пн</label>
-                        <label><input type="checkbox" value="2" checked> Вт</label>
-                        <label><input type="checkbox" value="3" checked> Ср</label>
-                        <label><input type="checkbox" value="4" checked> Чт</label>
-                        <label><input type="checkbox" value="5" checked> Пт</label>
-                        <label><input type="checkbox" value="6" checked> Сб</label>
-                        <label><input type="checkbox" value="0" checked> Вс</label>
-                    </div>
-                </div>
-                <div class="simulator-schedule">
-                    <h4>Тренажер 1</h4>
-                    <div class="form-group">
-                        <label for="simulator1-start">Начало рабочего дня</label>
-                        <input type="time" id="simulator1-start" value="10:00" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="simulator1-end">Окончание рабочего дня</label>
-                        <input type="time" id="simulator1-end" value="21:00" required>
-                    </div>
-                </div>
-                <div class="simulator-schedule">
-                    <h4>Тренажер 2</h4>
-                    <div class="form-group">
-                        <label for="simulator2-start">Начало рабочего дня</label>
-                        <input type="time" id="simulator2-start" value="10:00" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="simulator2-end">Окончание рабочего дня</label>
-                        <input type="time" id="simulator2-end" value="21:00" required>
-                    </div>
-                </div>
-                <div class="auto-schedule-section">
-                    <div class="form-group auto-schedule-checkbox">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="auto-schedule">
-                            Автоматически создавать расписание каждый месяц
-                        </label>
-                    </div>
-                    <div class="auto-schedule-settings" style="display: none;">
-                        <div class="form-group">
-                            <label for="schedule-day">День месяца</label>
-                            <input type="number" id="schedule-day" min="1" max="31" value="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="schedule-time">Время</label>
-                            <input type="time" id="schedule-time" value="00:10">
-                        </div>
-                        <input type="hidden" id="timezone" value="Asia/Yekaterinburg">
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Создать расписание</button>
-                    <button type="button" class="btn-secondary" onclick="closeModal('create-schedule-modal')">Отмена</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Модальное окно архива тренировок -->
-    <div class="modal" id="archive-modal">
-        <div class="modal-content">
-            <h3>Архив тренировок</h3>
-            <div class="archive-list">
-                <!-- Список архивных тренировок будет загружен динамически -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно просмотра тренировки -->
-    <div class="modal" id="view-training-modal">
-        <div class="modal-content">
-            <h3>Информация о тренировке</h3>
-            <div class="training-details">
-                <!-- Детали тренировки будут загружены динамически -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно управления группами -->
-    <div class="modal" id="groups-modal">
-        <div class="modal-content">
-            <h3>Управление группами</h3>
-            <div class="groups-list">
-                <!-- Список групп будет загружен динамически -->
-            </div>
-            <div class="form-actions">
-                <button class="btn-primary" id="create-group">Создать группу</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно создания группы -->
-    <div class="modal" id="create-group-modal">
-        <div class="modal-content">
-            <h3>Создать группу</h3>
-            <form id="create-group-form">
-                <div class="form-group">
-                    <label for="group-name">Название группы</label>
-                    <input type="text" id="group-name" required>
-                </div>
-                <div class="form-group">
-                    <label for="group-description">Описание</label>
-                    <textarea id="group-description" rows="3"></textarea>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Создать</button>
-                    <button type="button" class="btn-secondary" onclick="closeModal('create-group-modal')">Отмена</button>
-                </div>
-            </form>
         </div>
     </div>
 
