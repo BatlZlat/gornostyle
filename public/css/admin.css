@@ -514,7 +514,7 @@ body {
 
 .simulators-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 20px;
     padding: 20px;
 }
@@ -550,10 +550,16 @@ body {
 }
 
 .status-select {
-    padding: 5px 10px;
+    padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    background: #f8f9fa;
+    background: #f8f8f8;
+    cursor: pointer;
+}
+
+.status-select:focus {
+    outline: none;
+    border-color: #007bff;
 }
 
 .simulator-hours {
@@ -574,10 +580,15 @@ body {
 }
 
 .hours-group input[type="time"] {
-    padding: 5px 10px;
+    padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    background: #f8f9fa;
+    background: #f8f8f8;
+}
+
+.hours-group input[type="time"]:focus {
+    outline: none;
+    border-color: #007bff;
 }
 
 .alert {

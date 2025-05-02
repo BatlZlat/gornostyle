@@ -1,6 +1,7 @@
 // Глобальные переменные
 let currentPage = 'schedule';
 let currentDate = new Date();
+let datePicker;
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,8 +28,18 @@ function initializeNavigation() {
             pages.forEach(page => {
                 page.style.display = page.id === `${targetPage}-page` ? 'block' : 'none';
             });
+
+            // Загружаем контент страницы
+            loadPageContent(targetPage);
         });
     });
+
+    // Загружаем начальную страницу
+    const activeMenuItem = document.querySelector('.menu-item.active');
+    if (activeMenuItem) {
+        const targetPage = activeMenuItem.dataset.page;
+        loadPageContent(targetPage);
+    }
 }
 
 // Инициализация выбора даты
@@ -296,9 +307,25 @@ async function loadTrainings() {
 
 // Загрузка расписания
 async function loadSchedule() {
-    const date = datePicker.value;
-    // Здесь будет код для загрузки расписания с сервера
-    console.log('Loading schedule for date:', date);
+    try {
+        const date = datePicker ? datePicker.value : new Date().toISOString().split('T')[0];
+        const response = await fetch(`/api/schedule?date=${date}`);
+        const schedule = await response.json();
+        
+        const scheduleList = document.querySelector('.schedule-list');
+        if (scheduleList) {
+            scheduleList.innerHTML = schedule.map(slot => `
+                <div class="schedule-slot">
+                    <div class="slot-time">${slot.start_time} - ${slot.end_time}</div>
+                    <div class="slot-simulator">Тренажер ${slot.simulator_id}</div>
+                    <div class="slot-status">${slot.is_available ? 'Свободен' : 'Занят'}</div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке расписания:', error);
+        showError('Не удалось загрузить расписание');
+    }
 }
 
 // Загрузка тренажеров
@@ -317,9 +344,8 @@ async function loadSimulators() {
                             <span class="status-label">Статус:</span>
                             <select id="simulator${simulator.id}-status" class="status-select" 
                                     onchange="updateSimulatorStatus(${simulator.id}, this.value)">
-                                <option value="available" ${simulator.status === 'available' ? 'selected' : ''}>В работе</option>
-                                <option value="maintenance" ${simulator.status === 'maintenance' ? 'selected' : ''}>Не работает</option>
-                                <option value="inactive" ${simulator.status === 'inactive' ? 'selected' : ''}>Неактивен</option>
+                                <option value="true" ${simulator.is_working ? 'selected' : ''}>В работе</option>
+                                <option value="false" ${!simulator.is_working ? 'selected' : ''}>Не работает</option>
                             </select>
                         </div>
                         <div class="simulator-hours">
@@ -791,35 +817,40 @@ window.addEventListener('click', (e) => {
 });
 
 // Обновление статуса тренажера
-async function updateSimulatorStatus(simulatorId, status) {
+async function updateSimulatorStatus(simulatorId, isWorking) {
     try {
         const response = await fetch(`/api/simulators/${simulatorId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ is_working: isWorking === 'true' })
         });
 
-        const result = await response.json();
+        if (!response.ok) {
+            throw new Error('Ошибка при обновлении статуса');
+        }
 
-        if (result.success) {
-            showSuccess(`Статус тренажера успешно обновлен`);
-        } else {
-            throw new Error(result.error || 'Ошибка при обновлении статуса');
+        const updatedSimulator = await response.json();
+        showSuccess('Статус тренажера обновлен');
+        
+        // Обновляем отображение статуса
+        const statusSelect = document.getElementById(`simulator${simulatorId}-status`);
+        if (statusSelect) {
+            statusSelect.value = updatedSimulator.is_working.toString();
         }
     } catch (error) {
         console.error('Ошибка при обновлении статуса тренажера:', error);
-        showError(error.message || 'Не удалось обновить статус тренажера');
+        showError('Не удалось обновить статус тренажера');
     }
 }
 
-// Обновление рабочего времени тренажера
+// Обновление рабочих часов тренажера
 async function updateSimulatorHours(simulatorId) {
-    try {
-        const startTime = document.getElementById(`simulator${simulatorId}-start`).value;
-        const endTime = document.getElementById(`simulator${simulatorId}-end`).value;
+    const startTime = document.getElementById(`simulator${simulatorId}-start`).value;
+    const endTime = document.getElementById(`simulator${simulatorId}-end`).value;
 
+    try {
         const response = await fetch(`/api/simulators/${simulatorId}/hours`, {
             method: 'PUT',
             headers: {
@@ -831,15 +862,41 @@ async function updateSimulatorHours(simulatorId) {
             })
         });
 
-        const result = await response.json();
+        if (!response.ok) {
+            throw new Error('Ошибка при обновлении рабочих часов');
+        }
 
-        if (result.success) {
-            showSuccess(`Рабочее время тренажера успешно обновлено`);
+        const updatedSimulator = await response.json();
+        showSuccess('Рабочие часы обновлены');
+    } catch (error) {
+        console.error('Ошибка при обновлении рабочих часов:', error);
+        showError('Не удалось обновить рабочие часы');
+    }
+}
+
+// Сохранение прайса
+async function savePrices() {
+    try {
+        const prices = {};
+        document.querySelectorAll('.price-input').forEach(input => {
+            prices[input.dataset.price] = parseInt(input.value);
+        });
+
+        const response = await fetch('/api/prices', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(prices)
+        });
+
+        if (response.ok) {
+            showSuccess('Прайс успешно обновлен');
         } else {
-            throw new Error(result.error || 'Ошибка при обновлении рабочего времени');
+            throw new Error('Ошибка при обновлении прайса');
         }
     } catch (error) {
-        console.error('Ошибка при обновлении рабочего времени тренажера:', error);
-        showError(error.message || 'Не удалось обновить рабочее время тренажера');
+        console.error('Ошибка при сохранении прайса:', error);
+        showError('Не удалось сохранить прайс');
     }
 } 

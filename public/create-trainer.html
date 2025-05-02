@@ -18,28 +18,32 @@
                 <div class="page-content">
                     <form id="create-trainer-form" class="form-container">
                         <div class="form-group">
-                            <label for="trainer-name">ФИО</label>
-                            <input type="text" id="trainer-name" required>
+                            <label for="trainer-full-name">ФИО</label>
+                            <input type="text" id="trainer-full-name" name="full_name" required>
                         </div>
                         <div class="form-group">
                             <label for="trainer-phone">Телефон</label>
-                            <input type="tel" id="trainer-phone" required>
+                            <input type="tel" id="trainer-phone" name="phone" required>
                         </div>
                         <div class="form-group">
-                            <label for="trainer-email">Email</label>
-                            <input type="email" id="trainer-email" required>
+                            <label for="trainer-birth-date">Дата рождения</label>
+                            <input type="date" id="trainer-birth-date" name="birth_date" required>
                         </div>
                         <div class="form-group">
-                            <label for="trainer-sport">Вид спорта</label>
-                            <input type="text" id="trainer-sport" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="trainer-experience">Опыт работы (лет)</label>
-                            <input type="number" id="trainer-experience" min="0" required>
+                            <label for="trainer-sport-type">Вид спорта</label>
+                            <select id="trainer-sport-type" name="sport_type" required>
+                                <option value="ski">Горные лыжи</option>
+                                <option value="snowboard">Сноуборд</option>
+                                <option value="both">Оба вида</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label for="trainer-description">Описание</label>
-                            <textarea id="trainer-description" rows="3"></textarea>
+                            <textarea id="trainer-description" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="trainer-hire-date">Дата приема на работу</label>
+                            <input type="date" id="trainer-hire-date" name="hire_date" required>
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn-primary">Создать тренера</button>

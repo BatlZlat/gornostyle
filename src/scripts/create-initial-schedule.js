@@ -1,4 +1,12 @@
-const { pool } = require('../db');
+const { Pool } = require('pg');
+
+const pool = new Pool({
+    host: 'хххххххххххх',
+    port: 5432,
+    database: 'хххххххххххх',
+    user: 'хххххххххххх',
+    password: 'хххххххххххх'
+});
 
 async function createInitialSchedule() {
     const client = await pool.connect();
@@ -47,6 +55,7 @@ async function createInitialSchedule() {
         throw error;
     } finally {
         client.release();
+        await pool.end();
     }
 }
 

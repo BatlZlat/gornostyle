@@ -6,12 +6,13 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
 
             const formData = {
-                name: document.getElementById('trainer-name').value,
+                full_name: document.getElementById('trainer-full-name').value,
                 phone: document.getElementById('trainer-phone').value,
-                email: document.getElementById('trainer-email').value,
-                sport_type: document.getElementById('trainer-sport').value,
-                experience: document.getElementById('trainer-experience').value,
-                description: document.getElementById('trainer-description').value
+                birth_date: document.getElementById('trainer-birth-date').value,
+                sport_type: document.getElementById('trainer-sport-type').value,
+                description: document.getElementById('trainer-description').value,
+                hire_date: document.getElementById('trainer-hire-date').value,
+                is_active: true // По умолчанию тренер активен
             };
 
             try {
@@ -24,21 +25,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 if (response.ok) {
-                    // Перенаправляем на страницу тренеров после успешного создания
-                    window.location.href = 'admin.html';
+                    showSuccess('Тренер успешно создан');
+                    // Перенаправляем на страницу тренеров через 2 секунды
+                    setTimeout(() => {
+                        window.location.href = 'admin.html';
+                    }, 2000);
                 } else {
-                    throw new Error('Ошибка при создании тренера');
+                    const error = await response.json();
+                    throw new Error(error.message || 'Ошибка при создании тренера');
                 }
             } catch (error) {
                 console.error('Ошибка при создании тренера:', error);
-                showError('Не удалось создать тренера');
+                showError(error.message || 'Не удалось создать тренера');
             }
         });
     }
 
     // Функция отображения ошибок
     function showError(message) {
-        // Здесь можно добавить код для отображения ошибок пользователю
-        console.error(message);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.textContent = message;
+        document.querySelector('.form-container').insertBefore(errorDiv, document.querySelector('.form-actions'));
+        setTimeout(() => errorDiv.remove(), 3000);
+    }
+
+    // Функция отображения успешного сообщения
+    function showSuccess(message) {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'alert alert-success';
+        successDiv.textContent = message;
+        document.querySelector('.form-container').insertBefore(successDiv, document.querySelector('.form-actions'));
     }
 }); 

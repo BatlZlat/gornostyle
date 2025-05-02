@@ -55,7 +55,7 @@ CREATE TABLE administrators (
 CREATE TABLE simulators (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    status VARCHAR(20) DEFAULT 'available', -- available, maintenance, inactive
+    is_working BOOLEAN DEFAULT true, -- true = в работе, false = не работает
     working_hours_start TIME DEFAULT '10:00',
     working_hours_end TIME DEFAULT '21:00',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -146,18 +146,6 @@ CREATE TABLE schedule (
     end_time TIME NOT NULL,
     is_holiday BOOLEAN DEFAULT FALSE,
     is_booked BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Таблица настроек расписания
-CREATE TABLE schedule_settings (
-    id SERIAL PRIMARY KEY,
-    simulator_id INTEGER REFERENCES simulators(id),
-    day_of_month INTEGER NOT NULL CHECK (day_of_month BETWEEN 1 AND 31),
-    hour INTEGER NOT NULL CHECK (hour BETWEEN 0 AND 23),
-    minute INTEGER NOT NULL CHECK (minute BETWEEN 0 AND 59),
-    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

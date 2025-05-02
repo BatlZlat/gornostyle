@@ -6,6 +6,7 @@ const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-nex
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
+const trainersRouter = require('./routes/trainers');
 const cron = require('node-cron');
 
 const app = express();
@@ -15,7 +16,8 @@ console.log('Инициализация приложения...');
 console.log('Загруженные маршруты:', {
     schedule: !!scheduleRouter,
     simulators: !!simulatorsRouter,
-    groups: !!groupsRouter
+    groups: !!groupsRouter,
+    trainers: !!trainersRouter
 });
 
 // Настройка middleware
@@ -28,6 +30,7 @@ console.log('Регистрация маршрутов API...');
 app.use('/api/schedule', scheduleRouter);
 app.use('/api/simulators', simulatorsRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/trainers', trainersRouter);
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;
@@ -95,4 +98,6 @@ app.use((req, res) => {
 app.listen(PORT, () => {
     console.log(`\nСервер запущен на порту ${PORT}`);
     console.log('Cron-задача активна и ожидает следующего запуска');
-}); 
+});
+
+module.exports = app; 

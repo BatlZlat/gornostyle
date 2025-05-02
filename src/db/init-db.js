@@ -10,7 +10,8 @@ async function initDatabase() {
         // Читаем и выполняем SQL-файлы
         const sqlFiles = [
             'init-simulators.sql',
-            'init-schedule.sql'
+            'init-schedule.sql',
+            'init-trainers.sql'
         ];
 
         for (const file of sqlFiles) {
