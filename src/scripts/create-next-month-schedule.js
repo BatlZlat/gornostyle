@@ -4,8 +4,8 @@ const moment = require('moment-timezone');
 
 // Настройки для cron
 const CRON_SETTINGS = {
-    day: 1, // День месяца
-    hour: 0, // Час
+    day: 2, // День месяца
+    hour: 15, // Час
     minute: 10 // Минута
 };
 
