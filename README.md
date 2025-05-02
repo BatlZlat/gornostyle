@@ -52,8 +52,8 @@ node src/scripts/create-initial-schedule.js
 Настройки времени можно изменить в файле `src/scripts/create-next-month-schedule.js`:
 ```javascript
 const CRON_SETTINGS = {
-    day: 2,    // День месяца
-    hour: 15,  // Час
+    day: 1,    // День месяца
+    hour: 0,  // Час
     minute: 10 // Минута
 };
 ```

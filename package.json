@@ -2,22 +2,25 @@
   "name": "skisimulator",
   "version": "1.0.0",
   "description": "Система управления горнолыжными тренажерами",
-  "main": "src/index.js",
+  "main": "src/app.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js --ignore '*.test.js'",
+    "test": "echo \"Error: no test specified\" && exit 1",
     "init-db": "node src/scripts/initDb.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.18.2",
-    "moment-timezone": "^0.5.48",
+    "moment-timezone": "^0.5.45",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.64.0",
-    "pg": "^8.15.6"
+    "pg": "^8.11.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",

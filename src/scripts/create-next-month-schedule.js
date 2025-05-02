@@ -3,20 +3,25 @@ const { notifyScheduleCreated } = require('../bot/admin-bot');
 const moment = require('moment-timezone');
 
 // Настройки для cron
+const now = moment().tz('Asia/Yekaterinburg');
 const CRON_SETTINGS = {
-    day: 2, // День месяца
-    hour: 15, // Час
-    minute: 10 // Минута
+    day: 1,      // день
+    hour: 0,     // часы
+    minute: 10   // минуты
 };
 
 async function createNextMonthSchedule() {
+    console.log('\n=== Проверка времени запуска ===');
+    const now = moment().tz('Asia/Yekaterinburg');
+    console.log('Текущее время:', now.format('YYYY-MM-DD HH:mm:ss'));
+    console.log('Ожидаемое время запуска:', `${CRON_SETTINGS.day}-е число, ${CRON_SETTINGS.hour}:${CRON_SETTINGS.minute}`);
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
         // Устанавливаем часовой пояс Екатеринбурга
         const timezone = 'Asia/Yekaterinburg';
-        const now = moment().tz(timezone);
         
         // Получаем первый день следующего месяца
         const nextMonth = now.clone().add(1, 'months').startOf('month');
@@ -70,9 +75,9 @@ async function createNextMonthSchedule() {
     }
 }
 
-// Если скрипт запущен напрямую, а не через cron
-if (require.main === module) {
-    createNextMonthSchedule().catch(console.error);
-}
+// Убираем автоматический запуск при импорте
+// if (require.main === module) {
+//     createNextMonthSchedule().catch(console.error);
+// }
 
 module.exports = { createNextMonthSchedule, CRON_SETTINGS }; 
