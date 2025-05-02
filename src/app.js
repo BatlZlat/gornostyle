@@ -7,6 +7,7 @@ const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
 const trainersRouter = require('./routes/trainers');
+const trainingsRouter = require('./routes/trainings');
 const cron = require('node-cron');
 
 const app = express();
@@ -17,7 +18,8 @@ console.log('Загруженные маршруты:', {
     schedule: !!scheduleRouter,
     simulators: !!simulatorsRouter,
     groups: !!groupsRouter,
-    trainers: !!trainersRouter
+    trainers: !!trainersRouter,
+    trainings: !!trainingsRouter
 });
 
 // Настройка middleware
@@ -31,6 +33,7 @@ app.use('/api/schedule', scheduleRouter);
 app.use('/api/simulators', simulatorsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/trainers', trainersRouter);
+app.use('/api/trainings', trainingsRouter);
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;
