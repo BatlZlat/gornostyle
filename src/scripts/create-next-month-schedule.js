@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { notifyScheduleCreated } = require('../bot/admin-bot');
+const moment = require('moment-timezone');
 
 // Настройки для cron
 const CRON_SETTINGS = {
@@ -13,11 +14,16 @@ async function createNextMonthSchedule() {
     try {
         await client.query('BEGIN');
 
-        // Получаем первый и последний день следующего месяца
-        const now = new Date();
-        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-        const lastDayOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
-        lastDayOfNextMonth.setHours(23, 59, 59, 999);
+        // Устанавливаем часовой пояс Екатеринбурга
+        const timezone = 'Asia/Yekaterinburg';
+        const now = moment().tz(timezone);
+        
+        // Получаем первый день следующего месяца
+        const nextMonth = now.clone().add(1, 'months').startOf('month');
+        // Получаем последний день следующего месяца
+        const lastDayOfNextMonth = now.clone().add(1, 'months').endOf('month');
+
+        console.log('Создание расписания с', nextMonth.format('YYYY-MM-DD'), 'по', lastDayOfNextMonth.format('YYYY-MM-DD'));
 
         // Начальное и конечное время для слотов
         const startTime = '10:00';
@@ -25,19 +31,19 @@ async function createNextMonthSchedule() {
         const slotDuration = 30; // длительность слота в минутах
 
         // Создаем слоты для каждого дня следующего месяца
-        for (let date = new Date(nextMonth); date <= lastDayOfNextMonth; date.setDate(date.getDate() + 1)) {
-            const dateStr = date.toISOString().split('T')[0];
+        for (let date = nextMonth.clone(); date <= lastDayOfNextMonth; date.add(1, 'days')) {
+            const dateStr = date.format('YYYY-MM-DD');
             
             // Создаем слоты для каждого тренажера
             for (let simulatorId = 1; simulatorId <= 2; simulatorId++) {
                 // Создаем слоты с шагом в 30 минут
-                let currentTime = new Date(`2000-01-01T${startTime}`);
-                const endTimeDate = new Date(`2000-01-01T${endTime}`);
+                let currentTime = moment(startTime, 'HH:mm');
+                const endTimeDate = moment(endTime, 'HH:mm');
 
-                while (currentTime < endTimeDate) {
-                    const slotStart = currentTime.toTimeString().slice(0, 5);
-                    currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
-                    const slotEnd = currentTime.toTimeString().slice(0, 5);
+                while (currentTime.isBefore(endTimeDate)) {
+                    const slotStart = currentTime.format('HH:mm');
+                    currentTime.add(slotDuration, 'minutes');
+                    const slotEnd = currentTime.format('HH:mm');
 
                     await client.query(
                         `INSERT INTO schedule (simulator_id, date, start_time, end_time)
@@ -52,7 +58,7 @@ async function createNextMonthSchedule() {
         console.log('Расписание на следующий месяц успешно создано');
 
         // Отправляем уведомление через бота
-        const monthName = nextMonth.toLocaleString('ru-RU', { month: 'long' });
+        const monthName = nextMonth.locale('ru').format('MMMM');
         await notifyScheduleCreated(monthName);
 
     } catch (error) {
