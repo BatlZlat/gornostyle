@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const { notifyScheduleCreated } = require('../bot/admin-bot');
 
 // Настройки для cron
 const CRON_SETTINGS = {
@@ -16,6 +17,7 @@ async function createNextMonthSchedule() {
         const now = new Date();
         const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
         const lastDayOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+        lastDayOfNextMonth.setHours(23, 59, 59, 999);
 
         // Начальное и конечное время для слотов
         const startTime = '10:00';
@@ -48,6 +50,11 @@ async function createNextMonthSchedule() {
 
         await client.query('COMMIT');
         console.log('Расписание на следующий месяц успешно создано');
+
+        // Отправляем уведомление через бота
+        const monthName = nextMonth.toLocaleString('ru-RU', { month: 'long' });
+        await notifyScheduleCreated(monthName);
+
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Ошибка при создании расписания на следующий месяц:', error);
