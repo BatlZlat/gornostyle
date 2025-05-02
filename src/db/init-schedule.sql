@@ -18,4 +18,39 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
     is_booked BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(date, simulator_id, start_time)
-); 
+);
+
+-- Создание временных слотов для каждого тренажера
+DO $$
+DECLARE
+    simulator_id INTEGER;
+    current_date DATE := CURRENT_DATE;
+    slot_time TIME;
+BEGIN
+    -- Для каждого тренажера
+    FOR simulator_id IN SELECT id FROM simulators LOOP
+        -- Создаем слоты на 7 дней вперед
+        FOR i IN 0..6 LOOP
+            -- Создаем слоты с 10:00 до 21:00 с интервалом в 1 час
+            slot_time := '10:00'::TIME;
+            WHILE slot_time < '22:00'::TIME LOOP
+                INSERT INTO schedule (
+                    simulator_id,
+                    date,
+                    start_time,
+                    end_time,
+                    is_holiday,
+                    is_booked
+                ) VALUES (
+                    simulator_id,
+                    current_date + i,
+                    slot_time,
+                    slot_time + '1 hour'::INTERVAL,
+                    FALSE,
+                    FALSE
+                );
+                slot_time := slot_time + '1 hour'::INTERVAL;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END $$; 

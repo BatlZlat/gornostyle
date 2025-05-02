@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { pool } = require('./db');
+const { pool } = require('./db/index');
 const { setupBot } = require('./bot/admin-bot');
 const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-next-month-schedule');
 const scheduleRouter = require('./routes/schedule');

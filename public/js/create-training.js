@@ -1,55 +1,95 @@
 document.addEventListener('DOMContentLoaded', function() {
     const createTrainingForm = document.getElementById('create-training-form');
-    const trainingGroup = document.getElementById('training-group');
-    const timeSlot = document.getElementById('time-slot');
+    const trainingDate = document.getElementById('training-date');
+    const simulatorSelect = document.getElementById('simulator');
+    const timeSlotSelect = document.getElementById('time-slot');
+    const trainerSelect = document.getElementById('trainer');
 
-    // Загрузка списка групп
-    async function loadGroups() {
+    // Загрузка списка тренажеров
+    async function loadSimulators() {
         try {
-            const response = await fetch('/api/groups');
-            const groups = await response.json();
+            const response = await fetch('/api/simulators');
+            const simulators = await response.json();
             
-            if (trainingGroup) {
-                trainingGroup.innerHTML = groups.map(group => 
-                    `<option value="${group.id}">${group.name}</option>`
+            simulatorSelect.innerHTML = '<option value="">Выберите тренажер</option>' + 
+                simulators.map(simulator => 
+                    `<option value="${simulator.id}" ${!simulator.is_working ? 'disabled' : ''}>
+                        ${simulator.name} ${!simulator.is_working ? '(не активен)' : ''}
+                    </option>`
                 ).join('');
-            }
         } catch (error) {
-            console.error('Ошибка при загрузке групп:', error);
-            showError('Не удалось загрузить список групп');
+            console.error('Ошибка при загрузке тренажеров:', error);
+            showError('Не удалось загрузить список тренажеров');
         }
     }
 
     // Загрузка временных слотов
     async function loadTimeSlots() {
+        const date = trainingDate.value;
+        const simulatorId = simulatorSelect.value;
+
+        if (!date || !simulatorId) {
+            timeSlotSelect.innerHTML = '<option value="">Сначала выберите дату и тренажер</option>';
+            return;
+        }
+
         try {
-            const date = document.getElementById('training-date').value;
-            const simulator = document.getElementById('simulator').value;
-            
-            const response = await fetch(`/api/time-slots?date=${date}&simulator=${simulator}`);
+            const response = await fetch(`/api/schedule?date=${date}&simulator_id=${simulatorId}`);
             const slots = await response.json();
             
-            if (timeSlot) {
-                timeSlot.innerHTML = slots.map(slot => 
-                    `<option value="${slot.id}">${slot.start_time} - ${slot.end_time}</option>`
-                ).join('');
+            if (!slots || slots.length === 0) {
+                timeSlotSelect.innerHTML = '<option value="">Нет доступных временных слотов</option>';
+                return;
             }
+
+            timeSlotSelect.innerHTML = '<option value="">Выберите время</option>' + 
+                slots.map(slot => {
+                    const isDisabled = slot.is_booked || slot.is_holiday;
+                    const statusText = slot.is_booked ? '(занято)' : slot.is_holiday ? '(выходной)' : '';
+                    return `
+                        <option value="${slot.id}" ${isDisabled ? 'disabled' : ''}>
+                            ${formatTime(slot.start_time)} ${statusText}
+                        </option>
+                    `;
+                }).join('');
         } catch (error) {
             console.error('Ошибка при загрузке временных слотов:', error);
             showError('Не удалось загрузить временные слоты');
         }
     }
 
-    // Обработчик изменения даты или тренажера
-    const trainingDate = document.getElementById('training-date');
-    const simulator = document.getElementById('simulator');
+    // Загрузка списка тренеров
+    async function loadTrainers() {
+        try {
+            const response = await fetch('/api/trainers');
+            const trainers = await response.json();
+            
+            trainerSelect.innerHTML = '<option value="">Выберите тренера</option>' + 
+                trainers
+                    .filter(trainer => trainer.is_active)
+                    .map(trainer => 
+                        `<option value="${trainer.id}">${trainer.full_name} (${trainer.sport_type})</option>`
+                    ).join('');
+        } catch (error) {
+            console.error('Ошибка при загрузке тренеров:', error);
+            showError('Не удалось загрузить список тренеров');
+        }
+    }
 
+    // Форматирование времени
+    function formatTime(timeString) {
+        if (!timeString) return '';
+        const [hours, minutes] = timeString.split(':');
+        return `${hours}:${minutes}`;
+    }
+
+    // Обработчики событий
     if (trainingDate) {
         trainingDate.addEventListener('change', loadTimeSlots);
     }
 
-    if (simulator) {
-        simulator.addEventListener('change', loadTimeSlots);
+    if (simulatorSelect) {
+        simulatorSelect.addEventListener('change', loadTimeSlots);
     }
 
     // Обработчик отправки формы
@@ -58,12 +98,13 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
 
             const formData = {
-                date: document.getElementById('training-date').value,
-                group_id: document.getElementById('training-group').value,
-                max_participants: document.getElementById('max-participants').value,
+                date: trainingDate.value,
+                simulator_id: simulatorSelect.value,
+                time_slot_id: timeSlotSelect.value,
                 skill_level: document.getElementById('skill-level').value,
-                simulator_id: document.getElementById('simulator').value,
-                time_slot_id: document.getElementById('time-slot').value
+                trainer_id: trainerSelect.value,
+                max_participants: document.getElementById('max-participants').value,
+                is_group_session: true
             };
 
             try {
@@ -76,25 +117,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 if (response.ok) {
-                    // Перенаправляем на страницу тренировок после успешного создания
-                    window.location.href = 'admin.html';
+                    showSuccess('Групповая тренировка успешно создана');
+                    setTimeout(() => {
+                        window.location.href = 'admin.html';
+                    }, 2000);
                 } else {
-                    throw new Error('Ошибка при создании тренировки');
+                    const error = await response.json();
+                    throw new Error(error.message || 'Ошибка при создании тренировки');
                 }
             } catch (error) {
                 console.error('Ошибка при создании тренировки:', error);
-                showError('Не удалось создать тренировку');
+                showError(error.message || 'Не удалось создать тренировку');
             }
         });
     }
 
     // Функция отображения ошибок
     function showError(message) {
-        // Здесь можно добавить код для отображения ошибок пользователю
-        console.error(message);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.textContent = message;
+        document.querySelector('.form-container').insertBefore(errorDiv, document.querySelector('.form-actions'));
+        setTimeout(() => errorDiv.remove(), 3000);
+    }
+
+    // Функция отображения успешного сообщения
+    function showSuccess(message) {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'alert alert-success';
+        successDiv.textContent = message;
+        document.querySelector('.form-container').insertBefore(successDiv, document.querySelector('.form-actions'));
     }
 
     // Инициализация
-    loadGroups();
-    loadTimeSlots();
+    loadSimulators();
+    loadTrainers();
 }); 
