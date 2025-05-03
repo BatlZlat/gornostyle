@@ -1,72 +1,52 @@
-const { Pool } = require('pg');
-
-const pool = new Pool({
-    host: '90.156.210.24',
-    port: 5432,
-    database: 'skisimulator',
-    user: 'batl-zlat',
-    password: 'Nemezida2324%)'
-});
+const { pool } = require('../db');
+const moment = require('moment-timezone');
 
 async function createInitialSchedule() {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        // Создаем тренажеры, если их еще нет
-        const simulators = [
-            { name: 'Тренажер 1' },
-            { name: 'Тренажер 2' }
-        ];
-
-        for (const simulator of simulators) {
-            try {
-                await client.query(
-                    'INSERT INTO simulators (name) VALUES ($1) ON CONFLICT DO NOTHING',
-                    [simulator.name]
-                );
-            } catch (error) {
-                console.error('Ошибка при создании тренажера:', error);
-                throw error;
-            }
-        }
-
-        // Получаем текущую дату и дату конца следующего месяца
-        const now = new Date();
-        const endDate = new Date(now.getFullYear(), now.getMonth() + 2, 0); // Последний день следующего месяца
-        endDate.setHours(23, 59, 59, 999); // Устанавливаем конец дня
+        // Получаем текущую дату в часовом поясе Екатеринбурга
+        const now = moment().tz('Asia/Yekaterinburg');
+        const startDate = now.startOf('day');
+        
+        // Получаем последний день следующего месяца
+        const endDate = moment().tz('Asia/Yekaterinburg')
+            .add(1, 'month')
+            .endOf('month')
+            .endOf('day');
 
         // Начальное и конечное время для слотов
         const startTime = '10:00';
         const endTime = '21:00';
         const slotDuration = 30; // длительность слота в минутах
 
-        // Создаем слоты для каждого дня
-        for (let date = new Date(now); date <= endDate; date.setDate(date.getDate() + 1)) {
-            // Пропускаем воскресенье (0) и субботу (6)
-            if (date.getDay() === 0 || date.getDay() === 6) {
-                continue;
-            }
+        console.log(`Создание расписания с ${startDate.format('YYYY-MM-DD')} по ${endDate.format('YYYY-MM-DD')}`);
 
-            const dateStr = date.toISOString().split('T')[0];
+        // Создаем слоты для каждого дня
+        let currentDate = moment(startDate);
+        while (currentDate.isSameOrBefore(endDate)) {
+            const dateStr = currentDate.format('YYYY-MM-DD');
+            console.log(`Создание слотов для даты: ${dateStr}`);
             
             // Создаем слоты для каждого тренажера
             for (let simulatorId = 1; simulatorId <= 2; simulatorId++) {
                 // Создаем слоты с шагом в 30 минут
-                let currentTime = new Date(`2000-01-01T${startTime}`);
-                const endTimeDate = new Date(`2000-01-01T${endTime}`);
+                let currentTime = moment(`2000-01-01 ${startTime}`, 'YYYY-MM-DD HH:mm');
+                const endTimeMoment = moment(`2000-01-01 ${endTime}`, 'YYYY-MM-DD HH:mm');
 
-                while (currentTime < endTimeDate) {
-                    const slotStart = currentTime.toTimeString().slice(0, 5);
-                    currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
-                    const slotEnd = currentTime.toTimeString().slice(0, 5);
+                while (currentTime.isBefore(endTimeMoment)) {
+                    const slotStart = currentTime.format('HH:mm');
+                    currentTime.add(slotDuration, 'minutes');
+                    const slotEnd = currentTime.format('HH:mm');
 
                     try {
                         await client.query(
-                            `INSERT INTO schedule (simulator_id, date, start_time, end_time)
-                             VALUES ($1, $2, $3, $4)`,
+                            `INSERT INTO schedule (simulator_id, date, start_time, end_time, is_holiday, is_booked)
+                             VALUES ($1, $2, $3, $4, false, false)`,
                             [simulatorId, dateStr, slotStart, slotEnd]
                         );
+                        console.log(`Создан слот: ${dateStr} ${slotStart}-${slotEnd} для тренажера ${simulatorId}`);
                     } catch (error) {
                         if (error.code === '23505') { // Ошибка уникального ограничения
                             console.log(`Слот уже существует: ${dateStr} ${slotStart}-${slotEnd} для тренажера ${simulatorId}`);
@@ -76,6 +56,9 @@ async function createInitialSchedule() {
                     }
                 }
             }
+            
+            // Переходим к следующему дню
+            currentDate.add(1, 'day');
         }
 
         await client.query('COMMIT');
