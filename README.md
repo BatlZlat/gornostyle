@@ -1,101 +1,144 @@
-# Ski Simulator - Система управления тренажерами
+# Ski-instruktor - Система управления горнолыжными тренажерами
 
 ## Описание проекта
-Система для управления расписанием и бронированием тренажеров для обучения горнолыжному спорту.
+Ski-instruktor - это комплексная система для управления горнолыжными тренажерами и бронирования тренировок. Система включает в себя веб-интерфейс для администраторов и Telegram бота для клиентов.
+
+## Основные функции
+
+### Telegram бот (@Ski_Instruktor72_bot)
+- Регистрация новых клиентов
+- Бронирование тренировок
+- Управление личным кабинетом
+- Просмотр и управление записями
+- Управление кошельком
+- Работа с подарочными сертификатами
+
+### Веб-интерфейс (админ-панель)
+- Управление тренажерами
+- Управление тренерами
+- Управление группами
+- Управление расписанием
+- Управление ценами
+- Просмотр статистики
 
 ## Установка и запуск
-1. Установите зависимости:
+
+### Требования
+- Node.js 14+
+- PostgreSQL 12+
+- Telegram Bot Token
+
+### Установка зависимостей
 ```bash
 npm install
 ```
 
-2. Создайте файл `.env` с параметрами подключения к базе данных:
-```
-DB_USER=batl-zlat
-DB_HOST=90.156.210.24
-DB_NAME=skisimulator
-DB_PASSWORD=Nemezida2324%)
+### Настройка окружения
+Создайте файл `.env` в корневой директории проекта:
+```env
+# Настройки базы данных
+DB_HOST=your_host
 DB_PORT=5432
+DB_NAME=skisimulator
+DB_USER=your_user
+DB_PASSWORD=your_password
+
+# Настройки сервера
+PORT=3000
+
+# Токен Telegram бота
+TELEGRAM_BOT_TOKEN=your_bot_token
 ```
 
-3. Запустите сервер:
+### Инициализация базы данных
 ```bash
-node src/app.js
+npm run init-db
 ```
 
-## Бот-информер администратора
-В системе реализован Telegram-бот для уведомления администратора о важных событиях.
-
-### Настройка бота
-1. Найдите бота в Telegram: @GORNOSTYLE_INFO_BOT
-2. Отправьте команду `/start` для активации
-
-### Автоматические уведомления
-Бот автоматически отправляет уведомления о:
-- Создании нового расписания на следующий месяц
-- Важных изменениях в системе
-
-### Доступ
-Бот доступен только для администратора системы (ID: 546668421).
-
-## Скрипты управления расписанием
-
-### Создание первоначального расписания
-Для создания расписания на текущий и следующий месяц используйте скрипт:
+### Запуск сервера
 ```bash
-node src/scripts/create-initial-schedule.js
-```
-Скрипт создаст слоты с 10:00 до 21:00 с интервалом 30 минут для обоих тренажеров.
-
-### Автоматическое создание расписания
-Расписание на следующий месяц создается автоматически по расписанию.
-Настройки времени можно изменить в файле `src/scripts/create-next-month-schedule.js`:
-```javascript
-const CRON_SETTINGS = {
-    day: 1,    // День месяца
-    hour: 0,  // Час
-    minute: 10 // Минута
-};
+npm run start
 ```
 
-Для запуска автоматического создания расписания используйте:
-```bash
-node src/scripts/run-schedule-cron.js
-```
+## Структура базы данных
 
-Скрипт запустит создание расписания сразу и будет ждать следующего запуска по расписанию.
-
-### Управление расписанием через SQL
-Для удаления расписания за определенный период используйте SQL-запрос:
+### Таблица clients
 ```sql
-DELETE FROM schedule WHERE date BETWEEN '2024-05-01' AND '2024-05-31';
+CREATE TABLE clients (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    birth_date DATE NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    telegram_id VARCHAR(100) UNIQUE,
+    telegram_username VARCHAR(100),
+    nickname VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-Для создания расписания на конкретный день:
+### Таблица children
 ```sql
-INSERT INTO schedule (simulator_id, date, start_time, end_time)
-SELECT s.id, '2024-06-30', t.start_time::time, t.end_time::time
-FROM simulators s
-CROSS JOIN (
-    VALUES 
-    ('10:00', '10:30'), ('10:30', '11:00'), ('11:00', '11:30'),
-    ('11:30', '12:00'), ('12:00', '12:30'), ('12:30', '13:00'),
-    ('13:00', '13:30'), ('13:30', '14:00'), ('14:00', '14:30'),
-    ('14:30', '15:00'), ('15:00', '15:30'), ('15:30', '16:00'),
-    ('16:00', '16:30'), ('16:30', '17:00'), ('17:00', '17:30'),
-    ('17:30', '18:00'), ('18:00', '18:30'), ('18:30', '19:00'),
-    ('19:00', '19:30'), ('19:30', '20:00'), ('20:00', '20:30'),
-    ('20:30', '21:00')
-) AS t(start_time, end_time)
-WHERE s.id IN (1, 2);
+CREATE TABLE children (
+    id SERIAL PRIMARY KEY,
+    parent_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    birth_date DATE NOT NULL,
+    sport_type VARCHAR(20),
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-## Структура проекта
-- `src/` - исходный код сервера
-  - `routes/` - маршруты API
-  - `scripts/` - скрипты для управления расписанием
-  - `db/` - настройки базы данных
-  - `bot/` - код Telegram-бота
-- `public/` - статические файлы и клиентский код
-- `.env` - файл с переменными окружения
-- `README.md` - документация проекта 
+### Таблица wallets
+```sql
+CREATE TABLE wallets (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    balance DECIMAL(10,2) DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## API Endpoints
+
+### Клиенты
+- `GET /api/clients` - получение списка клиентов
+- `POST /api/clients` - создание нового клиента
+- `GET /api/clients/:id` - получение информации о клиенте
+- `PUT /api/clients/:id` - обновление информации о клиенте
+
+### Тренажеры
+- `GET /api/simulators` - получение списка тренажеров
+- `POST /api/simulators` - создание нового тренажера
+- `PUT /api/simulators/:id` - обновление информации о тренажере
+
+### Расписание
+- `GET /api/schedule` - получение расписания
+- `POST /api/schedule` - создание записи в расписании
+- `PUT /api/schedule/:id` - обновление записи в расписании
+
+## Разработка
+
+### Структура проекта
+```
+src/
+├── app.js              # Основной файл приложения
+├── bot/               # Код Telegram бота
+│   ├── index.js       # Основной файл бота
+│   ├── handlers.js    # Обработчики команд
+│   └── db-utils.js    # Утилиты для работы с БД
+├── routes/            # Маршруты API
+├── db/               # Настройки базы данных
+└── scripts/          # Скрипты для инициализации
+```
+
+### Запуск в режиме разработки
+```bash
+npm run dev
+```
+
+## Лицензия
+ISC 
