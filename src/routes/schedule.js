@@ -2,21 +2,21 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 
-// Получение временных слотов для конкретной даты и тренажера
+// Получение временных слотов для конкретной даты
 router.get('/', async (req, res) => {
-    const { date, simulator_id } = req.query;
+    const { date } = req.query;
 
-    if (!date || !simulator_id) {
-        return res.status(400).json({ error: 'Необходимо указать дату и ID тренажера' });
+    if (!date) {
+        return res.status(400).json({ error: 'Необходимо указать дату' });
     }
 
     try {
         const result = await pool.query(
-            `SELECT id, start_time, end_time, is_holiday, is_booked 
+            `SELECT id, simulator_id, start_time, end_time, is_holiday, is_booked 
              FROM schedule 
-             WHERE date = $1 AND simulator_id = $2 
-             ORDER BY start_time`,
-            [date, simulator_id]
+             WHERE date = $1 
+             ORDER BY simulator_id, start_time`,
+            [date]
         );
 
         res.json(result.rows);

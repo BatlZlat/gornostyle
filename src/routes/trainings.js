@@ -130,21 +130,36 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Получение списка тренировок
+// Получение тренировок
 router.get('/', async (req, res) => {
+    const { date, type } = req.query;
+
+    if (!date) {
+        return res.status(400).json({ error: 'Необходимо указать дату' });
+    }
+
     try {
-        const result = await pool.query(
-            `SELECT t.*, s.name as simulator_name, tr.full_name as trainer_name, g.name as group_name
-             FROM training_sessions t
-             LEFT JOIN simulators s ON t.simulator_id = s.id
-             LEFT JOIN trainers tr ON t.trainer_id = tr.id
-             LEFT JOIN groups g ON t.group_id = g.id
-             ORDER BY t.session_date DESC, t.start_time DESC`
-        );
+        let query = `
+            SELECT ts.*, g.name as group_name, g.description as group_description
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            WHERE ts.session_date = $1
+        `;
+        const params = [date];
+
+        if (type === 'group') {
+            query += ' AND ts.training_type = true';
+        } else if (type === 'individual') {
+            query += ' AND ts.training_type = false';
+        }
+
+        query += ' ORDER BY ts.start_time';
+
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
-        console.error('Ошибка при получении списка тренировок:', error);
-        res.status(500).json({ error: 'Ошибка при получении списка тренировок' });
+        console.error('Ошибка при получении тренировок:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
 });
 
