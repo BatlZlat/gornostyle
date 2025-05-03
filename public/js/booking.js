@@ -284,6 +284,19 @@ async function loadAvailableSlots() {
             }
         } else {
             console.log('Загрузка индивидуальных слотов');
+            
+            // Получаем статус тренажеров
+            const simulatorsResponse = await fetch('/api/simulators');
+            if (!simulatorsResponse.ok) {
+                throw new Error(`HTTP error! status: ${simulatorsResponse.status}`);
+            }
+            const simulators = await simulatorsResponse.json();
+            const simulatorStatus = {
+                1: simulators.find(s => s.id === 1)?.is_working ?? false,
+                2: simulators.find(s => s.id === 2)?.is_working ?? false
+            };
+
+            // Получаем расписание
             const response = await fetch(`/api/schedule?date=${date}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -302,31 +315,39 @@ async function loadAvailableSlots() {
             // Обновляем слоты для тренажера 1
             if (simulator1Slots) {
                 simulator1Slots.innerHTML = '<option value="">Выберите время</option>';
-                simulator1Schedule.forEach(slot => {
-                    const isAvailable = !slot.is_holiday && !slot.is_booked;
-                    simulator1Slots.innerHTML += `
-                        <option value="${slot.id}" 
-                                ${!isAvailable ? 'disabled' : ''}
-                                data-start-time="${slot.start_time}">
-                            ${formatTime(slot.start_time)}
-                        </option>
-                    `;
-                });
+                if (!simulatorStatus[1]) {
+                    simulator1Slots.innerHTML += '<option value="" disabled>Тренажер временно недоступен</option>';
+                } else {
+                    simulator1Schedule.forEach(slot => {
+                        const isAvailable = !slot.is_holiday && !slot.is_booked;
+                        simulator1Slots.innerHTML += `
+                            <option value="${slot.id}" 
+                                    ${!isAvailable ? 'disabled' : ''}
+                                    data-start-time="${slot.start_time}">
+                                ${formatTime(slot.start_time)}
+                            </option>
+                        `;
+                    });
+                }
             }
 
             // Обновляем слоты для тренажера 2
             if (simulator2Slots) {
                 simulator2Slots.innerHTML = '<option value="">Выберите время</option>';
-                simulator2Schedule.forEach(slot => {
-                    const isAvailable = !slot.is_holiday && !slot.is_booked;
-                    simulator2Slots.innerHTML += `
-                        <option value="${slot.id}" 
-                                ${!isAvailable ? 'disabled' : ''}
-                                data-start-time="${slot.start_time}">
-                            ${formatTime(slot.start_time)}
-                        </option>
-                    `;
-                });
+                if (!simulatorStatus[2]) {
+                    simulator2Slots.innerHTML += '<option value="" disabled>Тренажер временно недоступен</option>';
+                } else {
+                    simulator2Schedule.forEach(slot => {
+                        const isAvailable = !slot.is_holiday && !slot.is_booked;
+                        simulator2Slots.innerHTML += `
+                            <option value="${slot.id}" 
+                                    ${!isAvailable ? 'disabled' : ''}
+                                    data-start-time="${slot.start_time}">
+                                ${formatTime(slot.start_time)}
+                            </option>
+                        `;
+                    });
+                }
             }
         }
 
