@@ -1,3 +1,26 @@
+-- Удаляем все существующие таблицы
+DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS wallets CASCADE;
+DROP TABLE IF EXISTS certificates CASCADE;
+DROP TABLE IF EXISTS session_participants CASCADE;
+DROP TABLE IF EXISTS training_sessions CASCADE;
+DROP TABLE IF EXISTS schedule CASCADE;
+DROP TABLE IF EXISTS groups CASCADE;
+DROP TABLE IF EXISTS simulators CASCADE;
+DROP TABLE IF EXISTS trainers CASCADE;
+DROP TABLE IF EXISTS children CASCADE;
+DROP TABLE IF EXISTS clients CASCADE;
+DROP TABLE IF EXISTS administrators CASCADE;
+
+-- Создаем функцию для обновления updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
 -- Таблица клиентов
 CREATE TABLE clients (
     id SERIAL PRIMARY KEY,
@@ -74,9 +97,9 @@ CREATE TABLE groups (
 -- Таблица тренировок
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
-    simulator_id INTEGER REFERENCES simulators(id),
-    trainer_id INTEGER REFERENCES trainers(id),
-    group_id INTEGER REFERENCES groups(id),
+    simulator_id INTEGER REFERENCES simulators(id) ON DELETE CASCADE,
+    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
     session_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -87,7 +110,6 @@ CREATE TABLE training_sessions (
     price DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
-    with_trainer BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -96,8 +118,8 @@ CREATE TABLE training_sessions (
 CREATE TABLE session_participants (
     id SERIAL PRIMARY KEY,
     session_id INTEGER REFERENCES training_sessions(id) ON DELETE CASCADE,
-    client_id INTEGER REFERENCES clients(id),
-    child_id INTEGER REFERENCES children(id),
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    child_id INTEGER REFERENCES children(id) ON DELETE CASCADE,
     is_child BOOLEAN DEFAULT FALSE,
     status VARCHAR(20) DEFAULT 'confirmed', -- confirmed, cancelled, completed
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -108,12 +130,12 @@ CREATE TABLE session_participants (
 CREATE TABLE certificates (
     id SERIAL PRIMARY KEY,
     certificate_number VARCHAR(20) UNIQUE NOT NULL,
-    purchaser_id INTEGER REFERENCES clients(id),
+    purchaser_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     purchase_date TIMESTAMP NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'active', -- active, used, expired
     expiry_date TIMESTAMP NOT NULL,
-    activated_by_id INTEGER REFERENCES clients(id),
+    activated_by_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
     activation_date TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -141,7 +163,7 @@ CREATE TABLE transactions (
 -- Таблица расписания
 CREATE TABLE schedule (
     id SERIAL PRIMARY KEY,
-    simulator_id INTEGER REFERENCES simulators(id),
+    simulator_id INTEGER REFERENCES simulators(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -149,18 +171,6 @@ CREATE TABLE schedule (
     is_booked BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Таблица прайсов
-CREATE TABLE prices (
-    id SERIAL PRIMARY KEY,
-    type VARCHAR(50) NOT NULL, -- 'individual' или 'group'
-    with_trainer BOOLEAN NOT NULL,
-    duration INTEGER NOT NULL, -- в минутах
-    participants INTEGER NOT NULL, -- для групповых занятий
-    price DECIMAL(10,2) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Создание индексов
@@ -172,6 +182,8 @@ CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
 CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
+CREATE INDEX idx_training_sessions_simulator ON training_sessions(simulator_id);
+CREATE INDEX idx_training_sessions_group ON training_sessions(group_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
 CREATE INDEX idx_certificates_number ON certificates(certificate_number);
@@ -182,15 +194,6 @@ CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
 
 -- Создание триггеров для обновления updated_at
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Применение триггеров к таблицам
 CREATE TRIGGER update_clients_updated_at
     BEFORE UPDATE ON clients
     FOR EACH ROW
@@ -228,10 +231,5 @@ CREATE TRIGGER update_certificates_updated_at
 
 CREATE TRIGGER update_schedule_updated_at
     BEFORE UPDATE ON schedule
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_schedule_settings_updated_at
-    BEFORE UPDATE ON schedule_settings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column(); 

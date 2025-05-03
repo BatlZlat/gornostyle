@@ -3,57 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Создание групповой тренировки - Ski-instruktor</title>
+    <title>Создание тренировки - Ski-instruktor</title>
     <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
     <div class="admin-container">
         <header class="admin-header">
-            <h1>Создание групповой тренировки</h1>
+            <h1>Создание тренировки</h1>
             <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
         </header>
         
         <div class="admin-content">
             <main class="admin-main">
                 <div class="page-content">
-                    <form id="create-training-form" class="form-container">
+                    <form id="createTrainingForm" class="form-container">
                         <div class="form-group">
-                            <label for="training-date">Дата</label>
-                            <input type="date" id="training-date" name="date" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="simulator">Тренажер</label>
+                            <label for="simulator">Тренажер:</label>
                             <select id="simulator" name="simulator_id" required>
                                 <option value="">Выберите тренажер</option>
-                                <!-- Тренажеры будут загружены динамически -->
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label for="time-slot">Время</label>
-                            <select id="time-slot" name="time_slot_id" required>
+                            <label for="date">Дата:</label>
+                            <input type="date" id="date" name="date" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="timeSlot">Время:</label>
+                            <select id="timeSlot" name="time_slot_id" required>
                                 <option value="">Выберите время</option>
-                                <!-- Временные слоты будут загружены динамически -->
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label for="skill-level">Уровень сложности</label>
-                            <input type="number" id="skill-level" name="skill_level" min="1" max="5" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="trainer">Тренер</label>
-                            <select id="trainer" name="trainer_id" required>
+                            <label for="trainer">Тренер:</label>
+                            <select id="trainer" name="trainer_id">
                                 <option value="">Выберите тренера</option>
-                                <!-- Тренеры будут загружены динамически -->
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label for="max-participants">Максимальное количество участников</label>
-                            <input type="number" id="max-participants" name="max_participants" min="1" max="6" required>
+                            <label for="group">Группа:</label>
+                            <select id="group" name="group_id">
+                                <option value="">Выберите группу (необязательно)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="skillLevel">Уровень подготовки:</label>
+                            <select id="skillLevel" name="skill_level">
+                                <option value="">Выберите уровень (необязательно)</option>
+                                <option value="1">Начальный</option>
+                                <option value="2">Базовый</option>
+                                <option value="3">Средний</option>
+                                <option value="4">Продвинутый</option>
+                                <option value="5">Профессиональный</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="maxParticipants">Максимальное количество участников:</label>
+                            <input type="number" id="maxParticipants" name="max_participants" min="1" max="10" value="1" required>
                         </div>
 
                         <div class="form-actions">

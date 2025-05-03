@@ -201,12 +201,47 @@ async function handleBookingSubmit(e) {
         return;
     }
 
+    const duration = parseInt(durationSelect.value);
+    const selectedSimulator = document.querySelector('input[name="simulator"]:checked');
+    const simulatorId = selectedSimulator.value;
+    const slotsSelect = document.getElementById(`simulator${simulatorId}-slots`);
+    const selectedSlotId = slotsSelect.value;
+
+    // Проверяем доступность следующего слота для 60-минутных занятий
+    if (duration === 60) {
+        try {
+            const response = await fetch(`/api/schedule?date=${trainingDateInput.value}`);
+            const schedule = await response.json();
+            
+            const currentSlotIndex = schedule.findIndex(slot => 
+                slot.id === parseInt(selectedSlotId) && 
+                slot.simulator_id === parseInt(simulatorId)
+            );
+            
+            if (currentSlotIndex === -1 || currentSlotIndex === schedule.length - 1) {
+                showNotification('Для 60-минутного занятия необходимо выбрать время, после которого есть свободный слот', 'error');
+                return;
+            }
+
+            const nextSlot = schedule[currentSlotIndex + 1];
+            if (nextSlot.is_holiday || nextSlot.is_booked || nextSlot.simulator_id !== parseInt(simulatorId)) {
+                showNotification('Для 60-минутного занятия необходимо выбрать время, после которого есть свободный слот', 'error');
+                return;
+            }
+        } catch (error) {
+            console.error('Ошибка при проверке доступности следующего слота:', error);
+            showNotification('Произошла ошибка при проверке доступности времени', 'error');
+            return;
+        }
+    }
+
     const formData = {
-        simulator_id: simulatorSelect.value,
-        booking_date: dateInput.value,
-        start_time: timeSelect.value,
-        end_time: calculateEndTime(timeSelect.value, parseInt(durationSelect.value)),
-        trainer_id: trainerSelect.value || null
+        simulator_id: simulatorId,
+        booking_date: trainingDateInput.value,
+        start_time: slotsSelect.options[slotsSelect.selectedIndex].dataset.startTime,
+        duration: duration,
+        with_trainer: withTrainerCheckbox.checked,
+        is_group: groupTrainingCheckbox.checked
     };
 
     try {
@@ -218,15 +253,6 @@ async function handleBookingSubmit(e) {
     } catch (error) {
         showNotification('Ошибка при создании бронирования', 'error');
     }
-}
-
-// Вычисление времени окончания
-function calculateEndTime(startTime, duration) {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const endDate = new Date();
-    endDate.setHours(hours);
-    endDate.setMinutes(minutes + duration);
-    return endDate.toTimeString().slice(0, 5);
 }
 
 // Загрузка доступных слотов
@@ -289,21 +315,16 @@ async function loadAvailableSlots() {
                 throw new Error('Полученные данные не являются массивом');
             }
 
-            const duration = parseInt(durationSelect?.value || '60');
-
             // Обновляем слоты для тренажера 1
             if (simulator1Slots) {
                 simulator1Slots.innerHTML = '<option value="">Выберите время</option>';
                 const simulator1Schedule = schedule.filter(slot => slot.simulator_id === 1);
                 
-                simulator1Schedule.forEach((slot, index) => {
+                simulator1Schedule.forEach(slot => {
                     const isAvailable = !slot.is_holiday && !slot.is_booked;
-                    const nextSlot = simulator1Schedule[index + 1];
-                    const hasEnoughTime = duration === 30 || (nextSlot && !nextSlot.is_booked);
-
                     simulator1Slots.innerHTML += `
                         <option value="${slot.id}" 
-                                ${!isAvailable || !hasEnoughTime ? 'disabled' : ''}
+                                ${!isAvailable ? 'disabled' : ''}
                                 data-start-time="${slot.start_time}">
                             ${formatTime(slot.start_time)}
                         </option>
@@ -316,14 +337,11 @@ async function loadAvailableSlots() {
                 simulator2Slots.innerHTML = '<option value="">Выберите время</option>';
                 const simulator2Schedule = schedule.filter(slot => slot.simulator_id === 2);
                 
-                simulator2Schedule.forEach((slot, index) => {
+                simulator2Schedule.forEach(slot => {
                     const isAvailable = !slot.is_holiday && !slot.is_booked;
-                    const nextSlot = simulator2Schedule[index + 1];
-                    const hasEnoughTime = duration === 30 || (nextSlot && !nextSlot.is_booked);
-
                     simulator2Slots.innerHTML += `
                         <option value="${slot.id}" 
-                                ${!isAvailable || !hasEnoughTime ? 'disabled' : ''}
+                                ${!isAvailable ? 'disabled' : ''}
                                 data-start-time="${slot.start_time}">
                             ${formatTime(slot.start_time)}
                         </option>

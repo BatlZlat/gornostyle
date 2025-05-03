@@ -1,17 +1,35 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    host: 'хххххххххххх',
+    host: '90.156.210.24',
     port: 5432,
-    database: 'хххххххххххх',
-    user: 'хххххххххххх',
-    password: 'хххххххххххх'
+    database: 'skisimulator',
+    user: 'batl-zlat',
+    password: 'Nemezida2324%)'
 });
 
 async function createInitialSchedule() {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+
+        // Создаем тренажеры, если их еще нет
+        const simulators = [
+            { name: 'Тренажер 1' },
+            { name: 'Тренажер 2' }
+        ];
+
+        for (const simulator of simulators) {
+            try {
+                await client.query(
+                    'INSERT INTO simulators (name) VALUES ($1) ON CONFLICT DO NOTHING',
+                    [simulator.name]
+                );
+            } catch (error) {
+                console.error('Ошибка при создании тренажера:', error);
+                throw error;
+            }
+        }
 
         // Получаем текущую дату и дату конца следующего месяца
         const now = new Date();
@@ -25,6 +43,11 @@ async function createInitialSchedule() {
 
         // Создаем слоты для каждого дня
         for (let date = new Date(now); date <= endDate; date.setDate(date.getDate() + 1)) {
+            // Пропускаем воскресенье (0) и субботу (6)
+            if (date.getDay() === 0 || date.getDay() === 6) {
+                continue;
+            }
+
             const dateStr = date.toISOString().split('T')[0];
             
             // Создаем слоты для каждого тренажера
@@ -38,11 +61,19 @@ async function createInitialSchedule() {
                     currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
                     const slotEnd = currentTime.toTimeString().slice(0, 5);
 
-                    await client.query(
-                        `INSERT INTO schedule (simulator_id, date, start_time, end_time)
-                         VALUES ($1, $2, $3, $4)`,
-                        [simulatorId, dateStr, slotStart, slotEnd]
-                    );
+                    try {
+                        await client.query(
+                            `INSERT INTO schedule (simulator_id, date, start_time, end_time)
+                             VALUES ($1, $2, $3, $4)`,
+                            [simulatorId, dateStr, slotStart, slotEnd]
+                        );
+                    } catch (error) {
+                        if (error.code === '23505') { // Ошибка уникального ограничения
+                            console.log(`Слот уже существует: ${dateStr} ${slotStart}-${slotEnd} для тренажера ${simulatorId}`);
+                            continue;
+                        }
+                        throw error;
+                    }
                 }
             }
         }

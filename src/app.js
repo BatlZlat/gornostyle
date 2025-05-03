@@ -8,6 +8,7 @@ const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
 const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
+const pricesRouter = require('./routes/prices');
 const cron = require('node-cron');
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api/simulators', simulatorsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/trainers', trainersRouter);
 app.use('/api/trainings', trainingsRouter);
+app.use('/api/prices', pricesRouter);
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;

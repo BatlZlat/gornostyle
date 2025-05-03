@@ -53,6 +53,13 @@
                     </div>
                     
                     <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="group-training">
+                            Тренировка в группе
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
                         <label for="duration">Длительность тренировки</label>
                         <select id="duration" required>
                             <option value="30">30 минут</option>
@@ -62,8 +69,8 @@
                     
                     <div class="form-group">
                         <label class="checkbox-label">
-                            <input type="checkbox" id="group-training">
-                            Тренировка в группе
+                            <input type="checkbox" id="with-trainer">
+                            С тренером
                         </label>
                     </div>
                     
@@ -91,6 +98,7 @@
                     
                     <div class="price-calculation">
                         <h3>Стоимость тренировки: <span id="training-price">0</span> ₽</h3>
+                        <button type="button" id="top-up-wallet" class="btn-secondary">Пополнить кошелек</button>
                     </div>
                     
                     <button type="submit" class="btn-primary">Записаться на тренировку</button>
