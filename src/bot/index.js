@@ -126,7 +126,7 @@ bot.on('message', async (msg) => {
                         `📝 *ФИО:* ${client.full_name}\n` +
                         `📅 *Дата рождения:* ${new Date(client.birth_date).toLocaleDateString()}\n` +
                         `📱 *Телефон:* ${client.phone}\n` +
-                        `�� *Ребенок:* ${childInfo}\n\n` +
+                        `👶 *Ребенок:* ${childInfo}\n\n` +
                         '✏️ Для редактирования данных нажмите кнопку ниже',
                         {
                             parse_mode: 'Markdown',
@@ -213,7 +213,6 @@ bot.on('message', async (msg) => {
         case 'edit_profile':
             await handleEditProfile(bot, msg, state);
             break;
-        // Добавим другие обработчики позже
     }
 });
 
@@ -225,126 +224,123 @@ bot.on('polling_error', (error) => {
 // Запуск бота
 console.log('Бот запущен'); 
 
-function handleEditProfile(bot, msg, state) {
+// Обработка редактирования профиля
+async function handleEditProfile(bot, msg, state) {
     const chatId = msg.chat.id;
-    const currentStep = state.currentStep;
-    const data = state.data;
+    const text = msg.text;
 
-    switch (currentStep) {
+    if (!state.currentStep) {
+        state.currentStep = 'select_field';
+        return bot.sendMessage(chatId, 'Выберите, что хотите изменить:');
+    }
+
+    switch (state.currentStep) {
         case 'select_field':
-            // Обработка выбора поля для редактирования
-            const field = msg.text;
-            switch (field) {
+            switch (text) {
                 case '📝 ФИО':
-                    userStates.set(chatId, {
-                        step: 'edit_profile',
-                        currentStep: 'new_full_name',
-                        data: { ...data, field: 'full_name' }
-                    });
-                    await bot.sendMessage(chatId, 'Введите новое полное имя (ФИО):');
-                    break;
+                    state.currentStep = 'edit_name';
+                    state.editField = 'full_name';
+                    return bot.sendMessage(chatId, 'Введите новое ФИО:');
+
                 case '📅 Дата рождения':
-                    userStates.set(chatId, {
-                        step: 'edit_profile',
-                        currentStep: 'new_birth_date',
-                        data: { ...data, field: 'birth_date' }
-                    });
-                    await bot.sendMessage(chatId, 'Введите новую дату рождения (в формате ГГГГ-ММ-ДД):');
-                    break;
+                    state.currentStep = 'edit_birth_date';
+                    state.editField = 'birth_date';
+                    return bot.sendMessage(chatId, 'Введите новую дату рождения в формате ДД.ММ.ГГГГ:');
+
                 case '📱 Телефон':
-                    userStates.set(chatId, {
-                        step: 'edit_profile',
-                        currentStep: 'new_phone',
-                        data: { ...data, field: 'phone' }
-                    });
-                    await bot.sendMessage(chatId, 'Введите новый телефон:');
-                    break;
+                    state.currentStep = 'edit_phone';
+                    state.editField = 'phone';
+                    return bot.sendMessage(chatId, 'Введите новый номер телефона в формате +79999999999:');
+
                 case '👶 Данные ребенка':
-                    userStates.set(chatId, {
-                        step: 'edit_profile',
-                        currentStep: 'child_name',
-                        data: { ...data, field: 'child_name' }
-                    });
-                    await bot.sendMessage(chatId, 'Введите имя ребенка:');
-                    break;
+                    const child = await getChildByParentId(state.clientId);
+                    if (!child) {
+                        return bot.sendMessage(chatId, 
+                            'У вас пока нет зарегистрированного ребенка.\n' +
+                            'Хотите добавить?',
+                            {
+                                reply_markup: {
+                                    keyboard: [
+                                        ['➕ Добавить ребенка'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true,
+                                    one_time_keyboard: true
+                                }
+                            }
+                        );
+                    }
+                    state.currentStep = 'edit_child';
+                    return bot.sendMessage(chatId, 
+                        'Что вы хотите изменить?',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['👶 ФИО ребенка', '📅 Дата рождения ребенка'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true,
+                                one_time_keyboard: true
+                            }
+                        }
+                    );
+
                 case '➕ Добавить ребенка':
-                    userStates.set(chatId, {
-                        step: 'edit_profile',
-                        currentStep: 'child_birth_date',
-                        data: { ...data, field: 'child_birth_date' }
-                    });
-                    await bot.sendMessage(chatId, 'Введите дату рождения ребенка (в формате ГГГГ-ММ-ДД):');
-                    break;
+                    state.currentStep = 'add_child_name';
+                    return bot.sendMessage(chatId, 'Введите ФИО ребенка:');
+
                 case '🔙 Назад в меню':
-                    showMainMenu(bot, chatId);
-                    break;
+                    return showMainMenu(bot, chatId);
             }
             break;
-        case 'new_full_name':
-            // Обработка нового полного имени
-            const newFullName = msg.text;
-            userStates.set(chatId, {
-                step: 'edit_profile',
-                currentStep: 'new_phone',
-                data: { ...data, full_name: newFullName }
-            });
-            await bot.sendMessage(chatId, 'Введите новый телефон:');
-            break;
-        case 'new_birth_date':
-            // Обработка новой даты рождения
-            const newBirthDate = msg.text;
-            userStates.set(chatId, {
-                step: 'edit_profile',
-                currentStep: 'new_phone',
-                data: { ...data, birth_date: newBirthDate }
-            });
-            await bot.sendMessage(chatId, 'Введите новый телефон:');
-            break;
-        case 'new_phone':
-            // Обработка нового телефона
-            const newPhone = msg.text;
-            userStates.set(chatId, {
-                step: 'edit_profile',
-                currentStep: 'confirm',
-                data: { ...data, phone: newPhone }
-            });
-            await bot.sendMessage(chatId, `Вы уверены, что хотите изменить телефон на ${newPhone}?`);
-            break;
-        case 'child_name':
-            // Обработка имени ребенка
-            const childName = msg.text;
-            userStates.set(chatId, {
-                step: 'edit_profile',
-                currentStep: 'child_birth_date',
-                data: { ...data, child_name: childName }
-            });
-            await bot.sendMessage(chatId, 'Введите дату рождения ребенка (в формате ГГГГ-ММ-ДД):');
-            break;
-        case 'child_birth_date':
-            // Обработка даты рождения ребенка
-            const childBirthDate = msg.text;
-            userStates.set(chatId, {
-                step: 'edit_profile',
-                currentStep: 'confirm',
-                data: { ...data, child_birth_date: childBirthDate }
-            });
-            await bot.sendMessage(chatId, `Вы уверены, что хотите изменить дату рождения ребенка на ${childBirthDate}?`);
-            break;
-        case 'confirm':
-            // Обработка подтверждения изменений
-            const confirm = msg.text;
-            if (confirm === 'Да') {
-                // Сохранение изменений
-                await saveChanges(bot, data);
-            } else {
-                userStates.set(chatId, {
-                    step: 'edit_profile',
-                    currentStep: 'select_field',
-                    data: { ...data }
-                });
-                await bot.sendMessage(chatId, 'Изменения отменены.');
+
+        case 'edit_name':
+            if (text.length < 5) {
+                return bot.sendMessage(chatId, 'ФИО должно содержать минимум 5 символов. Попробуйте еще раз:');
             }
-            break;
+            await updateClientField(state.clientId, 'full_name', text);
+            await showMainMenu(bot, chatId);
+            userStates.delete(chatId);
+            return bot.sendMessage(chatId, '✅ ФИО успешно обновлено!');
+
+        case 'edit_birth_date':
+            const birthDate = validateDate(text);
+            if (!birthDate) {
+                return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+            }
+            await updateClientField(state.clientId, 'birth_date', birthDate);
+            await showMainMenu(bot, chatId);
+            userStates.delete(chatId);
+            return bot.sendMessage(chatId, '✅ Дата рождения успешно обновлена!');
+
+        case 'edit_phone':
+            const phone = validatePhone(text);
+            if (!phone) {
+                return bot.sendMessage(chatId, 'Неверный формат номера телефона. Используйте формат +79999999999:');
+            }
+            await updateClientField(state.clientId, 'phone', phone);
+            await showMainMenu(bot, chatId);
+            userStates.delete(chatId);
+            return bot.sendMessage(chatId, '✅ Номер телефона успешно обновлен!');
+
+        case 'add_child_name':
+            if (text.length < 5) {
+                return bot.sendMessage(chatId, 'ФИО ребенка должно содержать минимум 5 символов. Попробуйте еще раз:');
+            }
+            state.data.child = { full_name: text };
+            state.currentStep = 'add_child_birth_date';
+            return bot.sendMessage(chatId, 'Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:');
+
+        case 'add_child_birth_date':
+            const childBirthDate = validateDate(text);
+            if (!childBirthDate) {
+                return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+            }
+            state.data.child.birth_date = childBirthDate;
+            await addChild(state.clientId, state.data.child);
+            await showMainMenu(bot, chatId);
+            userStates.delete(chatId);
+            return bot.sendMessage(chatId, '✅ Ребенок успешно добавлен!');
     }
 }
 
