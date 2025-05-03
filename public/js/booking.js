@@ -49,7 +49,6 @@ async function initializeForm() {
             throw new Error('Элементы simulator1Slots или simulator2Slots не найдены');
         }
         
-        await loadSimulators();
         setMinDate();
         
         // Устанавливаем начальное состояние чекбокса групповой тренировки
@@ -68,7 +67,6 @@ async function initializeForm() {
         updatePrice();
 
         // Добавляем обработчики событий
-        if (simulatorSelect) simulatorSelect.addEventListener('change', updateTimeSlots);
         if (trainingDateInput) {
             trainingDateInput.addEventListener('change', async () => {
                 await loadAvailableSlots();
@@ -84,23 +82,6 @@ async function initializeForm() {
     } catch (error) {
         console.error('Ошибка при инициализации формы:', error);
         showNotification('Ошибка при инициализации формы', 'error');
-    }
-}
-
-// Загрузка списка тренажеров
-async function loadSimulators() {
-    try {
-        const simulators = await apiRequest('/simulators');
-        simulatorSelect.innerHTML = '<option value="">Выберите тренажер</option>';
-        simulators.forEach(simulator => {
-            if (simulator.status === 'available') {
-                simulatorSelect.innerHTML += `
-                    <option value="${simulator.id}">${simulator.name}</option>
-                `;
-            }
-        });
-    } catch (error) {
-        showNotification('Ошибка при загрузке списка тренажеров', 'error');
     }
 }
 
