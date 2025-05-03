@@ -4,7 +4,7 @@
   "description": "Система управления горнолыжными тренажерами",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "nodemon src/app.js",
     "dev": "nodemon src/app.js --ignore '*.test.js'",
     "test": "echo \"Error: no test specified\" && exit 1",
     "init-db": "node src/scripts/initDb.js"
@@ -24,6 +24,6 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.1.10"
   }
 }

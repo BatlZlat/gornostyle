@@ -11,7 +11,6 @@ const simulatorSelect = document.getElementById('simulator');
 const dateInput = document.getElementById('training-date');
 const timeSelect = document.getElementById('time');
 const durationSelect = document.getElementById('duration');
-const trainerSelect = document.getElementById('trainer');
 const totalPriceSpan = document.getElementById('total-price');
 const bookingForm = document.getElementById('booking-form');
 const phoneInput = document.getElementById('phone');
@@ -51,7 +50,6 @@ async function initializeForm() {
         }
         
         await loadSimulators();
-        await loadTrainers();
         setMinDate();
         
         // Устанавливаем начальное состояние чекбокса групповой тренировки
@@ -80,7 +78,6 @@ async function initializeForm() {
             loadAvailableSlots();
             updatePrice();
         });
-        if (trainerSelect) trainerSelect.addEventListener('change', updatePrice);
         if (bookingForm) bookingForm.addEventListener('submit', handleBookingSubmit);
         
         console.log('Инициализация формы завершена успешно');
@@ -104,21 +101,6 @@ async function loadSimulators() {
         });
     } catch (error) {
         showNotification('Ошибка при загрузке списка тренажеров', 'error');
-    }
-}
-
-// Загрузка списка тренеров
-async function loadTrainers() {
-    try {
-        const trainers = await apiRequest('/users/role/trainer');
-        trainerSelect.innerHTML = '<option value="">Без тренера</option>';
-        trainers.forEach(trainer => {
-            trainerSelect.innerHTML += `
-                <option value="${trainer.id}">${trainer.name}</option>
-            `;
-        });
-    } catch (error) {
-        showNotification('Ошибка при загрузке списка тренеров', 'error');
     }
 }
 
@@ -468,9 +450,8 @@ async function updatePrice() {
             }
         }
         
-        const priceElement = document.getElementById('total-price');
-        if (priceElement) {
-            priceElement.textContent = `${price} ₽`;
+        if (trainingPriceSpan) {
+            trainingPriceSpan.textContent = price;
         }
     } catch (error) {
         console.error('Ошибка при обновлении цены:', error);
