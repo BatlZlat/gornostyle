@@ -53,12 +53,29 @@ async function initializeForm() {
         await loadSimulators();
         await loadTrainers();
         setMinDate();
+        
+        // Устанавливаем начальное состояние чекбокса групповой тренировки
+        if (groupTrainingCheckbox) {
+            groupTrainingCheckbox.checked = false;
+        }
+        
+        // Устанавливаем тренажер 1 выбранным по умолчанию
+        const simulator1Radio = document.querySelector('input[name="simulator"][value="1"]');
+        if (simulator1Radio) {
+            simulator1Radio.checked = true;
+        }
+        
+        // Загружаем слоты при инициализации
         await loadAvailableSlots();
         updatePrice();
 
         // Добавляем обработчики событий
         if (simulatorSelect) simulatorSelect.addEventListener('change', updateTimeSlots);
-        if (dateInput) dateInput.addEventListener('change', loadAvailableSlots);
+        if (trainingDateInput) {
+            trainingDateInput.addEventListener('change', async () => {
+                await loadAvailableSlots();
+            });
+        }
         if (durationSelect) durationSelect.addEventListener('change', () => {
             loadAvailableSlots();
             updatePrice();
@@ -315,11 +332,13 @@ async function loadAvailableSlots() {
                 throw new Error('Полученные данные не являются массивом');
             }
 
+            // Обновляем слоты для обоих тренажеров
+            const simulator1Schedule = schedule.filter(slot => slot.simulator_id === 1);
+            const simulator2Schedule = schedule.filter(slot => slot.simulator_id === 2);
+
             // Обновляем слоты для тренажера 1
             if (simulator1Slots) {
                 simulator1Slots.innerHTML = '<option value="">Выберите время</option>';
-                const simulator1Schedule = schedule.filter(slot => slot.simulator_id === 1);
-                
                 simulator1Schedule.forEach(slot => {
                     const isAvailable = !slot.is_holiday && !slot.is_booked;
                     simulator1Slots.innerHTML += `
@@ -335,8 +354,6 @@ async function loadAvailableSlots() {
             // Обновляем слоты для тренажера 2
             if (simulator2Slots) {
                 simulator2Slots.innerHTML = '<option value="">Выберите время</option>';
-                const simulator2Schedule = schedule.filter(slot => slot.simulator_id === 2);
-                
                 simulator2Schedule.forEach(slot => {
                     const isAvailable = !slot.is_holiday && !slot.is_booked;
                     simulator2Slots.innerHTML += `
@@ -347,16 +364,6 @@ async function loadAvailableSlots() {
                         </option>
                     `;
                 });
-            }
-        }
-
-        // Активируем select'ы только для выбранного тренажера
-        const selectedSimulator = document.querySelector('input[name="simulator"]:checked');
-        if (selectedSimulator) {
-            const simulatorId = selectedSimulator.value;
-            const selectedSlots = document.getElementById(`simulator${simulatorId}-slots`);
-            if (selectedSlots) {
-                selectedSlots.disabled = false;
             }
         }
 
@@ -531,11 +538,6 @@ withTrainerCheckbox.addEventListener('change', function() {
     updatePrice();
 });
 
-// Обработка изменения количества участников
-participantsSelect.addEventListener('change', function() {
-    updatePrice();
-});
-
 // Обработка изменения длительности
 durationSelect.addEventListener('change', function() {
     updatePrice();
@@ -544,19 +546,6 @@ durationSelect.addEventListener('change', function() {
 // Обработка выбора тренажера
 document.querySelectorAll('input[name="simulator"]').forEach(radio => {
     radio.addEventListener('change', function() {
-        const simulatorId = this.value;
-        
-        // Деактивируем оба select'а
-        if (simulator1Slots) simulator1Slots.disabled = true;
-        if (simulator2Slots) simulator2Slots.disabled = true;
-        
-        // Активируем выбранный select
-        const selectedSlots = document.getElementById(`simulator${simulatorId}-slots`);
-        if (selectedSlots) {
-            selectedSlots.disabled = false;
-        }
-        
-        // Загружаем доступные слоты
         loadAvailableSlots();
         updatePrice();
     });
