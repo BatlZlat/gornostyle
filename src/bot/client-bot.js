@@ -103,11 +103,27 @@ bot.onText(/\/start/, async (msg) => {
     const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
     const client = await getClientByTelegramId(telegramId);
     if (!client) {
+        await bot.sendMessage(chatId,
+            '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
+            '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
+            'Я помогу вам:\n' +
+            '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
+            '• ⛷ Забронировать занятия в Кулиге зимой\n' +
+            '• 💳 Управлять вашим балансом\n' +
+            '• 🎁 Приобрести подарочные сертификаты\n\n' +
+            '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
+            {
+                reply_markup: {
+                    keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
+                    resize_keyboard: true,
+                    one_time_keyboard: true
+                }
+            }
+        );
         userStates.set(chatId, {
-            step: 'full_name',
+            step: 'wait_start',
             data: { telegram_id: telegramId, username, nickname }
         });
-        await bot.sendMessage(chatId, '👋 Добро пожаловать! Введите ваше полное имя (ФИО):');
     } else {
         await bot.sendMessage(chatId, '🎿 *С возвращением!* Чем могу помочь?', { parse_mode: 'Markdown' });
         showMainMenu(chatId);
@@ -119,6 +135,10 @@ bot.on('message', async (msg) => {
     if (msg.text.startsWith('/')) return;
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
+    if (state && state.step === 'wait_start' && msg.text === '🚀 Запуск сервиса Ski-instruktor') {
+        state.step = 'full_name';
+        return bot.sendMessage(chatId, 'Введите ваше полное имя (ФИО):');
+    }
     if (state) {
         switch (state.step) {
             case 'full_name':
