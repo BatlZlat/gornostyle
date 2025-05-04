@@ -1,4 +1,6 @@
 const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
 const path = require('path');
 const { pool } = require('./db/index');
 const { setupBot } = require('./bot/admin-bot');
@@ -10,6 +12,10 @@ const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
 const pricesRouter = require('./routes/prices');
 const cron = require('node-cron');
+require('dotenv').config();
+
+// Импортируем бота
+require('./bot/client-bot.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,8 +30,9 @@ console.log('Загруженные маршруты:', {
 });
 
 // Настройка middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Маршруты API
