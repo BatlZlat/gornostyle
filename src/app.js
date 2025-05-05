@@ -12,6 +12,7 @@ const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
 const pricesRouter = require('./routes/prices');
 const cron = require('node-cron');
+const fs = require('fs');
 require('dotenv').config();
 
 // Импортируем бота
@@ -43,6 +44,38 @@ app.use('/api/groups', groupsRouter);
 app.use('/api/trainers', trainersRouter);
 app.use('/api/trainings', trainingsRouter);
 app.use('/api/prices', pricesRouter);
+
+// API для управления ссылкой оплаты
+app.get('/api/payment-link', (req, res) => {
+    const paymentLink = process.env.PAYMENT_LINK || '';
+    res.json({ link: paymentLink });
+});
+
+app.put('/api/payment-link', (req, res) => {
+    const { link } = req.body;
+    if (!link) {
+        return res.status(400).json({ error: 'Ссылка не может быть пустой' });
+    }
+
+    // Читаем текущий .env файл
+    const envPath = path.join(__dirname, '../.env');
+    let envContent = fs.readFileSync(envPath, 'utf8');
+
+    // Обновляем или добавляем PAYMENT_LINK
+    if (envContent.includes('PAYMENT_LINK=')) {
+        envContent = envContent.replace(/PAYMENT_LINK=.*/, `PAYMENT_LINK=${link}`);
+    } else {
+        envContent += `\nPAYMENT_LINK=${link}`;
+    }
+
+    // Записываем обновленный контент
+    fs.writeFileSync(envPath, envContent);
+
+    // Обновляем переменную окружения
+    process.env.PAYMENT_LINK = link;
+
+    res.json({ success: true });
+});
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;

@@ -209,7 +209,17 @@ bot.on('message', async (msg) => {
                     `📅 *Дата рождения:* ${new Date(client.birth_date).toLocaleDateString()}\n` +
                     `📱 *Телефон:* ${client.phone}\n` +
                     `👶 *Ребенок:* ${childInfo}`,
-                    { parse_mode: 'Markdown', reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } }
+                    { 
+                        parse_mode: 'Markdown', 
+                        reply_markup: { 
+                            keyboard: [
+                                ['➕ Добавить ребенка'],
+                                ['✏️ Редактировать данные'],
+                                ['🔙 Назад в меню']
+                            ], 
+                            resize_keyboard: true 
+                        } 
+                    }
                 );
             }
             break;
@@ -221,10 +231,53 @@ bot.on('message', async (msg) => {
                     '💰 *Информация о кошельке:*\n' +
                     `🔢 *Номер кошелька:* ${client.wallet_number}\n` +
                     `💵 *Баланс:* ${client.balance || 0} руб.`,
-                    { parse_mode: 'Markdown', reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } }
+                    { 
+                        parse_mode: 'Markdown', 
+                        reply_markup: { 
+                            keyboard: [
+                                ['💳 Пополнить кошелек'],
+                                ['🔙 Назад в меню']
+                            ], 
+                            resize_keyboard: true 
+                        } 
+                    }
                 );
             }
             break;
+        }
+        case '💳 Пополнить кошелек': {
+            const paymentLink = process.env.PAYMENT_LINK;
+            if (!paymentLink) {
+                return bot.sendMessage(chatId, 'Извините, в данный момент пополнение кошелька недоступно.');
+            }
+            return bot.sendMessage(chatId,
+                '💳 *Пополнение кошелька*\n\n' +
+                'Для пополнения кошелька перейдите по ссылке ниже:\n' +
+                `[Ссылка для оплаты](${paymentLink})\n\n` +
+                'После оплаты баланс будет автоматически обновлен.',
+                { 
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true,
+                    reply_markup: { 
+                        keyboard: [['🔙 Назад в меню']], 
+                        resize_keyboard: true 
+                    }
+                }
+            );
+        }
+        case '➕ Добавить ребенка': {
+            userStates.set(chatId, {
+                step: 'child_name',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId, 'Введите полное имя ребенка (ФИО):');
+        }
+        case '✏️ Редактировать данные': {
+            userStates.set(chatId, {
+                step: 'edit_full_name',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId, 'Введите новое полное имя (ФИО):');
         }
         case '🎁 Сертификаты':
             return bot.sendMessage(chatId, '🔄 Функция сертификатов в разработке.', { reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } });

@@ -206,8 +206,31 @@ function initializeEventListeners() {
     // Обработчики для страницы финансов
     const createPaymentLinkBtn = document.getElementById('create-payment-link');
     if (createPaymentLinkBtn) {
-        createPaymentLinkBtn.addEventListener('click', () => {
-            window.location.href = 'payment-link.html';
+        createPaymentLinkBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/payment-link');
+                const data = await response.json();
+                
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <h3>Управление ссылкой оплаты</h3>
+                        <div class="form-group">
+                            <label for="payment-link">Ссылка для оплаты:</label>
+                            <input type="text" id="payment-link" value="${data.link || ''}" class="form-control">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn-primary" onclick="savePaymentLink()">Сохранить</button>
+                            <button class="btn-secondary" onclick="closeModal(this.parentElement.parentElement.parentElement)">Отмена</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            } catch (error) {
+                console.error('Ошибка при загрузке ссылки оплаты:', error);
+                showError('Не удалось загрузить ссылку оплаты');
+            }
         });
     }
 
@@ -898,5 +921,29 @@ async function savePrices() {
     } catch (error) {
         console.error('Ошибка при сохранении прайса:', error);
         showError('Не удалось сохранить прайс');
+    }
+}
+
+// Функция сохранения ссылки оплаты
+async function savePaymentLink() {
+    const link = document.getElementById('payment-link').value;
+    try {
+        const response = await fetch('/api/payment-link', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ link })
+        });
+
+        if (response.ok) {
+            showSuccess('Ссылка оплаты успешно обновлена');
+            closeModal(document.querySelector('.modal'));
+        } else {
+            throw new Error('Ошибка при обновлении ссылки оплаты');
+        }
+    } catch (error) {
+        console.error('Ошибка при сохранении ссылки оплаты:', error);
+        showError('Не удалось сохранить ссылку оплаты');
     }
 } 
