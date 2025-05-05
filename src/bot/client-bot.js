@@ -102,6 +102,10 @@ bot.onText(/\/start/, async (msg) => {
     const username = msg.from.username || '';
     const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
     const client = await getClientByTelegramId(telegramId);
+    
+    // Очищаем предыдущее состояние
+    userStates.delete(chatId);
+    
     if (!client) {
         await bot.sendMessage(chatId,
             '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
@@ -179,11 +183,52 @@ bot.on('message', async (msg) => {
                 state.step = 'child_birth_date';
                 return bot.sendMessage(chatId, 'Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:');
             case 'child_birth_date':
-                const childBirthDate = validateDate(msg.text);
-                if (!childBirthDate) return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
-                state.data.child.birth_date = childBirthDate;
+                const registrationChildBirthDate = validateDate(msg.text);
+                if (!registrationChildBirthDate) return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+                state.data.child.birth_date = registrationChildBirthDate;
                 await finishRegistration(chatId, state.data);
                 return;
+            case 'edit_full_name':
+                if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя должно содержать минимум 5 символов. Попробуйте еще раз:');
+                try {
+                    await pool.query('UPDATE clients SET full_name = $1 WHERE telegram_id = $2', [msg.text, state.data.telegram_id]);
+                    await bot.sendMessage(chatId, '✅ ФИО успешно обновлено!');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } catch (e) {
+                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
+                }
+            case 'edit_phone':
+                const newPhone = validatePhone(msg.text);
+                if (!newPhone) return bot.sendMessage(chatId, 'Неверный формат номера телефона. Используйте формат +79999999999:');
+                try {
+                    await pool.query('UPDATE clients SET phone = $1 WHERE telegram_id = $2', [newPhone, state.data.telegram_id]);
+                    await bot.sendMessage(chatId, '✅ Номер телефона успешно обновлен!');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } catch (e) {
+                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
+                }
+            case 'add_child_name':
+                if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:');
+                state.data.child_name = msg.text;
+                state.step = 'add_child_birth_date';
+                return bot.sendMessage(chatId, 'Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:');
+            case 'add_child_birth_date':
+                const newChildBirthDate = validateDate(msg.text);
+                if (!newChildBirthDate) return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+                try {
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    await pool.query(
+                        'INSERT INTO children (parent_id, full_name, birth_date) VALUES ($1, $2, $3)',
+                        [client.id, state.data.child_name, newChildBirthDate]
+                    );
+                    await bot.sendMessage(chatId, '✅ Ребенок успешно добавлен!');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } catch (e) {
+                    return bot.sendMessage(chatId, '❌ Произошла ошибка при добавлении ребенка. Попробуйте позже.');
+                }
         }
         return;
     }
@@ -247,14 +292,25 @@ bot.on('message', async (msg) => {
         }
         case '💳 Пополнить кошелек': {
             const paymentLink = process.env.PAYMENT_LINK;
+            const adminPhone = process.env.ADMIN_PHONE || '+79123924956';
             if (!paymentLink) {
                 return bot.sendMessage(chatId, 'Извините, в данный момент пополнение кошелька недоступно.');
             }
+            const client = await getClientByTelegramId(msg.from.id.toString());
+            if (!client) {
+                return bot.sendMessage(chatId, 'Пожалуйста, сначала зарегистрируйтесь в системе.');
+            }
             return bot.sendMessage(chatId,
-                '💳 *Пополнение кошелька*\n\n' +
-                'Для пополнения кошелька перейдите по ссылке ниже:\n' +
-                `[Ссылка для оплаты](${paymentLink})\n\n` +
-                'После оплаты баланс будет автоматически обновлен.',
+                '✨ *Пополняйте баланс легко и быстро всего в 1 клик!*\n\n' +
+                '*Вот как это работает:*\n' +
+                '1️⃣ Нажмите на ссылку ниже\n' +
+                '2️⃣ Укажите в комментарии номер вашего кошелька\n' +
+                `💎 *КОШЕЛЕК:* \`${client.wallet_number}\`\n\n` +
+                '3️⃣ В течение 15 минут баланс будет пополнен\n\n' +
+                `👉 [Пополнить баланс](${paymentLink}) 👈\n\n` +
+                '⚡ Ваши деньги прилетят к нам в течении 15 минут!\n\n' +
+                '💫 Горнолыжные приключения ждут вас! ⛷️✨\n\n' +
+                `*P.S.* Нужна помощь? Свяжитесь с администратором ${adminPhone}! 😊`,
                 { 
                     parse_mode: 'Markdown',
                     disable_web_page_preview: true,
@@ -267,17 +323,37 @@ bot.on('message', async (msg) => {
         }
         case '➕ Добавить ребенка': {
             userStates.set(chatId, {
-                step: 'child_name',
+                step: 'add_child_name',
                 data: { telegram_id: msg.from.id.toString() }
             });
             return bot.sendMessage(chatId, 'Введите полное имя ребенка (ФИО):');
         }
         case '✏️ Редактировать данные': {
+            return bot.sendMessage(chatId, 'Выберите, что хотите отредактировать:', {
+                reply_markup: {
+                    keyboard: [
+                        ['📝 Редактировать ФИО'],
+                        ['📱 Редактировать телефон'],
+                        ['➕ Добавить ребенка'],
+                        ['🔙 Назад в меню']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        }
+        case '📝 Редактировать ФИО': {
             userStates.set(chatId, {
                 step: 'edit_full_name',
                 data: { telegram_id: msg.from.id.toString() }
             });
             return bot.sendMessage(chatId, 'Введите новое полное имя (ФИО):');
+        }
+        case '📱 Редактировать телефон': {
+            userStates.set(chatId, {
+                step: 'edit_phone',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId, 'Введите новый номер телефона в формате +79999999999:');
         }
         case '🎁 Сертификаты':
             return bot.sendMessage(chatId, '🔄 Функция сертификатов в разработке.', { reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } });
