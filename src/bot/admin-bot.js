@@ -2,8 +2,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const { pool } = require('../db');
 
 // Конфигурация бота
-const BOT_TOKEN = '7406253231:AAGElwJIVE2pGFSusWuXvqs6gBunAEdcDLI';
-const ADMIN_ID = 546668421;
+const BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+const ADMIN_ID = process.env.ADMIN_TELEGRAM_ID || 546668421;
 
 // Инициализация бота
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -11,7 +11,7 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 // Обработка команды /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    if (chatId === ADMIN_ID) {
+    if (chatId === parseInt(ADMIN_ID)) {
         bot.sendMessage(chatId, 
             'Добро пожаловать в панель управления!\n\n' +
             'Я буду информировать вас о важных событиях в системе:\n' +
