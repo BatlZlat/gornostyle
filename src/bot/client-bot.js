@@ -262,27 +262,83 @@ bot.on('message', async (msg) => {
                 state.data.child.birth_date = registrationChildBirthDate;
                 await finishRegistration(chatId, state.data);
                 return;
-            case 'edit_full_name':
-                if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя должно содержать минимум 5 символов. Попробуйте еще раз:');
+            case 'edit_full_name': {
+                if (msg.text.length < 5) {
+                    return bot.sendMessage(chatId,
+                        '❌ Имя должно содержать минимум 5 символов. Попробуйте еще раз:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
                 try {
-                    await pool.query('UPDATE clients SET full_name = $1 WHERE telegram_id = $2', [msg.text, state.data.telegram_id]);
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    await pool.query(
+                        'UPDATE clients SET full_name = $1 WHERE id = $2',
+                        [msg.text, client.id]
+                    );
                     await bot.sendMessage(chatId, '✅ ФИО успешно обновлено!');
                     userStates.delete(chatId);
                     return showMainMenu(chatId);
                 } catch (e) {
                     return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
                 }
-            case 'edit_phone':
-                const newPhone = validatePhone(msg.text);
-                if (!newPhone) return bot.sendMessage(chatId, 'Неверный формат номера телефона. Используйте формат +79999999999:');
+            }
+            case 'edit_phone': {
+                const phone = validatePhone(msg.text);
+                if (!phone) {
+                    return bot.sendMessage(chatId,
+                        '❌ Неверный формат номера телефона. Используйте формат +79999999999:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
                 try {
-                    await pool.query('UPDATE clients SET phone = $1 WHERE telegram_id = $2', [newPhone, state.data.telegram_id]);
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    await pool.query(
+                        'UPDATE clients SET phone = $1 WHERE id = $2',
+                        [phone, client.id]
+                    );
                     await bot.sendMessage(chatId, '✅ Номер телефона успешно обновлен!');
                     userStates.delete(chatId);
                     return showMainMenu(chatId);
                 } catch (e) {
                     return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
                 }
+            }
+            case 'edit_birth_date': {
+                const birthDate = validateDate(msg.text);
+                if (!birthDate) {
+                    return bot.sendMessage(chatId,
+                        '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                try {
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    await pool.query(
+                        'UPDATE clients SET birth_date = $1 WHERE id = $2',
+                        [birthDate, client.id]
+                    );
+                    await bot.sendMessage(chatId, '✅ Дата рождения успешно обновлена!');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } catch (e) {
+                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
+                }
+            }
             case 'add_child_name':
                 if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:');
                 state.data.child_name = msg.text;
@@ -571,7 +627,7 @@ bot.on('message', async (msg) => {
                         message += `💰 Цена: ${training.price} руб.\n\n`;
                     });
                 }
-
+                message += '*Вы всегда можете записаться не только групповую тренировку, но и на индивидуальную.*\n\n';
                 message += 'Выберите действие:';
                 
                 return bot.sendMessage(chatId, message, {
@@ -717,6 +773,93 @@ bot.on('message', async (msg) => {
                     reply_markup: { 
                         keyboard: [['🔙 Назад в меню']], 
                         resize_keyboard: true 
+                    }
+                }
+            );
+        }
+        case '➕ Добавить ребенка': {
+            userStates.set(chatId, {
+                step: 'add_child_name',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId,
+                '👶 *Введите полное имя ребенка (ФИО):*',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case '✏️ Редактировать данные': {
+            userStates.set(chatId, {
+                step: 'edit_data',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId,
+                '✏️ *Что вы хотите изменить?*\n\n' +
+                '1. ФИО\n' +
+                '2. Телефон\n' +
+                '3. Дата рождения',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['1. ФИО', '2. Телефон'],
+                            ['3. Дата рождения'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case '1. ФИО': {
+            userStates.set(chatId, {
+                step: 'edit_full_name',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId,
+                '📝 *Введите новое ФИО:*',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case '2. Телефон': {
+            userStates.set(chatId, {
+                step: 'edit_phone',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId,
+                '📱 *Введите новый номер телефона в формате +79999999999:*',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case '3. Дата рождения': {
+            userStates.set(chatId, {
+                step: 'edit_birth_date',
+                data: { telegram_id: msg.from.id.toString() }
+            });
+            return bot.sendMessage(chatId,
+                '📅 *Введите новую дату рождения в формате ДД.ММ.ГГГГ:*',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
                     }
                 }
             );
