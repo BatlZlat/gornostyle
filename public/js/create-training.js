@@ -5,14 +5,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const timeSlotSelect = document.getElementById('timeSlot');
     const trainerSelect = document.getElementById('trainer');
     const groupSelect = document.getElementById('group');
-    const maxParticipantsInput = document.getElementById('maxParticipants');
+    const maxParticipantsSelect = document.getElementById('maxParticipants');
+    const priceField = document.getElementById('trainingPrice');
+    const skillLevelInput = document.getElementById('skillLevel');
 
-    // Загрузка тренажеров
+    // --- Заполняем select для участников ---
+    if (maxParticipantsSelect) {
+        maxParticipantsSelect.innerHTML = '';
+        for (let i = 2; i <= 6; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = i;
+            if (i === 4) opt.selected = true;
+            maxParticipantsSelect.appendChild(opt);
+        }
+    }
+
+    // --- Группа обязательна ---
+    groupSelect.required = true;
+
+    // --- Загрузка тренажеров ---
     async function loadSimulators() {
         try {
             const response = await fetch('/api/simulators');
             const simulators = await response.json();
-            
             simulatorSelect.innerHTML = '<option value="">Выберите тренажер</option>';
             simulators.forEach(simulator => {
                 const option = document.createElement('option');
@@ -25,39 +41,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 simulatorSelect.appendChild(option);
             });
         } catch (error) {
-            console.error('Ошибка при загрузке тренажеров:', error);
             showError('Не удалось загрузить список тренажеров');
         }
     }
 
-    // Загрузка тренеров
+    // --- Загрузка тренеров ---
     async function loadTrainers() {
         try {
             const response = await fetch('/api/trainers');
             const trainers = await response.json();
-            
-            trainerSelect.innerHTML = '<option value="">Выберите тренера</option>';
-            trainers
-                .filter(trainer => trainer.is_active)
-                .forEach(trainer => {
-                    const option = document.createElement('option');
-                    option.value = trainer.id;
-                    option.textContent = `${trainer.full_name} (${trainer.sport_type})`;
-                    trainerSelect.appendChild(option);
-                });
+            trainerSelect.innerHTML = '<option value="">Без тренера</option>';
+            trainers.filter(tr => tr.is_active).forEach(trainer => {
+                const option = document.createElement('option');
+                option.value = trainer.id;
+                option.textContent = `${trainer.full_name} (${trainer.sport_type})`;
+                trainerSelect.appendChild(option);
+            });
         } catch (error) {
-            console.error('Ошибка при загрузке тренеров:', error);
             showError('Не удалось загрузить список тренеров');
         }
     }
 
-    // Загрузка групп
+    // --- Загрузка групп ---
     async function loadGroups() {
         try {
             const response = await fetch('/api/groups');
             const groups = await response.json();
-            
-            groupSelect.innerHTML = '<option value="">Выберите группу (необязательно)</option>';
+            groupSelect.innerHTML = '<option value="">Выберите группу</option>';
             groups.forEach(group => {
                 const option = document.createElement('option');
                 option.value = group.id;
@@ -65,30 +75,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 groupSelect.appendChild(option);
             });
         } catch (error) {
-            console.error('Ошибка при загрузке групп:', error);
             showError('Не удалось загрузить список групп');
         }
     }
 
-    // Загрузка временных слотов
+    // --- Загрузка временных слотов ---
     async function loadTimeSlots() {
         const simulatorId = simulatorSelect.value;
         const date = dateInput.value;
-
         if (!simulatorId || !date) {
             timeSlotSelect.innerHTML = '<option value="">Сначала выберите тренажер и дату</option>';
             return;
         }
-
         try {
             const response = await fetch(`/api/schedule?date=${date}&simulator_id=${simulatorId}`);
             const slots = await response.json();
-            
             if (!slots || slots.length === 0) {
                 timeSlotSelect.innerHTML = '<option value="">Нет доступных временных слотов</option>';
                 return;
             }
-
             timeSlotSelect.innerHTML = '<option value="">Выберите время</option>';
             slots.forEach(slot => {
                 const option = document.createElement('option');
@@ -96,55 +101,75 @@ document.addEventListener('DOMContentLoaded', function() {
                 option.textContent = formatTime(slot.start_time);
                 if (slot.is_booked || slot.is_holiday) {
                     option.disabled = true;
+                    option.style.color = '#aaa';
                     option.textContent += slot.is_booked ? ' (занято)' : ' (выходной)';
                 }
                 timeSlotSelect.appendChild(option);
             });
         } catch (error) {
-            console.error('Ошибка при загрузке временных слотов:', error);
             showError('Не удалось загрузить временные слоты');
         }
     }
 
-    // Форматирование времени
+    // --- Форматирование времени ---
     function formatTime(timeString) {
         if (!timeString) return '';
         const [hours, minutes] = timeString.split(':');
         return `${hours}:${minutes}`;
     }
 
-    // Обработка изменения группы
-    groupSelect.addEventListener('change', function() {
-        // Если выбрана группа, устанавливаем training_type в true
-        if (this.value) {
-            maxParticipantsInput.min = 2;
-            maxParticipantsInput.value = Math.max(2, maxParticipantsInput.value);
-        } else {
-            maxParticipantsInput.min = 1;
-            maxParticipantsInput.value = Math.max(1, maxParticipantsInput.value);
+    // --- Пересчет цены ---
+    async function recalcPrice() {
+        if (!priceField) return;
+        const withTrainer = !!trainerSelect.value;
+        const participants = Number(maxParticipantsSelect.value);
+        try {
+            const response = await fetch('/api/prices');
+            const prices = await response.json();
+            const found = Object.values(prices).find(p =>
+                p.type === 'group' &&
+                p.with_trainer === withTrainer &&
+                p.participants === participants &&
+                p.duration === 60
+            );
+            if (found) {
+                priceField.textContent = `Стоимость: ${found.price} ₽`;
+                priceField.dataset.price = found.price;
+            } else {
+                priceField.textContent = 'Нет цены для выбранных параметров';
+                priceField.dataset.price = '';
+            }
+        } catch (e) {
+            priceField.textContent = 'Ошибка загрузки цены';
+            priceField.dataset.price = '';
         }
-    });
+    }
 
-    // Обработчики событий
+    trainerSelect.addEventListener('change', recalcPrice);
+    maxParticipantsSelect.addEventListener('change', recalcPrice);
+
     simulatorSelect.addEventListener('change', loadTimeSlots);
     dateInput.addEventListener('change', loadTimeSlots);
 
-    // Обработка отправки формы
+    // --- Отправка формы ---
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
-
         const formData = new FormData(form);
+        const withTrainer = !!formData.get('trainer_id');
+        const price = Number(priceField.dataset.price) || 0;
         const data = {
             simulator_id: formData.get('simulator_id'),
-            trainer_id: formData.get('trainer_id'),
-            group_id: formData.get('group_id') || null,
+            trainer_id: formData.get('trainer_id') || null,
+            group_id: formData.get('group_id'),
             date: formData.get('date'),
             time_slot_id: formData.get('time_slot_id'),
             skill_level: formData.get('skill_level') || null,
             max_participants: formData.get('max_participants'),
-            training_type: !!formData.get('group_id') // true если выбрана группа, false если нет
+            training_type: true,
+            with_trainer: withTrainer,
+            price: price,
+            duration: 60
         };
-
         try {
             const response = await fetch('/api/trainings', {
                 method: 'POST',
@@ -153,24 +178,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify(data)
             });
-
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || 'Ошибка при создании тренировки');
             }
-
-            const result = await response.json();
             showSuccess('Тренировка успешно создана');
             setTimeout(() => {
                 window.location.href = 'admin.html';
             }, 2000);
         } catch (error) {
-            console.error('Ошибка при создании тренировки:', error);
             showError(error.message);
         }
     });
 
-    // Функция отображения ошибок
+    // --- Функции отображения ошибок и успеха ---
     function showError(message) {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'alert alert-danger';
@@ -178,8 +199,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('.form-container').insertBefore(errorDiv, document.querySelector('.form-actions'));
         setTimeout(() => errorDiv.remove(), 3000);
     }
-
-    // Функция отображения успешного сообщения
     function showSuccess(message) {
         const successDiv = document.createElement('div');
         successDiv.className = 'alert alert-success';
@@ -187,8 +206,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('.form-container').insertBefore(successDiv, document.querySelector('.form-actions'));
     }
 
-    // Инициализация
+    // --- Инициализация ---
     loadSimulators();
     loadTrainers();
     loadGroups();
+    recalcPrice();
 }); 

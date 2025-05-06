@@ -45,8 +45,8 @@
 
                         <div class="form-group">
                             <label for="group">Группа:</label>
-                            <select id="group" name="group_id">
-                                <option value="">Выберите группу (необязательно)</option>
+                            <select id="group" name="group_id" required>
+                                <option value="">Выберите группу</option>
                             </select>
                         </div>
 
@@ -64,7 +64,11 @@
 
                         <div class="form-group">
                             <label for="maxParticipants">Максимальное количество участников:</label>
-                            <input type="number" id="maxParticipants" name="max_participants" min="1" max="10" value="1" required>
+                            <select id="maxParticipants" name="max_participants" required></select>
+                        </div>
+
+                        <div class="form-group">
+                            <span id="trainingPrice"></span>
                         </div>
 
                         <div class="form-actions">

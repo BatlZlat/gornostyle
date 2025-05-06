@@ -14,7 +14,8 @@ router.post('/', async (req, res) => {
         trainer_id,
         max_participants,
         training_type,          // переименовано с is_group_session
-        group_id               // добавляем group_id
+        group_id,               // добавляем group_id
+        price                   // теперь берем из запроса
     } = req.body;
 
     const client = await pool.connect();
@@ -31,7 +32,19 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Временной слот не найден' });
         }
 
-        const { start_time, end_time } = timeSlotResult.rows[0];
+        let { start_time, end_time } = timeSlotResult.rows[0];
+
+        // Проверяем длительность слота
+        const [sh, sm, ss] = start_time.split(':').map(Number);
+        const [eh, em, es] = end_time.split(':').map(Number);
+        const startDate = new Date(2000, 0, 1, sh, sm, ss || 0);
+        const endDate = new Date(2000, 0, 1, eh, em, es || 0);
+        let diff = (endDate - startDate) / 60000;
+        if (diff < 59) {
+            // Если слот короче 60 минут, вычисляем end_time = start_time + 60 минут
+            const newEnd = new Date(startDate.getTime() + 60 * 60000);
+            end_time = newEnd.toTimeString().slice(0, 5) + ':00';
+        }
 
         // Для групповой тренировки проверяем, что выбран следующий слот
         if (training_type) {
@@ -64,6 +77,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Тренажер уже занят в это время' });
         }
 
+        // Логируем итоговые значения
+        console.log('Вставляем в training_sessions:', {
+            simulator_id,
+            trainer_id,
+            group_id,
+            date,
+            start_time,
+            end_time,
+            duration: 60,
+            training_type,
+            max_participants: max_participants || 1,
+            skill_level: skill_level || 1,
+            price,
+            equipment_type: 'ski'
+        });
+
         // Создаем тренировку
         const result = await client.query(
             `INSERT INTO training_sessions (
@@ -80,12 +109,12 @@ router.post('/', async (req, res) => {
                 date,
                 start_time,
                 end_time,
-                training_type ? 60 : 30, // 60 минут для групповой, 30 для индивидуальной
+                60, // всегда 60 минут
                 training_type,
                 max_participants || 1,
                 skill_level || 1,
-                0, // price по умолчанию
-                'ski' // equipment_type по умолчанию
+                price || 0,
+                'ski'
             ]
         );
 
@@ -192,6 +221,64 @@ router.get('/', async (req, res) => {
 
     // Если не передано ни date, ни date_from/date_to
     return res.status(400).json({ error: 'Необходимо указать дату или диапазон дат' });
+});
+
+// Получение одной тренировки по id
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT ts.*, g.name as group_name, g.description as group_description
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            WHERE ts.id = $1
+        `, [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка при получении тренировки по id:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
+// Обновление тренировки по id
+router.put('/:id', async (req, res) => {
+    const { id } = req.params;
+    const {
+        start_time,
+        end_time,
+        group_name, // не обновляем в таблице, только для отображения
+        trainer_name, // не обновляем в таблице, только для отображения
+        simulator_id,
+        max_participants,
+        skill_level,
+        price
+    } = req.body;
+    try {
+        // Обновляем только основные поля
+        const result = await pool.query(
+            `UPDATE training_sessions SET
+                start_time = $1,
+                end_time = $2,
+                simulator_id = $3,
+                max_participants = $4,
+                skill_level = $5,
+                price = $6,
+                updated_at = NOW()
+            WHERE id = $7
+            RETURNING *`,
+            [start_time, end_time, simulator_id, max_participants, skill_level, price, id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+        res.json({ message: 'Тренировка обновлена', training: result.rows[0] });
+    } catch (error) {
+        console.error('Ошибка при обновлении тренировки:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
 });
 
 module.exports = router; 
