@@ -300,31 +300,70 @@ async function loadPageContent(page) {
 // Загрузка тренировок
 async function loadTrainings() {
     try {
-        const response = await fetch('/api/trainings');
-        const trainings = await response.json();
+        // Получаем текущую дату в формате YYYY-MM-DD
+        const today = new Date().toISOString().split('T')[0];
         
+        const response = await fetch(`/api/trainings?date=${today}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Полученные данные:', data); // Для отладки
+        
+        // Проверяем, что data существует и является массивом
+        if (!data || !Array.isArray(data)) {
+            console.error('Получены некорректные данные:', data);
+            throw new Error('Получены некорректные данные от сервера');
+        }
+
         const trainingList = document.querySelector('.training-list');
-        if (trainingList) {
-            trainingList.innerHTML = trainings.map(training => `
+        if (!trainingList) {
+            console.error('Элемент .training-list не найден на странице');
+            return;
+        }
+
+        if (data.length === 0) {
+            trainingList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок</div>';
+            return;
+        }
+
+        // Формируем HTML
+        let html = '';
+        data.forEach(training => {
+            html += `
                 <div class="training-item">
                     <div class="training-info">
-                        <h3>${training.name}</h3>
-                        <p>Дата: ${formatDate(training.date)}</p>
-                        <p>Время: ${training.start_time} - ${training.end_time}</p>
-                        <p>Тренер: ${training.trainer_name}</p>
-                        <p>Участники: ${training.participants_count}/${training.max_participants}</p>
+                        <div class="time">${training.start_time} - ${training.end_time}</div>
+                        <div class="details">
+                            <span>Группа: ${training.group_name || 'Не указана'}</span>
+                            <span>Тренер: ${training.trainer_name || 'Не указан'}</span>
+                            <span>Тренажер: ${training.simulator_id}</span>
+                            <span>Участников: ${training.max_participants}</span>
+                            <span>Уровень: ${training.skill_level}</span>
+                            <span>Цена: ${training.price} ₽</span>
+                        </div>
                     </div>
                     <div class="training-actions">
-                        <button class="btn-secondary" onclick="viewTraining(${training.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editTraining(${training.id})">Редактировать</button>
-                        <button class="btn-danger" onclick="deleteTraining(${training.id})">Удалить</button>
+                        <button class="btn-secondary" onclick="editTraining(${training.id})">
+                            Редактировать тренировку
+                        </button>
                     </div>
                 </div>
-            `).join('');
-        }
+            `;
+        });
+
+        trainingList.innerHTML = html;
     } catch (error) {
         console.error('Ошибка при загрузке тренировок:', error);
-        showError('Не удалось загрузить тренировки');
+        const trainingList = document.querySelector('.training-list');
+        if (trainingList) {
+            trainingList.innerHTML = `
+                <div class="alert alert-danger">
+                    Ошибка при загрузке тренировок: ${error.message}
+                </div>
+            `;
+        }
     }
 }
 
