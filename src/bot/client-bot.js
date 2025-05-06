@@ -1,6 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
+const { notifyNewTrainingRequest } = require('./admin-bot');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -139,6 +140,79 @@ bot.on('message', async (msg) => {
     if (msg.text.startsWith('/')) return;
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
+
+    // Обработка кнопок "Назад"
+    if (msg.text === '🔙 Назад') {
+        if (state) {
+            // Возвращаемся на предыдущий шаг
+            switch (state.step) {
+                case 'training_frequency':
+                    state.step = 'has_group';
+                    return bot.sendMessage(chatId,
+                        '👥 *У вас есть своя компания и вы хотите все вместе приехать?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Да', 'Нет'], ['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                case 'sport_type':
+                    state.step = 'training_frequency';
+                    return bot.sendMessage(chatId,
+                        '🔄 *Как часто вы хотите тренироваться?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Регулярно', 'Разово'], ['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                case 'skill_level':
+                    state.step = 'sport_type';
+                    return bot.sendMessage(chatId,
+                        '🏂 *На чем планируете кататься?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Лыжи', 'Сноуборд'], ['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                case 'preferred_date':
+                    state.step = 'skill_level';
+                    return bot.sendMessage(chatId, '📊 *Ваш уровень катания от 0 до 10:*', {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    });
+                case 'preferred_time':
+                    state.step = 'preferred_date';
+                    return bot.sendMessage(chatId,
+                        '📅 *Предложите удобную для вас дату в формате ДД.ММ.ГГГГ:*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+            }
+        }
+        return showMainMenu(chatId);
+    }
+
+    if (msg.text === '🔙 Назад в меню') {
+        userStates.delete(chatId);
+        return showMainMenu(chatId);
+    }
+
     if (state && state.step === 'wait_start' && msg.text === '🚀 Запуск сервиса Ski-instruktor') {
         state.step = 'full_name';
         return bot.sendMessage(chatId, 'Введите ваше полное имя (ФИО):');
@@ -233,7 +307,16 @@ bot.on('message', async (msg) => {
                 if (msg.text === 'Да') {
                     state.data.has_group = true;
                     state.step = 'group_size';
-                    return bot.sendMessage(chatId, '👥 Сколько вас человек?');
+                    return bot.sendMessage(chatId,
+                        '👥 *Сколько вас человек?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 } else {
                     state.data.has_group = false;
                     state.step = 'training_frequency';
@@ -242,7 +325,7 @@ bot.on('message', async (msg) => {
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [['Регулярно', 'Разово']],
+                                keyboard: [['Регулярно', 'Разово'], ['🔙 Назад']],
                                 resize_keyboard: true
                             }
                         }
@@ -258,7 +341,7 @@ bot.on('message', async (msg) => {
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [['Для себя', 'Для ребенка']],
+                                keyboard: [['Для себя', 'Для ребенка'], ['🔙 Назад']],
                                 resize_keyboard: true
                             }
                         }
@@ -270,7 +353,7 @@ bot.on('message', async (msg) => {
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [['Лыжи', 'Сноуборд']],
+                                keyboard: [['Лыжи', 'Сноуборд'], ['🔙 Назад']],
                                 resize_keyboard: true
                             }
                         }
@@ -278,7 +361,15 @@ bot.on('message', async (msg) => {
                 }
             case 'group_size':
                 if (!/^\d+$/.test(msg.text)) {
-                    return bot.sendMessage(chatId, 'Пожалуйста, введите число.');
+                    return bot.sendMessage(chatId,
+                        'Пожалуйста, введите число.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
                 state.data.group_size = parseInt(msg.text);
                 state.step = 'training_frequency';
@@ -287,7 +378,7 @@ bot.on('message', async (msg) => {
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [['Регулярно', 'Разово']],
+                            keyboard: [['Регулярно', 'Разово'], ['🔙 Назад']],
                             resize_keyboard: true
                         }
                     }
@@ -300,7 +391,7 @@ bot.on('message', async (msg) => {
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [['Лыжи', 'Сноуборд']],
+                            keyboard: [['Лыжи', 'Сноуборд'], ['🔙 Назад']],
                             resize_keyboard: true
                         }
                     }
@@ -308,23 +399,66 @@ bot.on('message', async (msg) => {
             case 'sport_type':
                 state.data.sport_type = msg.text;
                 state.step = 'skill_level';
-                return bot.sendMessage(chatId, '📊 *Ваш уровень катания от 0 до 10:*');
+                return bot.sendMessage(chatId,
+                    '📊 *Ваш уровень катания от 0 до 10:*',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
             case 'skill_level':
                 const level = parseInt(msg.text);
                 if (isNaN(level) || level < 0 || level > 10) {
-                    return bot.sendMessage(chatId, 'Пожалуйста, введите число от 0 до 10.');
+                    return bot.sendMessage(chatId,
+                        'Пожалуйста, введите число от 0 до 10.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
                 state.data.skill_level = level;
                 state.step = 'preferred_date';
-                return bot.sendMessage(chatId, '📅 *Предложите удобную для вас дату в формате ДД.ММ.ГГГГ:*');
+                return bot.sendMessage(chatId,
+                    '📅 *Предложите удобную для вас дату в формате ДД.ММ.ГГГГ:*',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
             case 'preferred_date':
                 const date = validateDate(msg.text);
                 if (!date) {
-                    return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+                    return bot.sendMessage(chatId,
+                        'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
                 state.data.preferred_date = date;
                 state.step = 'preferred_time';
-                return bot.sendMessage(chatId, '⏰ *Предложите удобное для вас время в формате ЧЧ:ММ:*');
+                return bot.sendMessage(chatId,
+                    '⏰ *Предложите удобное для вас время в формате ЧЧ:ММ:*',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
             case 'preferred_time':
                 if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(msg.text)) {
                     return bot.sendMessage(chatId, 'Неверный формат времени. Используйте формат ЧЧ:ММ:');
@@ -352,20 +486,19 @@ bot.on('message', async (msg) => {
                     );
 
                     // Отправляем уведомление администратору
-                    const adminMessage = 
-                        '📝 *Новое предложение тренировки*\n\n' +
-                        `👤 *ФИО:* ${client.full_name}\n` +
-                        `📱 *Телефон:* ${client.phone}\n` +
-                        (state.data.group_size ? 
-                            `👥 *Готовая группа:* ${state.data.group_size} человек\n` :
-                            `👥 *Ищет группу:* ${state.data.training_for}\n`) +
-                        `🔄 *Частота:* ${state.data.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n` +
-                        `🏂 *Тип:* ${state.data.sport_type}\n` +
-                        `📊 *Уровень:* ${state.data.skill_level}/10\n` +
-                        `📅 *Дата:* ${new Date(state.data.preferred_date).toLocaleDateString('ru-RU')}\n` +
-                        `⏰ *Время:* ${state.data.preferred_time}`;
-
-                    await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, adminMessage, { parse_mode: 'Markdown' });
+                    await notifyNewTrainingRequest({
+                        id: result.rows[0].id,
+                        client_name: client.full_name,
+                        client_phone: client.phone,
+                        has_group: state.data.has_group,
+                        group_size: state.data.group_size,
+                        training_for: state.data.training_for,
+                        training_frequency: state.data.training_frequency,
+                        sport_type: state.data.sport_type,
+                        skill_level: state.data.skill_level,
+                        preferred_date: new Date(state.data.preferred_date).toLocaleDateString('ru-RU'),
+                        preferred_time: state.data.preferred_time
+                    });
 
                     await bot.sendMessage(chatId,
                         '✅ *Спасибо за ваше предложение!*\n\n' +
@@ -391,8 +524,8 @@ bot.on('message', async (msg) => {
     switch (msg.text) {
         case '📝 Записаться на тренировку': {
             return bot.sendMessage(chatId,
-                '🎿 *Выберите тип тренировки:*\n\n' +
-                '1️⃣ *Горнолыжный тренажер Горностайл72*\n' +
+                '🎿 *Выберите тип тренировки:*\n\n\n' +
+                '1️⃣ *Горнолыжный тренажер Горностайл72*\n\n' +
                 '2️⃣ *Кулига. Естественный склон* (только зимой)\n\n' +
                 'Выберите вариант:',
                 {
@@ -428,6 +561,7 @@ bot.on('message', async (msg) => {
                 
                 if (result.rows.length === 0) {
                     message += 'На ближайшие 2 недели групповых тренировок не запланировано.\n\n';
+                    message += '*ВЫ ВСЕГДА МОЖЕТЕ ЗАПИСАТЬСЯ НА ИНДИВИДУАЛЬНУЮ ТРЕНИРОВКУ.*\n\n';
                 } else {
                     result.rows.forEach(training => {
                         const date = new Date(training.session_date).toLocaleDateString('ru-RU');
@@ -444,7 +578,7 @@ bot.on('message', async (msg) => {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [
-                            ['📝 Записаться на тренировку'],
+                            ['📝 Записаться'],
                             ['💡 Предложить тренировку'],
                             ['🔙 Назад в меню']
                         ],
