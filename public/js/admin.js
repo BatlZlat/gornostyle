@@ -300,10 +300,15 @@ async function loadPageContent(page) {
 // Загрузка тренировок
 async function loadTrainings() {
     try {
-        // Получаем текущую дату в формате YYYY-MM-DD
-        const today = new Date().toISOString().split('T')[0];
-        
-        const response = await fetch(`/api/trainings?date=${today}`);
+        // Определяем первый и последний день текущего месяца
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const dateFrom = firstDay.toISOString().split('T')[0];
+        const dateTo = lastDay.toISOString().split('T')[0];
+
+        // Запрашиваем тренировки за месяц
+        const response = await fetch(`/api/trainings?date_from=${dateFrom}&date_to=${dateTo}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -324,33 +329,50 @@ async function loadTrainings() {
         }
 
         if (data.length === 0) {
-            trainingList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок</div>';
+            trainingList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок за этот месяц</div>';
             return;
         }
 
+        // Группируем тренировки по дате
+        const grouped = {};
+        data.forEach(training => {
+            const date = new Date(training.session_date).toLocaleDateString('ru-RU');
+            if (!grouped[date]) grouped[date] = [];
+            grouped[date].push(training);
+        });
+        const sortedDates = Object.keys(grouped).sort((a, b) => {
+            // Сортировка по дате (ДД.ММ.ГГГГ)
+            const [da, ma, ya] = a.split('.');
+            const [db, mb, yb] = b.split('.');
+            return new Date(`${ya}-${ma}-${da}`) - new Date(`${yb}-${mb}-${db}`);
+        });
+
         // Формируем HTML
         let html = '';
-        data.forEach(training => {
-            html += `
-                <div class="training-item">
-                    <div class="training-info">
-                        <div class="time">${training.start_time} - ${training.end_time}</div>
-                        <div class="details">
-                            <span>Группа: ${training.group_name || 'Не указана'}</span>
-                            <span>Тренер: ${training.trainer_name || 'Не указан'}</span>
-                            <span>Тренажер: ${training.simulator_id}</span>
-                            <span>Участников: ${training.max_participants}</span>
-                            <span>Уровень: ${training.skill_level}</span>
-                            <span>Цена: ${training.price} ₽</span>
+        sortedDates.forEach(date => {
+            html += `<div style="text-align:center; font-weight:bold; font-size:1.2rem; margin:2rem 0 1rem 0;">${date}</div>`;
+            grouped[date].forEach(training => {
+                html += `
+                    <div class="training-item">
+                        <div class="training-info">
+                            <div class="time">${training.start_time} - ${training.end_time}</div>
+                            <div class="details">
+                                <span>Группа: ${training.group_name || 'Не указана'}</span>
+                                <span>Тренер: ${training.trainer_name || 'Не указан'}</span>
+                                <span>Тренажер: ${training.simulator_id}</span>
+                                <span>Участников: ${training.max_participants}</span>
+                                <span>Уровень: ${training.skill_level}</span>
+                                <span>Цена: ${training.price} ₽</span>
+                            </div>
+                        </div>
+                        <div class="training-actions">
+                            <button class="btn-secondary" onclick="editTraining(${training.id})">
+                                Редактировать тренировку
+                            </button>
                         </div>
                     </div>
-                    <div class="training-actions">
-                        <button class="btn-secondary" onclick="editTraining(${training.id})">
-                            Редактировать тренировку
-                        </button>
-                    </div>
-                </div>
-            `;
+                `;
+            });
         });
 
         trainingList.innerHTML = html;

@@ -132,35 +132,66 @@ router.post('/', async (req, res) => {
 
 // Получение тренировок
 router.get('/', async (req, res) => {
-    const { date, type } = req.query;
+    const { date, date_from, date_to, type } = req.query;
 
-    if (!date) {
-        return res.status(400).json({ error: 'Необходимо указать дату' });
-    }
+    // Если передан диапазон дат
+    if (date_from && date_to) {
+        try {
+            let query = `
+                SELECT ts.*, g.name as group_name, g.description as group_description
+                FROM training_sessions ts
+                LEFT JOIN groups g ON ts.group_id = g.id
+                WHERE ts.session_date >= $1 AND ts.session_date <= $2
+            `;
+            const params = [date_from, date_to];
 
-    try {
-        let query = `
-            SELECT ts.*, g.name as group_name, g.description as group_description
-            FROM training_sessions ts
-            LEFT JOIN groups g ON ts.group_id = g.id
-            WHERE ts.session_date = $1
-        `;
-        const params = [date];
+            if (type === 'group') {
+                query += ' AND ts.training_type = true';
+            } else if (type === 'individual') {
+                query += ' AND ts.training_type = false';
+            }
 
-        if (type === 'group') {
-            query += ' AND ts.training_type = true';
-        } else if (type === 'individual') {
-            query += ' AND ts.training_type = false';
+            query += ' ORDER BY ts.session_date, ts.start_time';
+
+            const result = await pool.query(query, params);
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Ошибка при получении тренировок (диапазон):', error);
+            res.status(500).json({ error: 'Внутренняя ошибка сервера' });
         }
-
-        query += ' ORDER BY ts.start_time';
-
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Ошибка при получении тренировок:', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        return;
     }
+
+    // Если передан только date (старый режим)
+    if (date) {
+        try {
+            let query = `
+                SELECT ts.*, g.name as group_name, g.description as group_description
+                FROM training_sessions ts
+                LEFT JOIN groups g ON ts.group_id = g.id
+                WHERE ts.session_date = $1
+            `;
+            const params = [date];
+
+            if (type === 'group') {
+                query += ' AND ts.training_type = true';
+            } else if (type === 'individual') {
+                query += ' AND ts.training_type = false';
+            }
+
+            query += ' ORDER BY ts.start_time';
+
+            const result = await pool.query(query, params);
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Ошибка при получении тренировок:', error);
+            res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        }
+        return;
+    }
+
+    // Если не передано ни date, ни date_from/date_to
+    return res.status(400).json({ error: 'Необходимо указать дату или диапазон дат' });
 });
 
 module.exports = router; 
