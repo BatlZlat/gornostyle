@@ -234,45 +234,58 @@ bot.on('message', async (msg) => {
                     state.step = 'group_size';
                     return bot.sendMessage(chatId, '👥 Сколько вас человек?');
                 } else {
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    if (client && client.has_child) {
-                        state.step = 'training_for';
-                        return bot.sendMessage(chatId,
-                            '👶 *Ищите компанию для себя или для ребенка?*',
-                            {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    keyboard: [['Для себя', 'Для ребенка']],
-                                    resize_keyboard: true
-                                }
+                    state.step = 'training_frequency';
+                    return bot.sendMessage(chatId,
+                        '🔄 *Как часто вы хотите тренироваться?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Регулярно', 'Разово']],
+                                resize_keyboard: true
                             }
-                        );
-                    } else {
-                        state.step = 'sport_type';
-                        return bot.sendMessage(chatId,
-                            '🏂 *На чем планируете кататься?*',
-                            {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    keyboard: [['Лыжи', 'Сноуборд']],
-                                    resize_keyboard: true
-                                }
+                        }
+                    );
+                }
+            case 'training_frequency':
+                state.data.training_frequency = msg.text.toLowerCase() === 'регулярно' ? 'regular' : 'one-time';
+                const client = await getClientByTelegramId(state.data.telegram_id);
+                if (client && client.has_child) {
+                    state.step = 'training_for';
+                    return bot.sendMessage(chatId,
+                        '👶 *Ищите компанию для себя или для ребенка?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Для себя', 'Для ребенка']],
+                                resize_keyboard: true
                             }
-                        );
-                    }
+                        }
+                    );
+                } else {
+                    state.step = 'sport_type';
+                    return bot.sendMessage(chatId,
+                        '🏂 *На чем планируете кататься?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Лыжи', 'Сноуборд']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
             case 'group_size':
                 if (!/^\d+$/.test(msg.text)) {
                     return bot.sendMessage(chatId, 'Пожалуйста, введите число.');
                 }
                 state.data.group_size = parseInt(msg.text);
-                state.step = 'sport_type';
+                state.step = 'training_frequency';
                 return bot.sendMessage(chatId,
-                    '🏂 *На чем планируете кататься?*',
+                    '🔄 *Как часто вы хотите тренироваться?*',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [['Лыжи', 'Сноуборд']],
+                            keyboard: [['Регулярно', 'Разово']],
                             resize_keyboard: true
                         }
                     }
@@ -316,22 +329,42 @@ bot.on('message', async (msg) => {
                 }
                 state.data.preferred_time = msg.text;
                 
-                // Отправляем информацию администратору
-                const client = await getClientByTelegramId(state.data.telegram_id);
-                const adminMessage = 
-                    '📝 *Новое предложение тренировки*\n\n' +
-                    `👤 *ФИО:* ${client.full_name}\n` +
-                    `📱 *Телефон:* ${client.phone}\n` +
-                    (state.data.group_size ? 
-                        `👥 *Готовая группа:* ${state.data.group_size} человек\n` :
-                        `👥 *Ищет группу:* ${state.data.training_for}\n`) +
-                    `🏂 *Тип:* ${state.data.sport_type}\n` +
-                    `📊 *Уровень:* ${state.data.skill_level}/10\n` +
-                    `📅 *Дата:* ${new Date(state.data.preferred_date).toLocaleDateString('ru-RU')}\n` +
-                    `⏰ *Время:* ${state.data.preferred_time}`;
-
+                // Сохраняем заявку в базу данных
                 try {
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    const result = await pool.query(
+                        `INSERT INTO group_training_requests (
+                            client_id, has_group, group_size, training_frequency,
+                            sport_type, skill_level, preferred_date, preferred_time
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+                        [
+                            client.id,
+                            state.data.has_group,
+                            state.data.group_size,
+                            state.data.training_frequency,
+                            state.data.sport_type.toLowerCase(),
+                            state.data.skill_level,
+                            state.data.preferred_date,
+                            state.data.preferred_time
+                        ]
+                    );
+
+                    // Отправляем уведомление администратору
+                    const adminMessage = 
+                        '📝 *Новое предложение тренировки*\n\n' +
+                        `👤 *ФИО:* ${client.full_name}\n` +
+                        `📱 *Телефон:* ${client.phone}\n` +
+                        (state.data.group_size ? 
+                            `👥 *Готовая группа:* ${state.data.group_size} человек\n` :
+                            `👥 *Ищет группу:* ${state.data.training_for}\n`) +
+                        `🔄 *Частота:* ${state.data.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n` +
+                        `🏂 *Тип:* ${state.data.sport_type}\n` +
+                        `📊 *Уровень:* ${state.data.skill_level}/10\n` +
+                        `📅 *Дата:* ${new Date(state.data.preferred_date).toLocaleDateString('ru-RU')}\n` +
+                        `⏰ *Время:* ${state.data.preferred_time}`;
+
                     await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, adminMessage, { parse_mode: 'Markdown' });
+
                     await bot.sendMessage(chatId,
                         '✅ *Спасибо за ваше предложение!*\n\n' +
                         'Мы рассмотрим его и свяжемся с вами в ближайшее время.',
@@ -345,7 +378,7 @@ bot.on('message', async (msg) => {
                     );
                     userStates.delete(chatId);
                 } catch (error) {
-                    console.error('Ошибка при отправке предложения администратору:', error);
+                    console.error('Ошибка при сохранении заявки:', error);
                     return bot.sendMessage(chatId, 'Произошла ошибка при отправке предложения. Попробуйте позже.');
                 }
                 break;
@@ -358,14 +391,14 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(chatId,
                 '🎿 *Выберите тип тренировки:*\n\n' +
                 '1️⃣ *Горнолыжный тренажер Горностайл72*\n' +
-                '2️⃣ *Естественный склон Кулига* (только зимой)\n\n' +
+                '2️⃣ *Кулига. Естественный склон* (только зимой)\n\n' +
                 'Выберите вариант:',
                 {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [
                             ['🏂 Горнолыжный тренажер'],
-                            ['⛷ Естественный склон'],
+                            ['⛷ Кулига.Естественный склон'],
                             ['🔙 Назад в меню']
                         ],
                         resize_keyboard: true
@@ -380,12 +413,12 @@ bot.on('message', async (msg) => {
                 twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
                 
                 const result = await pool.query(
-                    `SELECT ts.*, g.name as group_name, g.max_participants, g.price
+                    `SELECT ts.*, g.name as group_name, ts.max_participants, ts.price
                      FROM training_sessions ts
                      JOIN groups g ON ts.group_id = g.id
-                     WHERE ts.date BETWEEN CURRENT_DATE AND $1
-                     AND ts.type = 'group'
-                     ORDER BY ts.date, ts.start_time`,
+                     WHERE ts.session_date BETWEEN CURRENT_DATE AND $1
+                     AND ts.training_type = true
+                     ORDER BY ts.session_date, ts.start_time`,
                     [twoWeeksFromNow]
                 );
 
@@ -395,7 +428,7 @@ bot.on('message', async (msg) => {
                     message += 'На ближайшие 2 недели групповых тренировок не запланировано.\n\n';
                 } else {
                     result.rows.forEach(training => {
-                        const date = new Date(training.date).toLocaleDateString('ru-RU');
+                        const date = new Date(training.session_date).toLocaleDateString('ru-RU');
                         message += `📅 *${date} ${training.start_time}*\n`;
                         message += `👥 Группа: ${training.group_name}\n`;
                         message += `👤 Макс. участников: ${training.max_participants}\n`;

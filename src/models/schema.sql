@@ -163,6 +163,22 @@ CREATE TABLE prices (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица заявок на групповые тренировки
+CREATE TABLE group_training_requests (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    has_group BOOLEAN NOT NULL,
+    group_size INTEGER,
+    training_frequency VARCHAR(20) NOT NULL, -- 'regular' или 'one-time'
+    sport_type VARCHAR(20) NOT NULL, -- 'ski' или 'snowboard'
+    skill_level INTEGER CHECK (skill_level BETWEEN 0 AND 10),
+    preferred_date DATE NOT NULL,
+    preferred_time TIME NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -180,6 +196,8 @@ CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
+CREATE INDEX idx_group_training_requests_client ON group_training_requests(client_id);
+CREATE INDEX idx_group_training_requests_status ON group_training_requests(status);
 
 -- Создание триггеров для обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -233,5 +251,10 @@ CREATE TRIGGER update_schedule_updated_at
 
 CREATE TRIGGER update_schedule_settings_updated_at
     BEFORE UPDATE ON schedule_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_group_training_requests_updated_at
+    BEFORE UPDATE ON group_training_requests
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column(); 
