@@ -307,16 +307,15 @@ async function loadTrainings() {
         const dateFrom = firstDay.toISOString().split('T')[0];
         const dateTo = lastDay.toISOString().split('T')[0];
 
-        // Запрашиваем тренировки за месяц
+        // Запрашиваем тренировки за месяц с информацией о тренере
         const response = await fetch(`/api/trainings?date_from=${dateFrom}&date_to=${dateTo}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('Полученные данные:', data); // Для отладки
+        console.log('Полученные данные:', data);
         
-        // Проверяем, что data существует и является массивом
         if (!data || !Array.isArray(data)) {
             console.error('Получены некорректные данные:', data);
             throw new Error('Получены некорректные данные от сервера');
@@ -341,7 +340,6 @@ async function loadTrainings() {
             grouped[date].push(training);
         });
         const sortedDates = Object.keys(grouped).sort((a, b) => {
-            // Сортировка по дате (ДД.ММ.ГГГГ)
             const [da, ma, ya] = a.split('.');
             const [db, mb, yb] = b.split('.');
             return new Date(`${ya}-${ma}-${da}`) - new Date(`${yb}-${mb}-${db}`);
@@ -358,7 +356,7 @@ async function loadTrainings() {
                             <div class="time">${training.start_time} - ${training.end_time}</div>
                             <div class="details">
                                 <span>Группа: ${training.group_name || 'Не указана'}</span>
-                                <span>Тренер: ${training.trainer_name || 'Не указан'}</span>
+                                <span>Тренер: ${training.trainer_full_name || 'Не указан'}</span>
                                 <span>Тренажер: ${training.simulator_id}</span>
                                 <span>Участников: ${training.max_participants}</span>
                                 <span>Уровень: ${training.skill_level}</span>
@@ -368,6 +366,9 @@ async function loadTrainings() {
                         <div class="training-actions">
                             <button class="btn-secondary" onclick="editTraining(${training.id})">
                                 Редактировать тренировку
+                            </button>
+                            <button class="btn-danger" onclick="deleteTraining(${training.id})">
+                                Удалить тренировку
                             </button>
                         </div>
                     </div>
@@ -1015,104 +1016,131 @@ function showEditTrainingModal(training) {
     const oldModal = document.getElementById('edit-training-modal');
     if (oldModal) oldModal.remove();
 
-    // Получаем список тренеров
-    fetch('/api/trainers')
-        .then(res => res.json())
-        .then(trainers => {
-            // Формируем options для select
-            const trainerOptions = trainers.map(tr =>
-                `<option value="${tr.id}" ${tr.id === training.trainer_id ? 'selected' : ''}>${tr.full_name}</option>`
-            ).join('');
+    // Загружаем данные для выпадающих списков
+    Promise.all([
+        fetch('/api/trainers').then(res => res.json()),
+        fetch('/api/groups').then(res => res.json()),
+        fetch('/api/simulators').then(res => res.json())
+    ]).then(([trainers, groups, simulators]) => {
+        // Формируем options для select
+        const trainerOptions = trainers.map(tr =>
+            `<option value="${tr.id}" ${tr.id === training.trainer_id ? 'selected' : ''}>${tr.full_name}</option>`
+        ).join('');
 
-            // Формируем HTML модального окна
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.id = 'edit-training-modal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <h3>Редактировать тренировку</h3>
-                    <form id="edit-training-form">
-                        <div class="form-group">
-                            <label>Время начала</label>
-                            <input type="time" name="start_time" value="${training.start_time.slice(0,5)}" required />
-                        </div>
-                        <div class="form-group">
-                            <label>Время окончания</label>
-                            <input type="time" name="end_time" value="${training.end_time.slice(0,5)}" required />
-                        </div>
-                        <div class="form-group">
-                            <label>Группа</label>
-                            <input type="text" name="group_name" value="${training.group_name || ''}" />
-                        </div>
-                        <div class="form-group">
-                            <label>Тренер</label>
-                            <select name="trainer_id" required>
-                                <option value="">Выберите тренера</option>
-                                ${trainerOptions}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Тренажёр</label>
-                            <input type="number" name="simulator_id" value="${training.simulator_id}" min="1" required />
-                        </div>
-                        <div class="form-group">
-                            <label>Участников</label>
-                            <input type="number" name="max_participants" value="${training.max_participants}" min="1" required />
-                        </div>
-                        <div class="form-group">
-                            <label>Уровень</label>
-                            <input type="number" name="skill_level" value="${training.skill_level}" min="1" max="5" required />
-                        </div>
-                        <div class="form-group">
-                            <label>Цена (₽)</label>
-                            <input type="number" name="price" value="${training.price}" min="0" required />
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn-primary">Сохранить</button>
-                            <button type="button" class="btn-secondary" id="close-edit-modal">Отмена</button>
-                        </div>
-                    </form>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            modal.style.display = 'block';
+        const groupOptions = groups.map(gr =>
+            `<option value="${gr.id}" ${gr.id === training.group_id ? 'selected' : ''}>${gr.name}</option>`
+        ).join('');
 
-            // Закрытие по кнопке
-            document.getElementById('close-edit-modal').onclick = () => modal.remove();
-            // Закрытие по клику вне окна
-            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+        const simulatorOptions = simulators.map(sim =>
+            `<option value="${sim.id}" ${sim.id === training.simulator_id ? 'selected' : ''}>${sim.name}</option>`
+        ).join('');
 
-            // Обработка сохранения
-            document.getElementById('edit-training-form').onsubmit = async function(e) {
-                e.preventDefault();
-                const formData = new FormData(this);
-                const data = Object.fromEntries(formData.entries());
-                // Преобразуем числовые поля
-                data.simulator_id = Number(data.simulator_id);
-                data.max_participants = Number(data.max_participants);
-                data.skill_level = Number(data.skill_level);
-                data.price = Number(data.price);
-                data.trainer_id = Number(data.trainer_id);
-                // Отправляем PATCH/PUT-запрос
-                try {
-                    const response = await fetch(`/api/trainings/${training.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    });
-                    if (!response.ok) {
-                        const err = await response.json();
-                        throw new Error(err.error || 'Ошибка при сохранении');
-                    }
-                    showSuccess('Тренировка обновлена');
-                    modal.remove();
-                    loadTrainings();
-                } catch (error) {
-                    showError(error.message);
+        // Формируем HTML модального окна
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'edit-training-modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Редактировать тренировку</h3>
+                <form id="edit-training-form">
+                    <div class="form-group">
+                        <label>Время начала</label>
+                        <input type="time" name="start_time" value="${training.start_time.slice(0,5)}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Время окончания</label>
+                        <input type="time" name="end_time" value="${training.end_time.slice(0,5)}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <select name="group_id" required>
+                            <option value="">Выберите группу</option>
+                            ${groupOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Тренер</label>
+                        <select name="trainer_id">
+                            <option value="">Выберите тренера</option>
+                            ${trainerOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Тренажёр</label>
+                        <select name="simulator_id" required>
+                            <option value="">Выберите тренажёр</option>
+                            ${simulatorOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Участников</label>
+                        <input type="number" name="max_participants" value="${training.max_participants}" min="1" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Уровень</label>
+                        <select name="skill_level" required>
+                            <option value="1" ${training.skill_level === 1 ? 'selected' : ''}>Начальный</option>
+                            <option value="2" ${training.skill_level === 2 ? 'selected' : ''}>Базовый</option>
+                            <option value="3" ${training.skill_level === 3 ? 'selected' : ''}>Средний</option>
+                            <option value="4" ${training.skill_level === 4 ? 'selected' : ''}>Продвинутый</option>
+                            <option value="5" ${training.skill_level === 5 ? 'selected' : ''}>Профессиональный</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Цена (₽)</label>
+                        <input type="number" name="price" value="${training.price}" min="0" required />
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" id="close-edit-modal">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по кнопке
+        document.getElementById('close-edit-modal').onclick = () => modal.remove();
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+        // Обработка сохранения
+        document.getElementById('edit-training-form').onsubmit = async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Преобразуем числовые поля
+            data.simulator_id = Number(data.simulator_id);
+            data.max_participants = Number(data.max_participants);
+            data.skill_level = Number(data.skill_level);
+            data.price = Number(data.price);
+            data.trainer_id = data.trainer_id ? Number(data.trainer_id) : null;
+            data.group_id = Number(data.group_id);
+
+            // Отправляем PUT-запрос
+            try {
+                const response = await fetch(`/api/trainings/${training.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Ошибка при сохранении');
                 }
-            };
-        })
-        .catch(() => showError('Не удалось загрузить список тренеров'));
+                showSuccess('Тренировка обновлена');
+                modal.remove();
+                loadTrainings();
+            } catch (error) {
+                showError(error.message);
+            }
+        };
+    }).catch(error => {
+        console.error('Ошибка при загрузке данных:', error);
+        showError('Не удалось загрузить данные для редактирования');
+    });
 }
 
 // --- Обработчик кнопки "Редактировать тренировку" ---
@@ -1125,4 +1153,28 @@ window.editTraining = function(id) {
         .then(res => res.json())
         .then(training => showEditTrainingModal(training))
         .catch(() => showError('Не удалось загрузить данные тренировки'));
-}; 
+};
+
+// Функция удаления тренировки
+async function deleteTraining(trainingId) {
+    if (!confirm('Вы уверены, что хотите удалить эту тренировку?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/trainings/${trainingId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при удалении тренировки');
+        }
+
+        showSuccess('Тренировка успешно удалена');
+        loadTrainings(); // Перезагружаем список тренировок
+    } catch (error) {
+        console.error('Ошибка при удалении тренировки:', error);
+        showError(error.message || 'Не удалось удалить тренировку');
+    }
+} 

@@ -22,9 +22,9 @@ router.post('/', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // Получаем время начала и конца из time_slot_id
+        // Получаем время начала из time_slot_id
         const timeSlotResult = await client.query(
-            'SELECT start_time, end_time FROM schedule WHERE id = $1',
+            'SELECT start_time FROM schedule WHERE id = $1',
             [time_slot_id]
         );
 
@@ -32,25 +32,18 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Временной слот не найден' });
         }
 
-        let { start_time, end_time } = timeSlotResult.rows[0];
+        let start_time = timeSlotResult.rows[0].start_time;
+        
+        // Вычисляем end_time как start_time + 60 минут
+        const [hours, minutes] = start_time.split(':').map(Number);
+        const startDate = new Date(2000, 0, 1, hours, minutes);
+        const endDate = new Date(startDate.getTime() + 60 * 60000);
+        const end_time = endDate.toTimeString().slice(0, 5) + ':00';
 
-        // Проверяем длительность слота
-        const [sh, sm, ss] = start_time.split(':').map(Number);
-        const [eh, em, es] = end_time.split(':').map(Number);
-        const startDate = new Date(2000, 0, 1, sh, sm, ss || 0);
-        const endDate = new Date(2000, 0, 1, eh, em, es || 0);
-        let diff = (endDate - startDate) / 60000;
-        if (diff < 59) {
-            // Если слот короче 60 минут, вычисляем end_time = start_time + 60 минут
-            const newEnd = new Date(startDate.getTime() + 60 * 60000);
-            end_time = newEnd.toTimeString().slice(0, 5) + ':00';
-        }
-
-        // Для групповой тренировки проверяем, что выбран следующий слот
+        // Для групповой тренировки проверяем, что следующий слот доступен
         if (training_type) {
             const nextSlotResult = await client.query(
-                `SELECT id, start_time, end_time 
-                 FROM schedule 
+                `SELECT id FROM schedule 
                  WHERE simulator_id = $1 
                  AND date = $2 
                  AND start_time = $3 
@@ -119,27 +112,16 @@ router.post('/', async (req, res) => {
         );
 
         // Бронируем слоты в расписании
-        if (training_type) {
-            // Для групповой тренировки бронируем два слота
-            await client.query(
-                `UPDATE schedule 
-                 SET is_booked = true 
-                 WHERE simulator_id = $1 
-                 AND date = $2 
-                 AND start_time IN ($3, $4)`,
-                [simulator_id, date, start_time, end_time]
-            );
-        } else {
-            // Для индивидуальной тренировки бронируем один слот
-            await client.query(
-                `UPDATE schedule 
-                 SET is_booked = true 
-                 WHERE simulator_id = $1 
-                 AND date = $2 
-                 AND start_time = $3`,
-                [simulator_id, date, start_time]
-            );
-        }
+        // Бронируем все слоты между start_time и end_time
+        await client.query(
+            `UPDATE schedule 
+             SET is_booked = true 
+             WHERE simulator_id = $1 
+             AND date = $2 
+             AND start_time >= $3 
+             AND start_time < $4`,
+            [simulator_id, date, start_time, end_time]
+        );
 
         await client.query('COMMIT');
 
@@ -167,9 +149,13 @@ router.get('/', async (req, res) => {
     if (date_from && date_to) {
         try {
             let query = `
-                SELECT ts.*, g.name as group_name, g.description as group_description
+                SELECT ts.*, 
+                       g.name as group_name, 
+                       g.description as group_description,
+                       t.full_name as trainer_full_name
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
                 WHERE ts.session_date >= $1 AND ts.session_date <= $2
             `;
             const params = [date_from, date_to];
@@ -195,9 +181,13 @@ router.get('/', async (req, res) => {
     if (date) {
         try {
             let query = `
-                SELECT ts.*, g.name as group_name, g.description as group_description
+                SELECT ts.*, 
+                       g.name as group_name, 
+                       g.description as group_description,
+                       t.full_name as trainer_full_name
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
                 WHERE ts.session_date = $1
             `;
             const params = [date];
@@ -249,35 +239,142 @@ router.put('/:id', async (req, res) => {
     const {
         start_time,
         end_time,
-        group_name, // не обновляем в таблице, только для отображения
-        trainer_name, // не обновляем в таблице, только для отображения
         simulator_id,
+        trainer_id,
+        group_id,
         max_participants,
         skill_level,
         price
     } = req.body;
+
+    const client = await pool.connect();
     try {
-        // Обновляем только основные поля
-        const result = await pool.query(
+        await client.query('BEGIN');
+
+        // Проверяем, не занят ли тренажер в это время (исключая текущую тренировку)
+        const checkResult = await client.query(
+            `SELECT id FROM training_sessions 
+             WHERE simulator_id = $1 
+             AND session_date = (SELECT session_date FROM training_sessions WHERE id = $2)
+             AND ((start_time, end_time) OVERLAPS ($3::time, $4::time))
+             AND id != $2`,
+            [simulator_id, id, start_time, end_time]
+        );
+
+        if (checkResult.rows.length > 0) {
+            return res.status(400).json({ error: 'Тренажер уже занят в это время' });
+        }
+
+        // Обновляем тренировку
+        const result = await client.query(
             `UPDATE training_sessions SET
                 start_time = $1,
                 end_time = $2,
                 simulator_id = $3,
-                max_participants = $4,
-                skill_level = $5,
-                price = $6,
+                trainer_id = $4,
+                group_id = $5,
+                max_participants = $6,
+                skill_level = $7,
+                price = $8,
                 updated_at = NOW()
-            WHERE id = $7
+            WHERE id = $9
             RETURNING *`,
-            [start_time, end_time, simulator_id, max_participants, skill_level, price, id]
+            [start_time, end_time, simulator_id, trainer_id, group_id, max_participants, skill_level, price, id]
         );
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Тренировка не найдена' });
         }
+
+        // Обновляем слоты в расписании
+        // Сначала освобождаем старые слоты
+        const oldTraining = await client.query(
+            'SELECT simulator_id, session_date, start_time, end_time FROM training_sessions WHERE id = $1',
+            [id]
+        );
+
+        if (oldTraining.rows.length > 0) {
+            const old = oldTraining.rows[0];
+            await client.query(
+                `UPDATE schedule 
+                 SET is_booked = false 
+                 WHERE simulator_id = $1 
+                 AND date = $2 
+                 AND start_time >= $3 
+                 AND start_time < $4`,
+                [old.simulator_id, old.session_date, old.start_time, old.end_time]
+            );
+        }
+
+        // Бронируем новые слоты
+        await client.query(
+            `UPDATE schedule 
+             SET is_booked = true 
+             WHERE simulator_id = $1 
+             AND date = (SELECT session_date FROM training_sessions WHERE id = $2)
+             AND start_time >= $3 
+             AND start_time < $4`,
+            [simulator_id, id, start_time, end_time]
+        );
+
+        await client.query('COMMIT');
         res.json({ message: 'Тренировка обновлена', training: result.rows[0] });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Ошибка при обновлении тренировки:', error);
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
+// Удаление тренировки
+router.delete('/:id', async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Получаем информацию о тренировке
+        const trainingResult = await client.query(
+            'SELECT simulator_id, session_date, start_time, end_time, training_type FROM training_sessions WHERE id = $1',
+            [id]
+        );
+
+        if (trainingResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+
+        const training = trainingResult.rows[0];
+
+        // Освобождаем все слоты в расписании между start_time и end_time
+        await client.query(
+            `UPDATE schedule 
+             SET is_booked = false 
+             WHERE simulator_id = $1 
+             AND date = $2 
+             AND start_time >= $3 
+             AND start_time < $4`,
+            [
+                training.simulator_id, 
+                training.session_date, 
+                training.start_time, 
+                training.end_time
+            ]
+        );
+
+        // Удаляем тренировку
+        await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Тренировка успешно удалена' });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении тренировки:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
     }
 });
 
