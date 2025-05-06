@@ -125,4 +125,78 @@ CREATE TRIGGER training_sessions_schedule_trigger
 AFTER INSERT OR UPDATE ON training_sessions
 FOR EACH ROW
 EXECUTE FUNCTION update_schedule_slots();
+```
+
+## Таблица group_training_requests
+
+Таблица хранит заявки на групповые тренировки от клиентов.
+
+### Структура таблицы:
+
+```sql
+CREATE TABLE group_training_requests (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    has_group BOOLEAN NOT NULL,
+    group_size INTEGER,
+    training_frequency VARCHAR(20) NOT NULL,
+    sport_type VARCHAR(20) NOT NULL,
+    skill_level INTEGER CHECK (skill_level BETWEEN 0 AND 10),
+    preferred_date DATE NOT NULL,
+    preferred_time TIME NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Поля таблицы:
+
+- `id` - уникальный идентификатор заявки
+- `client_id` - ID клиента (с каскадным удалением)
+- `has_group` - наличие готовой группы
+- `group_size` - размер группы (если есть)
+- `training_frequency` - частота тренировок ('regular' или 'one-time')
+- `sport_type` - тип спорта ('ski' или 'snowboard')
+- `skill_level` - уровень катания (0-10)
+- `preferred_date` - предпочтительная дата
+- `preferred_time` - предпочтительное время
+- `status` - статус заявки ('pending', 'approved', 'rejected')
+- `created_at` - дата создания заявки
+- `updated_at` - дата последнего обновления
+
+### Индексы:
+
+- `idx_group_training_requests_client` - по полю client_id
+- `idx_group_training_requests_status` - по полю status
+
+### Триггеры:
+
+- `update_group_training_requests_updated_at` - автоматическое обновление updated_at
+
+### Примеры использования:
+
+1. Создание новой заявки:
+```sql
+INSERT INTO group_training_requests (
+    client_id, has_group, group_size, training_frequency,
+    sport_type, skill_level, preferred_date, preferred_time
+) VALUES (
+    1, true, 4, 'regular',
+    'ski', 3, '2024-05-17', '13:00'
+);
+```
+
+2. Получение всех заявок клиента:
+```sql
+SELECT * FROM group_training_requests
+WHERE client_id = 1
+ORDER BY created_at DESC;
+```
+
+3. Обновление статуса заявки:
+```sql
+UPDATE group_training_requests
+SET status = 'approved'
+WHERE id = 1;
 ``` 

@@ -231,9 +231,11 @@ bot.on('message', async (msg) => {
                 }
             case 'has_group':
                 if (msg.text === 'Да') {
+                    state.data.has_group = true;
                     state.step = 'group_size';
                     return bot.sendMessage(chatId, '👥 Сколько вас человек?');
                 } else {
+                    state.data.has_group = false;
                     state.step = 'training_frequency';
                     return bot.sendMessage(chatId,
                         '🔄 *Как часто вы хотите тренироваться?*',
@@ -340,7 +342,7 @@ bot.on('message', async (msg) => {
                         [
                             client.id,
                             state.data.has_group,
-                            state.data.group_size,
+                            state.data.has_group ? state.data.group_size : null,
                             state.data.training_frequency,
                             state.data.sport_type.toLowerCase(),
                             state.data.skill_level,
