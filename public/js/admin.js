@@ -2,6 +2,7 @@
 let currentPage = 'schedule';
 let currentDate = new Date();
 let datePicker;
+let allClients = []; // Глобальная переменная для хранения всех клиентов
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
@@ -511,106 +512,143 @@ async function loadClients() {
     try {
         console.log('Начало загрузки клиентов');
         const response = await fetch('/api/clients');
+        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const clients = await response.json();
-        console.log('Получены данные клиентов:', clients);
+        
+        allClients = await response.json();
+        console.log('Получены данные клиентов:', allClients);
         
         const clientsContainer = document.getElementById('clientsContainer');
         if (!clientsContainer) {
-            throw new Error('Элемент clientsContainer не найден на странице');
+            throw new Error('Элемент clientsContainer не найден');
         }
-        
-        clientsContainer.innerHTML = `
-            <div class="training-table-container">
-                <table class="training-table">
-                    <thead>
-                        <tr>
-                            <th>ФИО</th>
-                            <th>Возраст</th>
-                            <th>Телефон</th>
-                            <th>Ребёнок</th>
-                            <th>Возраст ребёнка</th>
-                            <th>Баланс</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${clients.map(client => {
-                            // Вычисляем возраст клиента
-                            const clientAge = client.birth_date ? 
-                                Math.floor((new Date() - new Date(client.birth_date)) / (365.25 * 24 * 60 * 60 * 1000)) : 
-                                '-';
-                            
-                            // Вычисляем возраст ребенка
-                            const childAge = client.child_birth_date ? 
-                                Math.floor((new Date() - new Date(client.child_birth_date)) / (365.25 * 24 * 60 * 60 * 1000)) : 
-                                '-';
 
-                            // Проверяем день рождения
-                            const today = new Date();
-                            const clientBirthDate = client.birth_date ? new Date(client.birth_date) : null;
-                            const childBirthDate = client.child_birth_date ? new Date(client.child_birth_date) : null;
-                            
-                            let rowClass = '';
-                            
-                            if (clientBirthDate) {
-                                const clientBirthDay = clientBirthDate.getDate();
-                                const clientBirthMonth = clientBirthDate.getMonth();
-                                const todayDay = today.getDate();
-                                const todayMonth = today.getMonth();
-                                
-                                // Проверяем, наступит ли день рождения в течение недели
-                                const nextWeek = new Date(today);
-                                nextWeek.setDate(today.getDate() + 7);
-                                
-                                if (clientBirthDay === todayDay && clientBirthMonth === todayMonth) {
-                                    rowClass = 'birthday-today';
-                                } else if (clientBirthDay >= todayDay && clientBirthDay <= nextWeek.getDate() && 
-                                         clientBirthMonth === todayMonth) {
-                                    rowClass = 'birthday-soon';
-                                }
-                            }
-                            
-                            return `
-                                <tr class="training-row ${rowClass}">
-                                    <td>${client.full_name || '-'}</td>
-                                    <td>${clientAge}</td>
-                                    <td>${client.phone || '-'}</td>
-                                    <td>${client.child_name || '-'}</td>
-                                    <td>${childAge}</td>
-                                    <td>${client.balance ? `${client.balance} ₽` : '0 ₽'}</td>
-                                    <td class="training-actions">
-                                        <button class="btn btn-sm btn-secondary" onclick="viewClient(${client.id})">
-                                            Просмотр
-                                        </button>
-                                        <button class="btn btn-sm btn-primary" onclick="editClient(${client.id})">
-                                            Редактировать
-                                        </button>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+        // Применяем текущие фильтры и сортировку
+        displayClients();
+        
         console.log('Таблица клиентов успешно отрендерена');
     } catch (error) {
         console.error('Ошибка при загрузке клиентов:', error);
         const clientsContainer = document.getElementById('clientsContainer');
         if (clientsContainer) {
-            clientsContainer.innerHTML = `
-                <div class="alert alert-danger">
-                    Ошибка при загрузке списка клиентов: ${error.message}
-                </div>
-            `;
-        } else {
-            console.error('Элемент clientsContainer не найден при отображении ошибки');
+            clientsContainer.innerHTML = `<div class="error-message">Ошибка при загрузке клиентов: ${error.message}</div>`;
         }
     }
 }
+
+// Функция для отображения клиентов с учетом фильтров и сортировки
+function displayClients() {
+    const clientsContainer = document.getElementById('clientsContainer');
+    const searchInput = document.getElementById('clientSearch');
+    const sortSelect = document.getElementById('clientSort');
+    
+    if (!clientsContainer || !searchInput || !sortSelect) return;
+
+    // Получаем значения фильтров
+    const searchTerm = searchInput.value.toLowerCase();
+    const sortValue = sortSelect.value;
+
+    // Фильтруем клиентов
+    let filteredClients = allClients.filter(client => {
+        const fullNameMatch = client.full_name.toLowerCase().includes(searchTerm);
+        const phoneMatch = client.phone.toLowerCase().includes(searchTerm);
+        const childNameMatch = client.child_name ? client.child_name.toLowerCase().includes(searchTerm) : false;
+        return fullNameMatch || phoneMatch || childNameMatch;
+    });
+
+    // Сортируем клиентов
+    filteredClients.sort((a, b) => {
+        switch (sortValue) {
+            case 'created_desc':
+                return new Date(b.created_at) - new Date(a.created_at);
+            case 'created_asc':
+                return new Date(a.created_at) - new Date(b.created_at);
+            case 'name_asc':
+                return a.full_name.localeCompare(b.full_name);
+            case 'name_desc':
+                return b.full_name.localeCompare(a.full_name);
+            case 'child_name_asc':
+                return (a.child_name || '').localeCompare(b.child_name || '');
+            case 'child_name_desc':
+                return (b.child_name || '').localeCompare(a.child_name || '');
+            default:
+                return 0;
+        }
+    });
+
+    // Формируем HTML таблицы
+    const tableHtml = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>ФИО</th>
+                    <th>Возраст</th>
+                    <th>Телефон</th>
+                    <th>Уровень</th>
+                    <th>Ребенок</th>
+                    <th>Возраст</th>
+                    <th>Уровень</th>
+                    <th>Баланс</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredClients.map((client, index) => {
+                    const birthDate = new Date(client.birth_date);
+                    const childBirthDate = client.child_birth_date ? new Date(client.child_birth_date) : null;
+                    const today = new Date();
+                    
+                    const isBirthday = birthDate.getDate() === today.getDate() && 
+                                     birthDate.getMonth() === today.getMonth();
+                    const isChildBirthday = childBirthDate && 
+                                          childBirthDate.getDate() === today.getDate() && 
+                                          childBirthDate.getMonth() === today.getMonth();
+                    
+                    const clientAge = Math.floor((today - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                    const childAge = childBirthDate ? 
+                        Math.floor((today - childBirthDate) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+                    
+                    return `
+                        <tr class="${isBirthday || isChildBirthday ? 'birthday-row' : ''}">
+                            <td>${index + 1}</td>
+                            <td>${client.full_name} ${isBirthday ? '🎂' : ''}</td>
+                            <td>${clientAge} лет</td>
+                            <td>${client.phone}</td>
+                            <td>${client.skill_level || '-'}</td>
+                            <td>${client.child_name ? client.child_name + (isChildBirthday ? ' 🎂' : '') : '-'}</td>
+                            <td>${childAge ? `${childAge} лет` : '-'}</td>
+                            <td>${client.child_skill_level || '-'}</td>
+                            <td>${client.balance || 0} ₽</td>
+                            <td>
+                                <button onclick="editClient(${client.id})" class="edit-button">✏️</button>
+                                <button onclick="deleteClient(${client.id})" class="delete-button">🗑️</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+
+    clientsContainer.innerHTML = tableHtml;
+}
+
+// Добавляем обработчики событий для поиска и сортировки
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('clientSearch');
+    const sortSelect = document.getElementById('clientSort');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', displayClients);
+    }
+
+    if (sortSelect) {
+        sortSelect.addEventListener('change', displayClients);
+    }
+});
 
 // Загрузка прайса
 async function loadPrices() {
@@ -1423,5 +1461,68 @@ async function editClient(id) {
     } catch (error) {
         console.error('Ошибка при загрузке данных клиента:', error);
         showError('Не удалось загрузить данные клиента');
+    }
+}
+
+// Функция удаления клиента
+async function deleteClient(id) {
+    if (!confirm('Вы уверены, что хотите удалить этого клиента?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/clients/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при удалении клиента');
+        }
+
+        showSuccess('Клиент успешно удален');
+        loadClients(); // Перезагружаем список клиентов
+    } catch (error) {
+        console.error('Ошибка при удалении клиента:', error);
+        showError(error.message || 'Не удалось удалить клиента');
+    }
+}
+
+// Функция для экспорта контактов
+async function exportContacts() {
+    try {
+        // Создаем CSV контент
+        const headers = ['ФИО', 'Телефон'];
+        const csvContent = [
+            headers.join(','),
+            ...allClients.map(client => [
+                `"${client.full_name}"`,
+                `"${client.phone}"`
+            ].join(','))
+        ].join('\n');
+
+        // Создаем Blob
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        
+        // Создаем ссылку для скачивания
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        // Устанавливаем имя файла с текущей датой
+        const date = new Date().toISOString().split('T')[0];
+        link.setAttribute('href', url);
+        link.setAttribute('download', `contacts_${date}.csv`);
+        
+        // Добавляем ссылку в DOM и эмулируем клик
+        document.body.appendChild(link);
+        link.click();
+        
+        // Удаляем ссылку
+        document.body.removeChild(link);
+        
+        showSuccess('Контакты успешно экспортированы');
+    } catch (error) {
+        console.error('Ошибка при экспорте контактов:', error);
+        showError('Не удалось экспортировать контакты');
     }
 } 

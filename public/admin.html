@@ -88,12 +88,23 @@
                 </div>
 
                 <!-- Страница клиентов -->
-                <div id="clients-page" class="page-content">
-                    <div class="page-header">
-                        <h2>Клиенты</h2>
-                        <div class="page-actions">
-                            <button class="btn-primary" onclick="showModal('create-client-modal')">Добавить клиента</button>
+                <div id="clients-page" class="page">
+                    <h2>Клиенты</h2>
+                    <div class="controls">
+                        <div class="search-controls">
+                            <input type="text" id="clientSearch" placeholder="Поиск по ФИО или телефону" class="search-input">
                         </div>
+                        <div class="sort-controls">
+                            <select id="clientSort" class="sort-select">
+                                <option value="created_desc">По дате создания (новые первые)</option>
+                                <option value="created_asc">По дате создания (старые первые)</option>
+                                <option value="name_asc">По ФИО (А-Я)</option>
+                                <option value="name_desc">По ФИО (Я-А)</option>
+                                <option value="child_name_asc">По ФИО ребенка (А-Я)</option>
+                                <option value="child_name_desc">По ФИО ребенка (Я-А)</option>
+                            </select>
+                        </div>
+                        <button onclick="exportContacts()" class="export-button">Экспорт контактов</button>
                     </div>
                     <div id="clientsContainer"></div>
                 </div>
