@@ -929,4 +929,54 @@ body {
         width: 95%;
         padding: 16px;
     }
+}
+
+/* Стили для подсветки дней рождения */
+.training-row.birthday-today {
+    background-color: #d4edda !important;
+    border-left: 4px solid #28a745;
+}
+
+.training-row.birthday-soon {
+    background-color: #fff3cd !important;
+    border-left: 4px solid #ffc107;
+}
+
+.training-row.birthday-today:hover {
+    background-color: #c3e6cb !important;
+}
+
+.training-row.birthday-soon:hover {
+    background-color: #ffeeba !important;
+}
+
+/* Стили для деталей клиента */
+.client-details {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.detail-group {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.detail-group h3 {
+    margin: 0 0 15px 0;
+    color: #2c3e50;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.detail-group p {
+    margin: 8px 0;
+    color: #495057;
+}
+
+.detail-group strong {
+    color: #2c3e50;
+    font-weight: 500;
 } 

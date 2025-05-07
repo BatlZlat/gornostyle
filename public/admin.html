@@ -88,20 +88,14 @@
                 </div>
 
                 <!-- Страница клиентов -->
-                <div class="page-content" id="clients-page" style="display: none;">
+                <div id="clients-page" class="page-content">
                     <div class="page-header">
                         <h2>Клиенты</h2>
                         <div class="page-actions">
-                            <select id="sort-clients" class="sort-select">
-                                <option value="created">По дате создания</option>
-                                <option value="name">По ФИО</option>
-                                <option value="age">По возрасту</option>
-                            </select>
+                            <button class="btn-primary" onclick="showModal('create-client-modal')">Добавить клиента</button>
                         </div>
                     </div>
-                    <div class="clients-list">
-                        <!-- Список клиентов будет загружен динамически -->
-                    </div>
+                    <div id="clientsContainer"></div>
                 </div>
 
                 <!-- Страница прайса -->
