@@ -348,32 +348,46 @@ async function loadTrainings() {
         // Формируем HTML
         let html = '';
         sortedDates.forEach(date => {
-            html += `<div style="text-align:center; font-weight:bold; font-size:1.2rem; margin:2rem 0 1rem 0;">${date}</div>`;
-            grouped[date].forEach(training => {
-                html += `
-                    <div class="training-item">
-                        <div class="training-info">
-                            <div class="time">${training.start_time} - ${training.end_time}</div>
-                            <div class="details">
-                                <span>Группа: ${training.group_name || 'Не указана'}</span>
-                                <span>Тренер: ${training.trainer_full_name || 'Не указан'}</span>
-                                <span>Тренажер: ${training.simulator_id}</span>
-                                <span>Участников: ${training.max_participants}</span>
-                                <span>Уровень: ${training.skill_level}</span>
-                                <span>Цена: ${training.price} ₽</span>
-                            </div>
-                        </div>
-                        <div class="training-actions">
-                            <button class="btn-secondary" onclick="editTraining(${training.id})">
-                                Редактировать тренировку
-                            </button>
-                            <button class="btn-danger" onclick="deleteTraining(${training.id})">
-                                Удалить тренировку
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
+            html += `
+                <div class="training-date-header">${date}</div>
+                <div class="training-table-container">
+                    <table class="training-table">
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>Группа</th>
+                                <th>Тренер</th>
+                                <th>Тренажёр</th>
+                                <th>Участников</th>
+                                <th>Уровень</th>
+                                <th>Цена</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${grouped[date].map(training => `
+                                <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
+                                    <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                    <td>${training.group_name || 'Не указана'}</td>
+                                    <td>${training.trainer_full_name || 'Не указан'}</td>
+                                    <td>Тренажёр ${training.simulator_id}</td>
+                                    <td>${training.max_participants}</td>
+                                    <td>${training.skill_level}</td>
+                                    <td>${training.price} ₽</td>
+                                    <td class="training-actions">
+                                        <button class="btn-secondary" onclick="editTraining(${training.id})">
+                                            Редактировать
+                                        </button>
+                                        <button class="btn-danger" onclick="deleteTraining(${training.id})">
+                                            Удалить
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
         });
 
         trainingList.innerHTML = html;

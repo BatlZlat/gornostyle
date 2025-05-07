@@ -702,4 +702,89 @@ body {
         margin-top: 0.7rem;
         margin-left: 0;
     }
+}
+
+/* Стили для таблицы тренировок */
+.training-table-container {
+    margin-bottom: 2rem;
+    overflow-x: auto;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.training-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.training-table th,
+.training-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.training-table th {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.training-table th:first-child {
+    border-top-left-radius: 8px;
+}
+
+.training-table th:last-child {
+    border-top-right-radius: 8px;
+}
+
+.training-row {
+    transition: background-color 0.2s;
+}
+
+.training-row:hover {
+    background-color: var(--background-color);
+}
+
+.training-row.simulator-2 {
+    background-color: #f0f7ff;
+}
+
+.training-row.simulator-2:hover {
+    background-color: #e6f2ff;
+}
+
+.training-table .training-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-start;
+    padding: 0.5rem;
+}
+
+.training-table .btn-secondary,
+.training-table .btn-danger {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 1024px) {
+    .training-table th,
+    .training-table td {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+    }
+
+    .training-table .training-actions {
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+
+    .training-table .btn-secondary,
+    .training-table .btn-danger {
+        width: 100%;
+        text-align: center;
+    }
 } 
