@@ -507,34 +507,57 @@ async function loadTrainers() {
 }
 
 // Загрузка клиентов
-async function loadClients(sortBy = 'created') {
+async function loadClients() {
     try {
-        const response = await fetch(`/api/clients?sort=${sortBy}`);
+        const response = await fetch('/api/clients');
         const clients = await response.json();
         
-        const clientsList = document.querySelector('.clients-list');
-        if (clientsList) {
-            clientsList.innerHTML = clients.map(client => `
-                <div class="client-item">
-                    <div class="client-info">
-                        <h3>${client.full_name}</h3>
-                        <p>Телефон: ${client.phone}</p>
-                        <p>Дата рождения: ${formatDate(client.birth_date)}</p>
-                        ${client.has_child ? `
-                            <p>Ребенок: ${client.child_name}</p>
-                            <p>Возраст ребенка: ${client.child_birth_date}</p>
-                        ` : ''}
-                    </div>
-                    <div class="client-actions">
-                        <button class="btn-secondary" onclick="viewClient(${client.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editClient(${client.id})">Редактировать</button>
-                    </div>
-                </div>
-            `).join('');
-        }
+        const clientsContainer = document.getElementById('clientsContainer');
+        clientsContainer.innerHTML = `
+            <div class="training-table-container">
+                <table class="training-table">
+                    <thead>
+                        <tr>
+                            <th>ФИО</th>
+                            <th>Возраст</th>
+                            <th>Телефон</th>
+                            <th>Уровень</th>
+                            <th>Ребёнок</th>
+                            <th>Уровень ребёнка</th>
+                            <th>Баланс</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${clients.map(client => {
+                            const age = client.birth_date ? 
+                                Math.floor((new Date() - new Date(client.birth_date)) / (365.25 * 24 * 60 * 60 * 1000)) : 
+                                '-';
+                            
+                            return `
+                                <tr class="training-row">
+                                    <td>${client.full_name || '-'}</td>
+                                    <td>${age}</td>
+                                    <td>${client.phone || '-'}</td>
+                                    <td>${client.skill_level || '-'}</td>
+                                    <td>${client.child_name || '-'}</td>
+                                    <td>${client.child_skill_level || '-'}</td>
+                                    <td>${client.balance ? `${client.balance} ₽` : '0 ₽'}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" onclick="editClient(${client.id})">
+                                            Редактировать
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
     } catch (error) {
         console.error('Ошибка при загрузке клиентов:', error);
-        showError('Не удалось загрузить клиентов');
+        showError('Не удалось загрузить список клиентов');
     }
 }
 
@@ -1191,4 +1214,109 @@ async function deleteTraining(trainingId) {
         console.error('Ошибка при удалении тренировки:', error);
         showError(error.message || 'Не удалось удалить тренировку');
     }
-} 
+}
+
+// Функция для отображения модального окна редактирования клиента
+function showEditClientModal(client) {
+    // Удаляем старое модальное окно, если есть
+    const oldModal = document.getElementById('edit-client-modal');
+    if (oldModal) oldModal.remove();
+
+    // Формируем HTML модального окна
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'edit-client-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>Редактирование клиента</h2>
+            <form id="editClientForm">
+                <div class="form-group">
+                    <label for="full_name">ФИО:</label>
+                    <input type="text" id="full_name" name="full_name" value="${client.full_name || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label for="birth_date">Дата рождения:</label>
+                    <input type="date" id="birth_date" name="birth_date" value="${client.birth_date || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">Телефон:</label>
+                    <input type="tel" id="phone" name="phone" value="${client.phone || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label for="skill_level">Уровень:</label>
+                    <select id="skill_level" name="skill_level" required>
+                        <option value="beginner" ${client.skill_level === 'beginner' ? 'selected' : ''}>Начинающий</option>
+                        <option value="intermediate" ${client.skill_level === 'intermediate' ? 'selected' : ''}>Средний</option>
+                        <option value="advanced" ${client.skill_level === 'advanced' ? 'selected' : ''}>Продвинутый</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="child_name">Имя ребёнка:</label>
+                    <input type="text" id="child_name" name="child_name" value="${client.child_name || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="child_birth_date">Дата рождения ребёнка:</label>
+                    <input type="date" id="child_birth_date" name="child_birth_date" value="${client.child_birth_date || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="child_skill_level">Уровень ребёнка:</label>
+                    <select id="child_skill_level" name="child_skill_level">
+                        <option value="">Не указан</option>
+                        <option value="beginner" ${client.child_skill_level === 'beginner' ? 'selected' : ''}>Начинающий</option>
+                        <option value="intermediate" ${client.child_skill_level === 'intermediate' ? 'selected' : ''}>Средний</option>
+                        <option value="advanced" ${client.child_skill_level === 'advanced' ? 'selected' : ''}>Продвинутый</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                    <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+
+    // Закрытие по кнопке
+    document.getElementById('close-edit-modal').onclick = () => modal.remove();
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+    // Обработка сохранения
+    document.getElementById('editClientForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        // Преобразуем числовые поля
+        data.skill_level = Number(data.skill_level);
+        if (data.child_skill_level) {
+            data.child_skill_level = Number(data.child_skill_level);
+        }
+
+        try {
+            const response = await fetch(`/api/clients/${client.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Ошибка при сохранении');
+            }
+            showSuccess('Клиент обновлен');
+            modal.remove();
+            loadClients();
+        } catch (error) {
+            showError(error.message);
+        }
+    };
+}
+
+// Обработчик кнопки редактирования клиента
+window.editClient = function(id) {
+    fetch(`/api/clients/${id}`)
+        .then(res => res.json())
+        .then(client => showEditClientModal(client))
+        .catch(() => showError('Не удалось загрузить данные клиента'));
+}; 
