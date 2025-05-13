@@ -627,21 +627,14 @@ bot.on('message', async (msg) => {
 
                     // Получаем расписание на выбранную дату
                     const scheduleResult = await pool.query(
-                        `WITH RECURSIVE time_slots AS (
-                            SELECT 
-                                s.*,
-                                ts.id as training_id,
-                                ts.duration,
-                                ts.start_time as session_start_time
-                            FROM schedule s 
-                            LEFT JOIN training_sessions ts ON s.simulator_id = ts.simulator_id 
-                            AND s.date = ts.session_date 
-                            AND s.start_time >= ts.start_time 
-                            AND s.start_time < (ts.start_time + COALESCE(ts.duration, 30) * interval '1 minute')
-                            WHERE s.date = $1 AND s.is_holiday = false
-                        )
-                        SELECT * FROM time_slots
-                        ORDER BY start_time`,
+                        `SELECT s.*, ts.id as training_id
+                        FROM schedule s 
+                        LEFT JOIN training_sessions ts ON s.simulator_id = ts.simulator_id 
+                        AND s.date = ts.session_date 
+                        AND s.start_time >= ts.start_time 
+                        AND s.start_time < (ts.start_time + COALESCE(ts.duration, 30) * interval '1 minute')
+                        WHERE s.date = $1 AND s.is_holiday = false
+                        ORDER BY s.start_time`,
                         [date]
                     );
 
@@ -670,7 +663,7 @@ bot.on('message', async (msg) => {
                         const row = [];
                         simulators.forEach(sim => {
                             const slot = scheduleBySimulator[sim.id].find(s => s.start_time === time);
-                            const isBooked = slot && slot.training_id;
+                            const isBooked = slot && (slot.is_booked || slot.training_id);
                             
                             // Форматируем время в HH:MM
                             const [hours, minutes] = time.split(':');
@@ -756,11 +749,21 @@ bot.on('message', async (msg) => {
                             'SELECT balance FROM wallets WHERE client_id = $1',
                             [state.data.client_id]
                         );
-                        const balance = balanceResult.rows[0]?.balance || 0;
+                        const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                        const price = parseFloat(state.data.price);
 
-                        // Форматируем время в HH:MM
-                        const [hours, minutes] = time.split(':');
-                        const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                        if (balance < price) {
+                            return bot.sendMessage(chatId,
+                                '❌ На вашем балансе недостаточно средств для записи на тренировку.\n' +
+                                'Пожалуйста, пополните баланс и попробуйте снова.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['💳 Пополнить кошелек'], ['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
 
                         // Формируем итоговое сообщение
                         let summaryMessage = '📋 *Проверьте данные заявки:*\n\n';
@@ -770,14 +773,9 @@ bot.on('message', async (msg) => {
                         summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
                         summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
                         summaryMessage += `• Дата: ${state.data.preferred_date}\n`;
-                        summaryMessage += `• Время: ${formattedTime}\n`;
-                        summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
+                        summaryMessage += `• Время: ${time}\n`;
+                        summaryMessage += `• Стоимость: ${price} руб. 💰\n`;
                         summaryMessage += `• Ваш баланс: ${balance} руб. 💳\n\n`;
-
-                        if (balance < state.data.price) {
-                            summaryMessage += '⚠️ *Внимание!* На вашем балансе недостаточно средств.\n';
-                            summaryMessage += 'Пожалуйста, пополните баланс перед записью на тренировку.\n\n';
-                        }
 
                         summaryMessage += 'Выберите действие:';
 
@@ -833,9 +831,10 @@ bot.on('message', async (msg) => {
                             'SELECT balance FROM wallets WHERE client_id = $1',
                             [state.data.client_id]
                         );
-                        const balance = balanceResult.rows[0]?.balance || 0;
+                        const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                        const price = parseFloat(state.data.price);
 
-                        if (balance < state.data.price) {
+                        if (balance < price) {
                             return bot.sendMessage(chatId,
                                 '❌ На вашем балансе недостаточно средств для записи на тренировку.\n' +
                                 'Пожалуйста, пополните баланс и попробуйте снова.',
@@ -883,9 +882,9 @@ bot.on('message', async (msg) => {
                         const duration = state.data.duration;
                         const slotsNeeded = Math.ceil(duration / 30); // Количество необходимых 30-минутных слотов
 
-                        // Получаем все слоты для бронирования
+                        // Проверяем доступность всех необходимых слотов
                         const slotsToBook = await pool.query(
-                            `SELECT id FROM schedule 
+                            `SELECT id, start_time, is_booked FROM schedule 
                             WHERE simulator_id = $1 
                             AND date = $2 
                             AND start_time >= $3 
@@ -893,6 +892,35 @@ bot.on('message', async (msg) => {
                             ORDER BY start_time`,
                             [state.data.simulator_id, state.data.preferred_date, startTime, duration]
                         );
+
+                        // Проверяем, что все необходимые слоты свободны
+                        if (slotsToBook.rows.length < slotsNeeded) {
+                            return bot.sendMessage(chatId,
+                                '❌ Выбранное время недоступно для записи.\n' +
+                                'Пожалуйста, выберите другое время или уменьшите длительность тренировки до 30 минут.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+
+                        // Проверяем, что все слоты свободны
+                        const hasBookedSlots = slotsToBook.rows.some(slot => slot.is_booked);
+                        if (hasBookedSlots) {
+                            return bot.sendMessage(chatId,
+                                '❌ Выбранное время недоступно для записи.\n' +
+                                'Пожалуйста, выберите другое время или уменьшите длительность тренировки до 30 минут.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
 
                         // Бронируем каждый слот
                         for (const slot of slotsToBook.rows) {
@@ -908,6 +936,13 @@ bot.on('message', async (msg) => {
                             [state.data.simulator_id]
                         );
                         const simulatorName = simulatorResult.rows[0].name;
+
+                        // Получаем информацию о клиенте для уведомления администратора
+                        const clientResult = await pool.query(
+                            'SELECT full_name, phone FROM clients WHERE id = $1',
+                            [state.data.client_id]
+                        );
+                        const clientInfo = clientResult.rows[0];
 
                         // Обновляем баланс клиента
                         await pool.query(
@@ -944,10 +979,16 @@ bot.on('message', async (msg) => {
                             ]
                         );
 
+                        // Форматируем дату и время
+                        const [year, month, day] = state.data.preferred_date.split('-');
+                        const formattedDate = `${day}.${month}.${year}`;
+                        const [hours, minutes] = state.data.preferred_time.split(':');
+                        const formattedTime = `${hours}:${minutes}`;
+
                         // Формируем сообщение об успешной записи
                         let message = '✅ *Запись на тренировку успешно создана!*\n\n';
-                        message += `📅 Дата: ${state.data.preferred_date}\n`;
-                        message += `⏰ Время: ${state.data.preferred_time}\n`;
+                        message += `📅 Дата: ${formattedDate}\n`;
+                        message += `⏰ Время: ${formattedTime}\n`;
                         message += `🎿 Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n`;
                         message += `🏂 Тренажер: ${simulatorName}\n`;
                         message += `💰 Сумма списания: ${state.data.price} руб.\n`;
@@ -957,6 +998,33 @@ bot.on('message', async (msg) => {
                         }
 
                         message += '\nПроверить запись вы можете на главной странице бота, нажав кнопку Мои Записи.';
+
+                        // Отправляем уведомление администратору
+                        const adminMessage = 
+                            '📝 *Новая индивидуальная тренировка*\n\n' +
+                            `👤 *ФИО:* ${clientInfo.full_name}\n` +
+                            `📱 *Телефон:* ${clientInfo.phone}\n` +
+                            `🎿 *Тип:* ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n` +
+                            `🏂 *Снаряжение:* ${state.data.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
+                            `👨‍🏫 *Тренер:* ${state.data.with_trainer ? 'С тренером' : 'Без тренера'}\n` +
+                            `⏱ *Длительность:* ${state.data.duration} минут\n` +
+                            `📅 *Дата:* ${formattedDate}\n` +
+                            `⏰ *Время:* ${formattedTime}\n` +
+                            `💰 *Стоимость:* ${state.data.price} руб.`;
+
+                        // Импортируем и вызываем функцию уведомления администратора
+                        await notifyNewTrainingRequest({
+                            id: result.rows[0].id,
+                            client_name: clientInfo.full_name,
+                            client_phone: clientInfo.phone,
+                            training_type: state.data.training_type,
+                            equipment_type: state.data.equipment_type,
+                            with_trainer: state.data.with_trainer,
+                            duration: state.data.duration,
+                            preferred_date: formattedDate,
+                            preferred_time: formattedTime,
+                            price: state.data.price
+                        });
 
                         // Очищаем состояние
                         userStates.delete(chatId);
@@ -1404,11 +1472,21 @@ bot.on('callback_query', async (callbackQuery) => {
                     'SELECT balance FROM wallets WHERE client_id = $1',
                     [state.data.client_id]
                 );
-                const balance = balanceResult.rows[0]?.balance || 0;
+                const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                const price = parseFloat(state.data.price);
 
-                // Форматируем время в HH:MM
-                const [hours, minutes] = time.split(':');
-                const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                if (balance < price) {
+                    return bot.sendMessage(chatId,
+                        '❌ На вашем балансе недостаточно средств для записи на тренировку.\n' +
+                        'Пожалуйста, пополните баланс и попробуйте снова.',
+                        {
+                            reply_markup: {
+                                keyboard: [['💳 Пополнить кошелек'], ['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
 
                 // Формируем итоговое сообщение
                 let summaryMessage = '📋 *Проверьте данные заявки:*\n\n';
@@ -1418,14 +1496,9 @@ bot.on('callback_query', async (callbackQuery) => {
                 summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
                 summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
                 summaryMessage += `• Дата: ${state.data.preferred_date}\n`;
-                summaryMessage += `• Время: ${formattedTime}\n`;
-                summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
+                summaryMessage += `• Время: ${time}\n`;
+                summaryMessage += `• Стоимость: ${price} руб. 💰\n`;
                 summaryMessage += `• Ваш баланс: ${balance} руб. 💳\n\n`;
-
-                if (balance < state.data.price) {
-                    summaryMessage += '⚠️ *Внимание!* На вашем балансе недостаточно средств.\n';
-                    summaryMessage += 'Пожалуйста, пополните баланс перед записью на тренировку.\n\n';
-                }
 
                 summaryMessage += 'Выберите действие:';
 
