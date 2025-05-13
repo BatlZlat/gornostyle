@@ -471,27 +471,118 @@ bot.on('message', async (msg) => {
 
                 const state = userStates.get(chatId);
                 state.data.preferred_date = date;
-                state.step = 'preferred_time';
-                userStates.set(chatId, state);
 
-                return bot.sendMessage(chatId,
-                    '⏰ *Введите предпочтительное время в формате ЧЧ:ММ:*\n\n' +
-                    'Например: 14:30',
-                    {
+                try {
+                    // Получаем информацию о тренажерах
+                    const simulatorsResult = await pool.query(
+                        'SELECT id, name FROM simulators WHERE is_working = true'
+                    );
+                    const simulators = simulatorsResult.rows;
+
+                    // Получаем расписание на выбранную дату
+                    const scheduleResult = await pool.query(
+                        `WITH RECURSIVE time_slots AS (
+                            SELECT 
+                                s.*,
+                                ts.id as training_id,
+                                ts.duration,
+                                ts.start_time as session_start_time
+                            FROM schedule s 
+                            LEFT JOIN training_sessions ts ON s.simulator_id = ts.simulator_id 
+                            AND s.date = ts.session_date 
+                            AND s.start_time >= ts.start_time 
+                            AND s.start_time < (ts.start_time + COALESCE(ts.duration, 30) * interval '1 minute')
+                            WHERE s.date = $1 AND s.is_holiday = false
+                        )
+                        SELECT * FROM time_slots
+                        ORDER BY start_time`,
+                        [date]
+                    );
+
+                    // Группируем расписание по тренажерам
+                    const scheduleBySimulator = {};
+                    simulators.forEach(sim => {
+                        scheduleBySimulator[sim.id] = scheduleResult.rows.filter(
+                            s => s.simulator_id === sim.id
+                        );
+                    });
+
+                    // Создаем клавиатуру с доступным временем
+                    const keyboard = [];
+                    const timeSlots = new Set();
+
+                    // Собираем все временные слоты
+                    scheduleResult.rows.forEach(slot => {
+                        timeSlots.add(slot.start_time);
+                    });
+
+                    // Сортируем временные слоты
+                    const sortedTimeSlots = Array.from(timeSlots).sort();
+
+                    // Создаем строки клавиатуры
+                    sortedTimeSlots.forEach(time => {
+                        const row = [];
+                        simulators.forEach(sim => {
+                            const slot = scheduleBySimulator[sim.id].find(s => s.start_time === time);
+                            const isBooked = slot && slot.training_id;
+                            
+                            // Форматируем время в HH:MM
+                            const [hours, minutes] = time.split(':');
+                            const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                            
+                            row.push({
+                                text: `${isBooked ? '⏰' : '✅'} ${formattedTime}`,
+                                callback_data: isBooked ? 
+                                    'booked' : 
+                                    `time_${sim.id}_${time}`
+                            });
+                        });
+                        keyboard.push(row);
+                    });
+
+                    // Добавляем кнопку "Назад"
+                    keyboard.push([{
+                        text: '🔙 Назад',
+                        callback_data: 'back_to_date'
+                    }]);
+
+                    state.step = 'select_time';
+                    userStates.set(chatId, state);
+
+                    // Формируем сообщение с информацией о тренажерах
+                    let message = '⏰ *Выберите удобное время:*\n\n';
+                    simulators.forEach((sim, index) => {
+                        message += `${index + 1}. ${sim.name}\n`;
+                    });
+                    message += '\n✅ - время доступно\n⏰ - время занято';
+
+                    return bot.sendMessage(chatId, message, {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
+                            inline_keyboard: keyboard
                         }
-                    }
-                );
-            }
-            case 'preferred_time': {
-                const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-                if (!timeRegex.test(msg.text)) {
+                    });
+                } catch (error) {
+                    console.error('Ошибка при получении расписания:', error);
                     return bot.sendMessage(chatId,
-                        '❌ Неверный формат времени. Пожалуйста, используйте формат ЧЧ:ММ\n' +
-                        'Например: 14:30',
+                        '❌ Произошла ошибка при получении расписания. Пожалуйста, попробуйте позже.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+            }
+            case 'select_time': {
+                const data = msg.text;
+                if (data === 'back_to_date') {
+                    // Возвращаемся к выбору даты
+                    userStates.get(chatId).step = 'preferred_date';
+                    return bot.sendMessage(chatId,
+                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                        'Например: 25.12.2024',
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -502,63 +593,85 @@ bot.on('message', async (msg) => {
                     );
                 }
 
-                const state = userStates.get(chatId);
-                state.data.preferred_time = msg.text;
-
-                try {
-                    // Создаем запись в базе данных
-                    const result = await pool.query(
-                        `INSERT INTO training_requests (
-                            client_id, 
-                            child_id, 
-                            training_type, 
-                            preferred_date, 
-                            preferred_time, 
-                            status
-                        ) VALUES ($1, $2, $3, $4, $5, 'pending') 
-                        RETURNING id`,
-                        [
-                            state.data.client_id,
-                            state.data.is_child ? state.data.child_id : null,
-                            state.data.training_type,
-                            state.data.preferred_date,
-                            state.data.preferred_time
-                        ]
-                    );
-
-                    // Формируем сообщение об успешной записи
-                    let message = '✅ *Запись на тренировку успешно создана!*\n\n';
-                    message += `📅 Дата: ${state.data.preferred_date}\n`;
-                    message += `⏰ Время: ${state.data.preferred_time}\n`;
-                    message += `🎿 Тип тренировки: ${state.data.training_type === 'group' ? 'Групповая' : 'Индивидуальная'}\n`;
-                    
-                    if (state.data.is_child) {
-                        message += `👶 Ребенок: ${state.data.child_name}\n`;
-                    }
-
-                    message += '\nМы свяжемся с вами для подтверждения записи.';
-
-                    // Очищаем состояние
-                    userStates.delete(chatId);
-
-                    return bot.sendMessage(chatId, message, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
-                        }
+                if (data === 'booked') {
+                    // Игнорируем нажатие на занятое время
+                    return bot.answerCallbackQuery(msg.id, {
+                        text: 'Это время уже занято',
+                        show_alert: true
                     });
-                } catch (error) {
-                    console.error('Ошибка при создании записи:', error);
-                    return bot.sendMessage(chatId,
-                        '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
-                        {
+                }
+
+                if (data.startsWith('time_')) {
+                    const [, simulatorId, time] = data.split('_');
+                    
+                    try {
+                        // Создаем запись в базе данных
+                        const result = await pool.query(
+                            `INSERT INTO training_requests (
+                                client_id, 
+                                child_id, 
+                                training_type, 
+                                preferred_date, 
+                                preferred_time,
+                                simulator_id,
+                                status
+                            ) VALUES ($1, $2, $3, $4, $5, $6, 'pending') 
+                            RETURNING id`,
+                            [
+                                state.data.client_id,
+                                state.data.is_child ? state.data.child_id : null,
+                                state.data.training_type,
+                                state.data.preferred_date,
+                                time,
+                                simulatorId
+                            ]
+                        );
+
+                        // Получаем информацию о тренажере
+                        const simulatorResult = await pool.query(
+                            'SELECT name FROM simulators WHERE id = $1',
+                            [simulatorId]
+                        );
+                        const simulatorName = simulatorResult.rows[0].name;
+
+                        // Формируем сообщение об успешной записи
+                        let message = '✅ *Запись на тренировку успешно создана!*\n\n';
+                        message += `📅 Дата: ${state.data.preferred_date}\n`;
+                        message += `⏰ Время: ${time}\n`;
+                        message += `🎿 Тип тренировки: ${state.data.training_type === 'group' ? 'Групповая' : 'Индивидуальная'}\n`;
+                        message += `🏂 Тренажер: ${simulatorName}\n`;
+                        
+                        if (state.data.is_child) {
+                            message += `👶 Ребенок: ${state.data.child_name}\n`;
+                        }
+
+                        message += '\nМы свяжемся с вами для подтверждения записи.';
+
+                        // Очищаем состояние
+                        userStates.delete(chatId);
+
+                        // Удаляем сообщение с кнопками
+                        await bot.deleteMessage(chatId, msg.message_id);
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
                             }
-                        }
-                    );
+                        });
+                    } catch (error) {
+                        console.error('Ошибка при создании записи:', error);
+                        return bot.sendMessage(chatId,
+                            '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
                 }
             }
         }
@@ -911,5 +1024,144 @@ bot.on('message', async (msg) => {
                 );
             }
         }
+    }
+});
+
+// Добавляем обработчик callback_query для инлайн-кнопок
+bot.on('callback_query', async (callbackQuery) => {
+    const chatId = callbackQuery.message.chat.id;
+    const data = callbackQuery.data;
+    const state = userStates.get(chatId);
+
+    try {
+        if (!state) {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Сессия истекла. Пожалуйста, начните процесс записи заново.',
+                show_alert: true
+            });
+            return showMainMenu(chatId);
+        }
+
+        if (data === 'back_to_date') {
+            // Возвращаемся к выбору даты
+            state.step = 'preferred_date';
+            userStates.set(chatId, state);
+            await bot.answerCallbackQuery(callbackQuery.id);
+            return bot.sendMessage(chatId,
+                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                'Например: 25.12.2024',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        if (data === 'booked') {
+            // Игнорируем нажатие на занятое время
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Это время уже занято',
+                show_alert: true
+            });
+            return;
+        }
+
+        if (data.startsWith('time_')) {
+            const [, simulatorId, time] = data.split('_');
+            
+            try {
+                // Создаем запись в базе данных
+                const result = await pool.query(
+                    `INSERT INTO training_requests (
+                        client_id, 
+                        child_id, 
+                        training_type, 
+                        preferred_date, 
+                        preferred_time,
+                        simulator_id,
+                        status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, 'pending') 
+                    RETURNING id`,
+                    [
+                        state.data.client_id,
+                        state.data.is_child ? state.data.child_id : null,
+                        state.data.training_type,
+                        state.data.preferred_date,
+                        time,
+                        simulatorId
+                    ]
+                );
+
+                // Получаем информацию о тренажере
+                const simulatorResult = await pool.query(
+                    'SELECT name FROM simulators WHERE id = $1',
+                    [simulatorId]
+                );
+                const simulatorName = simulatorResult.rows[0].name;
+
+                // Форматируем время в HH:MM
+                const [hours, minutes] = time.split(':');
+                const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+
+                // Формируем сообщение об успешной записи
+                let message = '✅ *Запись на тренировку успешно создана!*\n\n';
+                message += `📅 Дата: ${state.data.preferred_date}\n`;
+                message += `⏰ Время: ${formattedTime}\n`;
+                message += `🎿 Тип тренировки: ${state.data.training_type === 'group' ? 'Групповая' : 'Индивидуальная'}\n`;
+                message += `🏂 Тренажер: ${simulatorName}\n`;
+                
+                if (state.data.is_child) {
+                    message += `👶 Ребенок: ${state.data.child_name}\n`;
+                }
+
+                message += '\nМы свяжемся с вами для подтверждения записи.';
+
+                // Очищаем состояние
+                userStates.delete(chatId);
+
+                // Удаляем сообщение с кнопками
+                await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+
+                // Отвечаем на callback-запрос
+                await bot.answerCallbackQuery(callbackQuery.id);
+
+                return bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка при создании записи:', error);
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: 'Произошла ошибка при создании записи. Пожалуйста, попробуйте позже.',
+                    show_alert: true
+                });
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка при обработке callback-запроса:', error);
+        try {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                show_alert: true
+            });
+        } catch (e) {
+            console.error('Ошибка при отправке ответа на callback-запрос:', e);
+        }
+        return showMainMenu(chatId);
     }
 });
