@@ -1060,17 +1060,20 @@ bot.on('message', async (msg) => {
             let childInfo = 'нет';
             if (client) {
                 const childRes = await pool.query('SELECT * FROM children WHERE parent_id = $1', [client.id]);
-                if (childRes.rows[0]) {
-                    const birthDate = new Date(childRes.rows[0].birth_date);
-                    const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
-                    childInfo = `${childRes.rows[0].full_name} (${age} лет)`;
+                if (childRes.rows.length > 0) {
+                    childInfo = childRes.rows.map(child => {
+                        const birthDate = new Date(child.birth_date);
+                        const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                        return `${child.full_name} (${age} лет)`;
+                    }).join('\n👶 ');
+                    childInfo = '👶 ' + childInfo;
                 }
                 return bot.sendMessage(chatId,
                     '👤 *Ваша личная информация:*\n' +
                     `📝 *ФИО:* ${client.full_name}\n` +
                     `📅 *Дата рождения:* ${new Date(client.birth_date).toLocaleDateString()}\n` +
                     `📱 *Телефон:* ${client.phone}\n` +
-                    `👶 *Ребенок:* ${childInfo}`,
+                    `👶 *Дети:*\n${childInfo}`,
                     { 
                         parse_mode: 'Markdown', 
                         reply_markup: { 
