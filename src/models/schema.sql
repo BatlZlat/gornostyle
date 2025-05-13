@@ -163,29 +163,13 @@ CREATE TABLE prices (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Таблица заявок на групповые тренировки
-CREATE TABLE group_training_requests (
-    id SERIAL PRIMARY KEY,
-    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
-    has_group BOOLEAN NOT NULL,
-    group_size INTEGER,
-    training_frequency VARCHAR(20) NOT NULL, -- 'regular' или 'one-time'
-    sport_type VARCHAR(20) NOT NULL, -- 'ski' или 'snowboard'
-    skill_level INTEGER CHECK (skill_level BETWEEN 0 AND 10),
-    preferred_date DATE NOT NULL,
-    preferred_time TIME NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Таблица заявок на тренировки
 CREATE TABLE training_requests (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     child_id INTEGER REFERENCES children(id),
     training_type VARCHAR(20) NOT NULL, -- 'individual' или 'group'
-    equipment_type VARCHAR(20), -- 'ski' или 'snowboard'
+    equipment_type VARCHAR(20) NOT NULL, -- 'ski' или 'snowboard'
     with_trainer BOOLEAN NOT NULL,
     duration INTEGER NOT NULL,
     preferred_date DATE NOT NULL,
@@ -193,6 +177,11 @@ CREATE TABLE training_requests (
     simulator_id INTEGER REFERENCES simulators(id),
     price DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'confirmed', 'cancelled'
+    -- Поля для групповых тренировок
+    has_group BOOLEAN DEFAULT FALSE,
+    group_size INTEGER,
+    training_frequency VARCHAR(20), -- 'regular' или 'one-time'
+    skill_level INTEGER CHECK (skill_level BETWEEN 0 AND 10),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -214,8 +203,6 @@ CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
-CREATE INDEX idx_group_training_requests_client ON group_training_requests(client_id);
-CREATE INDEX idx_group_training_requests_status ON group_training_requests(status);
 CREATE INDEX idx_training_requests_client ON training_requests(client_id);
 CREATE INDEX idx_training_requests_status ON training_requests(status);
 
@@ -274,12 +261,9 @@ CREATE TRIGGER update_schedule_settings_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_group_training_requests_updated_at
-    BEFORE UPDATE ON group_training_requests
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_training_requests_updated_at
     BEFORE UPDATE ON training_requests
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column(); 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Удаляем старую таблицу group_training_requests 
