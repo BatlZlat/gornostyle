@@ -576,6 +576,58 @@ bot.on('message', async (msg) => {
                     return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
                 }
             }
+            case 'add_child_name': {
+                if (msg.text.length < 5) {
+                    return bot.sendMessage(chatId,
+                        '❌ Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                state.data.child_name = msg.text;
+                state.step = 'add_child_birth_date';
+                return bot.sendMessage(chatId,
+                    '📅 *Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:*',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            case 'add_child_birth_date': {
+                const birthDate = validateDate(msg.text);
+                if (!birthDate) {
+                    return bot.sendMessage(chatId,
+                        '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                try {
+                    const client = await getClientByTelegramId(state.data.telegram_id);
+                    await pool.query(
+                        'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, NULL, NULL)',
+                        [client.id, state.data.child_name, birthDate]
+                    );
+                    await bot.sendMessage(chatId, '✅ Ребенок успешно добавлен!');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } catch (e) {
+                    console.error('Ошибка при добавлении ребенка:', e);
+                    return bot.sendMessage(chatId, '❌ Произошла ошибка при добавлении ребенка. Попробуйте позже.');
+                }
+            }
             case 'has_group':
                 console.log('Обработка ответа на вопрос о компании:', msg.text);
                 if (msg.text === 'Да') {
