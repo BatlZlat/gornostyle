@@ -878,6 +878,30 @@ bot.on('message', async (msg) => {
                             ]
                         );
 
+                        // Бронируем слоты в расписании
+                        const startTime = state.data.preferred_time;
+                        const duration = state.data.duration;
+                        const slotsNeeded = Math.ceil(duration / 30); // Количество необходимых 30-минутных слотов
+
+                        // Получаем все слоты для бронирования
+                        const slotsToBook = await pool.query(
+                            `SELECT id FROM schedule 
+                            WHERE simulator_id = $1 
+                            AND date = $2 
+                            AND start_time >= $3 
+                            AND start_time < ($3::time + ($4 * interval '1 minute'))
+                            ORDER BY start_time`,
+                            [state.data.simulator_id, state.data.preferred_date, startTime, duration]
+                        );
+
+                        // Бронируем каждый слот
+                        for (const slot of slotsToBook.rows) {
+                            await pool.query(
+                                'UPDATE schedule SET is_booked = true WHERE id = $1',
+                                [slot.id]
+                            );
+                        }
+
                         // Получаем информацию о тренажере
                         const simulatorResult = await pool.query(
                             'SELECT name FROM simulators WHERE id = $1',
@@ -932,7 +956,7 @@ bot.on('message', async (msg) => {
                             message += `👶 Ребенок: ${state.data.child_name}\n`;
                         }
 
-                        message += '\nМы свяжемся с вами для подтверждения записи.';
+                        message += '\nПроверить запись вы можете на главной странице бота, нажав кнопку Мои Записи.';
 
                         // Очищаем состояние
                         userStates.delete(chatId);
