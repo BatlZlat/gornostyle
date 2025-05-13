@@ -301,297 +301,182 @@ bot.on('message', async (msg) => {
                     }
                 });
             case 'has_child':
-                if (msg.text.toLowerCase() === 'да') {
-                    state.step = 'child_name';
-                    return bot.sendMessage(chatId, 'Введите полное имя ребенка (ФИО):');
-                } else {
-                    await finishRegistration(chatId, state.data);
-                    return;
+                if (msg.text === 'Да') {
+                    const state = userStates.get(chatId);
+                    if (state.data.children.length > 1) {
+                        // Если детей несколько, показываем список
+                        const childrenList = state.data.children.map((child, index) => 
+                            `${index + 1}. ${child.full_name} (${new Date(child.birth_date).toLocaleDateString()})`
+                        ).join('\n');
+
+                        state.step = 'select_child';
+                        userStates.set(chatId, state);
+                        
+                        return bot.sendMessage(chatId,
+                            '👶 *Выберите ребенка из списка:*\n\n' +
+                            childrenList,
+                            { 
+                                parse_mode: 'Markdown', 
+                                reply_markup: { 
+                                    keyboard: [
+                                        ...state.data.children.map((_, i) => [`${i + 1}`]),
+                                        ['🔙 Назад в меню']
+                                    ], 
+                                    resize_keyboard: true 
+                                } 
+                            }
+                        );
+                    } else {
+                        // Если ребенок один, сразу переходим к выбору типа тренировки
+                        const selectedChild = state.data.children[0];
+                        userStates.set(chatId, {
+                            step: 'training_type',
+                            data: {
+                                client_id: state.data.client_id,
+                                is_child: true,
+                                child_id: selectedChild.id,
+                                child_name: selectedChild.full_name
+                            }
+                        });
+
+                        return bot.sendMessage(chatId,
+                            '🎿 *Выберите тип тренировки:*\n\n' +
+                            '• Групповая - тренировка в группе с другими участниками\n' +
+                            '• Индивидуальная - персональная тренировка',
+                            {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    keyboard: [
+                                        ['👥 Групповая'],
+                                        ['👤 Индивидуальная'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+                } else if (msg.text === 'Нет') {
+                    // Если не хотят записывать ребенка, переходим к выбору типа тренировки для себя
+                    const state = userStates.get(chatId);
+                    userStates.set(chatId, {
+                        step: 'training_type',
+                        data: {
+                            client_id: state.data.client_id,
+                            is_child: false
+                        }
+                    });
+
+                    return bot.sendMessage(chatId,
+                        '🎿 *Выберите тип тренировки:*\n\n' +
+                        '• Групповая - тренировка в группе с другими участниками\n' +
+                        '• Индивидуальная - персональная тренировка',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['👥 Групповая'],
+                                    ['👤 Индивидуальная'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
-            case 'child_name':
-                if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:');
-                state.data.child = { full_name: msg.text };
-                state.step = 'child_birth_date';
-                return bot.sendMessage(chatId, 'Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:');
-            case 'child_birth_date':
-                const registrationChildBirthDate = validateDate(msg.text);
-                if (!registrationChildBirthDate) return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
-                state.data.child.birth_date = registrationChildBirthDate;
-                await finishRegistration(chatId, state.data);
-                return;
-            case 'edit_data': {
-                const client = await getClientByTelegramId(msg.from.id.toString());
-                const childRes = await pool.query('SELECT * FROM children WHERE parent_id = $1', [client.id]);
-                const hasChild = childRes.rows.length > 0;
+                break;
+            case 'select_child': {
+                const state = userStates.get(chatId);
+                const childIndex = parseInt(msg.text) - 1;
                 
-                if (msg.text === '1. ФИО') {
-                    userStates.set(chatId, {
-                        step: 'edit_full_name',
-                        data: { 
-                            telegram_id: msg.from.id.toString()
-                        }
-                    });
+                if (isNaN(childIndex) || childIndex < 0 || childIndex >= state.data.children.length) {
                     return bot.sendMessage(chatId,
-                        '📝 *Введите новое ФИО:*',
+                        '❌ Пожалуйста, выберите номер ребенка из списка.',
                         {
-                            parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
+                                keyboard: [
+                                    ...state.data.children.map((_, i) => [`${i + 1}`]),
+                                    ['🔙 Назад в меню']
+                                ],
                                 resize_keyboard: true
                             }
                         }
                     );
                 }
 
-                if (msg.text === '2. Телефон') {
-                    userStates.set(chatId, {
-                        step: 'edit_phone',
-                        data: { 
-                            telegram_id: msg.from.id.toString()
-                        }
-                    });
-                    return bot.sendMessage(chatId,
-                        '📱 *Введите новый номер телефона в формате +79999999999:*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                if (msg.text === '3. Дата рождения') {
-                    userStates.set(chatId, {
-                        step: 'edit_birth_date',
-                        data: { 
-                            telegram_id: msg.from.id.toString()
-                        }
-                    });
-                    return bot.sendMessage(chatId,
-                        '📅 *Введите новую дату рождения в формате ДД.ММ.ГГГГ:*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                if (msg.text === '4. ФИО ребенка') {
-                    userStates.set(chatId, {
-                        step: 'edit_child_name',
-                        data: { 
-                            telegram_id: msg.from.id.toString(),
-                            child_id: childRes.rows[0].id
-                        }
-                    });
-                    return bot.sendMessage(chatId,
-                        '👶 *Введите новое ФИО ребенка:*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                
-                if (msg.text === '5. Дата рождения ребенка') {
-                    userStates.set(chatId, {
-                        step: 'edit_child_birth_date',
-                        data: { 
-                            telegram_id: msg.from.id.toString(),
-                            child_id: childRes.rows[0].id
-                        }
-                    });
-                    return bot.sendMessage(chatId,
-                        '📅 *Введите новую дату рождения ребенка в формате ДД.ММ.ГГГГ:*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                let message = '✏️ *Что вы хотите изменить?*\n\n' +
-                             '1. ФИО\n' +
-                             '2. Телефон\n' +
-                             '3. Дата рождения';
-                 
-                if (hasChild) {
-                    message += '\n4. ФИО ребенка\n' +
-                              '5. Дата рождения ребенка';
-                }
-
-                const keyboard = [
-                    ['1. ФИО', '2. Телефон'],
-                    ['3. Дата рождения']
-                ];
-
-                if (hasChild) {
-                    keyboard.push(['4. ФИО ребенка', '5. Дата рождения ребенка']);
-                }
-
-                keyboard.push(['🔙 Назад в меню']);
-
-                return bot.sendMessage(chatId, message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: keyboard,
-                        resize_keyboard: true
+                const selectedChild = state.data.children[childIndex];
+                userStates.set(chatId, {
+                    step: 'training_type',
+                    data: {
+                        client_id: state.data.client_id,
+                        is_child: true,
+                        child_id: selectedChild.id,
+                        child_name: selectedChild.full_name
                     }
                 });
-            }
-            case 'edit_full_name': {
-                if (msg.text.length < 5) {
-                    return bot.sendMessage(chatId,
-                        '❌ Имя должно содержать минимум 5 символов. Попробуйте еще раз:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                try {
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    await pool.query(
-                        'UPDATE clients SET full_name = $1 WHERE id = $2',
-                        [msg.text, client.id]
-                    );
-                    await bot.sendMessage(chatId, '✅ ФИО успешно обновлено!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
-                }
-            }
-            case 'edit_phone': {
-                const phone = validatePhone(msg.text);
-                if (!phone) {
-                    return bot.sendMessage(chatId,
-                        '❌ Неверный формат номера телефона. Используйте формат +79999999999:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                try {
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    await pool.query(
-                        'UPDATE clients SET phone = $1 WHERE id = $2',
-                        [phone, client.id]
-                    );
-                    await bot.sendMessage(chatId, '✅ Номер телефона успешно обновлен!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
-                }
-            }
-            case 'edit_birth_date': {
-                const birthDate = validateDate(msg.text);
-                if (!birthDate) {
-                    return bot.sendMessage(chatId,
-                        '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                try {
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    await pool.query(
-                        'UPDATE clients SET birth_date = $1 WHERE id = $2',
-                        [birthDate, client.id]
-                    );
-                    await bot.sendMessage(chatId, '✅ Дата рождения успешно обновлена!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
-                }
-            }
-            case 'edit_child_name': {
-                if (msg.text.length < 5) {
-                    return bot.sendMessage(chatId,
-                        '❌ Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                try {
-                    await pool.query(
-                        'UPDATE children SET full_name = $1 WHERE id = $2',
-                        [msg.text, state.data.child_id]
-                    );
-                    await bot.sendMessage(chatId, '✅ ФИО ребенка успешно обновлено!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
-                }
-            }
-            case 'edit_child_birth_date': {
-                const birthDate = validateDate(msg.text);
-                if (!birthDate) {
-                    return bot.sendMessage(chatId,
-                        '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                try {
-                    await pool.query(
-                        'UPDATE children SET birth_date = $1 WHERE id = $2',
-                        [birthDate, state.data.child_id]
-                    );
-                    await bot.sendMessage(chatId, '✅ Дата рождения ребенка успешно обновлена!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при обновлении данных. Попробуйте позже.');
-                }
-            }
-            case 'add_child_name': {
-                if (msg.text.length < 5) {
-                    return bot.sendMessage(chatId,
-                        '❌ Имя ребенка должно содержать минимум 5 символов. Попробуйте еще раз:',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                state.data.child_name = msg.text;
-                state.step = 'add_child_birth_date';
+
                 return bot.sendMessage(chatId,
-                    '📅 *Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:*',
+                    '🎿 *Выберите тип тренировки:*\n\n' +
+                    '• Групповая - тренировка в группе с другими участниками\n' +
+                    '• Индивидуальная - персональная тренировка',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['👥 Групповая'],
+                                ['👤 Индивидуальная'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            case 'training_type': {
+                if (msg.text === '👥 Групповая' || msg.text === '👤 Индивидуальная') {
+                    const state = userStates.get(chatId);
+                    state.data.training_type = msg.text === '👥 Групповая' ? 'group' : 'individual';
+                    state.step = 'preferred_date';
+                    userStates.set(chatId, state);
+
+                    return bot.sendMessage(chatId,
+                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                        'Например: 25.12.2024',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                break;
+            }
+            case 'preferred_date': {
+                const date = validateDate(msg.text);
+                if (!date) {
+                    return bot.sendMessage(chatId,
+                        '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\n' +
+                        'Например: 25.12.2024',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                const state = userStates.get(chatId);
+                state.data.preferred_date = date;
+                state.step = 'preferred_time';
+                userStates.set(chatId, state);
+
+                return bot.sendMessage(chatId,
+                    '⏰ *Введите предпочтительное время в формате ЧЧ:ММ:*\n\n' +
+                    'Например: 14:30',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -601,12 +486,14 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
-            case 'add_child_birth_date': {
-                const birthDate = validateDate(msg.text);
-                if (!birthDate) {
+            case 'preferred_time': {
+                const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+                if (!timeRegex.test(msg.text)) {
                     return bot.sendMessage(chatId,
-                        '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:',
+                        '❌ Неверный формат времени. Пожалуйста, используйте формат ЧЧ:ММ\n' +
+                        'Например: 14:30',
                         {
+                            parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
@@ -614,303 +501,45 @@ bot.on('message', async (msg) => {
                         }
                     );
                 }
-                try {
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    await pool.query(
-                        'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, NULL, NULL)',
-                        [client.id, state.data.child_name, birthDate]
-                    );
-                    await bot.sendMessage(chatId, '✅ Ребенок успешно добавлен!');
-                    userStates.delete(chatId);
-                    return showMainMenu(chatId);
-                } catch (e) {
-                    console.error('Ошибка при добавлении ребенка:', e);
-                    return bot.sendMessage(chatId, '❌ Произошла ошибка при добавлении ребенка. Попробуйте позже.');
-                }
-            }
-            case 'has_group':
-                console.log('Обработка ответа на вопрос о компании:', msg.text);
-                if (msg.text === 'Да') {
-                    console.log('Пользователь выбрал "Да" - переход к выбору инвентаря');
-                    state.step = 'sport_type';
-                    state.data.hasGroup = true;
-                    return bot.sendMessage(chatId,
-                        '🏂 *Какой инвентарь вас интересует?*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['Горные лыжи', 'Сноуборд'], ['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                } else if (msg.text === 'Нет') {
-                    console.log('Пользователь выбрал "Нет" - переход к выбору инвентаря');
-                    state.step = 'sport_type';
-                    state.data.hasGroup = false;
-                    return bot.sendMessage(chatId,
-                        '🏂 *Какой инвентарь вас интересует?*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['Горные лыжи', 'Сноуборд'], ['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                break;
-            case 'sport_type':
-                console.log('Обработка выбора инвентаря:', msg.text);
-                if (msg.text === 'Горные лыжи' || msg.text === 'Сноуборд') {
-                    state.data.sportType = msg.text === 'Горные лыжи' ? 'ski' : 'snowboard';
-                    state.step = 'training_frequency';
-                    console.log('Переход к выбору частоты тренировок');
-                    
-                    return bot.sendMessage(chatId,
-                        '🔄 *Как часто вы хотите заниматься?*',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['Регулярно', 'Разово'], ['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                break;
-            case 'training_frequency':
-                console.log('Обработка выбора частоты:', msg.text);
-                if (msg.text === 'Регулярно' || msg.text === 'Разово') {
-                    state.data.trainingFrequency = msg.text === 'Регулярно' ? 'regular' : 'one-time';
-                    state.step = 'skill_level';
-                    console.log('Переход к оценке уровня катания');
-                    
-                    return bot.sendMessage(chatId,
-                        '📊 *Оцените ваш уровень катания от 0 до 10:*\n\n' +
-                        '0 - Никогда не катался\n' +
-                        '10 - Профессионал',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                break;
-            case 'skill_level':
-                console.log('Обработка уровня катания:', msg.text);
-                const skillLevel = parseInt(msg.text);
-                if (isNaN(skillLevel) || skillLevel < 0 || skillLevel > 10) {
-                    console.log('Неверный уровень катания');
-                    return bot.sendMessage(chatId,
-                        '❌ Пожалуйста, введите число от 0 до 10:',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
 
-                state.data.skillLevel = skillLevel;
-                
-                // Если у пользователя нет своей группы, пропускаем вопрос о размере группы
-                if (!state.data.hasGroup) {
-                    state.step = 'preferred_date';
-                    console.log('Переход к выбору даты (без группы)');
-                    return bot.sendMessage(chatId,
-                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                        'Например: 25.12.2024',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                state.step = 'group_size';
-                console.log('Переход к выбору размера группы');
-                return bot.sendMessage(chatId,
-                    '👥 *Введите количество человек в группе:*',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            case 'group_size':
-                console.log('Обработка размера группы:', msg.text);
-                let groupSize;
-                
-                // Проверяем, является ли ввод числом
-                if (/^\d+$/.test(msg.text)) {
-                    groupSize = parseInt(msg.text);
-                    console.log('Введено число:', groupSize);
-                } else {
-                    console.log('Неверный формат размера группы');
-                    return bot.sendMessage(chatId,
-                        '❌ Пожалуйста, введите число:',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                // Сохраняем размер группы и переходим к выбору даты
-                state.data.groupSize = groupSize;
-                state.data.trainingType = 'Групповая'; // Устанавливаем тип тренировки по умолчанию
-                state.step = 'preferred_date';
-                console.log('Переход к выбору даты, размер группы:', groupSize);
-                
-                return bot.sendMessage(chatId,
-                    '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                    'Например: 25.12.2024',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            case 'training_type':
-                console.log('Обработка выбора типа тренировки:', msg.text);
-                if (msg.text === 'Индивидуальная' || msg.text === 'Групповая') {
-                    state.data.trainingType = msg.text;
-                    state.step = 'preferred_date';
-                    console.log('Переход к выбору даты, тип тренировки:', msg.text);
-                    
-                    return bot.sendMessage(chatId,
-                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                        'Например: 25.12.2024',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-                console.log('Неверный выбор типа тренировки');
-                return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите тип тренировки из предложенных вариантов:',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['Индивидуальная', 'Групповая'], ['🔙 Назад']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            case 'preferred_date':
-                console.log('Обработка ввода даты:', msg.text);
-                const date = validateDate(msg.text);
-                if (!date) {
-                    console.log('Неверный формат даты');
-                    return bot.sendMessage(chatId,
-                        '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\n' +
-                        'Например: 25.12.2024',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                state.data.preferredDate = date;
-                state.step = 'preferred_time';
-                console.log('Переход к выбору времени, дата:', date);
-
-                return bot.sendMessage(chatId,
-                    '⏰ *Введите предпочтительное время в формате ЧЧ:ММ:*\n\n' +
-                    'Например: 14:30',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            case 'preferred_time':
-                console.log('Обработка ввода времени:', msg.text);
-                if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(msg.text)) {
-                    console.log('Неверный формат времени');
-                    return bot.sendMessage(chatId,
-                        '❌ Неверный формат времени. Пожалуйста, используйте формат ЧЧ:ММ\n' +
-                        'Например: 14:30',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад']],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                state.data.preferredTime = msg.text;
-                console.log('Завершение формы, все данные:', state.data);
+                const state = userStates.get(chatId);
+                state.data.preferred_time = msg.text;
 
                 try {
-                    // Получаем информацию о клиенте
-                    const client = await getClientByTelegramId(state.data.telegram_id);
-                    
-                    // Сохраняем заявку в базу данных
+                    // Создаем запись в базе данных
                     const result = await pool.query(
-                        `INSERT INTO group_training_requests 
-                        (client_id, has_group, group_size, training_frequency, sport_type, 
-                        skill_level, preferred_date, preferred_time, status)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+                        `INSERT INTO training_requests (
+                            client_id, 
+                            child_id, 
+                            training_type, 
+                            preferred_date, 
+                            preferred_time, 
+                            status
+                        ) VALUES ($1, $2, $3, $4, $5, 'pending') 
                         RETURNING id`,
                         [
-                            client.id,
-                            state.data.hasGroup,
-                            state.data.hasGroup ? state.data.groupSize : null,
-                            state.data.trainingFrequency,
-                            state.data.sportType,
-                            state.data.skillLevel,
-                            state.data.preferredDate,
-                            state.data.preferredTime
+                            state.data.client_id,
+                            state.data.is_child ? state.data.child_id : null,
+                            state.data.training_type,
+                            state.data.preferred_date,
+                            state.data.preferred_time
                         ]
                     );
 
-                    // Отправляем уведомление администратору
-                    await notifyNewTrainingRequest({
-                        id: result.rows[0].id,
-                        client_name: client.full_name,
-                        client_phone: client.phone,
-                        has_group: state.data.hasGroup,
-                        group_size: state.data.hasGroup ? state.data.groupSize : 'НЕТ',
-                        training_frequency: state.data.trainingFrequency,
-                        sport_type: state.data.sportType,
-                        skill_level: state.data.skillLevel,
-                        preferred_date: state.data.preferredDate,
-                        preferred_time: state.data.preferredTime
-                    });
+                    // Формируем сообщение об успешной записи
+                    let message = '✅ *Запись на тренировку успешно создана!*\n\n';
+                    message += `📅 Дата: ${state.data.preferred_date}\n`;
+                    message += `⏰ Время: ${state.data.preferred_time}\n`;
+                    message += `🎿 Тип тренировки: ${state.data.training_type === 'group' ? 'Групповая' : 'Индивидуальная'}\n`;
+                    
+                    if (state.data.is_child) {
+                        message += `👶 Ребенок: ${state.data.child_name}\n`;
+                    }
 
-                    // Отправляем разное сообщение в зависимости от наличия группы
-                    const message = state.data.hasGroup
-                        ? '✅ *Спасибо за заявку! Мы обязательно с вами свяжемся!*'
-                        : '✅ *Спасибо за заявку! Мы постараемся подобрать для вас группу, в которой будет комфортно вам заниматься.*';
+                    message += '\nМы свяжемся с вами для подтверждения записи.';
+
+                    // Очищаем состояние
+                    userStates.delete(chatId);
 
                     return bot.sendMessage(chatId, message, {
                         parse_mode: 'Markdown',
@@ -920,11 +549,10 @@ bot.on('message', async (msg) => {
                         }
                     });
                 } catch (error) {
-                    console.error('Ошибка при сохранении заявки:', error);
+                    console.error('Ошибка при создании записи:', error);
                     return bot.sendMessage(chatId,
-                        '❌ Произошла ошибка при сохранении заявки. Пожалуйста, попробуйте позже.',
+                        '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                         {
-                            parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
@@ -932,6 +560,7 @@ bot.on('message', async (msg) => {
                         }
                     );
                 }
+            }
         }
         return;
     }
@@ -1199,6 +828,88 @@ bot.on('message', async (msg) => {
                     resize_keyboard: true
                 }
             });
+        }
+        case '📝 Записаться': {
+            try {
+                const client = await getClientByTelegramId(msg.from.id.toString());
+                if (!client) {
+                    return bot.sendMessage(chatId,
+                        '❌ Вы не зарегистрированы. Пожалуйста, зарегистрируйтесь сначала.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Получаем список детей клиента
+                const childrenResult = await pool.query(
+                    'SELECT * FROM children WHERE parent_id = $1',
+                    [client.id]
+                );
+                const children = childrenResult.rows;
+
+                // Сохраняем данные в состоянии
+                userStates.set(chatId, {
+                    step: 'has_child',
+                    data: {
+                        client_id: client.id,
+                        children: children
+                    }
+                });
+
+                // Если есть дети, спрашиваем, хотит ли записать ребенка
+                if (children.length > 0) {
+                    return bot.sendMessage(chatId,
+                        '👥 *Хотите записать ребенка на тренировку?*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['Да', 'Нет'], ['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } else {
+                    // Если детей нет, сразу переходим к выбору типа тренировки
+                    userStates.set(chatId, {
+                        step: 'training_type',
+                        data: {
+                            client_id: client.id,
+                            is_child: false
+                        }
+                    });
+                    return bot.sendMessage(chatId,
+                        '🎿 *Выберите тип тренировки:*\n\n' +
+                        '• Групповая - тренировка в группе с другими участниками\n' +
+                        '• Индивидуальная - персональная тренировка',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['👥 Групповая'],
+                                    ['👤 Индивидуальная'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+            } catch (error) {
+                console.error('Ошибка при проверке регистрации:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
         }
     }
 });
