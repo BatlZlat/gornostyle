@@ -757,19 +757,27 @@ bot.on('message', async (msg) => {
                                 client_id, 
                                 child_id, 
                                 training_type, 
+                                equipment_type,
+                                with_trainer,
+                                duration,
                                 preferred_date, 
                                 preferred_time,
                                 simulator_id,
+                                price,
                                 status
-                            ) VALUES ($1, $2, $3, $4, $5, $6, 'pending') 
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending') 
                             RETURNING id`,
                             [
                                 state.data.client_id,
                                 state.data.is_child ? state.data.child_id : null,
                                 state.data.training_type,
+                                state.data.equipment_type,
+                                state.data.with_trainer,
+                                state.data.duration,
                                 state.data.preferred_date,
                                 time,
-                                simulatorId
+                                simulatorId,
+                                state.data.price
                             ]
                         );
 
@@ -799,6 +807,9 @@ bot.on('message', async (msg) => {
                         // Удаляем сообщение с кнопками
                         await bot.deleteMessage(chatId, msg.message_id);
 
+                        // Отвечаем на callback-запрос
+                        await bot.answerCallbackQuery(msg.id);
+
                         return bot.sendMessage(chatId, message, {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -808,6 +819,10 @@ bot.on('message', async (msg) => {
                         });
                     } catch (error) {
                         console.error('Ошибка при создании записи:', error);
+                        await bot.answerCallbackQuery(msg.id, {
+                            text: 'Произошла ошибка при создании записи. Пожалуйста, попробуйте позже.',
+                            show_alert: true
+                        });
                         return bot.sendMessage(chatId,
                             '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                             {
@@ -858,58 +873,184 @@ bot.on('message', async (msg) => {
                         );
                     }
 
-                    // Создаем заявку на тренировку
-                    const result = await pool.query(
-                        `INSERT INTO training_requests 
-                        (client_id, child_id, training_type, preferred_date, preferred_time, status) 
-                        VALUES ($1, $2, $3, $4, $5, 'pending') 
-                        RETURNING id`,
-                        [
-                            state.data.client_id,
-                            state.data.child_id,
-                            state.data.training_type,
-                            state.data.preferred_date,
-                            state.data.preferred_time
-                        ]
+                    // Получаем баланс клиента
+                    const walletResult = await pool.query(
+                        'SELECT balance FROM wallets WHERE client_id = $1',
+                        [state.data.client_id]
                     );
+                    const balance = walletResult.rows[0]?.balance || 0;
 
                     // Форматируем время в HH:MM
                     const formattedTime = state.data.preferred_time.padStart(5, '0');
 
                     // Формируем итоговое сообщение
-                    let summaryMessage = '✅ *Ваша заявка на тренировку принята!*\n\n';
+                    let summaryMessage = '📋 *Проверьте данные заявки:*\n\n';
                     summaryMessage += '*Детали тренировки:*\n';
                     summaryMessage += `• Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n`;
-                    
-                    if (state.data.training_type === 'individual') {
-                        summaryMessage += `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
-                        summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
-                        summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
-                        summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
-                    }
-                    
+                    summaryMessage += `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
+                    summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
+                    summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
                     summaryMessage += `• Дата: ${state.data.preferred_date}\n`;
-                    summaryMessage += `• Время: ${formattedTime}\n\n`;
-                    summaryMessage += 'Мы свяжемся с вами для подтверждения заявки.';
+                    summaryMessage += `• Время: ${formattedTime}\n`;
+                    summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
+                    summaryMessage += `• Ваш баланс: ${balance} руб. 💳\n\n`;
 
-                    await bot.sendMessage(chatId, summaryMessage, {
+                    if (balance < state.data.price) {
+                        summaryMessage += '⚠️ *Внимание!* На вашем балансе недостаточно средств.\n';
+                        summaryMessage += 'Пожалуйста, пополните баланс перед записью на тренировку.\n\n';
+                    }
+
+                    summaryMessage += 'Выберите действие:';
+
+                    // Сохраняем состояние для следующего шага
+                    state.step = 'confirm_booking';
+                    userStates.set(chatId, state);
+
+                    return bot.sendMessage(chatId, summaryMessage, {
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
+                            keyboard: [
+                                ['✅ Записаться на тренировку'],
+                                ['❌ Я передумал'],
+                                ['💳 Пополнить кошелек'],
+                                ['🔙 Назад в меню']
+                            ],
                             resize_keyboard: true
                         }
                     });
-
-                    // Сбрасываем состояние
-                    userStates.delete(chatId);
                 } catch (error) {
-                    console.error('Ошибка при создании заявки:', error);
+                    console.error('Ошибка при проверке времени:', error);
                     return bot.sendMessage(chatId,
-                        '❌ Произошла ошибка при создании заявки. Пожалуйста, попробуйте позже.',
+                        '❌ Произошла ошибка при проверке времени. Пожалуйста, попробуйте позже.',
                         {
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                break;
+            }
+            case 'confirm_booking': {
+                const state = userStates.get(chatId);
+                
+                if (msg.text === '✅ Записаться на тренировку') {
+                    try {
+                        // Проверяем баланс перед созданием заявки
+                        const walletResult = await pool.query(
+                            'SELECT balance FROM wallets WHERE client_id = $1',
+                            [state.data.client_id]
+                        );
+                        const balance = walletResult.rows[0]?.balance || 0;
+
+                        if (balance < state.data.price) {
+                            return bot.sendMessage(chatId,
+                                '❌ Недостаточно средств на балансе. Пожалуйста, пополните кошелек.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [
+                                            ['💳 Пополнить кошелек'],
+                                            ['🔙 Назад в меню']
+                                        ],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+
+                        // Создаем заявку на тренировку
+                        const result = await pool.query(
+                            `INSERT INTO training_requests 
+                            (client_id, child_id, training_type, equipment_type, with_trainer, 
+                            duration, preferred_date, preferred_time, price, status) 
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending') 
+                            RETURNING id`,
+                            [
+                                state.data.client_id,
+                                state.data.child_id,
+                                state.data.training_type,
+                                state.data.equipment_type,
+                                state.data.with_trainer,
+                                state.data.duration,
+                                state.data.preferred_date,
+                                state.data.preferred_time,
+                                state.data.price
+                            ]
+                        );
+
+                        // Списываем средства с баланса
+                        await pool.query(
+                            `UPDATE wallets 
+                            SET balance = balance - $1 
+                            WHERE client_id = $2`,
+                            [state.data.client_id, state.data.client_id]
+                        );
+
+                        // Создаем запись о транзакции
+                        await pool.query(
+                            `INSERT INTO transactions 
+                            (wallet_id, amount, type, description) 
+                            VALUES (
+                                (SELECT id FROM wallets WHERE client_id = $1),
+                                $2,
+                                'payment',
+                                'Оплата тренировки'
+                            )`,
+                            [state.data.client_id, state.data.price]
+                        );
+
+                        await bot.sendMessage(chatId,
+                            '✅ *Заявка на тренировку успешно создана!*\n\n' +
+                            'Мы свяжемся с вами для подтверждения записи.',
+                            {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+
+                        // Сбрасываем состояние
+                        userStates.delete(chatId);
+                    } catch (error) {
+                        console.error('Ошибка при создании заявки:', error);
+                        return bot.sendMessage(chatId,
+                            '❌ Произошла ошибка при создании заявки. Пожалуйста, попробуйте позже.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+                } else if (msg.text === '❌ Я передумал') {
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                } else if (msg.text === '💳 Пополнить кошелек') {
+                    const paymentLink = process.env.PAYMENT_LINK;
+                    const adminPhone = process.env.ADMIN_PHONE || '+79123924956';
+                    const client = await getClientByTelegramId(msg.from.id.toString());
+                    
+                    return bot.sendMessage(chatId,
+                        '✨ *Пополняйте баланс легко и быстро всего в 1 клик!*\n\n' +
+                        '*Вот как это работает:*\n' +
+                        '1️⃣ Нажмите на ссылку ниже\n' +
+                        '2️⃣ Укажите в комментарии номер вашего кошелька\n' +
+                        `💎 *КОШЕЛЕК:* \`${client.wallet_number}\`\n\n` +
+                        '3️⃣ В течение 15 минут баланс будет пополнен\n\n' +
+                        `👉 [Пополнить баланс](${paymentLink}) 👈\n\n` +
+                        '⚡ Ваши деньги прилетят к нам в течении 15 минут!\n\n' +
+                        '💫 Горнолыжные приключения ждут вас! ⛷️✨\n\n' +
+                        `*P.S.* Нужна помощь? Свяжитесь с администратором ${adminPhone}! 😊`,
+                        { 
+                            parse_mode: 'Markdown',
+                            disable_web_page_preview: true,
+                            reply_markup: { 
+                                keyboard: [['🔙 Назад в меню']], 
+                                resize_keyboard: true 
                             }
                         }
                     );
@@ -1321,19 +1462,27 @@ bot.on('callback_query', async (callbackQuery) => {
                         client_id, 
                         child_id, 
                         training_type, 
+                        equipment_type,
+                        with_trainer,
+                        duration,
                         preferred_date, 
                         preferred_time,
                         simulator_id,
+                        price,
                         status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, 'pending') 
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending') 
                     RETURNING id`,
                     [
                         state.data.client_id,
                         state.data.is_child ? state.data.child_id : null,
                         state.data.training_type,
+                        state.data.equipment_type,
+                        state.data.with_trainer,
+                        state.data.duration,
                         state.data.preferred_date,
                         time,
-                        simulatorId
+                        simulatorId,
+                        state.data.price
                     ]
                 );
 
