@@ -696,9 +696,8 @@ bot.on('message', async (msg) => {
                         group_size,
                         training_frequency,
                         skill_level,
-                        price,
                         status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
                     RETURNING id`,
                     [
                         clientInfo.id,
@@ -711,8 +710,7 @@ bot.on('message', async (msg) => {
                         state.data.has_group,
                         state.data.group_size || null,
                         state.data.training_frequency,
-                        state.data.skill_level,
-                        price
+                        state.data.skill_level
                     ]
                 );
                 
@@ -728,8 +726,7 @@ bot.on('message', async (msg) => {
                 adminMessage += `🏂 *Тип:* ${state.data.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
                 adminMessage += `📊 *Уровень:* ${state.data.skill_level}/10\n`;
                 adminMessage += `📅 *Дата:* ${state.data.preferred_date}\n`;
-                adminMessage += `⏰ *Время:* ${state.data.preferred_time}\n`;
-                adminMessage += `💰 *Стоимость:* ${price} руб.`;
+                adminMessage += `⏰ *Время:* ${state.data.preferred_time}`;
                 
                 // Отправляем уведомление администратору
                 await notifyNewTrainingRequest({
@@ -743,8 +740,7 @@ bot.on('message', async (msg) => {
                     sport_type: state.data.sport_type,
                     skill_level: state.data.skill_level,
                     preferred_date: state.data.preferred_date,
-                    preferred_time: state.data.preferred_time,
-                    price: price
+                    preferred_time: state.data.preferred_time
                 });
                 
                 // Очищаем состояние

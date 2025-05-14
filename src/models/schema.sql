@@ -175,7 +175,7 @@ CREATE TABLE training_requests (
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
     simulator_id INTEGER REFERENCES simulators(id),
-    price DECIMAL(10,2) NOT NULL,
+    price DECIMAL(10,2) DEFAULT 0,
     status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'confirmed', 'cancelled'
     -- Поля для групповых тренировок
     has_group BOOLEAN DEFAULT FALSE,
