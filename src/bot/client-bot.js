@@ -1068,6 +1068,261 @@ bot.on('message', async (msg) => {
                 }
                 break;
             }
+            case 'has_group': {
+                console.log('Обработка состояния has_group:', {
+                    message: msg.text,
+                    currentState: state
+                });
+                
+                if (msg.text === 'Да') {
+                    const newState = {
+                        step: 'group_size',
+                        data: { 
+                            ...state.data,
+                            has_group: true
+                        }
+                    };
+                    console.log('Установка нового состояния:', newState);
+                    userStates.set(chatId, newState);
+                    return bot.sendMessage(chatId,
+                        '👥 *Сколько человек в вашей группе?*\n\n' +
+                        'Введите число от 2 до 8 человек.',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } else if (msg.text === 'Нет') {
+                    const newState = {
+                        step: 'training_for',
+                        data: { 
+                            ...state.data,
+                            has_group: false
+                        }
+                    };
+                    console.log('Установка нового состояния:', newState);
+                    userStates.set(chatId, newState);
+                    return bot.sendMessage(chatId,
+                        '👤 *Для кого тренировка?*\n\n' +
+                        '1. Для себя\n' +
+                        '2. Для ребенка\n' +
+                        '3. Для себя и ребенка',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['2. Для ребенка'],
+                                    ['3. Для себя и ребенка'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                break;
+            }
+            case 'group_size': {
+                const size = parseInt(msg.text);
+                if (isNaN(size) || size < 2 || size > 8) {
+                    return bot.sendMessage(chatId,
+                        '❌ Пожалуйста, введите число от 2 до 8 человек.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Проверяем, что мы в правильном состоянии
+                if (!state.data.has_group) {
+                    console.error('Ошибка состояния: has_group не установлен');
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                }
+
+                const newState = {
+                    step: 'training_for',
+                    data: { 
+                        ...state.data,
+                        group_size: size
+                    }
+                };
+                console.log('Установка нового состояния:', newState);
+                userStates.set(chatId, newState);
+                return bot.sendMessage(chatId,
+                    '👤 *Для кого тренировка?*\n\n' +
+                    '1. Для себя\n' +
+                    '2. Для ребенка\n' +
+                    '3. Для себя и ребенка',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['1. Для себя'],
+                                ['2. Для ребенка'],
+                                ['3. Для себя и ребенка'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            case 'training_for': {
+                let trainingFor;
+                if (msg.text === '1. Для себя') trainingFor = 'self';
+                else if (msg.text === '2. Для ребенка') trainingFor = 'child';
+                else if (msg.text === '3. Для себя и ребенка') trainingFor = 'both';
+                else {
+                    return bot.sendMessage(chatId,
+                        '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['2. Для ребенка'],
+                                    ['3. Для себя и ребенка'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                userStates.set(chatId, {
+                    step: 'training_frequency',
+                    data: { ...state.data, training_for: trainingFor }
+                });
+                return bot.sendMessage(chatId,
+                    '🔄 *Как часто планируете тренироваться?*\n\n' +
+                    '1. Разово\n' +
+                    '2. Регулярно',
+                    { 
+                        parse_mode: 'Markdown', 
+                        reply_markup: { 
+                            keyboard: [
+                                ['1. Разово'],
+                                ['2. Регулярно'],
+                                ['🔙 Назад в меню']
+                            ], 
+                            resize_keyboard: true 
+                        } 
+                    }
+                );
+            }
+            case 'training_frequency': {
+                let frequency;
+                if (msg.text === '1. Разово') frequency = 'once';
+                else if (msg.text === '2. Регулярно') frequency = 'regular';
+                else {
+                    return bot.sendMessage(chatId,
+                        '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Разово'],
+                                    ['2. Регулярно'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                userStates.set(chatId, {
+                    step: 'sport_type',
+                    data: { ...state.data, training_frequency: frequency }
+                });
+                return bot.sendMessage(chatId,
+                    '🎿 *Выберите тип спорта:*\n\n' +
+                    '1. Горные лыжи\n' +
+                    '2. Сноуборд',
+                    { 
+                        parse_mode: 'Markdown', 
+                        reply_markup: { 
+                            keyboard: [
+                                ['1. Горные лыжи'],
+                                ['2. Сноуборд'],
+                                ['🔙 Назад в меню']
+                            ], 
+                            resize_keyboard: true 
+                        } 
+                    }
+                );
+            }
+            case 'sport_type': {
+                let sportType;
+                if (msg.text === '1. Горные лыжи') sportType = 'ski';
+                else if (msg.text === '2. Сноуборд') sportType = 'snowboard';
+                else {
+                    return bot.sendMessage(chatId,
+                        '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Горные лыжи'],
+                                    ['2. Сноуборд'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                userStates.set(chatId, {
+                    step: 'skill_level',
+                    data: { ...state.data, sport_type: sportType }
+                });
+                return bot.sendMessage(chatId,
+                    '📊 *Оцените ваш уровень подготовки от 1 до 10:*\n\n' +
+                    '1 - Начинающий\n' +
+                    '5 - Средний\n' +
+                    '10 - Профессионал',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            case 'skill_level': {
+                const level = parseInt(msg.text);
+                if (isNaN(level) || level < 1 || level > 10) {
+                    return bot.sendMessage(chatId,
+                        '❌ Пожалуйста, введите число от 1 до 10.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                userStates.set(chatId, {
+                    step: 'preferred_date',
+                    data: { ...state.data, skill_level: level }
+                });
+                return bot.sendMessage(chatId,
+                    '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                    'Например: 25.12.2024',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
         }
         return;
     }
