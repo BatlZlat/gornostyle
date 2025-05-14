@@ -746,17 +746,23 @@ bot.on('message', async (msg) => {
                 // Очищаем состояние
                 userStates.delete(chatId);
                 
-                return bot.sendMessage(chatId,
-                    '✅ *Ваша заявка успешно отправлена!*\n\n' +
-                    'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
-                        }
+                // Формируем финальное сообщение в зависимости от ответа на вопрос о группе
+                let finalMessage;
+                if (state.data.has_group) {
+                    finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
+                        'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.';
+                } else {
+                    finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
+                        'Мы постараемся подобрать для вас группу в удобное для вас время.';
+                }
+                
+                return bot.sendMessage(chatId, finalMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
                     }
-                );
+                });
             } catch (error) {
                 console.error('Ошибка при создании заявки:', error);
                 return bot.sendMessage(chatId,
@@ -1356,30 +1362,35 @@ bot.on('message', async (msg) => {
                     // Создаем запись в базе данных
                     const result = await pool.query(
                         `INSERT INTO training_requests (
-                            client_id, 
-                            child_id, 
-                            training_type, 
+                            client_id,
+                            child_id,
+                            training_type,
                             equipment_type,
                             with_trainer,
                             duration,
-                            preferred_date, 
+                            preferred_date,
                             preferred_time,
-                            simulator_id,
-                            price,
+                            has_group,
+                            group_size,
+                            training_frequency,
+                            skill_level,
                             status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending') 
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
                         RETURNING id`,
                         [
                             state.data.client_id,
-                            state.data.is_child ? state.data.child_id : null,
-                            state.data.training_type,
-                            state.data.equipment_type,
-                            state.data.with_trainer,
-                            state.data.duration,
+                            state.data.training_for === 'child' || state.data.training_for === 'both' ? 
+                                (await pool.query('SELECT id FROM children WHERE parent_id = $1 LIMIT 1', [state.data.client_id])).rows[0]?.id : null,
+                            'group',
+                            state.data.sport_type,
+                            true,
+                            60,
                             state.data.preferred_date,
                             state.data.preferred_time,
-                            state.data.simulator_id,
-                            state.data.price
+                            state.data.has_group,
+                            state.data.group_size || null,
+                            state.data.training_frequency,
+                            state.data.skill_level
                         ]
                     );
 
@@ -1535,7 +1546,17 @@ bot.on('message', async (msg) => {
                     // Очищаем состояние
                     userStates.delete(chatId);
 
-                    return bot.sendMessage(chatId, message, {
+                    // Формируем финальное сообщение в зависимости от ответа на вопрос о группе
+                    let finalMessage;
+                    if (state.data.has_group) {
+                        finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
+                            'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.';
+                    } else {
+                        finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
+                            'Мы постараемся подобрать для вас группу в удобное для вас время.';
+                    }
+                    
+                    return bot.sendMessage(chatId, finalMessage, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
