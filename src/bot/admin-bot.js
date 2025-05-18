@@ -43,23 +43,16 @@ async function notifyNewTrainingRequest(requestData) {
             `📱 *Телефон:* ${requestData.client_phone}\n` +
             (requestData.has_group ? 
                 `👥 *Готовая группа:* ${requestData.group_size} человек\n` :
-                `👥 *Ищет группу:* ${requestData.training_for}\n`) +
+                `👥 *Ищет группу:* ${requestData.training_for === 'self' ? 'Для себя' : 
+                                  requestData.training_for === 'child' ? 'Для ребенка' : 'Для себя и ребенка'}\n`) +
             `🔄 *Частота:* ${requestData.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n` +
-            `🏂 *Тип:* ${requestData.sport_type}\n` +
+            `🏂 *Тип:* ${requestData.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
             `📊 *Уровень:* ${requestData.skill_level}/10\n` +
             `📅 *Дата:* ${requestData.preferred_date}\n` +
             `⏰ *Время:* ${requestData.preferred_time}`;
 
         await bot.sendMessage(ADMIN_ID, message, { 
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ Одобрить', callback_data: `approve_${requestData.id}` },
-                        { text: '❌ Отклонить', callback_data: `reject_${requestData.id}` }
-                    ]
-                ]
-            }
+            parse_mode: 'Markdown'
         });
     } catch (error) {
         console.error('Ошибка при отправке уведомления о новой заявке:', error);
