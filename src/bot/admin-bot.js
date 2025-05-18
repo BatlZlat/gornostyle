@@ -63,6 +63,30 @@ async function notifyNewTrainingRequest(requestData) {
     }
 }
 
+// Функция для отправки уведомления о новой индивидуальной записи
+async function notifyNewIndividualTraining(trainingData) {
+    try {
+        const message = 
+            '🎿 *Запись на индивидуальную тренировку*\n\n' +
+            `👤 *ФИО:* ${trainingData.client_name}\n` +
+            (trainingData.child_name ? `👶 *ФИО ребенка:* ${trainingData.child_name}\n` : '') +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.with_trainer ? 'С тренером' : 'Без тренера'}\n` +
+            `🏂 *Тип:* ${trainingData.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
+            `⏱ *Длительность:* ${trainingData.duration} минут\n` +
+            `🎯 *Тренажер:* №${trainingData.simulator_id}\n` +
+            `💰 *Стоимость:* ${trainingData.price} руб.\n` +
+            `📅 *Дата:* ${trainingData.preferred_date}\n` +
+            `⏰ *Время:* ${trainingData.preferred_time}`;
+
+        await bot.sendMessage(ADMIN_ID, message, { 
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о новой индивидуальной записи:', error);
+    }
+}
+
 // Обработка callback-запросов
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
@@ -104,5 +128,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
 module.exports = {
     notifyScheduleCreated,
-    notifyNewTrainingRequest
+    notifyNewTrainingRequest,
+    notifyNewIndividualTraining
 }; 

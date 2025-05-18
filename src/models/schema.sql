@@ -180,6 +180,22 @@ CREATE TABLE training_requests (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Добавляем новую таблицу для индивидуальных тренировок
+CREATE TABLE individual_training_sessions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    child_id INTEGER REFERENCES children(id),
+    equipment_type VARCHAR(20) NOT NULL,
+    with_trainer BOOLEAN NOT NULL,
+    duration INTEGER NOT NULL,
+    preferred_date DATE NOT NULL,
+    preferred_time TIME NOT NULL,
+    simulator_id INTEGER REFERENCES simulators(id),
+    price DECIMAL(10,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -199,6 +215,10 @@ CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
 CREATE INDEX idx_training_requests_client ON training_requests(client_id);
 CREATE INDEX idx_training_requests_status ON training_requests(status);
+CREATE INDEX idx_individual_training_client ON individual_training_sessions(client_id);
+CREATE INDEX idx_individual_training_child ON individual_training_sessions(child_id);
+CREATE INDEX idx_individual_training_date ON individual_training_sessions(preferred_date);
+CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(simulator_id);
 
 -- Создание триггеров для обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -257,6 +277,11 @@ CREATE TRIGGER update_schedule_settings_updated_at
 
 CREATE TRIGGER update_training_requests_updated_at
     BEFORE UPDATE ON training_requests
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_individual_training_updated_at
+    BEFORE UPDATE ON individual_training_sessions
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

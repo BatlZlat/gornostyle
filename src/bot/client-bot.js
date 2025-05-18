@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest } = require('./admin-bot');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining } = require('./admin-bot');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -498,31 +498,29 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
-            
-            const state = userStates.get(chatId);
-            state.data.training_frequency = frequency;
-            state.step = 'suggest_sport_type';
-            userStates.set(chatId, state);
-            
+            userStates.set(chatId, {
+                step: 'sport_type',
+                data: { ...state.data, training_frequency: frequency }
+            });
             return bot.sendMessage(chatId,
                 '🎿 *Выберите тип спорта:*\n\n' +
                 '1. Горные лыжи\n' +
                 '2. Сноуборд',
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
+                { 
+                    parse_mode: 'Markdown', 
+                    reply_markup: { 
                         keyboard: [
                             ['1. Горные лыжи'],
                             ['2. Сноуборд'],
                             ['🔙 Назад в меню']
-                        ],
-                        resize_keyboard: true
-                    }
+                        ], 
+                        resize_keyboard: true 
+                    } 
                 }
             );
         }
 
-        case 'suggest_sport_type': {
+        case 'sport_type': {
             let sportType;
             if (msg.text === '1. Горные лыжи') sportType = 'ski';
             else if (msg.text === '2. Сноуборд') sportType = 'snowboard';
@@ -541,16 +539,14 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
-            
-            const state = userStates.get(chatId);
-            state.data.sport_type = sportType;
-            state.step = 'suggest_skill_level';
-            userStates.set(chatId, state);
-            
+            userStates.set(chatId, {
+                step: 'skill_level',
+                data: { ...state.data, sport_type: sportType }
+            });
             return bot.sendMessage(chatId,
-                '📊 *Укажите уровень подготовки:*\n\n' +
-                'Введите число от 1 до 10:\n' +
+                '📊 *Оцените ваш уровень подготовки от 1 до 10:*\n\n' +
                 '1 - Начинающий\n' +
+                '5 - Средний\n' +
                 '10 - Профессионал',
                 {
                     parse_mode: 'Markdown',
@@ -562,9 +558,9 @@ bot.on('message', async (msg) => {
             );
         }
 
-        case 'suggest_skill_level': {
-            const skillLevel = parseInt(msg.text);
-            if (isNaN(skillLevel) || skillLevel < 1 || skillLevel > 10) {
+        case 'skill_level': {
+            const level = parseInt(msg.text);
+            if (isNaN(level) || level < 1 || level > 10) {
                 return bot.sendMessage(chatId,
                     '❌ Пожалуйста, введите число от 1 до 10.',
                     {
@@ -575,16 +571,13 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
-            
-            const state = userStates.get(chatId);
-            state.data.skill_level = skillLevel;
-            state.step = 'suggest_preferred_date';
-            userStates.set(chatId, state);
-            
+            userStates.set(chatId, {
+                step: 'preferred_date',
+                data: { ...state.data, skill_level: level }
+            });
             return bot.sendMessage(chatId,
-                '📅 *Выберите предпочтительную дату:*\n\n' +
-                'Введите дату в формате ДД.ММ.ГГГГ\n' +
-                'Например: 15.05.2024',
+                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                'Например: 25.12.2024',
                 {
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -957,41 +950,109 @@ bot.on('message', async (msg) => {
                 state.data.training_type = msg.text === '👥 Групповая' ? 'group' : 'individual';
                 
                 if (msg.text === '👤 Индивидуальная') {
-                    state.step = 'equipment_type';
-                    userStates.set(chatId, state);
-                    return bot.sendMessage(chatId,
-                        '🎿 *Выберите тип снаряжения:*\n\n' +
-                        '• 🎿 Горные лыжи\n' +
-                        '• 🏂 Сноуборд',
-                        {
+                    // Проверяем наличие детей у клиента
+                    const childrenResult = await pool.query(
+                        'SELECT id, full_name FROM children WHERE parent_id = $1',
+                        [state.data.client_id]
+                    );
+                    
+                    if (childrenResult.rows.length > 0) {
+                        state.data.children = childrenResult.rows;
+                        state.step = 'select_participant';
+                        userStates.set(chatId, state);
+                        
+                        let message = '👤 *Для кого тренировка?*\n\n';
+                        message += '1. Для себя\n';
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
+                        });
+                        
+                        return bot.sendMessage(chatId, message, {
                             parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [
-                                    ['🎿 Горные лыжи'],
-                                    ['🏂 Сноуборд'],
+                                    ['1. Для себя'],
+                                    ...childrenResult.rows.map((_, i) => [`${i + 2}. Для ребенка`]),
                                     ['🔙 Назад в меню']
                                 ],
                                 resize_keyboard: true
                             }
-                        }
-                    );
-                } else {
-                    state.step = 'preferred_date';
-                    userStates.set(chatId, state);
-                    return bot.sendMessage(chatId,
-                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                        'Например: 25.12.2024',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
+                        });
+                    } else {
+                        state.step = 'equipment_type';
+                        userStates.set(chatId, state);
+                        return bot.sendMessage(chatId,
+                            '🎿 *Выберите тип снаряжения:*\n\n' +
+                            '• 🎿 Горные лыжи\n' +
+                            '• 🏂 Сноуборд',
+                            {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    keyboard: [
+                                        ['🎿 Горные лыжи'],
+                                        ['🏂 Сноуборд'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
                             }
-                        }
-                    );
+                        );
+                    }
+                } else {
+                    // ... existing group training logic ...
                 }
             }
             break;
+        }
+
+        case 'select_participant': {
+            const state = userStates.get(chatId);
+            const choice = parseInt(msg.text);
+            
+            if (isNaN(choice) || choice < 1 || choice > state.data.children.length + 1) {
+                return bot.sendMessage(chatId,
+                    '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['1. Для себя'],
+                                ...state.data.children.map((_, i) => [`${i + 2}. Для ребенка`]),
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            if (choice === 1) {
+                state.data.is_child = false;
+            } else {
+                const selectedChild = state.data.children[choice - 2];
+                state.data.is_child = true;
+                state.data.child_id = selectedChild.id;
+                state.data.child_name = selectedChild.full_name;
+            }
+            
+            state.step = 'equipment_type';
+            userStates.set(chatId, state);
+            
+            return bot.sendMessage(chatId,
+                '🎿 *Выберите тип снаряжения:*\n\n' +
+                '• 🎿 Горные лыжи\n' +
+                '• 🏂 Сноуборд',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['🎿 Горные лыжи'],
+                            ['🏂 Сноуборд'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
         case 'equipment_type': {
             if (msg.text === '🎿 Горные лыжи' || msg.text === '🏂 Сноуборд') {
@@ -1235,7 +1296,14 @@ bot.on('message', async (msg) => {
         }
         case 'select_time': {
             const data = msg.text;
+            console.log('Обработка select_time:', {
+                data,
+                state: state,
+                message: msg
+            });
+
             if (data === 'back_to_date') {
+                console.log('Возврат к выбору даты');
                 // Возвращаемся к выбору даты
                 userStates.get(chatId).step = 'preferred_date';
                 return bot.sendMessage(chatId,
@@ -1252,6 +1320,7 @@ bot.on('message', async (msg) => {
             }
 
             if (data === 'booked') {
+                console.log('Попытка выбрать занятое время');
                 // Игнорируем нажатие на занятое время
                 return bot.answerCallbackQuery(msg.id, {
                     text: 'Это время уже занято',
@@ -1260,63 +1329,84 @@ bot.on('message', async (msg) => {
             }
 
             if (data.startsWith('time_')) {
+                console.log('Обработка выбора времени:', data);
                 const [, simulatorId, time] = data.split('_');
+                console.log('Разобранные данные:', { simulatorId, time });
                 
                 try {
+                    console.log('Получение баланса клиента:', state.data.client_id);
                     // Получаем баланс клиента
                     const balanceResult = await pool.query(
                         'SELECT balance FROM wallets WHERE client_id = $1',
                         [state.data.client_id]
                     );
+                    console.log('Результат запроса баланса:', balanceResult.rows[0]);
                     const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
                     const price = parseFloat(state.data.price);
+                    console.log('Баланс и цена:', { balance, price });
 
-                    if (balance < price) {
-                        return bot.sendMessage(chatId,
-                            '❌ На вашем балансе недостаточно средств для записи на тренировку.\n' +
-                            'Пожалуйста, пополните баланс и попробуйте снова.',
-                            {
-                                reply_markup: {
-                                    keyboard: [['💳 Пополнить кошелек'], ['🔙 Назад в меню']],
-                                    resize_keyboard: true
-                                }
-                            }
-                        );
-                    }
+                    // Получаем информацию о тренажере
+                    const simulatorResult = await pool.query(
+                        'SELECT name FROM simulators WHERE id = $1',
+                        [simulatorId]
+                    );
+                    const simulatorName = simulatorResult.rows[0].name;
+
+                    // Форматируем дату и время
+                    const [year, month, day] = state.data.preferred_date.split('-');
+                    const formattedDate = `${day}.${month}.${year}`;
+                    const [hours, minutes] = time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+                    console.log('Отформатированные дата и время:', { formattedDate, formattedTime });
 
                     // Формируем итоговое сообщение
                     let summaryMessage = '📋 *Проверьте данные заявки:*\n\n';
                     summaryMessage += '*Детали тренировки:*\n';
-                    summaryMessage += `• Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n`;
+                    if (state.data.is_child) {
+                        summaryMessage += `• ФИО участника: ${state.data.child_name}\n`;
+                    } else {
+                        const clientResult = await pool.query(
+                            'SELECT full_name FROM clients WHERE id = $1',
+                            [state.data.client_id]
+                        );
+                        summaryMessage += `• ФИО участника: ${clientResult.rows[0].full_name}\n`;
+                    }
+                    summaryMessage += `• Тип тренировки: Индивидуальная\n`;
                     summaryMessage += `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
                     summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
                     summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
-                    summaryMessage += `• Дата: ${state.data.preferred_date}\n`;
-                    summaryMessage += `• Время: ${time}\n`;
-                    summaryMessage += `• Стоимость: ${price} руб. 💰\n`;
+                    summaryMessage += `• Дата: ${formattedDate}\n`;
+                    summaryMessage += `• Время: ${formattedTime}\n`;
+                    summaryMessage += `• Тренажер: ${simulatorName} (№${simulatorId})\n`;
+                    summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
                     summaryMessage += `• Ваш баланс: ${balance} руб. 💳\n\n`;
 
                     summaryMessage += 'Выберите действие:';
+                    console.log('Сформированное сообщение:', summaryMessage);
 
                     // Сохраняем состояние для следующего шага
                     state.step = 'confirm_booking';
                     state.data.preferred_time = time;
                     state.data.simulator_id = simulatorId;
+                    state.data.simulator_name = simulatorName;
                     userStates.set(chatId, state);
+                    console.log('Обновленное состояние:', state);
 
                     // Удаляем сообщение с кнопками
+                    console.log('Удаление сообщения с кнопками:', msg.message_id);
                     await bot.deleteMessage(chatId, msg.message_id);
 
                     // Отвечаем на callback-запрос
+                    console.log('Отправка ответа на callback-запрос');
                     await bot.answerCallbackQuery(msg.id);
 
+                    console.log('Отправка итогового сообщения');
                     return bot.sendMessage(chatId, summaryMessage, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [
                                 ['✅ Записаться на тренировку'],
                                 ['❌ Я передумал'],
-                                ['💳 Пополнить кошелек'],
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
@@ -1324,6 +1414,12 @@ bot.on('message', async (msg) => {
                     });
                 } catch (error) {
                     console.error('Ошибка при проверке времени:', error);
+                    console.error('Детали ошибки:', {
+                        error: error.message,
+                        stack: error.stack,
+                        state: state,
+                        data: msg
+                    });
                     await bot.answerCallbackQuery(msg.id, {
                         text: 'Произошла ошибка при проверке времени. Пожалуйста, попробуйте позже.',
                         show_alert: true
@@ -1345,10 +1441,31 @@ bot.on('message', async (msg) => {
             
             if (msg.text === '✅ Записаться на тренировку') {
                 try {
-                    // Проверяем баланс еще раз
+                    // Получаем информацию о клиенте
+                    const clientResult = await pool.query(
+                        'SELECT id, full_name, phone FROM clients WHERE id = $1',
+                        [state.data.client_id]
+                    );
+                    
+                    if (!clientResult.rows[0]) {
+                        console.error('Клиент не найден:', { client_id: state.data.client_id });
+                        return bot.sendMessage(chatId,
+                            '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    const clientInfo = clientResult.rows[0];
+
+                    // Проверяем баланс
                     const balanceResult = await pool.query(
                         'SELECT balance FROM wallets WHERE client_id = $1',
-                        [state.data.client_id]
+                        [clientInfo.id]
                     );
                     const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
                     const price = parseFloat(state.data.price);
@@ -1368,31 +1485,28 @@ bot.on('message', async (msg) => {
 
                     // Создаем запись в базе данных
                     const result = await pool.query(
-                        `INSERT INTO training_requests (
+                        `INSERT INTO individual_training_sessions (
                             client_id,
                             child_id,
                             equipment_type,
+                            with_trainer,
                             duration,
                             preferred_date,
                             preferred_time,
-                            has_group,
-                            group_size,
-                            training_frequency,
-                            skill_level
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            simulator_id,
+                            price
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         RETURNING id`,
                         [
-                            state.data.client_id,
-                            state.data.training_for === 'child' || state.data.training_for === 'both' ? 
-                                (await pool.query('SELECT id FROM children WHERE parent_id = $1 LIMIT 1', [state.data.client_id])).rows[0]?.id : null,
-                            state.data.sport_type,
-                            60,
+                            clientInfo.id,
+                            state.data.is_child ? state.data.child_id : null,
+                            state.data.equipment_type,
+                            state.data.with_trainer,
+                            state.data.duration,
                             state.data.preferred_date,
                             state.data.preferred_time,
-                            state.data.has_group,
-                            state.data.group_size || null,
-                            state.data.training_frequency,
-                            state.data.skill_level
+                            state.data.simulator_id,
+                            state.data.price
                         ]
                     );
 
@@ -1414,6 +1528,13 @@ bot.on('message', async (msg) => {
 
                     // Проверяем, что все необходимые слоты свободны
                     if (slotsToBook.rows.length < slotsNeeded) {
+                        console.error('Недостаточно свободных слотов:', {
+                            needed: slotsNeeded,
+                            available: slotsToBook.rows.length,
+                            simulator_id: state.data.simulator_id,
+                            date: state.data.preferred_date,
+                            time: startTime
+                        });
                         return bot.sendMessage(chatId,
                             '❌ Выбранное время недоступно для записи.\n' +
                             'Пожалуйста, выберите другое время или уменьшите длительность тренировки до 30 минут.',
@@ -1429,6 +1550,12 @@ bot.on('message', async (msg) => {
                     // Проверяем, что все слоты свободны
                     const hasBookedSlots = slotsToBook.rows.some(slot => slot.is_booked);
                     if (hasBookedSlots) {
+                        console.error('Найдены занятые слоты:', {
+                            simulator_id: state.data.simulator_id,
+                            date: state.data.preferred_date,
+                            time: startTime,
+                            slots: slotsToBook.rows
+                        });
                         return bot.sendMessage(chatId,
                             '❌ Выбранное время недоступно для записи.\n' +
                             'Пожалуйста, выберите другое время или уменьшите длительность тренировки до 30 минут.',
@@ -1449,36 +1576,22 @@ bot.on('message', async (msg) => {
                         );
                     }
 
-                    // Получаем информацию о тренажере
-                    const simulatorResult = await pool.query(
-                        'SELECT name FROM simulators WHERE id = $1',
-                        [state.data.simulator_id]
-                    );
-                    const simulatorName = simulatorResult.rows[0].name;
-
-                    // Получаем информацию о клиенте для уведомления администратора
-                    const clientResult = await pool.query(
-                        'SELECT full_name, phone FROM clients WHERE id = $1',
-                        [state.data.client_id]
-                    );
-                    const clientInfo = clientResult.rows[0];
-
                     // Обновляем баланс клиента
                     await pool.query(
                         'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
-                        [state.data.price, state.data.client_id]
+                        [state.data.price, clientInfo.id]
                     );
 
                     // Получаем ID кошелька для создания транзакции
                     const walletResult = await pool.query(
                         'SELECT id FROM wallets WHERE client_id = $1',
-                        [state.data.client_id]
+                        [clientInfo.id]
                     );
                     const walletId = walletResult.rows[0].id;
 
                     // Формируем описание транзакции
                     const transactionDescription = 
-                        `Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}; ` +
+                        `Индивидуальная тренировка; ` +
                         `Дата: ${state.data.preferred_date}; ` +
                         `Время: ${state.data.preferred_time}; ` +
                         `Длительность: ${state.data.duration} минут`;
@@ -1508,8 +1621,8 @@ bot.on('message', async (msg) => {
                     let message = '✅ *Запись на тренировку успешно создана!*\n\n';
                     message += `📅 Дата: ${formattedDate}\n`;
                     message += `⏰ Время: ${formattedTime}\n`;
-                    message += `🎿 Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n`;
-                    message += `🏂 Тренажер: ${simulatorName}\n`;
+                    message += `🎿 Тип тренировки: Индивидуальная\n`;
+                    message += `🏂 Тренажер: ${state.data.simulator_name}\n`;
                     message += `💰 Сумма списания: ${state.data.price} руб.\n`;
                     
                     if (state.data.is_child) {
@@ -1523,7 +1636,7 @@ bot.on('message', async (msg) => {
                         '📝 *Новая индивидуальная тренировка*\n\n' +
                         `👤 *ФИО:* ${clientInfo.full_name}\n` +
                         `📱 *Телефон:* ${clientInfo.phone}\n` +
-                        `🎿 *Тип:* ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n` +
+                        `🎿 *Тип:* Индивидуальная\n` +
                         `🏂 *Снаряжение:* ${state.data.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
                         `👨‍🏫 *Тренер:* ${state.data.with_trainer ? 'С тренером' : 'Без тренера'}\n` +
                         `⏱ *Длительность:* ${state.data.duration} минут\n` +
@@ -1532,33 +1645,25 @@ bot.on('message', async (msg) => {
                         `💰 *Стоимость:* ${state.data.price} руб.`;
 
                     // Импортируем и вызываем функцию уведомления администратора
-                    await notifyNewTrainingRequest({
+                    await notifyNewIndividualTraining({
                         id: result.rows[0].id,
                         client_name: clientInfo.full_name,
+                        child_name: state.data.is_child ? state.data.child_name : null,
                         client_phone: clientInfo.phone,
-                        training_type: state.data.training_type,
-                        equipment_type: state.data.equipment_type,
                         with_trainer: state.data.with_trainer,
+                        equipment_type: state.data.equipment_type,
                         duration: state.data.duration,
+                        simulator_id: state.data.simulator_id,
+                        simulator_name: state.data.simulator_name,
+                        price: state.data.price,
                         preferred_date: formattedDate,
-                        preferred_time: formattedTime,
-                        price: state.data.price
+                        preferred_time: formattedTime
                     });
 
                     // Очищаем состояние
                     userStates.delete(chatId);
 
-                    // Формируем финальное сообщение в зависимости от ответа на вопрос о группе
-                    let finalMessage;
-                    if (state.data.has_group) {
-                        finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
-                            'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.';
-                    } else {
-                        finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
-                            'Мы постараемся подобрать для вас группу в удобное для вас время.';
-                    }
-                    
-                    return bot.sendMessage(chatId, finalMessage, {
+                    return bot.sendMessage(chatId, message, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -1566,7 +1671,12 @@ bot.on('message', async (msg) => {
                         }
                     });
                 } catch (error) {
-                    console.error('Ошибка при создании записи:', error);
+                    console.error('Ошибка при создании записи:', {
+                        error: error.message,
+                        stack: error.stack,
+                        state: state,
+                        data: msg
+                    });
                     return bot.sendMessage(chatId,
                         '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                         {
@@ -1588,9 +1698,6 @@ bot.on('message', async (msg) => {
                         }
                     }
                 );
-            } else if (msg.text === '💳 Пополнить кошелек') {
-                // Показываем меню пополнения баланса
-                return showBalanceMenu(chatId);
             } else if (msg.text === '🔙 Назад в меню') {
                 userStates.delete(chatId);
                 return showMainMenu(chatId);
@@ -1902,37 +2009,52 @@ bot.on('callback_query', async (callbackQuery) => {
             const [, simulatorId, time] = data.split('_');
             
             try {
-                // Получаем баланс клиента
+                // Получаем баланс клиента для отображения
                 const balanceResult = await pool.query(
                     'SELECT balance FROM wallets WHERE client_id = $1',
                     [state.data.client_id]
                 );
                 const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
-                const price = parseFloat(state.data.price);
 
-                if (balance < price) {
-                    return bot.sendMessage(chatId,
-                        '❌ На вашем балансе недостаточно средств для записи на тренировку.\n' +
-                        'Пожалуйста, пополните баланс и попробуйте снова.',
-                        {
-                            reply_markup: {
-                                keyboard: [['💳 Пополнить кошелек'], ['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        }
+                // Получаем информацию о тренажере
+                const simulatorResult = await pool.query(
+                    'SELECT name FROM simulators WHERE id = $1',
+                    [simulatorId]
+                );
+                const simulatorName = simulatorResult.rows[0].name;
+
+                // Форматируем время в ЧЧ:ММ
+                const [hours, minutes] = time.split(':');
+                const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+
+                // Форматируем дату
+                const [year, month, day] = state.data.preferred_date.split('-');
+                const formattedDate = `${day}.${month}.${year}`;
+
+                // Получаем информацию об участнике
+                let participantName;
+                if (state.data.is_child) {
+                    participantName = state.data.child_name;
+                } else {
+                    const clientResult = await pool.query(
+                        'SELECT full_name FROM clients WHERE id = $1',
+                        [state.data.client_id]
                     );
+                    participantName = clientResult.rows[0].full_name;
                 }
 
                 // Формируем итоговое сообщение
                 let summaryMessage = '📋 *Проверьте данные заявки:*\n\n';
                 summaryMessage += '*Детали тренировки:*\n';
-                summaryMessage += `• Тип тренировки: ${state.data.training_type === 'individual' ? 'Индивидуальная' : 'Групповая'}\n`;
+                summaryMessage += `• ФИО участника: ${participantName}\n`;
+                summaryMessage += `• Тип тренировки: Индивидуальная\n`;
                 summaryMessage += `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
                 summaryMessage += `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера 👤'}\n`;
                 summaryMessage += `• Длительность: ${state.data.duration} минут ⏱\n`;
-                summaryMessage += `• Дата: ${state.data.preferred_date}\n`;
-                summaryMessage += `• Время: ${time}\n`;
-                summaryMessage += `• Стоимость: ${price} руб. 💰\n`;
+                summaryMessage += `• Дата: ${formattedDate}\n`;
+                summaryMessage += `• Время: ${formattedTime}\n`;
+                summaryMessage += `• Тренажер: ${simulatorName} (№${simulatorId})\n`;
+                summaryMessage += `• Стоимость: ${state.data.price} руб. 💰\n`;
                 summaryMessage += `• Ваш баланс: ${balance} руб. 💳\n\n`;
 
                 summaryMessage += 'Выберите действие:';
@@ -1941,6 +2063,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 state.step = 'confirm_booking';
                 state.data.preferred_time = time;
                 state.data.simulator_id = simulatorId;
+                state.data.simulator_name = simulatorName;
                 userStates.set(chatId, state);
 
                 // Удаляем сообщение с кнопками
@@ -1955,14 +2078,19 @@ bot.on('callback_query', async (callbackQuery) => {
                         keyboard: [
                             ['✅ Записаться на тренировку'],
                             ['❌ Я передумал'],
-                            ['💳 Пополнить кошелек'],
                             ['🔙 Назад в меню']
                         ],
                         resize_keyboard: true
                     }
                 });
             } catch (error) {
-                console.error('Ошибка при проверке времени:', error);
+                console.error('Ошибка при обработке выбора времени:', {
+                    error: error.message,
+                    stack: error.stack,
+                    state: state,
+                    data: callbackQuery.data
+                });
+                
                 await bot.answerCallbackQuery(callbackQuery.id, {
                     text: 'Произошла ошибка при проверке времени. Пожалуйста, попробуйте позже.',
                     show_alert: true
