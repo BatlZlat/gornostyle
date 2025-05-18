@@ -668,10 +668,20 @@ bot.on('message', async (msg) => {
             try {
                 // Получаем информацию о клиенте
                 const clientResult = await pool.query(
-                    'SELECT full_name, birth_date, phone FROM clients WHERE telegram_id = $1',
+                    'SELECT id, full_name, birth_date, phone FROM clients WHERE telegram_id = $1',
                     [state.data.telegram_id]
                 );
                 const clientInfo = clientResult.rows[0];
+
+                // Получаем ID ребенка, если тренировка для ребенка
+                let childId = null;
+                if (state.data.training_for === 'child' || state.data.training_for === 'both') {
+                    const childResult = await pool.query(
+                        'SELECT id FROM children WHERE parent_id = $1 LIMIT 1',
+                        [clientInfo.id]
+                    );
+                    childId = childResult.rows[0]?.id;
+                }
 
                 // Получаем цену для групповой тренировки
                 const priceResult = await pool.query(
@@ -686,24 +696,21 @@ bot.on('message', async (msg) => {
                 const result = await pool.query(
                     `INSERT INTO training_requests (
                         client_id,
-                        training_type,
+                        child_id,
                         equipment_type,
-                        with_trainer,
                         duration,
                         preferred_date,
                         preferred_time,
                         has_group,
                         group_size,
                         training_frequency,
-                        skill_level,
-                        status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+                        skill_level
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     RETURNING id`,
                     [
                         clientInfo.id,
-                        'group',
+                        childId,
                         state.data.sport_type,
-                        true,
                         60,
                         state.data.preferred_date,
                         state.data.preferred_time,
@@ -1364,26 +1371,21 @@ bot.on('message', async (msg) => {
                         `INSERT INTO training_requests (
                             client_id,
                             child_id,
-                            training_type,
                             equipment_type,
-                            with_trainer,
                             duration,
                             preferred_date,
                             preferred_time,
                             has_group,
                             group_size,
                             training_frequency,
-                            skill_level,
-                            status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+                            skill_level
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                         RETURNING id`,
                         [
                             state.data.client_id,
                             state.data.training_for === 'child' || state.data.training_for === 'both' ? 
                                 (await pool.query('SELECT id FROM children WHERE parent_id = $1 LIMIT 1', [state.data.client_id])).rows[0]?.id : null,
-                            'group',
                             state.data.sport_type,
-                            true,
                             60,
                             state.data.preferred_date,
                             state.data.preferred_time,

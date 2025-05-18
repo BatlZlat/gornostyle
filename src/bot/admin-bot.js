@@ -37,6 +37,10 @@ async function notifyScheduleCreated(month) {
 // Функция для отправки уведомления о новой заявке
 async function notifyNewTrainingRequest(requestData) {
     try {
+        // Форматируем дату из YYYY-MM-DD в DD.MM.YYYY
+        const [year, month, day] = requestData.preferred_date.split('-');
+        const formattedDate = `${day}.${month}.${year}`;
+
         const message = 
             '📝 *Заявка на Групповую тренировку*\n\n' +
             `👤 *ФИО:* ${requestData.client_name}\n` +
@@ -48,7 +52,7 @@ async function notifyNewTrainingRequest(requestData) {
             `🔄 *Частота:* ${requestData.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n` +
             `🏂 *Тип:* ${requestData.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
             `📊 *Уровень:* ${requestData.skill_level}/10\n` +
-            `📅 *Дата:* ${requestData.preferred_date}\n` +
+            `📅 *Дата:* ${formattedDate}\n` +
             `⏰ *Время:* ${requestData.preferred_time}`;
 
         await bot.sendMessage(ADMIN_ID, message, { 

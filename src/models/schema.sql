@@ -168,16 +168,10 @@ CREATE TABLE training_requests (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     child_id INTEGER REFERENCES children(id),
-    training_type VARCHAR(20) NOT NULL, -- 'individual' или 'group'
     equipment_type VARCHAR(20) NOT NULL, -- 'ski' или 'snowboard'
-    with_trainer BOOLEAN NOT NULL,
     duration INTEGER NOT NULL,
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
-    simulator_id INTEGER REFERENCES simulators(id),
-    price DECIMAL(10,2) DEFAULT 0,
-    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'confirmed', 'cancelled'
-    -- Поля для групповых тренировок
     has_group BOOLEAN DEFAULT FALSE,
     group_size INTEGER,
     training_frequency VARCHAR(20), -- 'regular' или 'one-time'
