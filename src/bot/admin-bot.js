@@ -87,6 +87,37 @@ async function notifyNewIndividualTraining(trainingData) {
     }
 }
 
+// Функция для отправки уведомления о новой записи на групповую тренировку
+async function notifyNewGroupTrainingParticipant(trainingData) {
+    try {
+        // Форматируем дату из YYYY-MM-DD в DD.MM.YYYY
+        const date = new Date(trainingData.session_date);
+        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+
+        const message = 
+            '👥 *Новая запись на групповую тренировку*\n\n' +
+            `👤 *Клиент:* ${trainingData.client_name}\n` +
+            (trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n` : '') +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `👥 *Группа:* ${trainingData.group_name}\n` +
+            `🏂 *Тип:* ${trainingData.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
+            `📊 *Уровень:* ${trainingData.skill_level}/10\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            `⏱ *Длительность:* ${trainingData.duration} минут\n` +
+            `💰 *Стоимость:* ${trainingData.price} руб.\n` +
+            `📅 *Дата:* ${formattedDate}\n` +
+            `⏰ *Время:* ${trainingData.start_time}\n` +
+            `👥 *Участников:* ${trainingData.current_participants}/${trainingData.max_participants}`;
+
+        await bot.sendMessage(ADMIN_ID, message, { 
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о новой записи на групповую тренировку:', error);
+    }
+}
+
 // Обработка callback-запросов
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
@@ -129,5 +160,6 @@ bot.on('callback_query', async (callbackQuery) => {
 module.exports = {
     notifyScheduleCreated,
     notifyNewTrainingRequest,
-    notifyNewIndividualTraining
+    notifyNewIndividualTraining,
+    notifyNewGroupTrainingParticipant
 }; 

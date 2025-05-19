@@ -2387,94 +2387,16 @@ bot.on('message', async (msg) => {
             }
 
             const selectedSession = state.data.available_sessions[selectedIndex];
-            
-            // Проверяем, является ли тренировка детской
-            const isChildrenGroup = selectedSession.group_name.toLowerCase().includes('дети');
-            
-            // Получаем информацию о клиенте
-            const clientResult = await pool.query(
-                'SELECT id, full_name, birth_date FROM clients WHERE id = $1',
+
+            // Проверяем баланс клиента
+            const walletResult = await pool.query(
+                'SELECT w.*, c.full_name, c.phone FROM wallets w JOIN clients c ON w.client_id = c.id WHERE w.client_id = $1',
                 [state.data.client_id]
             );
-            const clientInfo = clientResult.rows[0];
-            
-            // Вычисляем возраст клиента
-            const birthDate = new Date(clientInfo.birth_date);
-            const today = new Date();
-            const age = today.getFullYear() - birthDate.getFullYear() - 
-                (today.getMonth() < birthDate.getMonth() || 
-                (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate()) ? 1 : 0);
 
-            if (isChildrenGroup) {
-                if (age >= 16) {
-                    // Если взрослый выбирает детскую группу, проверяем наличие детей
-                    const childrenResult = await pool.query(
-                        'SELECT id, full_name FROM children WHERE parent_id = $1',
-                        [state.data.client_id]
-                    );
-                    
-                    if (childrenResult.rows.length === 0) {
-                        return bot.sendMessage(chatId,
-                            '❌ Эта тренировка предназначена только для детей.\n\n' +
-                            'У вас нет зарегистрированных детей. Вы можете:\n' +
-                            '• Выбрать другую тренировку\n' +
-                            '• Предложить новую групповую тренировку',
-                            {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    keyboard: [
-                                        ['🎿 Выбрать другую тренировку'],
-                                        ['💡 Предложить тренировку'],
-                                        ['🔙 Назад в меню']
-                                    ],
-                                    resize_keyboard: true
-                                }
-                            }
-                        );
-                    }
-
-                    // Если есть дети, предлагаем выбрать ребенка
-                    state.data.selected_session = selectedSession;
-                    state.data.children = childrenResult.rows;
-                    state.step = 'select_child_for_training';
-                    userStates.set(chatId, state);
-
-                    let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
-                    childrenResult.rows.forEach((child, index) => {
-                        message += `${index + 1}. ${child.full_name}\n`;
-                    });
-
-                    return bot.sendMessage(chatId, message, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ...childrenResult.rows.map((_, i) => [`${i + 1}`]),
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    });
-                }
-            } else {
-                // Для взрослых групп проверяем возраст
-                if (age < 16) {
-                    return bot.sendMessage(chatId,
-                        '❌ Эта тренировка предназначена только для взрослых (от 16 лет).\n\n' +
-                        'Пожалуйста, выберите детскую группу или предложите новую тренировку.',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [
-                                    ['🎿 Выбрать другую тренировку'],
-                                    ['💡 Предложить тренировку'],
-                                    ['🔙 Назад в меню']
-                                ],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-            }
+            const wallet = walletResult.rows[0];
+            const requiredAmount = parseFloat(selectedSession.price);
+            const currentBalance = parseFloat(wallet.balance);
 
             // Форматируем дату и время
             const date = new Date(selectedSession.session_date);
@@ -2484,6 +2406,9 @@ bot.on('message', async (msg) => {
 
             // Формируем сообщение с деталями тренировки
             let message = '📋 *Проверьте данные тренировки:*\n\n';
+            if (state.data.selected_child) {
+                message += `👶 Ребенок: ${state.data.selected_child.full_name}\n`;
+            }
             message += `📅 Дата: ${formattedDate}\n`;
             message += `⏰ Время: ${formattedTime}\n`;
             message += `👥 Группа: ${selectedSession.group_name}\n`;
@@ -2491,69 +2416,12 @@ bot.on('message', async (msg) => {
             message += `📊 Уровень: ${selectedSession.skill_level}/10\n`;
             message += `🎿 Тренажер: ${selectedSession.simulator_name}\n`;
             message += `👨‍🏫 Тренер: ${selectedSession.trainer_name}\n`;
-            message += `💰 Цена: ${selectedSession.price} руб.\n\n`;
+            message += `💰 Цена: ${requiredAmount.toFixed(2)} руб.\n`;
+            message += `💳 Баланс: ${currentBalance.toFixed(2)} руб.\n\n`;
             message += 'Выберите действие:';
 
             // Сохраняем выбранную тренировку в состоянии
             state.data.selected_session = selectedSession;
-            state.step = 'confirm_group_training';
-            userStates.set(chatId, state);
-
-            return bot.sendMessage(chatId, message, {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    keyboard: [
-                        ['✅ Записаться на тренировку'],
-                        ['❌ Я передумал'],
-                        ['🔙 Назад в меню']
-                    ],
-                    resize_keyboard: true
-                }
-            });
-        }
-        case 'select_child_for_training': {
-            const selectedIndex = parseInt(msg.text) - 1;
-            const state = userStates.get(chatId);
-            
-            if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.children.length) {
-                return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите номер ребенка из списка.',
-                    {
-                        reply_markup: {
-                            keyboard: [
-                                ...state.data.children.map((_, i) => [`${i + 1}`]),
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            }
-
-            const selectedChild = state.data.children[selectedIndex];
-            const selectedSession = state.data.selected_session;
-
-            // Форматируем дату и время
-            const date = new Date(selectedSession.session_date);
-            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-            const [hours, minutes] = selectedSession.start_time.split(':');
-            const formattedTime = `${hours}:${minutes}`;
-
-            // Формируем сообщение с деталями тренировки
-            let message = '📋 *Проверьте данные тренировки:*\n\n';
-            message += `👶 Ребенок: ${selectedChild.full_name}\n`;
-            message += `📅 Дата: ${formattedDate}\n`;
-            message += `⏰ Время: ${formattedTime}\n`;
-            message += `👥 Группа: ${selectedSession.group_name}\n`;
-            message += `👥 Участников: ${selectedSession.current_participants}/${selectedSession.max_participants}\n`;
-            message += `📊 Уровень: ${selectedSession.skill_level}/10\n`;
-            message += `🎿 Тренажер: ${selectedSession.simulator_name}\n`;
-            message += `👨‍🏫 Тренер: ${selectedSession.trainer_name}\n`;
-            message += `💰 Цена: ${selectedSession.price} руб.\n\n`;
-            message += 'Выберите действие:';
-
-            // Сохраняем выбранного ребенка в состоянии
-            state.data.selected_child = selectedChild;
             state.step = 'confirm_group_training';
             userStates.set(chatId, state);
 
@@ -2591,13 +2459,38 @@ bot.on('message', async (msg) => {
             const selectedSession = state.data.selected_session;
 
             try {
-                // Проверяем, не заполнена ли группа
-                const [currentParticipants] = await pool.query(
-                    'SELECT COUNT(*) as count FROM session_participants WHERE session_id = ?',
-                    [selectedSession.session_id]
+                // Проверяем баланс клиента
+                const walletResult = await pool.query(
+                    'SELECT w.*, c.full_name, c.phone FROM wallets w JOIN clients c ON w.client_id = c.id WHERE w.client_id = $1',
+                    [state.data.client_id]
                 );
 
-                if (currentParticipants[0].count >= selectedSession.max_participants) {
+                const wallet = walletResult.rows[0];
+                const requiredAmount = parseFloat(selectedSession.price);
+                const currentBalance = parseFloat(wallet.balance);
+
+                if (!wallet || currentBalance < requiredAmount) {
+                    return bot.sendMessage(chatId,
+                        `❌ Недостаточно средств на счете. Требуется: ${requiredAmount.toFixed(2)} руб.\nТекущий баланс: ${currentBalance.toFixed(2)} руб.`,
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['💳 Пополнить счет'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Проверяем, не заполнена ли группа
+                const participantsResult = await pool.query(
+                    'SELECT COUNT(*) as count FROM session_participants WHERE session_id = $1',
+                    [selectedSession.id]
+                );
+
+                if (participantsResult.rows[0].count >= selectedSession.max_participants) {
                     return bot.sendMessage(chatId,
                         '❌ К сожалению, группа уже заполнена. Пожалуйста, выберите другую тренировку.',
                         {
@@ -2614,53 +2507,105 @@ bot.on('message', async (msg) => {
                     );
                 }
 
-                // Создаем запись о записи на тренировку
-                await pool.query(
-                    'INSERT INTO session_participants (session_id, client_id, child_id, status) VALUES (?, ?, ?, ?)',
-                    [
-                        selectedSession.session_id,
-                        state.data.client_id,
-                        state.data.selected_child ? state.data.selected_child.child_id : null,
-                        'confirmed'
-                    ]
-                );
+                // Начинаем транзакцию
+                const client = await pool.connect();
+                try {
+                    await client.query('BEGIN');
 
-                // Форматируем дату и время
-                const date = new Date(selectedSession.session_date);
-                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                const [hours, minutes] = selectedSession.start_time.split(':');
-                const formattedTime = `${hours}:${minutes}`;
+                    // Создаем запись о записи на тренировку
+                    await client.query(
+                        'INSERT INTO session_participants (session_id, client_id, child_id, status) VALUES ($1, $2, $3, $4)',
+                        [
+                            selectedSession.id,
+                            state.data.client_id,
+                            state.data.selected_child ? state.data.selected_child.id : null,
+                            'confirmed'
+                        ]
+                    );
 
-                // Формируем сообщение об успешной записи
-                let message = '✅ *Вы успешно записались на тренировку!*\n\n';
-                if (state.data.selected_child) {
-                    message += `👶 Ребенок: ${state.data.selected_child.full_name}\n`;
-                }
-                message += `📅 Дата: ${formattedDate}\n`;
-                message += `⏰ Время: ${formattedTime}\n`;
-                message += `👥 Группа: ${selectedSession.group_name}\n`;
-                message += `🎿 Тренажер: ${selectedSession.simulator_name}\n`;
-                message += `👨‍🏫 Тренер: ${selectedSession.trainer_name}\n`;
-                message += `💰 Цена: ${selectedSession.price} руб.\n\n`;
-                message += 'Вы можете проверить свои записи в разделе "📋 Мои записи"';
+                    // Списываем средства со счета
+                    await client.query(
+                        'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
+                        [requiredAmount, state.data.client_id]
+                    );
 
-                // Очищаем состояние
-                state.step = 'main_menu';
-                state.data = {};
-                userStates.set(chatId, state);
+                    // Форматируем дату и время для description
+                    const date = new Date(selectedSession.session_date);
+                    const formattedDate = `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
 
-                return bot.sendMessage(chatId, message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: [
-                            ['🎿 Записаться на тренировку'],
-                            ['📋 Мои записи'],
-                            ['👤 Мой профиль'],
-                            ['❓ Помощь']
-                        ],
-                        resize_keyboard: true
+                    // Создаем запись о транзакции
+                    await client.query(
+                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                        [
+                            wallet.id,
+                            requiredAmount,
+                            'payment',
+                            `Группа: ${selectedSession.group_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                        ]
+                    );
+
+                    await client.query('COMMIT');
+
+                    // Форматируем дату и время для сообщения
+                    const formattedDateMsg = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const formattedTimeMsg = `${hours}:${minutes}`;
+
+                    // Получаем обновленное количество участников
+                    const updatedParticipantsResult = await pool.query(
+                        'SELECT COUNT(*) as count FROM session_participants WHERE session_id = $1',
+                        [selectedSession.id]
+                    );
+                    const updatedParticipantsCount = updatedParticipantsResult.rows[0].count;
+
+                    // Формируем сообщение об успешной записи
+                    let message = '✅ *Вы успешно записались на тренировку!*\n\n';
+                    if (state.data.selected_child) {
+                        message += `👶 Ребенок: ${state.data.selected_child.full_name}\n`;
                     }
-                });
+                    message += `📅 Дата: ${formattedDateMsg}\n`;
+                    message += `⏰ Время: ${formattedTimeMsg}\n`;
+                    message += `👥 Группа: ${selectedSession.group_name}\n`;
+                    message += `🎿 Тренажер: ${selectedSession.simulator_name}\n`;
+                    message += `👨‍🏫 Тренер: ${selectedSession.trainer_name}\n`;
+                    message += `💰 Цена: ${requiredAmount.toFixed(2)} руб.\n`;
+                    message += `💳 Баланс: ${(currentBalance - requiredAmount).toFixed(2)} руб.\n\n`;
+                    message += 'Вы можете проверить свои записи в разделе "📋 Мои записи"';
+
+                    // Отправляем уведомление администратору
+                    const { notifyNewGroupTrainingParticipant } = require('./admin-bot');
+                    await notifyNewGroupTrainingParticipant({
+                        ...selectedSession,
+                        client_name: wallet.full_name,
+                        client_phone: wallet.phone,
+                        child_name: state.data.selected_child ? state.data.selected_child.full_name : null,
+                        current_participants: updatedParticipantsCount
+                    });
+
+                    // Очищаем состояние
+                    state.step = 'main_menu';
+                    state.data = {};
+                    userStates.set(chatId, state);
+
+                    return bot.sendMessage(chatId, message, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🎿 Записаться на тренировку'],
+                                ['📋 Мои записи'],
+                                ['👤 Мой профиль'],
+                                ['❓ Помощь']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } catch (error) {
+                    await client.query('ROLLBACK');
+                    throw error;
+                } finally {
+                    client.release();
+                }
             } catch (error) {
                 console.error('Error confirming group training:', error);
                 return bot.sendMessage(chatId,
