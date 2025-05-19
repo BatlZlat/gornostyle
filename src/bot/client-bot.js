@@ -360,7 +360,7 @@ bot.on('message', async (msg) => {
                     userStates.set(chatId, state);
                     return bot.sendMessage(chatId,
                         '👥 *Сколько человек в вашей группе?*\n\n' +
-                        'Введите число от 2 до 8:',
+                        'Введите число от 2 до 12:',
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -397,9 +397,9 @@ bot.on('message', async (msg) => {
 
         case 'suggest_group_size': {
             const groupSize = parseInt(msg.text);
-            if (isNaN(groupSize) || groupSize < 2 || groupSize > 8) {
+            if (isNaN(groupSize) || groupSize < 2 || groupSize > 12) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, введите число от 2 до 8.',
+                    '❌ Пожалуйста, введите число от 2 до 12.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -560,9 +560,9 @@ bot.on('message', async (msg) => {
 
         case 'skill_level': {
             const level = parseInt(msg.text);
-            if (isNaN(level) || level < 1 || level > 10) {
+            if (isNaN(level) || level < 0 || level > 10) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, введите число от 1 до 10.',
+                    '❌ Пожалуйста, введите число от 0 до 10.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -572,7 +572,7 @@ bot.on('message', async (msg) => {
                 );
             }
             userStates.set(chatId, {
-                step: 'preferred_date',
+                step: 'suggest_preferred_date',
                 data: { ...state.data, skill_level: level }
             });
             return bot.sendMessage(chatId,
@@ -661,112 +661,47 @@ bot.on('message', async (msg) => {
             try {
                 // Получаем информацию о клиенте
                 const clientResult = await pool.query(
-                    'SELECT id, full_name, birth_date, phone FROM clients WHERE telegram_id = $1',
+                    'SELECT id, full_name, phone FROM clients WHERE telegram_id = $1',
                     [state.data.telegram_id]
                 );
                 const clientInfo = clientResult.rows[0];
 
-                // Получаем ID ребенка, если тренировка для ребенка
-                let childId = null;
-                if (state.data.training_for === 'child' || state.data.training_for === 'both') {
-                    const childResult = await pool.query(
-                        'SELECT id FROM children WHERE parent_id = $1 LIMIT 1',
-                        [clientInfo.id]
-                    );
-                    childId = childResult.rows[0]?.id;
-                }
+                // Форматируем дату
+                const [year, month, day] = state.data.preferred_date.split('-');
+                const formattedDate = `${day}.${month}.${year}`;
 
-                // Получаем цену для групповой тренировки
-                const priceResult = await pool.query(
-                    `SELECT price FROM prices 
-                    WHERE type = 'group' 
-                    AND with_trainer = true 
-                    AND duration = 60`
-                );
-                const price = priceResult.rows[0]?.price || 0;
-                
-                // Создаем заявку в базе данных
-                const result = await pool.query(
-                    `INSERT INTO training_requests (
-                        client_id,
-                        child_id,
-                        equipment_type,
-                        duration,
-                        preferred_date,
-                        preferred_time,
-                        has_group,
-                        group_size,
-                        training_frequency,
-                        skill_level
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                    RETURNING id`,
-                    [
-                        clientInfo.id,
-                        childId,
-                        state.data.sport_type,
-                        60,
-                        state.data.preferred_date,
-                        state.data.preferred_time,
-                        state.data.has_group,
-                        state.data.group_size || null,
-                        state.data.training_frequency,
-                        state.data.skill_level
-                    ]
-                );
-                
-                // Формируем сообщение для администратора
-                let adminMessage = '📝 *Заявка на Групповую тренировку*\n\n';
-                adminMessage += `👤 *ФИО:* ${clientInfo.full_name}\n`;
-                adminMessage += `📱 *Телефон:* ${clientInfo.phone}\n`;
-                adminMessage += state.data.has_group ? 
+                // Формируем сообщение с введенными данными
+                let summaryMessage = '📝 *Вы заполнили заявку на формирование групповой тренировки*\n\n';
+                summaryMessage += `👤 *ФИО:* ${clientInfo.full_name}\n`;
+                summaryMessage += `📱 *Телефон:* ${clientInfo.phone}\n`;
+                summaryMessage += state.data.has_group ? 
                     `👥 *Готовая группа:* ${state.data.group_size} человек\n` :
                     `👥 *Ищет группу:* ${state.data.training_for === 'self' ? 'Для себя' : 
-                                  state.data.training_for === 'child' ? 'Для ребенка' : 'Для себя и ребенка'}\n`;
-                adminMessage += `🔄 *Частота:* ${state.data.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n`;
-                adminMessage += `🏂 *Тип:* ${state.data.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
-                adminMessage += `📊 *Уровень:* ${state.data.skill_level}/10\n`;
-                adminMessage += `📅 *Дата:* ${state.data.preferred_date}\n`;
-                adminMessage += `⏰ *Время:* ${state.data.preferred_time}`;
-                
-                // Отправляем уведомление администратору
-                await notifyNewTrainingRequest({
-                    id: result.rows[0].id,
-                    client_name: clientInfo.full_name,
-                    client_phone: clientInfo.phone,
-                    has_group: state.data.has_group,
-                    group_size: state.data.group_size,
-                    training_for: state.data.training_for,
-                    training_frequency: state.data.training_frequency,
-                    sport_type: state.data.sport_type,
-                    skill_level: state.data.skill_level,
-                    preferred_date: state.data.preferred_date,
-                    preferred_time: state.data.preferred_time
-                });
-                
-                // Очищаем состояние
-                userStates.delete(chatId);
-                
-                // Формируем финальное сообщение в зависимости от ответа на вопрос о группе
-                let finalMessage;
-                if (state.data.has_group) {
-                    finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
-                        'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.';
-                } else {
-                    finalMessage = '✅ *Ваша заявка успешно отправлена!*\n\n' +
-                        'Мы постараемся подобрать для вас группу в удобное для вас время.';
-                }
-                
-                return bot.sendMessage(chatId, finalMessage, {
+                          state.data.training_for === 'child' ? 'Для ребенка' : 'Для себя и ребенка'}\n`;
+                summaryMessage += `🔄 *Частота:* ${state.data.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n`;
+                summaryMessage += `🏂 *Тип:* ${state.data.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
+                summaryMessage += `📊 *Уровень:* ${state.data.skill_level}/10\n`;
+                summaryMessage += `📅 *Дата:* ${formattedDate}\n`;
+                summaryMessage += `⏰ *Время:* ${state.data.preferred_time}\n\n`;
+                summaryMessage += 'Выберите действие:';
+
+                state.step = 'confirm_suggestion';
+                userStates.set(chatId, state);
+
+                return bot.sendMessage(chatId, summaryMessage, {
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [['🔙 Назад в меню']],
+                        keyboard: [
+                            ['✅ Отправить заявку'],
+                            ['🔙 Вернуться в главное меню']
+                        ],
                         resize_keyboard: true
                     }
                 });
             } catch (error) {
-                console.error('Ошибка при создании заявки:', error);
+                console.error('Ошибка при формировании заявки:', error);
                 return bot.sendMessage(chatId,
-                    '❌ Произошла ошибка при создании заявки. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    '❌ Произошла ошибка при формировании заявки. Пожалуйста, попробуйте позже.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -775,6 +710,108 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
+        }
+
+        case 'confirm_suggestion': {
+            if (msg.text === '✅ Отправить заявку') {
+                try {
+                    const state = userStates.get(chatId);
+                    
+                    // Получаем информацию о клиенте
+                    const clientResult = await pool.query(
+                        'SELECT id, full_name, phone FROM clients WHERE telegram_id = $1',
+                        [state.data.telegram_id]
+                    );
+                    const clientInfo = clientResult.rows[0];
+
+                    // Получаем ID ребенка, если тренировка для ребенка
+                    let childId = null;
+                    if (state.data.training_for === 'child' || state.data.training_for === 'both') {
+                        const childResult = await pool.query(
+                            'SELECT id FROM children WHERE parent_id = $1 LIMIT 1',
+                            [clientInfo.id]
+                        );
+                        childId = childResult.rows[0]?.id;
+                    }
+
+                    // Создаем заявку в базе данных
+                    const result = await pool.query(
+                        `INSERT INTO training_requests (
+                            client_id,
+                            child_id,
+                            equipment_type,
+                            duration,
+                            preferred_date,
+                            preferred_time,
+                            has_group,
+                            group_size,
+                            training_frequency,
+                            skill_level
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        RETURNING id`,
+                        [
+                            clientInfo.id,
+                            childId,
+                            state.data.sport_type,
+                            60,
+                            state.data.preferred_date,
+                            state.data.preferred_time,
+                            state.data.has_group,
+                            state.data.group_size || null,
+                            state.data.training_frequency,
+                            state.data.skill_level
+                        ]
+                    );
+
+                    // Отправляем уведомление администратору
+                    await notifyNewTrainingRequest({
+                        id: result.rows[0].id,
+                        client_name: clientInfo.full_name,
+                        client_phone: clientInfo.phone,
+                        has_group: state.data.has_group,
+                        group_size: state.data.group_size,
+                        training_for: state.data.training_for,
+                        training_frequency: state.data.training_frequency,
+                        sport_type: state.data.sport_type,
+                        skill_level: state.data.skill_level,
+                        preferred_date: state.data.preferred_date,
+                        preferred_time: state.data.preferred_time
+                    });
+
+                    // Очищаем состояние
+                    userStates.delete(chatId);
+
+                    // Формируем сообщение об успешной отправке
+                    const adminPhone = process.env.ADMIN_PHONE;
+                    let successMessage = '✅ *Ваша заявка на формирование групповой тренировки успешно отправлена!*\n\n';
+                    successMessage += 'Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.\n\n';
+                    successMessage += 'Вы также можете связаться с нами для уточнения деталей:\n';
+                    successMessage += `📱 Телефон: ${adminPhone}`;
+
+                    return bot.sendMessage(chatId, successMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    });
+                } catch (error) {
+                    console.error('Ошибка при сохранении заявки:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при сохранении заявки. Пожалуйста, попробуйте позже.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+            } else if (msg.text === '🔙 Вернуться в главное меню') {
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+            }
+            break;
         }
 
         case 'wait_start': {
@@ -1722,7 +1759,7 @@ bot.on('message', async (msg) => {
                 userStates.set(chatId, newState);
                 return bot.sendMessage(chatId,
                     '👥 *Сколько человек в вашей группе?*\n\n' +
-                    'Введите число от 2 до 8 человек.',
+                    'Введите число от 2 до 12 человек.',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -1764,9 +1801,9 @@ bot.on('message', async (msg) => {
         }
         case 'group_size': {
             const size = parseInt(msg.text);
-            if (isNaN(size) || size < 2 || size > 8) {
+            if (isNaN(size) || size < 2 || size > 12) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, введите число от 2 до 8 человек.',
+                    '❌ Пожалуйста, введите число от 2 до 12 человек.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -1932,9 +1969,9 @@ bot.on('message', async (msg) => {
         }
         case 'skill_level': {
             const level = parseInt(msg.text);
-            if (isNaN(level) || level < 1 || level > 10) {
+            if (isNaN(level) || level < 0 || level > 10) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, введите число от 1 до 10.',
+                    '❌ Пожалуйста, введите число от 0 до 10.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -1944,7 +1981,7 @@ bot.on('message', async (msg) => {
                 );
             }
             userStates.set(chatId, {
-                step: 'preferred_date',
+                step: 'suggest_preferred_date',
                 data: { ...state.data, skill_level: level }
             });
             return bot.sendMessage(chatId,
