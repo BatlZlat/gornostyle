@@ -1148,7 +1148,7 @@ bot.on('message', async (msg) => {
                             reply_markup: {
                                 keyboard: [
                                     ['1. Для себя'],
-                                    ...childrenResult.rows.map((_, i) => [`${i + 2}. Для ребенка`]),
+                                    ...childrenResult.rows.map(child => [`2. Для ребенка: ${child.full_name}`]),
                                     ['🔙 Назад в меню']
                                 ],
                                 resize_keyboard: true
@@ -1192,7 +1192,7 @@ bot.on('message', async (msg) => {
                         reply_markup: {
                             keyboard: [
                                 ['1. Для себя'],
-                                ...state.data.children.map((_, i) => [`${i + 2}. Для ребенка`]),
+                                ...state.data.children.map(child => [`2. Для ребенка: ${child.full_name}`]),
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
