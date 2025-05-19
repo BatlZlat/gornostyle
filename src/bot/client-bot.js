@@ -436,47 +436,181 @@ bot.on('message', async (msg) => {
 
         case 'suggest_training_for': {
             let trainingFor;
-            if (msg.text === '1. Для себя') trainingFor = 'self';
-            else if (msg.text === '2. Для ребенка') trainingFor = 'child';
-            else if (msg.text === '3. Для себя и ребенка') trainingFor = 'both';
-            else {
+            if (msg.text === '1. Для себя') {
+                trainingFor = 'self';
+                userStates.set(chatId, {
+                    step: 'suggest_training_frequency',
+                    data: { ...state.data, training_for: trainingFor }
+                });
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                    '🔄 *Как часто планируете тренироваться?*\n\n' +
+                    '1. Разово\n' +
+                    '2. Регулярно',
                     {
+                        parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [
-                                ['1. Для себя'],
-                                ['2. Для ребенка'],
-                                ['3. Для себя и ребенка'],
+                                ['1. Разово'],
+                                ['2. Регулярно'],
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
                         }
                     }
                 );
-            }
-            
-            const state = userStates.get(chatId);
-            state.data.training_for = trainingFor;
-            state.step = 'suggest_training_frequency';
-            userStates.set(chatId, state);
-            
-            return bot.sendMessage(chatId,
-                '🔄 *Как часто планируете тренироваться?*\n\n' +
-                '1. Разово\n' +
-                '2. Регулярно',
-                {
+            } else if (msg.text.startsWith('Для ребенка:')) {
+                // Получаем ID клиента по telegram_id
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [state.data.telegram_id]
+                );
+                
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                const clientId = clientResult.rows[0].id;
+
+                // Получаем информацию о детях клиента
+                const childrenResult = await pool.query(
+                    'SELECT id, full_name FROM children WHERE parent_id = $1',
+                    [clientId]
+                );
+                
+                if (childrenResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ У вас нет зарегистрированных детей. Пожалуйста, выберите другой вариант.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Извлекаем имя ребенка из сообщения
+                const childName = msg.text.split(': ')[1];
+                const selectedChild = childrenResult.rows.find(child => child.full_name === childName);
+                
+                if (!selectedChild) {
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при выборе ребенка. Пожалуйста, попробуйте еще раз.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                trainingFor = 'child';
+                userStates.set(chatId, {
+                    step: 'suggest_training_frequency',
+                    data: { 
+                        ...state.data, 
+                        training_for: trainingFor,
+                        child_id: selectedChild.id,
+                        child_name: selectedChild.full_name
+                    }
+                });
+                return bot.sendMessage(chatId,
+                    '🔄 *Как часто планируете тренироваться?*\n\n' +
+                    '1. Разово\n' +
+                    '2. Регулярно',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['1. Разово'],
+                                ['2. Регулярно'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            } else if (msg.text === '🔙 Назад в меню') {
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+            } else {
+                // Получаем ID клиента по telegram_id
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [state.data.telegram_id]
+                );
+                
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                const clientId = clientResult.rows[0].id;
+
+                // Получаем информацию о детях клиента
+                const childrenResult = await pool.query(
+                    'SELECT id, full_name FROM children WHERE parent_id = $1',
+                    [clientId]
+                );
+                
+                if (childrenResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ У вас нет зарегистрированных детей. Пожалуйста, выберите другой вариант.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Формируем сообщение с списком детей
+                let message = '👤 *Для кого тренировка?*\n\n';
+                message += '1. Для себя\n';
+                childrenResult.rows.forEach((child, index) => {
+                    message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
+                });
+
+                return bot.sendMessage(chatId, message, {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [
-                            ['1. Разово'],
-                            ['2. Регулярно'],
+                            ['1. Для себя'],
+                            ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
                             ['🔙 Назад в меню']
                         ],
                         resize_keyboard: true
                     }
-                }
-            );
+                });
+            }
+            break;
         }
 
         case 'suggest_training_frequency': {
@@ -544,9 +678,8 @@ bot.on('message', async (msg) => {
                 data: { ...state.data, sport_type: sportType }
             });
             return bot.sendMessage(chatId,
-                '📊 *Оцените ваш уровень подготовки от 1 до 10:*\n\n' +
-                '1 - Начинающий\n' +
-                '5 - Средний\n' +
+                '📊 *Оцените ваш уровень подготовки от 0 до 10:*\n\n' +
+                '0 - Начинающий\n' +
                 '10 - Профессионал',
                 {
                     parse_mode: 'Markdown',
@@ -672,7 +805,17 @@ bot.on('message', async (msg) => {
 
                 // Формируем сообщение с введенными данными
                 let summaryMessage = '📝 *Вы заполнили заявку на формирование групповой тренировки*\n\n';
+                
+                // Добавляем информацию о заказчике
                 summaryMessage += `👤 *ФИО:* ${clientInfo.full_name}\n`;
+                
+                // Добавляем информацию об участниках в зависимости от выбора
+                if (state.data.training_for === 'child') {
+                    summaryMessage += `👶 *Участник:* ${state.data.child_name}\n`;
+                } else if (state.data.training_for === 'both') {
+                    summaryMessage += `👥 *Участники:* ${clientInfo.full_name} и ${state.data.child_name}\n`;
+                }
+                
                 summaryMessage += `📱 *Телефон:* ${clientInfo.phone}\n`;
                 summaryMessage += state.data.has_group ? 
                     `👥 *Готовая группа:* ${state.data.group_size} человек\n` :
@@ -727,11 +870,7 @@ bot.on('message', async (msg) => {
                     // Получаем ID ребенка, если тренировка для ребенка
                     let childId = null;
                     if (state.data.training_for === 'child' || state.data.training_for === 'both') {
-                        const childResult = await pool.query(
-                            'SELECT id FROM children WHERE parent_id = $1 LIMIT 1',
-                            [clientInfo.id]
-                        );
-                        childId = childResult.rows[0]?.id;
+                        childId = state.data.child_id;
                     }
 
                     // Создаем заявку в базе данных
@@ -1850,45 +1989,181 @@ bot.on('message', async (msg) => {
         }
         case 'training_for': {
             let trainingFor;
-            if (msg.text === '1. Для себя') trainingFor = 'self';
-            else if (msg.text === '2. Для ребенка') trainingFor = 'child';
-            else if (msg.text === '3. Для себя и ребенка') trainingFor = 'both';
-            else {
+            if (msg.text === '1. Для себя') {
+                trainingFor = 'self';
+                userStates.set(chatId, {
+                    step: 'suggest_training_frequency',
+                    data: { ...state.data, training_for: trainingFor }
+                });
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите один из предложенных вариантов.',
+                    '🔄 *Как часто планируете тренироваться?*\n\n' +
+                    '1. Разово\n' +
+                    '2. Регулярно',
                     {
+                        parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [
-                                ['1. Для себя'],
-                                ['2. Для ребенка'],
-                                ['3. Для себя и ребенка'],
+                                ['1. Разово'],
+                                ['2. Регулярно'],
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
                         }
                     }
                 );
-            }
-            userStates.set(chatId, {
-                step: 'training_frequency',
-                data: { ...state.data, training_for: trainingFor }
-            });
-            return bot.sendMessage(chatId,
-                '🔄 *Как часто планируете тренироваться?*\n\n' +
-                '1. Разово\n' +
-                '2. Регулярно',
-                { 
-                    parse_mode: 'Markdown', 
-                    reply_markup: { 
-                        keyboard: [
-                            ['1. Разово'],
-                            ['2. Регулярно'],
-                            ['🔙 Назад в меню']
-                        ], 
-                        resize_keyboard: true 
-                    } 
+            } else if (msg.text.startsWith('Для ребенка:')) {
+                // Получаем ID клиента по telegram_id
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [state.data.telegram_id]
+                );
+                
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
                 }
-            );
+
+                const clientId = clientResult.rows[0].id;
+
+                // Получаем информацию о детях клиента
+                const childrenResult = await pool.query(
+                    'SELECT id, full_name FROM children WHERE parent_id = $1',
+                    [clientId]
+                );
+                
+                if (childrenResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ У вас нет зарегистрированных детей. Пожалуйста, выберите другой вариант.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Извлекаем имя ребенка из сообщения
+                const childName = msg.text.split(': ')[1];
+                const selectedChild = childrenResult.rows.find(child => child.full_name === childName);
+                
+                if (!selectedChild) {
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при выборе ребенка. Пожалуйста, попробуйте еще раз.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                trainingFor = 'child';
+                userStates.set(chatId, {
+                    step: 'suggest_training_frequency',
+                    data: { 
+                        ...state.data, 
+                        training_for: trainingFor,
+                        child_id: selectedChild.id,
+                        child_name: selectedChild.full_name
+                    }
+                });
+                return bot.sendMessage(chatId,
+                    '🔄 *Как часто планируете тренироваться?*\n\n' +
+                    '1. Разово\n' +
+                    '2. Регулярно',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['1. Разово'],
+                                ['2. Регулярно'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            } else if (msg.text === '🔙 Назад в меню') {
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+            } else {
+                // Получаем ID клиента по telegram_id
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [state.data.telegram_id]
+                );
+                
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                const clientId = clientResult.rows[0].id;
+
+                // Получаем информацию о детях клиента
+                const childrenResult = await pool.query(
+                    'SELECT id, full_name FROM children WHERE parent_id = $1',
+                    [clientId]
+                );
+                
+                if (childrenResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ У вас нет зарегистрированных детей. Пожалуйста, выберите другой вариант.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                // Формируем сообщение с списком детей
+                let message = '👤 *Для кого тренировка?*\n\n';
+                message += '1. Для себя\n';
+                childrenResult.rows.forEach((child, index) => {
+                    message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
+                });
+
+                return bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['1. Для себя'],
+                            ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            }
+            break;
         }
         case 'training_frequency': {
             let frequency;
@@ -1954,9 +2229,8 @@ bot.on('message', async (msg) => {
                 data: { ...state.data, sport_type: sportType }
             });
             return bot.sendMessage(chatId,
-                '📊 *Оцените ваш уровень подготовки от 1 до 10:*\n\n' +
-                '1 - Начинающий\n' +
-                '5 - Средний\n' +
+                '📊 *Оцените ваш уровень подготовки от 0 до 10:*\n\n' +
+                '0 - Начинающий\n' +
                 '10 - Профессионал',
                 {
                     parse_mode: 'Markdown',
@@ -1987,6 +2261,36 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(chatId,
                 '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
                 'Например: 25.12.2024',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case 'suggest_skill_level': {
+            const level = parseInt(msg.text);
+            if (isNaN(level) || level < 0 || level > 10) {
+                return bot.sendMessage(chatId,
+                    '❌ Пожалуйста, введите число от 0 до 10.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            userStates.set(chatId, {
+                step: 'suggest_preferred_date',
+                data: { ...state.data, skill_level: level }
+            });
+            return bot.sendMessage(chatId,
+                '📊 *Оцените ваш уровень подготовки от 0 до 10:*\n\n' +
+                '0 - Начинающий\n' +
+                '10 - Профессионал',
                 {
                     parse_mode: 'Markdown',
                     reply_markup: {
