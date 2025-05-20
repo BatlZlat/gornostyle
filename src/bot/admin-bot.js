@@ -160,12 +160,20 @@ bot.on('callback_query', async (callbackQuery) => {
 
 // Уведомление об отмене групповой тренировки
 async function notifyAdminGroupTrainingCancellation({ clientName, clientPhone, date, time, groupName, trainerName, simulatorName, seatsLeft, refund, adminChatId }) {
+    // Форматируем дату
+    const dateObj = new Date(date);
+    const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+    
+    // Форматируем время
+    const [hours, minutes] = time.split(':');
+    const formattedTime = `${hours}:${minutes}`;
+
     const message =
         `❌ *Отмена групповой тренировки*\n\n` +
         `👤 Клиент: ${clientName}\n` +
         `📞 Телефон: ${clientPhone}\n` +
-        `📅 Дата: ${date}\n` +
-        `⏰ Время: ${time}\n` +
+        `📅 Дата: ${formattedDate}\n` +
+        `⏰ Время: ${formattedTime}\n` +
         `👥 Группа: ${groupName}\n` +
         `👨‍🏫 Тренер: ${trainerName}\n` +
         `🎿 Тренажер: ${simulatorName}\n` +
@@ -176,12 +184,20 @@ async function notifyAdminGroupTrainingCancellation({ clientName, clientPhone, d
 
 // Уведомление об отмене индивидуальной тренировки
 async function notifyAdminIndividualTrainingCancellation({ clientName, clientPhone, date, time, simulatorName, refund, adminChatId }) {
+    // Форматируем дату
+    const dateObj = new Date(date);
+    const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+    
+    // Форматируем время
+    const [hours, minutes] = time.split(':');
+    const formattedTime = `${hours}:${minutes}`;
+
     const message =
         `❌ *Отмена индивидуальной тренировки*\n\n` +
         `👤 Клиент: ${clientName}\n` +
         `📞 Телефон: ${clientPhone}\n` +
-        `📅 Дата: ${date}\n` +
-        `⏰ Время: ${time}\n` +
+        `📅 Дата: ${formattedDate}\n` +
+        `⏰ Время: ${formattedTime}\n` +
         `🎿 Тренажер: ${simulatorName}\n` +
         `💰 Возврат: ${refund} руб.`;
     await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });

@@ -3186,7 +3186,8 @@ bot.on('message', async (msg) => {
                 if (selectedSession.session_type === 'group') {
                     // Получаем параметры тренировки до удаления
                     const groupInfoRes = await pool.query(
-                        `SELECT ts.session_date, ts.start_time, ts.group_id, ts.trainer_id, ts.simulator_id, ts.price, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+                        `SELECT ts.session_date, ts.start_time, ts.group_id, ts.trainer_id, ts.simulator_id, ts.price, ts.max_participants,
+                         g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
                          FROM training_sessions ts
                          LEFT JOIN groups g ON ts.group_id = g.id
                          LEFT JOIN trainers t ON ts.trainer_id = t.id
@@ -3195,12 +3196,15 @@ bot.on('message', async (msg) => {
                         [selectedSession.session_id]
                     );
                     const groupInfo = groupInfoRes.rows[0];
+                    
                     // Считаем сколько мест осталось после удаления
                     const seatsRes = await pool.query(
                         'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
                         [selectedSession.session_id]
                     );
-                    const seatsLeft = Math.max(0, groupInfo ? groupInfo.max_participants - parseInt(seatsRes.rows[0].count) - 1 : 0);
+                    const currentParticipants = parseInt(seatsRes.rows[0].count) - 1; // -1 потому что мы удаляем одного участника
+                    const maxParticipants = groupInfo.max_participants;
+                    const seatsLeft = `${currentParticipants}/${maxParticipants}`;
                     // Получаем данные клиента
                     const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
                     const client = clientRes.rows[0];
