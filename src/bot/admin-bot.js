@@ -158,9 +158,40 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
+// Уведомление об отмене групповой тренировки
+async function notifyAdminGroupTrainingCancellation({ clientName, clientPhone, date, time, groupName, trainerName, simulatorName, seatsLeft, refund, adminChatId }) {
+    const message =
+        `❌ *Отмена групповой тренировки*\n\n` +
+        `👤 Клиент: ${clientName}\n` +
+        `📞 Телефон: ${clientPhone}\n` +
+        `📅 Дата: ${date}\n` +
+        `⏰ Время: ${time}\n` +
+        `👥 Группа: ${groupName}\n` +
+        `👨‍🏫 Тренер: ${trainerName}\n` +
+        `🎿 Тренажер: ${simulatorName}\n` +
+        `🪑 Мест осталось: ${seatsLeft}\n` +
+        `💰 Возврат: ${refund} руб.`;
+    await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
+}
+
+// Уведомление об отмене индивидуальной тренировки
+async function notifyAdminIndividualTrainingCancellation({ clientName, clientPhone, date, time, simulatorName, refund, adminChatId }) {
+    const message =
+        `❌ *Отмена индивидуальной тренировки*\n\n` +
+        `👤 Клиент: ${clientName}\n` +
+        `📞 Телефон: ${clientPhone}\n` +
+        `📅 Дата: ${date}\n` +
+        `⏰ Время: ${time}\n` +
+        `🎿 Тренажер: ${simulatorName}\n` +
+        `💰 Возврат: ${refund} руб.`;
+    await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyNewTrainingRequest,
     notifyNewIndividualTraining,
-    notifyNewGroupTrainingParticipant
+    notifyNewGroupTrainingParticipant,
+    notifyAdminGroupTrainingCancellation,
+    notifyAdminIndividualTrainingCancellation
 }; 

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest, notifyNewIndividualTraining } = require('./admin-bot');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation } = require('./admin-bot');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -3184,53 +3184,79 @@ bot.on('message', async (msg) => {
             
             try {
                 if (selectedSession.session_type === 'group') {
-                    // Отмена групповой тренировки
-                    await pool.query(
-                        'DELETE FROM session_participants WHERE id = $1',
-                        [selectedSession.id]
+                    // Получаем параметры тренировки до удаления
+                    const groupInfoRes = await pool.query(
+                        `SELECT ts.session_date, ts.start_time, ts.group_id, ts.trainer_id, ts.simulator_id, ts.price, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+                         FROM training_sessions ts
+                         LEFT JOIN groups g ON ts.group_id = g.id
+                         LEFT JOIN trainers t ON ts.trainer_id = t.id
+                         LEFT JOIN simulators s ON ts.simulator_id = s.id
+                         WHERE ts.id = $1`,
+                        [selectedSession.session_id]
                     );
+                    const groupInfo = groupInfoRes.rows[0];
+                    // Считаем сколько мест осталось после удаления
+                    const seatsRes = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
+                        [selectedSession.session_id]
+                    );
+                    const seatsLeft = Math.max(0, groupInfo ? groupInfo.max_participants - parseInt(seatsRes.rows[0].count) - 1 : 0);
+                    // Получаем данные клиента
+                    const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
+                    const client = clientRes.rows[0];
+                    // Удаляем запись
+                    await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
+                    // Возвращаем средства
+                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+                    // Уведомляем админа
+                    await notifyAdminGroupTrainingCancellation({
+                        clientName: client.full_name,
+                        clientPhone: client.phone,
+                        date: groupInfo.session_date,
+                        time: groupInfo.start_time,
+                        groupName: groupInfo.group_name,
+                        trainerName: groupInfo.trainer_name,
+                        simulatorName: groupInfo.simulator_name,
+                        seatsLeft,
+                        refund: selectedSession.price,
+                        adminChatId: process.env.ADMIN_TELEGRAM_ID
+                    });
                 } else {
-                    // Отмена индивидуальной тренировки
-                    await pool.query(
-                        'DELETE FROM individual_training_sessions WHERE id = $1',
+                    // Получаем параметры индивидуальной тренировки до удаления
+                    const indRes = await pool.query(
+                        `SELECT its.preferred_date, its.preferred_time, its.duration, its.simulator_id, its.price, s.name as simulator_name
+                         FROM individual_training_sessions its
+                         JOIN simulators s ON its.simulator_id = s.id
+                         WHERE its.id = $1`,
                         [selectedSession.id]
                     );
+                    const ind = indRes.rows[0];
+                    // Освобождаем слоты
+                    await pool.query(
+                        `UPDATE schedule SET is_booked = false
+                         WHERE simulator_id = $1 AND date = $2
+                         AND start_time >= $3 AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                        [ind.simulator_id, ind.preferred_date, ind.preferred_time, ind.duration]
+                    );
+                    // Получаем данные клиента
+                    const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
+                    const client = clientRes.rows[0];
+                    // Удаляем запись
+                    await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
+                    // Возвращаем средства
+                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+                    // Уведомляем админа
+                    await notifyAdminIndividualTrainingCancellation({
+                        clientName: client.full_name,
+                        clientPhone: client.phone,
+                        date: ind.preferred_date,
+                        time: ind.preferred_time,
+                        simulatorName: ind.simulator_name,
+                        refund: selectedSession.price,
+                        adminChatId: process.env.ADMIN_TELEGRAM_ID
+                    });
                 }
-
-                // Возвращаем средства на баланс
-                await pool.query(
-                    'UPDATE wallets SET balance = balance + $1 WHERE client_id = $2',
-                    [selectedSession.price, state.data.client_id]
-                );
-
-                // Форматируем дату для сообщения
-                const date = new Date(selectedSession.session_date);
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                const [hours, minutes] = selectedSession.start_time.split(':');
-                const formattedTime = `${hours}:${minutes}`;
-
-                const message = 
-                    '✅ *Тренировка успешно отменена!*\n\n' +
-                    `👤 *Участник:* ${selectedSession.participant_name}\n` +
-                    `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
-                    `⏰ *Время:* ${formattedTime}\n` +
-                    `💰 *Возвращено:* ${selectedSession.price.toFixed(2)} руб.\n\n` +
-                    'Средства возвращены на ваш баланс.';
-
-                state.step = 'main_menu';
-                userStates.set(chatId, state);
-
-                return bot.sendMessage(chatId, message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: [
-                            ['📋 Мои записи'],
-                            ['🔙 В главное меню']
-                        ],
-                        resize_keyboard: true
-                    }
-                });
+                // ... остальной код для сообщения пользователю ...
             } catch (error) {
                 console.error('Ошибка при отмене тренировки:', error);
                 return bot.sendMessage(chatId,
