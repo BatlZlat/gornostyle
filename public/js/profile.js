@@ -95,23 +95,29 @@ function displayBookings(bookings) {
     bookingsList.innerHTML = '';
 
     if (bookings.length === 0) {
-        bookingsList.innerHTML = '<p class="no-bookings">Бронирования не найдены</p>';
+        bookingsList.innerHTML = '<p class="no-bookings">Записи не найдены</p>';
         return;
     }
 
     bookings.forEach(booking => {
         const bookingCard = document.createElement('div');
         bookingCard.className = 'booking-card';
+        
+        const participantName = booking.is_child ? 
+            `Ребенок: ${booking.child_name}` : 
+            `Клиент: ${booking.client_name}`;
+
         bookingCard.innerHTML = `
             <div class="booking-info">
                 <h4>${booking.simulator_name}</h4>
-                <p>Дата: ${formatDate(booking.booking_date)}</p>
+                <p>${participantName}</p>
+                <p>Дата: ${formatDate(booking.session_date)}</p>
                 <p>Время: ${booking.start_time} - ${booking.end_time}</p>
                 <p>Тренер: ${booking.trainer_name || 'Без тренера'}</p>
-                <p>Статус: ${getStatusText(booking.status)}</p>
+                <p>Статус: ${getStatusText(booking.participant_status)}</p>
             </div>
             <div class="booking-actions">
-                ${booking.status !== 'cancelled' && isUpcoming(booking) ? `
+                ${booking.participant_status !== 'cancelled' && isUpcoming(booking) ? `
                     <button class="cancel-booking" data-booking-id="${booking.id}">
                         Отменить
                     </button>

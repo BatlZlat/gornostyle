@@ -63,16 +63,21 @@ class Booking {
 
     static async findByUser(user_id) {
         const query = `
-            SELECT b.*, 
-                   u.name as user_name,
-                   t.name as trainer_name,
-                   s.name as simulator_name
-            FROM bookings b
-            JOIN users u ON b.user_id = u.id
-            LEFT JOIN users t ON b.trainer_id = t.id
-            JOIN simulators s ON b.simulator_id = s.id
-            WHERE b.user_id = $1
-            ORDER BY b.booking_date DESC, b.start_time DESC
+            SELECT ts.*, 
+                   c.full_name as client_name,
+                   ch.full_name as child_name,
+                   t.full_name as trainer_name,
+                   s.name as simulator_name,
+                   sp.is_child,
+                   sp.status as participant_status
+            FROM training_sessions ts
+            JOIN session_participants sp ON ts.id = sp.session_id
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            JOIN simulators s ON ts.simulator_id = s.id
+            WHERE (sp.client_id = $1 OR ch.parent_id = $1)
+            ORDER BY ts.session_date DESC, ts.start_time DESC
         `;
         const result = await db.query(query, [user_id]);
         return result.rows;
