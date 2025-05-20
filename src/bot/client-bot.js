@@ -3205,13 +3205,17 @@ bot.on('message', async (msg) => {
                     const currentParticipants = parseInt(seatsRes.rows[0].count) - 1; // -1 потому что мы удаляем одного участника
                     const maxParticipants = groupInfo.max_participants;
                     const seatsLeft = `${currentParticipants}/${maxParticipants}`;
+
                     // Получаем данные клиента
                     const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
                     const client = clientRes.rows[0];
+
                     // Удаляем запись
                     await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
+
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+
                     // Уведомляем админа
                     await notifyAdminGroupTrainingCancellation({
                         clientName: client.full_name,
@@ -3225,6 +3229,36 @@ bot.on('message', async (msg) => {
                         refund: selectedSession.price,
                         adminChatId: process.env.ADMIN_TELEGRAM_ID
                     });
+
+                    // Форматируем дату для сообщения клиенту
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+
+                    // Сообщение для клиента
+                    const clientMessage = 
+                        '✅ *Тренировка успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
+                        'Средства возвращены на ваш баланс.';
+
+                    state.step = 'main_menu';
+                    userStates.set(chatId, state);
+
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
                 } else {
                     // Получаем параметры индивидуальной тренировки до удаления
                     const indRes = await pool.query(
@@ -3235,6 +3269,7 @@ bot.on('message', async (msg) => {
                         [selectedSession.id]
                     );
                     const ind = indRes.rows[0];
+
                     // Освобождаем слоты
                     await pool.query(
                         `UPDATE schedule SET is_booked = false
@@ -3242,13 +3277,17 @@ bot.on('message', async (msg) => {
                          AND start_time >= $3 AND start_time < ($3::time + ($4 * interval '1 minute'))`,
                         [ind.simulator_id, ind.preferred_date, ind.preferred_time, ind.duration]
                     );
+
                     // Получаем данные клиента
                     const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
                     const client = clientRes.rows[0];
+
                     // Удаляем запись
                     await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
+
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+
                     // Уведомляем админа
                     await notifyAdminIndividualTrainingCancellation({
                         clientName: client.full_name,
@@ -3258,6 +3297,36 @@ bot.on('message', async (msg) => {
                         simulatorName: ind.simulator_name,
                         refund: selectedSession.price,
                         adminChatId: process.env.ADMIN_TELEGRAM_ID
+                    });
+
+                    // Форматируем дату для сообщения клиенту
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+
+                    // Сообщение для клиента
+                    const clientMessage = 
+                        '✅ *Тренировка успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
+                        'Средства возвращены на ваш баланс.';
+
+                    state.step = 'main_menu';
+                    userStates.set(chatId, state);
+
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
                     });
                 }
                 // ... остальной код для сообщения пользователю ...
