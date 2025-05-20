@@ -242,8 +242,11 @@ bot.on('message', async (msg) => {
                     LEFT JOIN trainers t ON ts.trainer_id = t.id
                     LEFT JOIN children c ON sp.child_id = c.id
                     WHERE sp.client_id = $1
-                    AND ts.session_date >= CURRENT_DATE
                     AND ts.status = 'scheduled'
+                    AND (
+                        ts.session_date > CURRENT_DATE OR
+                        (ts.session_date = CURRENT_DATE AND ts.start_time > CURRENT_TIME)
+                    )
                     UNION ALL
                     SELECT 
                         its.id,
@@ -267,7 +270,10 @@ bot.on('message', async (msg) => {
                     LEFT JOIN children c ON its.child_id = c.id
                     JOIN clients cl ON its.client_id = cl.id
                     WHERE its.client_id = $1
-                    AND its.preferred_date >= CURRENT_DATE
+                    AND (
+                        its.preferred_date > CURRENT_DATE OR
+                        (its.preferred_date = CURRENT_DATE AND its.preferred_time > CURRENT_TIME)
+                    )
                 )
                 SELECT * FROM client_sessions
                 ORDER BY session_date, start_time`,
@@ -3417,7 +3423,7 @@ async function showMyBookings(chatId) {
         let message = '📋 Ваши записи на тренировки:\n\n';
         
         sessions.forEach(session => {
-            const price = parseFloat(session.price);
+            const price = session.price ? Number(session.price) : 0;
             const formattedPrice = price.toFixed(2);
             
             message += `🏂 Тренировка: ${session.simulator_name}\n`;
@@ -3425,7 +3431,9 @@ async function showMyBookings(chatId) {
             message += `⏰ Время: ${session.start_time} - ${session.end_time}\n`;
             message += `👤 ${session.is_child ? 'Ребенок' : 'Клиент'}: ${session.is_child ? session.child_name : session.client_name}\n`;
             message += `💰 Стоимость: ${formattedPrice} руб.\n`;
-            message += `📊 Уровень: ${session.skill_level}\n`;
+            if (session.skill_level) {
+                message += `📊 Уровень: ${session.skill_level}\n`;
+            }
             message += `🏷️ Статус: ${getStatusText(session.participant_status)}\n\n`;
         });
 
