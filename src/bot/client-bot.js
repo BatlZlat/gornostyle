@@ -1184,30 +1184,27 @@ bot.on('message', async (msg) => {
 
                         // Формируем сообщение со списком тренировок
                         let message = '🎿 *Доступные групповые тренировки:*\n\n';
+                        
+                        // Добавляем информацию о каждой тренировке
                         result.rows.forEach((session, index) => {
                             const date = new Date(session.session_date);
+                            const dayOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][date.getDay()];
                             const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                             const [hours, minutes] = session.start_time.split(':');
                             const formattedTime = `${hours}:${minutes}`;
                             
-                            message += `${index + 1}. ${formattedDate} ${formattedTime}\n`;
-                            message += `   • Группа: ${session.group_name}\n`;
-                            message += `   • Участников: ${session.current_participants}/${session.max_participants}\n`;
-                            message += `   • Уровень: ${session.skill_level}/10\n`;
-                            message += `   • Тренажер: ${session.simulator_name}\n`;
-                            message += `   • Тренер: ${session.trainer_name}\n`;
-                            message += `   • Цена: ${session.price} руб.\n\n`;
+                            message += `${index + 1}. *${formattedDate} (${dayOfWeek}) ${formattedTime}*\n`;
+                            message += `   👥 ${session.group_name} (${session.current_participants}/${session.max_participants})\n`;
+                            message += `   💰 ${session.price} руб.\n\n`;
                         });
 
-                        message += 'Выберите номер тренировки:';
+                        message += 'Чтобы выбрать тренировку, введите её номер в чат.\n';
+                        message += 'Например: 1 - для выбора первой тренировки';
 
                         return bot.sendMessage(chatId, message, {
                             parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [
-                                    ...result.rows.map((_, i) => [`${i + 1}`]),
-                                    ['🔙 Назад в меню']
-                                ],
+                                keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
                             }
                         });
@@ -2373,13 +2370,11 @@ bot.on('message', async (msg) => {
             
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_sessions.length) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите номер тренировки из списка.',
+                    '❌ Пожалуйста, введите номер тренировки из списка.\n' +
+                    'Например: 1 - для выбора первой тренировки',
                     {
                         reply_markup: {
-                            keyboard: [
-                                ...state.data.available_sessions.map((_, i) => [`${i + 1}`]),
-                                ['🔙 Назад в меню']
-                            ],
+                            keyboard: [['🔙 Назад в меню']],
                             resize_keyboard: true
                         }
                     }
