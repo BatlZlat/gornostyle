@@ -3718,7 +3718,7 @@ async function handleTopUpBalance(chatId, clientId) {
             'Для пополнения баланса необходимо отправить необходимую сумму по СБП.\n' +
             'В комментарии платежа укажите номер вашего кошелька.\n' +
             'Для этого скопируйте номер кошелька, кликнув по нему.\n\n' +
-            'Ссылка для пополнения счета: https://www.tinkoff.ru/rm/r_iRVDWYAZSN.vtGhEjAwqf/GJQYT57036';
+            `Ссылка для пополнения счета: ${process.env.PAYMENT_LINK}`;
 
         await bot.sendMessage(chatId, message, {
             parse_mode: 'HTML',
