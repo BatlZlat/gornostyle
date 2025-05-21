@@ -66,6 +66,12 @@ async function notifyNewTrainingRequest(requestData) {
 // Функция для отправки уведомления о новой индивидуальной записи
 async function notifyNewIndividualTraining(trainingData) {
     try {
+        // Форматируем дату и время
+        const [year, month, day] = trainingData.preferred_date.split('-');
+        const formattedDate = `${day}.${month}.${year}`;
+        const [hours, minutes] = trainingData.preferred_time.split(':');
+        const formattedTime = `${hours}:${minutes}`;
+
         const message = 
             '🎿 *Запись на индивидуальную тренировку*\n\n' +
             `👤 *ФИО:* ${trainingData.client_name}\n` +
@@ -76,8 +82,8 @@ async function notifyNewIndividualTraining(trainingData) {
             `⏱ *Длительность:* ${trainingData.duration} минут\n` +
             `🎯 *Тренажер:* №${trainingData.simulator_id}\n` +
             `💰 *Стоимость:* ${trainingData.price} руб.\n` +
-            `📅 *Дата:* ${trainingData.preferred_date}\n` +
-            `⏰ *Время:* ${trainingData.preferred_time}`;
+            `📅 *Дата:* ${formattedDate}\n` +
+            `⏰ *Время:* ${formattedTime}`;
 
         await bot.sendMessage(ADMIN_ID, message, { 
             parse_mode: 'Markdown'
