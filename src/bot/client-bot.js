@@ -2887,29 +2887,35 @@ bot.on('message', async (msg) => {
                             [price, state.data.client_id]
                         );
 
+                        // Получаем ID кошелька
+                        const walletResult = await client.query(
+                            'SELECT id FROM wallets WHERE client_id = $1',
+                            [state.data.client_id]
+                        );
+
                         // Форматируем дату и время для description
-                        const date = new Date(selectedSession.session_date);
-                        const formattedDate = `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
-                        const [hours, minutes] = selectedSession.start_time.split(':');
-                        const formattedTime = `${hours}:${minutes}`;
+                        const transactionDate = new Date(selectedSession.session_date);
+                        const transactionFormattedDate = `${transactionDate.getDate()}.${transactionDate.getMonth() + 1}.${transactionDate.getFullYear()}`;
+                        const [transactionHours, transactionMinutes] = selectedSession.start_time.split(':');
+                        const transactionFormattedTime = `${transactionHours}:${transactionMinutes}`;
 
                         // Создаем запись о транзакции
                         await client.query(
                             'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
                             [
-                                balanceResult.rows[0].id,
+                                walletResult.rows[0].id,
                                 price,
                                 'payment',
-                                `Группа: ${selectedSession.group_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                `Группа: ${selectedSession.group_name}, Дата: ${transactionFormattedDate}, Время: ${transactionFormattedTime}, Длительность: ${selectedSession.duration} мин.`
                             ]
                         );
 
                         await client.query('COMMIT');
 
                         // Форматируем дату и время для сообщения
-                        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                        const formattedDateMsg = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                        const formattedTimeMsg = `${hours}:${minutes}`;
+                        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][transactionDate.getDay()];
+                        const formattedDateMsg = `${transactionDate.getDate().toString().padStart(2, '0')}.${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}.${transactionDate.getFullYear()}`;
+                        const formattedTimeMsg = `${transactionHours}:${transactionMinutes}`;
 
                         // Формируем сообщение об успешной записи
                         let message = '✅ *Вы успешно записались на тренировку!*\n\n';
