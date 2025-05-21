@@ -222,7 +222,7 @@ bot.on('message', async (msg) => {
                         sp.id,
                         sp.session_id,
                         sp.child_id,
-                        c.full_name as participant_name,
+                        COALESCE(c.full_name, cl.full_name) as participant_name,
                         ts.session_date,
                         ts.start_time,
                         ts.duration,
@@ -241,6 +241,7 @@ bot.on('message', async (msg) => {
                     LEFT JOIN groups g ON ts.group_id = g.id
                     LEFT JOIN trainers t ON ts.trainer_id = t.id
                     LEFT JOIN children c ON sp.child_id = c.id
+                    JOIN clients cl ON sp.client_id = cl.id
                     WHERE sp.client_id = $1
                     AND ts.status = 'scheduled'
                     AND (
@@ -251,6 +252,7 @@ bot.on('message', async (msg) => {
                         )
                     )
                     UNION ALL
+                    -- Индивидуальные тренировки
                     SELECT 
                         its.id,
                         its.id as session_id,
@@ -3075,9 +3077,16 @@ bot.on('message', async (msg) => {
                             LEFT JOIN groups g ON ts.group_id = g.id
                             LEFT JOIN trainers t ON ts.trainer_id = t.id
                             LEFT JOIN children c ON sp.child_id = c.id
+                            JOIN clients cl ON sp.client_id = cl.id
                             WHERE sp.client_id = $1
-                            AND ts.session_date >= CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
                             AND ts.status = 'scheduled'
+                            AND (
+                                ts.session_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                                OR (
+                                    ts.session_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                                    AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                                )
+                            )
                             UNION ALL
                             -- Индивидуальные тренировки
                             SELECT 
