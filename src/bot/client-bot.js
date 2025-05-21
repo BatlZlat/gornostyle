@@ -3690,7 +3690,7 @@ function formatDate(dateStr) {
 async function handleTopUpBalance(chatId, clientId) {
     try {
         const clientResult = await pool.query(
-            'SELECT c.id, w.wallet_number FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
+            'SELECT c.id, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
             [clientId]
         );
 
@@ -3706,25 +3706,27 @@ async function handleTopUpBalance(chatId, clientId) {
             );
         }
 
-        const { wallet_number: walletNumber } = clientResult.rows[0];
+        const { wallet_number: walletNumber, balance } = clientResult.rows[0];
         const formattedWalletNumber = formatWalletNumber(walletNumber);
+        const formattedBalance = parseFloat(balance).toFixed(2);
 
-        await bot.sendMessage(chatId,
-            '💳 *Пополнение баланса*\n\n' +
-            `Ваш номер кошелька: \`${formattedWalletNumber}\`\n\n` +
-            'ВАЖНО!!!\n' +
+        const message = 
+            '<b>💳 Пополнение баланса</b>\n\n' +
+            `<b>Номер кошелька:</b> <code>${formattedWalletNumber}</code>\n` +
+            `<b>Текущий баланс:</b> ${formattedBalance} руб.\n\n` +
+            '<b>ВАЖНО!!!</b>\n' +
             'Для пополнения баланса необходимо отправить необходимую сумму по СБП.\n' +
             'В комментарии платежа укажите номер вашего кошелька.\n' +
             'Для этого скопируйте номер кошелька, кликнув по нему.\n\n' +
-            'Ссылка для пополнения счета: https://www.tinkoff.ru/rm/r_iRVDWYAZSN.vtGhEjAwqf/GJQYT57036',
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    keyboard: [['🔙 Назад в меню']],
-                    resize_keyboard: true
-                }
+            'Ссылка для пополнения счета: https://www.tinkoff.ru/rm/r_iRVDWYAZSN.vtGhEjAwqf/GJQYT57036';
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
             }
-        );
+        });
     } catch (error) {
         console.error('Ошибка при пополнении баланса:', error);
         await bot.sendMessage(chatId,
@@ -3801,26 +3803,35 @@ bot.on('message', async (msg) => {
 
     if (msg.text === '💳 Пополнить баланс') {
         try {
-            const clientResult = await pool.query(
-                'SELECT id FROM clients WHERE telegram_id = $1',
-                [chatId]
-            );
+            const state = userStates.get(chatId);
+            let clientId;
 
-            if (!clientResult.rows[0]) {
-                return bot.sendMessage(chatId,
-                    '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
-                    {
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
-                        }
-                    }
+            if (state && state.client_id) {
+                clientId = state.client_id;
+            } else {
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [chatId]
                 );
+
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                clientId = clientResult.rows[0].id;
             }
 
-            await handleTopUpBalance(chatId, clientResult.rows[0].id);
+            await handleTopUpBalance(chatId, clientId);
         } catch (error) {
-            console.error('Ошибка при пополнении баланса:', error);
+            console.error('Ошибка при обработке пополнения баланса:', error);
             await bot.sendMessage(chatId,
                 '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                 {
