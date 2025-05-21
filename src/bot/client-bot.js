@@ -204,7 +204,7 @@ bot.on('message', async (msg) => {
             }
         );
     }
-
+    
     // Глобальная обработка "Личный кабинет"
     if (msg.text === '👤 Личный кабинет') {
         return bot.sendMessage(chatId,
@@ -2099,22 +2099,7 @@ bot.on('message', async (msg) => {
             } else if (msg.text === '❌ Я передумал') {
                 userStates.delete(chatId);
                 return showMainMenu(chatId);
-            } else if (msg.text === '💳 Пополнить баланс') {
-                state.step = 'top_up_balance';
-                userStates.set(chatId, state);
-                return bot.sendMessage(chatId,
-                    '💳 *Пополнение баланса*\n\n' +
-                    'Введите сумму для пополнения в рублях.\n' +
-                    'Например: 1000',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            }
+            } 
             break;
         }
         case 'has_group': {
@@ -2861,21 +2846,6 @@ bot.on('message', async (msg) => {
             if (msg.text === '❌ Я передумал') {
                 userStates.delete(chatId);
                 return showMainMenu(chatId);
-            }
-
-            if (msg.text === '💳 Пополнить баланс') {
-                // Здесь будет логика пополнения баланса
-                return bot.sendMessage(chatId,
-                    '💳 *Пополнение баланса*\n\n' +
-                    'Функционал пополнения баланса находится в разработке.',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
             }
 
             if (msg.text === '✅ Записаться') {
@@ -3715,3 +3685,154 @@ function formatDate(dateStr) {
     const [year, month, day] = dateStr.split('-');
     return `${day}.${month}.${year}`;
 }
+
+// Функция для пополнения баланса
+async function handleTopUpBalance(chatId, clientId) {
+    try {
+        const clientResult = await pool.query(
+            'SELECT c.id, w.wallet_number FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
+            [clientId]
+        );
+
+        if (!clientResult.rows[0]) {
+            return bot.sendMessage(chatId,
+                '❌ Ошибка: кошелек не найден. Пожалуйста, обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        const { wallet_number: walletNumber } = clientResult.rows[0];
+        const formattedWalletNumber = formatWalletNumber(walletNumber);
+
+        await bot.sendMessage(chatId,
+            '💳 *Пополнение баланса*\n\n' +
+            `Ваш номер кошелька: \`${formattedWalletNumber}\`\n\n` +
+            'ВАЖНО!!!\n' +
+            'Для пополнения баланса необходимо отправить необходимую сумму по СБП.\n' +
+            'В комментарии платежа укажите номер вашего кошелька.\n' +
+            'Для этого скопируйте номер кошелька, кликнув по нему.\n\n' +
+            'Ссылка для пополнения счета: https://www.tinkoff.ru/rm/r_iRVDWYAZSN.vtGhEjAwqf/GJQYT57036',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Ошибка при пополнении баланса:', error);
+        await bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// В обработчике сообщений
+bot.on('message', async (msg) => {
+    if (msg.text.startsWith('/')) return;
+    const chatId = msg.chat.id;
+    const state = userStates.get(chatId);
+
+    // ... existing code ...
+
+    if (msg.text === '💰 Кошелек') {
+        try {
+            const clientResult = await pool.query(
+                'SELECT c.id, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
+                [chatId]
+            );
+
+            if (!clientResult.rows[0]) {
+                return bot.sendMessage(chatId,
+                    '❌ Ошибка: кошелек не найден. Пожалуйста, обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            const { id: clientId, wallet_number: walletNumber, balance } = clientResult.rows[0];
+            const formattedWalletNumber = formatWalletNumber(walletNumber);
+
+            await bot.sendMessage(chatId,
+                `💳 *Информация о кошельке*\n\n` +
+                `Номер кошелька: \`${formattedWalletNumber}\`\n` +
+                `Текущий баланс: ${balance} руб.\n\n` +
+                `Выберите действие:`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['💳 Пополнить баланс'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('Ошибка при получении информации о кошельке:', error);
+            await bot.sendMessage(chatId,
+                '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    if (msg.text === '💳 Пополнить баланс') {
+        try {
+            const clientResult = await pool.query(
+                'SELECT id FROM clients WHERE telegram_id = $1',
+                [chatId]
+            );
+
+            if (!clientResult.rows[0]) {
+                return bot.sendMessage(chatId,
+                    '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            await handleTopUpBalance(chatId, clientResult.rows[0].id);
+        } catch (error) {
+            console.error('Ошибка при пополнении баланса:', error);
+            await bot.sendMessage(chatId,
+                '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    // ... existing code ...
+});
+
