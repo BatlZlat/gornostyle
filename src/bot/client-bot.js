@@ -1279,7 +1279,6 @@ bot.on('message', async (msg) => {
             if (msg.text === '👥 Групповая' || msg.text === '👤 Индивидуальная') {
                 const state = userStates.get(chatId);
                 state.data.training_type = msg.text === '👥 Групповая' ? 'group' : 'individual';
-                
                 if (msg.text === '👥 Групповая') {
                     try {
                         // Получаем доступные групповые тренировки на ближайшие 2 недели
@@ -1382,28 +1381,54 @@ bot.on('message', async (msg) => {
                         );
                     }
                 } else if (msg.text === '👤 Индивидуальная') {
-                    // Существующая логика для индивидуальных тренировок
-                    state.step = 'equipment_type';
-                    userStates.set(chatId, state);
-                    return bot.sendMessage(chatId,
-                        '🎿 *Выберите тип снаряжения:*\n\n' +
-                        '• 🎿 Горные лыжи\n' +
-                        '• 🏂 Сноуборд',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [
-                                    ['🎿 Горные лыжи'],
-                                    ['🏂 Сноуборд'],
-                                    ['🔙 Назад в меню']
-                                ],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
+                    // Новый вызов функции выбора участника
+                    await askIndividualForWhom(chatId, state.data.client_id);
+                    return;
                 }
             }
             break;
+        }
+
+        case 'individual_for_whom': {
+            const state = userStates.get(chatId);
+            const choice = parseInt(msg.text);
+            if (isNaN(choice) || choice < 1 || choice > (state.data.children.length + 1)) {
+                return bot.sendMessage(chatId, '❌ Пожалуйста, выберите один из предложенных вариантов.', {
+                    reply_markup: {
+                        keyboard: [
+                            ['1. Для себя'],
+                            ...state.data.children.map((child, idx) => [`${idx + 2}. ${child.full_name}`])
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            }
+            if (choice === 1) {
+                // Для себя
+                state.data.is_child = false;
+            } else {
+                // Для ребенка
+                const selectedChild = state.data.children[choice - 2];
+                state.data.is_child = true;
+                state.data.child_id = selectedChild.id;
+                state.data.child_name = selectedChild.full_name;
+            }
+            state.step = 'equipment_type';
+            userStates.set(chatId, state);
+            return bot.sendMessage(chatId,
+                '🎿 *Выберите тип снаряжения:*\n\n• 🎿 Горные лыжи\n• 🏂 Сноуборд',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['🎿 Горные лыжи'],
+                            ['🏂 Сноуборд'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
 
         case 'select_participant': {
@@ -3591,4 +3616,31 @@ async function showMyBookings(chatId) {
         console.error('Ошибка при получении записей:', error);
         await bot.sendMessage(chatId, 'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.');
     }
+}
+
+// Функция для выбора, для кого индивидуальная тренировка
+async function askIndividualForWhom(chatId, clientId) {
+    // Получаем детей клиента
+    const childrenResult = await pool.query(
+        'SELECT id, full_name FROM children WHERE parent_id = $1',
+        [clientId]
+    );
+    const children = childrenResult.rows;
+    // Формируем варианты
+    let message = 'Для кого индивидуальная тренировка?';
+    const keyboard = [ ['1. Для себя'] ];
+    children.forEach((child, idx) => {
+        keyboard.push([`${idx + 2}. ${child.full_name}`]);
+    });
+    // Сохраняем детей в состояние
+    userStates.set(chatId, {
+        step: 'individual_for_whom',
+        data: { client_id: clientId, children }
+    });
+    await bot.sendMessage(chatId, message, {
+        reply_markup: {
+            keyboard,
+            resize_keyboard: true
+        }
+    });
 }
