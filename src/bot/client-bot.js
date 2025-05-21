@@ -244,8 +244,11 @@ bot.on('message', async (msg) => {
                     WHERE sp.client_id = $1
                     AND ts.status = 'scheduled'
                     AND (
-                        ts.session_date > CURRENT_DATE OR
-                        (ts.session_date = CURRENT_DATE AND ts.start_time > CURRENT_TIME)
+                        ts.session_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                        OR (
+                            ts.session_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                            AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                        )
                     )
                     UNION ALL
                     SELECT 
@@ -271,8 +274,11 @@ bot.on('message', async (msg) => {
                     JOIN clients cl ON its.client_id = cl.id
                     WHERE its.client_id = $1
                     AND (
-                        its.preferred_date > CURRENT_DATE OR
-                        (its.preferred_date = CURRENT_DATE AND its.preferred_time > CURRENT_TIME)
+                        its.preferred_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                        OR (
+                            its.preferred_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                            AND its.preferred_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                        )
                     )
                 )
                 SELECT * FROM client_sessions
@@ -1298,11 +1304,15 @@ bot.on('message', async (msg) => {
                             LEFT JOIN trainers t ON ts.trainer_id = t.id
                             LEFT JOIN session_participants sp ON ts.id = sp.session_id
                             WHERE ts.training_type = true
-                            AND ts.session_date >= CURRENT_DATE
-                            AND ts.session_date <= CURRENT_DATE + INTERVAL '14 days'
+                            AND ts.session_date <= ((NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date + INTERVAL '14 days')
                             AND ts.status = 'scheduled'
-                            AND (ts.session_date > CURRENT_DATE OR 
-                                (ts.session_date = CURRENT_DATE AND ts.start_time > CURRENT_TIME))
+                            AND (
+                                ts.session_date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                                OR (
+                                    ts.session_date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                                    AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                                )
+                            )
                             GROUP BY ts.id, g.name, s.name, t.full_name
                             HAVING COUNT(sp.id) < ts.max_participants
                             ORDER BY ts.session_date, ts.start_time`
@@ -3015,7 +3025,7 @@ bot.on('message', async (msg) => {
                             LEFT JOIN trainers t ON ts.trainer_id = t.id
                             LEFT JOIN children c ON sp.child_id = c.id
                             WHERE sp.client_id = $1
-                            AND ts.session_date >= CURRENT_DATE
+                            AND ts.session_date >= CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
                             AND ts.status = 'scheduled'
                             UNION ALL
                             -- Индивидуальные тренировки
@@ -3041,7 +3051,7 @@ bot.on('message', async (msg) => {
                             LEFT JOIN children c ON its.child_id = c.id
                             JOIN clients cl ON its.client_id = cl.id
                             WHERE its.client_id = $1
-                            AND its.preferred_date >= CURRENT_DATE
+                            AND its.preferred_date >= CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
                         )
                         SELECT * FROM client_sessions
                         ORDER BY session_date, start_time`,
