@@ -2002,97 +2002,54 @@ bot.on('message', async (msg) => {
                         );
                     }
 
-                    // Обновляем баланс клиента
+                    // Отправляем уведомление администратору
+                    const { notifyNewIndividualTraining } = require('./admin-bot');
+                    await notifyNewIndividualTraining({
+                        client_name: clientInfo.full_name,
+                        client_phone: clientInfo.phone,
+                        child_name: state.data.is_child ? state.data.child_name : null,
+                        with_trainer: state.data.with_trainer,
+                        equipment_type: state.data.equipment_type,
+                        duration: state.data.duration,
+                        simulator_id: state.data.simulator_id,
+                        price: state.data.price,
+                        preferred_date: state.data.preferred_date,
+                        preferred_time: state.data.preferred_time
+                    });
+
+                    // Списываем средства
                     await pool.query(
                         'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
-                        [state.data.price, clientInfo.id]
+                        [price, clientInfo.id]
                     );
-
-                    // Получаем ID кошелька для создания транзакции
-                    const walletResult = await pool.query(
-                        'SELECT id FROM wallets WHERE client_id = $1',
-                        [clientInfo.id]
-                    );
-                    const walletId = walletResult.rows[0].id;
-
-                    // Формируем описание транзакции
-                    const transactionDescription = 
-                        `Индивидуальная тренировка; ` +
-                        `Дата: ${state.data.preferred_date}; ` +
-                        `Время: ${state.data.preferred_time}; ` +
-                        `Длительность: ${state.data.duration} минут`;
-
-                    // Создаем запись о транзакции
-                    await pool.query(
-                        `INSERT INTO transactions (
-                            wallet_id,
-                            amount,
-                            type,
-                            description
-                        ) VALUES ($1, $2, 'payment', $3)`,
-                        [
-                            walletId,
-                            state.data.price,
-                            transactionDescription
-                        ]
-                    );
-
-                    // Форматируем дату и время
-                    const [year, month, day] = state.data.preferred_date.split('-');
-                    const formattedDate = `${day}.${month}.${year}`;
-                    const [hours, minutes] = state.data.preferred_time.split(':');
-                    const formattedTime = `${hours}:${minutes}`;
-
-                    // Формируем сообщение об успешной записи
-                    let message = '✅ *Запись на тренировку успешно создана!*\n\n';
-                    message += `📅 Дата: ${formattedDate}\n`;
-                    message += `⏰ Время: ${formattedTime}\n`;
-                    message += `🎿 Тип тренировки: Индивидуальная\n`;
-                    message += `🏂 Тренажер: ${state.data.simulator_name}\n`;
-                    message += `💰 Сумма списания: ${state.data.price} руб.\n`;
-                    
-                    if (state.data.is_child) {
-                        message += `👶 Ребенок: ${state.data.child_name}\n`;
-                    }
-
-                    message += '\nПроверить запись вы можете на главной странице бота, нажав кнопку Мои Записи.';
-
-                    // Отправляем уведомление администратору
-                    const { notifyNewGroupTrainingParticipant } = require('./admin-bot');
-                    
-                    // Получаем данные клиента
-                    const clientInfoResult = await pool.query(
-                        'SELECT full_name, phone FROM clients WHERE id = $1',
-                        [state.data.client_id]
-                    );
-                    
-                    const clientData = clientInfoResult.rows[0];
-                    
-                    await notifyNewGroupTrainingParticipant({
-                        ...selectedSession,
-                        client_name: clientData.full_name,
-                        client_phone: clientData.phone,
-                        child_name: state.data.selected_child ? state.data.selected_child.full_name : null,
-                        current_participants: currentParticipants + 1
-                    });
 
                     // Очищаем состояние
                     userStates.delete(chatId);
 
-                    return bot.sendMessage(chatId, message, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
+                    // Отправляем сообщение об успешной записи
+                    return bot.sendMessage(chatId,
+                        '✅ Вы успешно записались на тренировку!\n\n' +
+                        'Детали тренировки:\n' +
+                        `• ФИО участника: ${state.data.is_child ? state.data.child_name : clientInfo.full_name}\n` +
+                        `• Тип тренировки: Индивидуальная\n` +
+                        `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n` +
+                        `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера'}\n` +
+                        `• Длительность: ${state.data.duration} минут ⏱️\n` +
+                        `• Дата: ${formatDate(state.data.preferred_date)}\n` +
+                        `• Время: ${state.data.preferred_time}\n` +
+                        `• Тренажер: ${state.data.simulator_name} (№${state.data.simulator_id})\n` +
+                        `• Стоимость: ${state.data.price} руб. 💰\n\n` +
+                        'Ждем вас на тренировке!',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 В главное меню']],
+                                resize_keyboard: true
+                            }
                         }
-                    });
+                    );
                 } catch (error) {
-                    console.error('Ошибка при создании записи:', {
-                        error: error.message,
-                        stack: error.stack,
-                        state: state,
-                        data: msg
-                    });
+                    console.error('Ошибка при создании записи:', error);
                     return bot.sendMessage(chatId,
                         '❌ Произошла ошибка при создании записи. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                         {
@@ -2105,18 +2062,22 @@ bot.on('message', async (msg) => {
                 }
             } else if (msg.text === '❌ Я передумал') {
                 userStates.delete(chatId);
+                return showMainMenu(chatId);
+            } else if (msg.text === '💳 Пополнить баланс') {
+                state.step = 'top_up_balance';
+                userStates.set(chatId, state);
                 return bot.sendMessage(chatId,
-                    '❌ Запись на тренировку отменена.',
+                    '💳 *Пополнение баланса*\n\n' +
+                    'Введите сумму для пополнения в рублях.\n' +
+                    'Например: 1000',
                     {
+                        parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
                             resize_keyboard: true
                         }
                     }
                 );
-            } else if (msg.text === '🔙 Назад в меню') {
-                userStates.delete(chatId);
-                return showMainMenu(chatId);
             }
             break;
         }
@@ -3643,4 +3604,10 @@ async function askIndividualForWhom(chatId, clientId) {
             resize_keyboard: true
         }
     });
+}
+
+// Функция для форматирования даты в формат ДД.ММ.ГГГГ
+function formatDate(dateStr) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}.${month}.${year}`;
 }
