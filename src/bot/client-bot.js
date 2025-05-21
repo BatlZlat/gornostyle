@@ -3308,6 +3308,23 @@ bot.on('message', async (msg) => {
                     // Удаляем запись
                     await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
 
+                    // Получаем ID кошелька
+                    const walletResult = await pool.query(
+                        'SELECT id FROM wallets WHERE client_id = $1',
+                        [state.data.client_id]
+                    );
+                    
+                    // Создаем запись о транзакции
+                    await pool.query(
+                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                        [
+                            walletResult.rows[0].id,
+                            selectedSession.price,
+                            'refund',
+                            `Возврат средств за ${selectedSession.session_type === 'group' ? 'групповую' : 'индивидуальную'} тренировку; ${selectedSession.session_type === 'group' ? `Группа: ${groupInfo.group_name},` : `Тренажер: ${ind.simulator_name},`} Дата: ${selectedSession.session_type === 'group' ? groupInfo.session_date : ind.preferred_date}, Время: ${selectedSession.session_type === 'group' ? groupInfo.start_time : ind.preferred_time}`
+                        ]
+                    );
+                    
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
 
