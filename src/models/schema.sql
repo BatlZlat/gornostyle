@@ -124,7 +124,8 @@ CREATE TABLE wallets (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     balance DECIMAL(10,2) DEFAULT 0,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    wallet_number VARCHAR(20) UNIQUE NOT NULL
 );
 
 -- Таблица транзакций
