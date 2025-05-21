@@ -2511,8 +2511,7 @@ bot.on('message', async (msg) => {
             
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_sessions.length) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, введите номер тренировки из списка.\n' +
-                    'Например: 1 - для выбора первой тренировки',
+                    '❌ Пожалуйста, выберите тренировку из списка.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Назад в меню']],
@@ -2522,10 +2521,10 @@ bot.on('message', async (msg) => {
                 );
             }
 
-            const selectedSession = state.data.available_sessions[selectedIndex];
-            
             try {
-                // Получаем информацию о клиенте
+                const selectedSession = state.data.available_sessions[selectedIndex];
+                
+                // Получаем данные клиента
                 const clientResult = await pool.query(
                     `SELECT c.*, 
                         EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birth_date)) as age,
@@ -2542,74 +2541,114 @@ bot.on('message', async (msg) => {
                 // Определяем тип тренировки по названию группы
                 const isChildrenTraining = selectedSession.group_name.toLowerCase().includes('дети');
                 const isAdultTraining = selectedSession.group_name.toLowerCase().includes('взрослые');
+                const isGeneralTraining = !isChildrenTraining && !isAdultTraining;
 
                 // Проверяем возрастные ограничения
-                if (isChildrenTraining && clientAge >= 16) {
-                    // Проверяем наличие детей у клиента
-                    const childrenResult = await pool.query(
-                        `SELECT id, full_name, 
-                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
-                        FROM children 
-                        WHERE parent_id = $1 AND 
-                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 16`,
-                        [state.data.client_id]
-                    );
-
-                    if (childrenResult.rows.length === 0) {
-                        return bot.sendMessage(chatId,
-                            '❌ На данную тренировку можно записать только детей до 16 лет.\n\n' +
-                            'У вас нет детей младше 16 лет или вы не добавили их в профиль.\n\n' +
-                            'Вы можете:\n' +
-                            '• Выбрать другую тренировку\n' +
-                            '• Добавить ребенка в профиль',
-                            {
-                                reply_markup: {
-                                    keyboard: [
-                                        ['🎿 Выбрать другую тренировку'],
-                                        ['👤 Добавить ребенка'],
-                                        ['🔙 Назад в меню']
-                                    ],
-                                    resize_keyboard: true
-                                }
-                            }
+                if (isChildrenTraining) {
+                    if (clientAge >= 16) {
+                        // Проверяем наличие детей у клиента
+                        const childrenResult = await pool.query(
+                            `SELECT id, full_name, 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
+                            FROM children 
+                            WHERE parent_id = $1 AND 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 16`,
+                            [state.data.client_id]
                         );
-                    }
 
-                    // Если есть дети, предлагаем выбрать ребенка
-                    state.data.selected_session = selectedSession;
-                    state.data.available_children = childrenResult.rows;
-                    state.step = 'select_child_for_training';
-                    userStates.set(chatId, state);
-
-                    let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
-                    childrenResult.rows.forEach((child, index) => {
-                        message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
-                    });
-
-                    return bot.sendMessage(chatId, message, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name}`]),
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
+                        if (childrenResult.rows.length === 0) {
+                            return bot.sendMessage(chatId,
+                                '❌ На данную тренировку можно записать только детей до 16 лет.\n\n' +
+                                'У вас нет детей младше 16 лет или вы не добавили их в профиль.\n\n' +
+                                'Вы можете:\n' +
+                                '• Выбрать другую тренировку\n' +
+                                '• Добавить ребенка в профиль',
+                                {
+                                    reply_markup: {
+                                        keyboard: [
+                                            ['🎿 Выбрать другую тренировку'],
+                                            ['👤 Добавить ребенка'],
+                                            ['🔙 Назад в меню']
+                                        ],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
                         }
-                    });
-                }
 
-                if (isAdultTraining && clientAge < 16) {
-                    return bot.sendMessage(chatId,
-                        '❌ На данную тренировку можно записаться только с 16 лет.\n\n' +
-                        'Пожалуйста, выберите детскую тренировку или тренировку без возрастных ограничений.',
-                        {
+                        // Если есть дети, предлагаем выбрать ребенка
+                        state.data.selected_session = selectedSession;
+                        state.data.available_children = childrenResult.rows;
+                        state.step = 'select_child_for_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
+                                keyboard: [
+                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
                                 resize_keyboard: true
                             }
+                        });
+                    }
+                    // Если клиент младше 16 лет, он может записаться сам
+                } else if (isAdultTraining) {
+                    if (clientAge < 16) {
+                        // Проверяем, есть ли у клиента дети старше 16 лет
+                        const childrenResult = await pool.query(
+                            `SELECT id, full_name, 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
+                            FROM children 
+                            WHERE parent_id = $1 AND 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) >= 16`,
+                            [state.data.client_id]
+                        );
+
+                        if (childrenResult.rows.length === 0) {
+                            return bot.sendMessage(chatId,
+                                '❌ На данную тренировку можно записаться только с 16 лет.\n\n' +
+                                'Пожалуйста, выберите детскую тренировку или тренировку без возрастных ограничений.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
                         }
-                    );
+
+                        // Если есть дети старше 16 лет, предлагаем выбрать ребенка
+                        state.data.selected_session = selectedSession;
+                        state.data.available_children = childrenResult.rows;
+                        state.step = 'select_child_for_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
+                    // Если клиент старше 16 лет, он может записаться сам
                 }
+                // Для общей тренировки нет возрастных ограничений
 
                 // Форматируем дату и время
                 const date = new Date(selectedSession.session_date);
@@ -2617,6 +2656,28 @@ bot.on('message', async (msg) => {
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = selectedSession.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
+
+                // Безопасное форматирование цены
+                let formattedPrice = '—';
+                try {
+                    const price = parseFloat(selectedSession.price);
+                    if (!isNaN(price)) {
+                        formattedPrice = price.toFixed(2);
+                    }
+                } catch (e) {
+                    console.error('Ошибка при форматировании цены:', e);
+                }
+
+                // Безопасное форматирование баланса
+                let formattedBalance = '—';
+                try {
+                    const balance = parseFloat(client.balance);
+                    if (!isNaN(balance)) {
+                        formattedBalance = balance.toFixed(2);
+                    }
+                } catch (e) {
+                    console.error('Ошибка при форматировании баланса:', e);
+                }
 
                 // Формируем сообщение с деталями тренировки
                 let message = '📋 *Проверьте данные перед записью на тренировку:*\n\n';
@@ -2628,8 +2689,8 @@ bot.on('message', async (msg) => {
                 message += `📊 *Уровень:* ${selectedSession.skill_level}/10\n`;
                 message += `🎿 *Тренажер:* ${selectedSession.simulator_name}\n`;
                 message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n`;
-                message += `💰 *Цена:* ${selectedSession.price.toFixed(2)} руб.\n`;
-                message += `💳 *Баланс:* ${client.balance.toFixed(2)} руб.\n\n`;
+                message += `💰 *Цена:* ${formattedPrice} руб.\n`;
+                message += `💳 *Баланс:* ${formattedBalance} руб.\n\n`;
                 message += 'Выберите действие:';
 
                 // Сохраняем выбранную тренировку в состоянии
