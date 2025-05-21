@@ -197,6 +197,20 @@ CREATE TABLE individual_training_sessions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица неудачных платежей
+CREATE TABLE failed_payments (
+    id SERIAL PRIMARY KEY,
+    amount DECIMAL(10,2) NOT NULL,
+    wallet_number VARCHAR(20) NOT NULL,
+    sms_text TEXT NOT NULL,
+    error_type VARCHAR(50) NOT NULL, -- 'wallet_not_found', 'invalid_format', etc.
+    processed BOOLEAN DEFAULT FALSE, -- true если платеж был обработан вручную
+    processed_by INTEGER REFERENCES administrators(id),
+    processed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -220,6 +234,9 @@ CREATE INDEX idx_individual_training_client ON individual_training_sessions(clie
 CREATE INDEX idx_individual_training_child ON individual_training_sessions(child_id);
 CREATE INDEX idx_individual_training_date ON individual_training_sessions(preferred_date);
 CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(simulator_id);
+CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
+CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
+CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
 
 -- Создание триггеров для обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -283,6 +300,11 @@ CREATE TRIGGER update_training_requests_updated_at
 
 CREATE TRIGGER update_individual_training_updated_at
     BEFORE UPDATE ON individual_training_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_failed_payments_updated_at
+    BEFORE UPDATE ON failed_payments
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
