@@ -144,7 +144,7 @@ app.use((req, res) => {
     });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`\nСервер запущен на порту ${PORT}`);
     console.log('Cron-задача активна и ожидает следующего запуска');
 });
