@@ -1,17 +1,23 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { pool } = require('../db');
+const { Pool } = require('pg');
 
-// Конфигурация бота
-const BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
-const ADMIN_ID = process.env.ADMIN_TELEGRAM_ID || 546668421;
+// Создаем экземпляр бота
+const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: true });
 
-// Инициализация бота
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+// Настройка подключения к БД
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || undefined,
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+});
 
 // Обработка команды /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    if (chatId === parseInt(ADMIN_ID)) {
+    if (chatId === parseInt(process.env.ADMIN_TELEGRAM_ID) || chatId === parseInt(process.env.ADMIN_TELEGRAM_ID_2)) {
         bot.sendMessage(chatId, 
             'Добро пожаловать в панель управления!\n\n' +
             'Я буду информировать вас о важных событиях в системе:\n' +
@@ -28,68 +34,61 @@ bot.onText(/\/start/, (msg) => {
 async function notifyScheduleCreated(month) {
     try {
         const message = `✅ Расписание на ${month} успешно создано!`;
-        await bot.sendMessage(ADMIN_ID, message);
+        await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message);
     } catch (error) {
         console.error('Ошибка при отправке уведомления:', error);
     }
 }
 
-// Функция для отправки уведомления о новой заявке
-async function notifyNewTrainingRequest(requestData) {
+// Функция для отправки уведомления о новой заявке на тренировку
+async function notifyNewTrainingRequest(trainingData) {
     try {
-        // Форматируем дату из YYYY-MM-DD в DD.MM.YYYY
-        const [year, month, day] = requestData.preferred_date.split('-');
-        const formattedDate = `${day}.${month}.${year}`;
+        const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+        if (!adminChatId) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
 
-        const message = 
-            '📝 *Заявка на Групповую тренировку*\n\n' +
-            `👤 *ФИО:* ${requestData.client_name}\n` +
-            `📱 *Телефон:* ${requestData.client_phone}\n` +
-            (requestData.has_group ? 
-                `👥 *Готовая группа:* ${requestData.group_size} человек\n` :
-                `👥 *Ищет группу:* ${requestData.training_for === 'self' ? 'Для себя' : 
-                                  requestData.training_for === 'child' ? 'Для ребенка' : 'Для себя и ребенка'}\n`) +
-            `🔄 *Частота:* ${requestData.training_frequency === 'regular' ? 'Регулярно' : 'Разово'}\n` +
-            `🏂 *Тип:* ${requestData.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
-            `📊 *Уровень:* ${requestData.skill_level}/10\n` +
-            `📅 *Дата:* ${formattedDate}\n` +
-            `⏰ *Время:* ${requestData.preferred_time}`;
+        const message = `
+🔔 Новая заявка на тренировку!
 
-        await bot.sendMessage(ADMIN_ID, message, { 
-            parse_mode: 'Markdown'
-        });
+👤 Клиент: ${trainingData.client_name}
+📅 Дата: ${trainingData.date}
+⏰ Время: ${trainingData.time}
+🎯 Тип: ${trainingData.type}
+👥 Группа: ${trainingData.group_name || 'Индивидуальная'}
+👨‍🏫 Тренер: ${trainingData.trainer_name}
+💰 Стоимость: ${trainingData.price} руб.
+        `;
+
+        await bot.sendMessage(adminChatId, message);
     } catch (error) {
-        console.error('Ошибка при отправке уведомления о новой заявке:', error);
+        console.error('Ошибка при отправке уведомления:', error);
     }
 }
 
-// Функция для отправки уведомления о новой индивидуальной записи
+// Функция для отправки уведомления о новой индивидуальной тренировке
 async function notifyNewIndividualTraining(trainingData) {
     try {
-        // Форматируем дату и время
-        const [year, month, day] = trainingData.preferred_date.split('-');
-        const formattedDate = `${day}.${month}.${year}`;
-        const [hours, minutes] = trainingData.preferred_time.split(':');
-        const formattedTime = `${hours}:${minutes}`;
+        const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+        if (!adminChatId) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
 
-        const message = 
-            '🎿 *Запись на индивидуальную тренировку*\n\n' +
-            `👤 *ФИО:* ${trainingData.client_name}\n` +
-            (trainingData.child_name ? `👶 *ФИО ребенка:* ${trainingData.child_name}\n` : '') +
-            `📱 *Телефон:* ${trainingData.client_phone}\n` +
-            `👨‍🏫 *Тренер:* ${trainingData.with_trainer ? 'С тренером' : 'Без тренера'}\n` +
-            `🏂 *Тип:* ${trainingData.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
-            `⏱ *Длительность:* ${trainingData.duration} минут\n` +
-            `🎯 *Тренажер:* №${trainingData.simulator_id}\n` +
-            `💰 *Стоимость:* ${trainingData.price} руб.\n` +
-            `📅 *Дата:* ${formattedDate}\n` +
-            `⏰ *Время:* ${formattedTime}`;
+        const message = `
+🔔 Новая индивидуальная тренировка!
 
-        await bot.sendMessage(ADMIN_ID, message, { 
-            parse_mode: 'Markdown'
-        });
+👤 Клиент: ${trainingData.client_name}
+📅 Дата: ${trainingData.date}
+⏰ Время: ${trainingData.time}
+👨‍🏫 Тренер: ${trainingData.trainer_name}
+💰 Стоимость: ${trainingData.price} руб.
+        `;
+
+        await bot.sendMessage(adminChatId, message);
     } catch (error) {
-        console.error('Ошибка при отправке уведомления о новой индивидуальной записи:', error);
+        console.error('Ошибка при отправке уведомления:', error);
     }
 }
 
@@ -117,7 +116,7 @@ async function notifyNewGroupTrainingParticipant(trainingData) {
             `⏰ *Время:* ${formattedTime}\n` +
             `👥 *Участников:* ${trainingData.current_participants}/${trainingData.max_participants}`;
 
-        await bot.sendMessage(ADMIN_ID, message, { 
+        await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { 
             parse_mode: 'Markdown'
         });
     } catch (error) {
@@ -130,7 +129,7 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const data = callbackQuery.data;
     
-    if (chatId !== parseInt(ADMIN_ID)) {
+    if (chatId !== parseInt(process.env.ADMIN_TELEGRAM_ID) && chatId !== parseInt(process.env.ADMIN_TELEGRAM_ID_2)) {
         return;
     }
 
@@ -164,49 +163,53 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// Уведомление об отмене групповой тренировки
-async function notifyAdminGroupTrainingCancellation({ clientName, clientPhone, date, time, groupName, trainerName, simulatorName, seatsLeft, refund, adminChatId }) {
-    // Форматируем дату
-    const dateObj = new Date(date);
-    const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
-    
-    // Форматируем время
-    const [hours, minutes] = time.split(':');
-    const formattedTime = `${hours}:${minutes}`;
+// Функция для отправки уведомления об отмене групповой тренировки
+async function notifyAdminGroupTrainingCancellation(trainingData) {
+    try {
+        const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+        if (!adminChatId) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
 
-    const message =
-        `❌ *Отмена групповой тренировки*\n\n` +
-        `👤 Клиент: ${clientName}\n` +
-        `📞 Телефон: ${clientPhone}\n` +
-        `📅 Дата: ${formattedDate}\n` +
-        `⏰ Время: ${formattedTime}\n` +
-        `👥 Группа: ${groupName}\n` +
-        `👨‍🏫 Тренер: ${trainerName}\n` +
-        `🎿 Тренажер: ${simulatorName}\n` +
-        `🪑 Мест осталось: ${seatsLeft}\n` +
-        `💰 Возврат: ${refund} руб.`;
-    await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
+        const message = `
+❌ Отмена групповой тренировки!
+
+👤 Клиент: ${trainingData.client_name}
+📅 Дата: ${trainingData.date}
+⏰ Время: ${trainingData.time}
+👥 Группа: ${trainingData.group_name}
+👨‍🏫 Тренер: ${trainingData.trainer_name}
+        `;
+
+        await bot.sendMessage(adminChatId, message);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления:', error);
+    }
 }
 
-// Уведомление об отмене индивидуальной тренировки
-async function notifyAdminIndividualTrainingCancellation({ clientName, clientPhone, date, time, simulatorName, refund, adminChatId }) {
-    // Форматируем дату
-    const dateObj = new Date(date);
-    const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
-    
-    // Форматируем время
-    const [hours, minutes] = time.split(':');
-    const formattedTime = `${hours}:${minutes}`;
+// Функция для отправки уведомления об отмене индивидуальной тренировки
+async function notifyAdminIndividualTrainingCancellation(trainingData) {
+    try {
+        const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+        if (!adminChatId) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
 
-    const message =
-        `❌ *Отмена индивидуальной тренировки*\n\n` +
-        `👤 Клиент: ${clientName}\n` +
-        `📞 Телефон: ${clientPhone}\n` +
-        `📅 Дата: ${formattedDate}\n` +
-        `⏰ Время: ${formattedTime}\n` +
-        `🎿 Тренажер: ${simulatorName}\n` +
-        `💰 Возврат: ${refund} руб.`;
-    await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
+        const message = `
+❌ Отмена индивидуальной тренировки!
+
+👤 Клиент: ${trainingData.client_name}
+📅 Дата: ${trainingData.date}
+⏰ Время: ${trainingData.time}
+👨‍🏫 Тренер: ${trainingData.trainer_name}
+        `;
+
+        await bot.sendMessage(adminChatId, message);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления:', error);
+    }
 }
 
 // Уведомление о неудачном платеже
@@ -220,28 +223,38 @@ async function notifyAdminFailedPayment({ amount, wallet_number, date, time }) {
         `⚠️ Автор платежа не найден. Деньги не зачислены.`;
 
     try {
-        await bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+        await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Ошибка при отправке уведомления о неудачном платеже:', error);
     }
 }
 
-// Уведомление о пополнении кошелька
+// Функция для отправки уведомления о пополнении кошелька
 async function notifyAdminWalletRefilled({ clientName, amount, walletNumber, balance }) {
-    const message =
-        `✅ Пополнение кошелька\n\n` +
-        `👤 Клиент: ${clientName}\n` +
-        `💳 Кошелек: ${walletNumber}\n` +
-        `💰 Сумма пополнения: ${amount} руб.\n` +
-        `💵 Итоговый баланс: ${balance} руб.`;
     try {
-        await bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+        const adminChatId = process.env.ADMIN_TELEGRAM_ID;
+        if (!adminChatId) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = `
+✅ Пополнение кошелька
+
+👤 Клиент: ${clientName}
+💳 Кошелек: ${walletNumber}
+💰 Сумма пополнения: ${amount} руб.
+💵 Итоговый баланс: ${balance} руб.
+        `;
+
+        await bot.sendMessage(adminChatId, message);
     } catch (error) {
         console.error('Ошибка при отправке уведомления о пополнении кошелька:', error);
     }
 }
 
 module.exports = {
+    bot,
     notifyScheduleCreated,
     notifyNewTrainingRequest,
     notifyNewIndividualTraining,

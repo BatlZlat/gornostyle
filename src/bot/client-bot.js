@@ -13,6 +13,7 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
+// Создаем экземпляр бота
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const userStates = new Map();
 
@@ -4039,6 +4040,53 @@ async function showPersonalCabinet(chatId) {
                 }
             }
         );
+    }
+}
+
+// Обработка пополнения кошелька
+async function handleWalletTopUp(chatId, clientId, amount) {
+    try {
+        // Получаем данные клиента
+        const clientResult = await pool.query(
+            'SELECT name, wallet_number, balance FROM clients WHERE id = $1',
+            [clientId]
+        );
+
+        if (clientResult.rows.length === 0) {
+            await bot.sendMessage(chatId, '❌ Клиент не найден');
+            return;
+        }
+
+        const client = clientResult.rows[0];
+        const newBalance = client.balance + amount;
+
+        // Обновляем баланс
+        await pool.query(
+            'UPDATE clients SET balance = $1 WHERE id = $2',
+            [newBalance, clientId]
+        );
+
+        // Отправляем уведомление клиенту
+        const clientMessage = `
+✅ Ваш кошелек пополнен!
+
+💰 Сумма пополнения: ${amount} руб.
+💵 Текущий баланс: ${newBalance} руб.
+        `;
+        await bot.sendMessage(chatId, clientMessage);
+
+        // Отправляем уведомление администратору
+        const { notifyAdminWalletRefilled } = require('./admin-bot');
+        await notifyAdminWalletRefilled({
+            clientName: client.name,
+            amount: amount,
+            walletNumber: client.wallet_number,
+            balance: newBalance
+        });
+
+    } catch (error) {
+        console.error('Ошибка при пополнении кошелька:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при пополнении кошелька');
     }
 }
 

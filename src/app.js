@@ -1,9 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const { pool } = require('./db/index');
-const { setupBot } = require('./bot/admin-bot');
 const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-next-month-schedule');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
@@ -15,10 +15,9 @@ const clientsRouter = require('./routes/clients');
 const smsRouter = require('./routes/sms');
 const cron = require('node-cron');
 const fs = require('fs');
-require('dotenv').config();
 
 // Импортируем бота
-require('./bot/client-bot.js');
+require('./bot/client-bot');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
