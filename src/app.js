@@ -12,6 +12,7 @@ const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
 const pricesRouter = require('./routes/prices');
 const clientsRouter = require('./routes/clients');
+const smsRouter = require('./routes/sms');
 const cron = require('node-cron');
 const fs = require('fs');
 require('dotenv').config();
@@ -46,6 +47,7 @@ app.use('/api/trainers', trainersRouter);
 app.use('/api/trainings', trainingsRouter);
 app.use('/api/prices', pricesRouter);
 app.use('/api/clients', clientsRouter);
+app.use('/api/sms', smsRouter);
 
 // API для управления ссылкой оплаты
 app.get('/api/payment-link', (req, res) => {

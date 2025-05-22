@@ -209,11 +209,29 @@ async function notifyAdminIndividualTrainingCancellation({ clientName, clientPho
     await bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
 }
 
+// Уведомление о неудачном платеже
+async function notifyAdminFailedPayment({ amount, wallet_number, date, time }) {
+    const message = 
+        `❌ Платеж не обработан\n\n` +
+        `💵 Сумма: ${amount} руб.\n` +
+        `📝 Номер кошелька: ${wallet_number}\n` +
+        `📅 Дата: ${date}\n` +
+        `⏰ Время: ${time}\n\n` +
+        `⚠️ Автор платежа не найден. Деньги не зачислены.`;
+
+    try {
+        await bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о неудачном платеже:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyNewTrainingRequest,
     notifyNewIndividualTraining,
     notifyNewGroupTrainingParticipant,
     notifyAdminGroupTrainingCancellation,
-    notifyAdminIndividualTrainingCancellation
+    notifyAdminIndividualTrainingCancellation,
+    notifyAdminFailedPayment
 }; 
