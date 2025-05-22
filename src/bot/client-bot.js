@@ -207,17 +207,7 @@ bot.on('message', async (msg) => {
     
     // Глобальная обработка "Личный кабинет"
     if (msg.text === '👤 Личный кабинет') {
-        return bot.sendMessage(chatId,
-            'Функционал "Личный кабинет" находится в разработке.\n\nСкоро здесь появится возможность просматривать и редактировать профиль, а также управлять своими данными.',
-            {
-                reply_markup: {
-                    keyboard: [
-                        ['🔙 В главное меню']
-                    ],
-                    resize_keyboard: true
-                }
-            }
-        );
+        await showPersonalCabinet(chatId);
     }
 
     // Глобальная обработка "В главное меню"
@@ -3847,4 +3837,116 @@ bot.on('message', async (msg) => {
 
     // ... existing code ...
 });
+
+// Функция для расчета возраста
+function calculateAge(birthDate) {
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--;
+    }
+    
+    return age;
+}
+
+// Функция для форматирования даты рождения
+function formatBirthDate(birthDate) {
+    const date = new Date(birthDate);
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+}
+
+// Функция для отображения личного кабинета
+async function showPersonalCabinet(chatId) {
+    try {
+        // Получаем информацию о клиенте
+        const clientResult = await pool.query(
+            `SELECT c.*, 
+                    COALESCE(c.skill_level, 0) as skill_level 
+             FROM clients c 
+             WHERE c.telegram_id = $1`,
+            [chatId]
+        );
+
+        if (!clientResult.rows[0]) {
+            return bot.sendMessage(chatId,
+                '❌ Ошибка: профиль не найден. Пожалуйста, обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        const client = clientResult.rows[0];
+        const clientAge = calculateAge(client.birth_date);
+        const formattedBirthDate = formatBirthDate(client.birth_date);
+
+        // Получаем информацию о детях
+        const childrenResult = await pool.query(
+            `SELECT c.*, 
+                    COALESCE(c.skill_level, 0) as skill_level 
+             FROM children c 
+             WHERE c.parent_id = $1 
+             ORDER BY c.birth_date`,
+            [client.id]
+        );
+
+        // Формируем сообщение
+        let message = `👤 *Личный кабинет*\n\n`;
+        
+        // Информация о клиенте
+        message += `*Информация о вас:*\n`;
+        message += `👤 *ФИО:* ${client.full_name}\n`;
+        message += `📅 *Дата рождения:* ${formattedBirthDate} (${clientAge} лет)\n`;
+        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n\n`;
+
+        // Информация о детях
+        if (childrenResult.rows.length > 0) {
+            message += `*Информация о детях:*\n`;
+            childrenResult.rows.forEach((child, index) => {
+                const childAge = calculateAge(child.birth_date);
+                const childBirthDate = formatBirthDate(child.birth_date);
+                message += `\n*Ребенок ${index + 1}:*\n`;
+                message += `👶 *ФИО:* ${child.full_name}\n`;
+                message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
+                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
+            });
+        }
+
+        message += `\nВыберите действие:`;
+
+        // Кнопки действий
+        const keyboard = [
+            ['➕ Добавить ребенка'],
+            ['🔙 Назад в меню']
+        ];
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard,
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при отображении личного кабинета:', error);
+        await bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
 
