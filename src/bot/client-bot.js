@@ -216,6 +216,28 @@ bot.on('message', async (msg) => {
         userStates.set(chatId, { step: 'main_menu', data: { client_id: client ? client.id : undefined } });
         return showMainMenu(chatId);
     }
+
+    // Глобальная обработка "Добавить ребенка"
+    if (msg.text === '➕ Добавить ребенка') {
+        let clientId;
+        if (state && state.data && state.data.client_id) {
+            clientId = state.data.client_id;
+        } else {
+            const client = await getClientByTelegramId(msg.from.id.toString());
+            if (!client) {
+                return bot.sendMessage(chatId, '❌ Профиль не найден. Пожалуйста, обратитесь в поддержку.');
+            }
+            clientId = client.id;
+        }
+        userStates.set(chatId, { step: 'add_child_name', data: { client_id: clientId } });
+        return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+            reply_markup: {
+                keyboard: [['🔙 Отмена']],
+                resize_keyboard: true
+            }
+        });
+    }
+    
     // Глобальная обработка "Мои записи"
     if (msg.text === '📋 Мои записи') {
         let clientId = state && state.data && state.data.client_id;
@@ -3437,6 +3459,76 @@ bot.on('message', async (msg) => {
                     {
                         reply_markup: {
                             keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        }
+        case 'add_child_name': {
+            if (msg.text === '🔙 Отмена') {
+                userStates.delete(chatId);
+                return showPersonalCabinet(chatId);
+            }
+
+            state.data.child_name = msg.text;
+            state.step = 'add_child_birth_date';
+            userStates.set(chatId, state);
+
+            return bot.sendMessage(chatId,
+                '📅 Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Отмена']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        case 'add_child_birth_date': {
+            if (msg.text === '🔙 Отмена') {
+                userStates.delete(chatId);
+                return showPersonalCabinet(chatId);
+            }
+
+            const birthDate = validateDate(msg.text);
+            if (!birthDate) {
+                return bot.sendMessage(chatId,
+                    '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ:',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Отмена']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            try {
+                await pool.query(
+                    'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
+                    [state.data.client_id, state.data.child_name, birthDate, 'ski', null]
+                );
+
+                userStates.delete(chatId);
+                await bot.sendMessage(chatId,
+                    '✅ Ребенок успешно добавлен!',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                return showPersonalCabinet(chatId);
+            } catch (error) {
+                console.error('Ошибка при добавлении ребенка:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
                             resize_keyboard: true
                         }
                     }
