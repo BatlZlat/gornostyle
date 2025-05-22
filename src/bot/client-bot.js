@@ -3752,7 +3752,7 @@ bot.on('message', async (msg) => {
     if (msg.text === '💰 Кошелек') {
         try {
             const clientResult = await pool.query(
-                'SELECT c.id, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
+                'SELECT c.id, c.full_name, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
                 [chatId]
             );
 
@@ -3768,13 +3768,14 @@ bot.on('message', async (msg) => {
                 );
             }
 
-            const { id: clientId, wallet_number: walletNumber, balance } = clientResult.rows[0];
+            const { id: clientId, full_name, wallet_number: walletNumber, balance } = clientResult.rows[0];
             const formattedWalletNumber = formatWalletNumber(walletNumber);
 
             await bot.sendMessage(chatId,
                 `💳 *Информация о кошельке*\n\n` +
-                `Номер кошелька: \`${formattedWalletNumber}\`\n` +
-                `Текущий баланс: ${balance} руб.\n\n` +
+                `👤 *Владелец:* ${full_name}\n` +
+                `💳 *Номер кошелька*: \`${formattedWalletNumber}\`\n` +
+                `💰 *Текущий баланс*: ${parseFloat(balance).toFixed(2)} руб.\n\n` +
                 `Выберите действие:`,
                 {
                     parse_mode: 'Markdown',
