@@ -226,6 +226,21 @@ async function notifyAdminFailedPayment({ amount, wallet_number, date, time }) {
     }
 }
 
+// Уведомление о пополнении кошелька
+async function notifyAdminWalletRefilled({ clientName, amount, walletNumber, balance }) {
+    const message =
+        `✅ Пополнение кошелька\n\n` +
+        `👤 Клиент: ${clientName}\n` +
+        `💳 Кошелек: ${walletNumber}\n` +
+        `💰 Сумма пополнения: ${amount} руб.\n` +
+        `💵 Итоговый баланс: ${balance} руб.`;
+    try {
+        await bot.sendMessage(ADMIN_ID, message, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о пополнении кошелька:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyNewTrainingRequest,
@@ -233,5 +248,6 @@ module.exports = {
     notifyNewGroupTrainingParticipant,
     notifyAdminGroupTrainingCancellation,
     notifyAdminIndividualTrainingCancellation,
-    notifyAdminFailedPayment
+    notifyAdminFailedPayment,
+    notifyAdminWalletRefilled
 }; 

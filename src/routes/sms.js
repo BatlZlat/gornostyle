@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminFailedPayment } = require('../bot/admin-bot');
+const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-bot');
 
 // Универсальный парсер суммы и кошелька
 function parseSmsUniversal(text) {
@@ -106,29 +106,14 @@ router.post('/process', async (req, res) => {
             throw new Error('Необходимые таблицы не существуют');
         }
 
-        // Обновляем баланс кошелька
-        const result = await pool.query(
-            `WITH wallet_update AS (
-                UPDATE wallets 
-                SET balance = balance + $1,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE wallet_number = $2
-                RETURNING client_id, id
-            )
-            SELECT 
-                CASE 
-                    WHEN client_id IS NULL THEN false
-                    ELSE true
-                END as success,
-                client_id,
-                id as wallet_id
-            FROM wallet_update`,
-            [cleanAmount, cleanWalletNumber]
+        // Получаем текущий баланс и имя клиента
+        const walletInfo = await pool.query(
+            `SELECT w.balance, c.full_name FROM wallets w JOIN clients c ON w.client_id = c.id WHERE w.wallet_number = $1`,
+            [cleanWalletNumber]
         );
-
-        if (!result.rows[0].success) {
+        if (walletInfo.rows.length === 0) {
+            // Кошелек не найден, обработка как раньше
             console.log('Кошелек не найден:', cleanWalletNumber);
-            // Если кошелек не найден, сохраняем информацию о неудачном платеже
             await pool.query(
                 `INSERT INTO failed_payments (
                     amount, 
@@ -138,38 +123,54 @@ router.post('/process', async (req, res) => {
                 ) VALUES ($1, $2, $3, $4)`,
                 [cleanAmount, cleanWalletNumber, sms_text, 'wallet_not_found']
             );
-
-            // Отправляем уведомление администратору
             await notifyAdminFailedPayment({
                 amount: cleanAmount,
                 wallet_number: cleanWalletNumber,
                 date: new Date().toLocaleDateString(),
                 time: new Date().toLocaleTimeString()
             });
-
             return res.status(200).json({ 
                 message: 'Платеж не обработан - кошелек не найден',
                 saved_to_failed: true
             });
         }
+        const oldBalance = parseFloat(walletInfo.rows[0].balance);
+        const clientName = walletInfo.rows[0].full_name;
+        const newBalance = oldBalance + cleanAmount;
+
+        // Обновляем баланс кошелька
+        await pool.query(
+            `UPDATE wallets SET balance = $1, last_updated = CURRENT_TIMESTAMP WHERE wallet_number = $2`,
+            [newBalance, cleanWalletNumber]
+        );
 
         // Создаем запись о транзакции
         await pool.query(
             `INSERT INTO transactions (wallet_id, amount, type, description)
-            VALUES ($1, $2, $3, $4)`,
-            [result.rows[0].wallet_id, cleanAmount, 'refill', 'Пополнение через СБП']
+            VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, $3, $4)`,
+            [cleanWalletNumber, cleanAmount, 'refill', 'Пополнение через СБП']
         );
 
+        // Уведомляем администратора о пополнении
+        await notifyAdminWalletRefilled({
+            clientName,
+            amount: cleanAmount,
+            walletNumber: cleanWalletNumber,
+            balance: newBalance
+        });
+
         console.log('Платеж успешно обработан:', {
-            wallet_id: result.rows[0].wallet_id,
-            client_id: result.rows[0].client_id,
-            amount: cleanAmount
+            wallet_number: cleanWalletNumber,
+            client_name: clientName,
+            amount: cleanAmount,
+            new_balance: newBalance
         });
 
         res.json({ 
             message: 'Платеж успешно обработан',
-            wallet_id: result.rows[0].wallet_id,
-            client_id: result.rows[0].client_id
+            wallet_number: cleanWalletNumber,
+            client_name: clientName,
+            new_balance: newBalance
         });
 
     } catch (error) {
