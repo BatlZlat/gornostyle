@@ -2057,13 +2057,13 @@ bot.on('message', async (msg) => {
                         client_name: clientInfo.full_name,
                         client_phone: clientInfo.phone,
                         child_name: state.data.is_child ? state.data.child_name : null,
-                        with_trainer: state.data.with_trainer,
+                        trainer_name: state.data.with_trainer ? 'С тренером' : 'Без тренера',
                         equipment_type: state.data.equipment_type,
                         duration: state.data.duration,
                         simulator_id: state.data.simulator_id,
                         price: state.data.price,
-                        preferred_date: state.data.preferred_date,
-                        preferred_time: state.data.preferred_time
+                        date: state.data.preferred_date,
+                        time: state.data.preferred_time
                     });
 
                     // Списываем средства
