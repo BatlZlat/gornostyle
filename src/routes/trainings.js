@@ -126,17 +126,37 @@ router.post('/', async (req, res) => {
         );
         const training = detailsResult.rows[0];
 
-        // Формируем текст уведомления
-        const trainingText =
-`✅ Создана новая тренировка!
+        // Форматируем дату в формат д.м.г
+        const formatDate = (dateStr) => {
+            const date = new Date(dateStr);
+            return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+        };
 
-👥 Группа: ${training.group_name || '-'}
-⏰ Время: ${training.start_time ? training.start_time.slice(0,5) : '-'}
-⏱ Длительность: ${training.duration || 60} минут
-👤 Тренер: ${training.trainer_name || '-'}
-👥 Мест: ${training.max_participants}
-📊 Уровень: ${training.skill_level}
-💰 Стоимость: ${Number(training.price).toFixed(2)} руб.`;
+        // Формируем текст уведомления для клиентов
+        const clientTrainingText =
+`Друзья! Создана новая *${training.training_type ? 'групповая' : 'индивидуальная'} тренировка*! Присоединяйтесь, в группе тренироваться дешевле и интересней!
+
+👥 *Группа:* ${training.group_name || '-'}
+📅 *Дата:* ${formatDate(training.session_date)}
+⏰ *Время:* ${training.start_time ? training.start_time.slice(0,5) : '-'}
+⏱ *Длительность:* ${training.duration || 60} минут
+👤 *Тренер:* ${training.trainer_name || '-'}
+👥 *Мест:* ${training.max_participants}
+📊 *Уровень:* ${training.skill_level}
+💰 *Стоимость:* ${Number(training.price).toFixed(2)} руб.`;
+
+        // Формируем текст уведомления для администраторов
+        const adminTrainingText =
+`✅ *Создана новая тренировка!*
+
+👥 *Группа:* ${training.group_name || '-'}
+📅 *Дата:* ${formatDate(training.session_date)}
+⏰ *Время:* ${training.start_time ? training.start_time.slice(0,5) : '-'}
+⏱ *Длительность:* ${training.duration || 60} минут
+👤 *Тренер:* ${training.trainer_name || '-'}
+👥 *Мест:* ${training.max_participants}
+📊 *Уровень:* ${training.skill_level}
+💰 *Стоимость:* ${Number(training.price).toFixed(2)} руб.`;
 
         // Уведомление клиентам
         const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -145,7 +165,11 @@ router.post('/', async (req, res) => {
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: c.telegram_id, text: trainingText })
+                body: JSON.stringify({ 
+                    chat_id: c.telegram_id, 
+                    text: clientTrainingText,
+                    parse_mode: 'Markdown'
+                })
             });
         }
 
@@ -158,7 +182,11 @@ router.post('/', async (req, res) => {
                 await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: adminId, text: trainingText })
+                    body: JSON.stringify({ 
+                        chat_id: adminId, 
+                        text: adminTrainingText,
+                        parse_mode: 'Markdown'
+                    })
                 });
             }
         }
