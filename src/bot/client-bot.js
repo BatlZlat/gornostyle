@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation } = require('./admin-bot');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-bot');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -139,6 +139,14 @@ async function registerClient(data) {
 async function finishRegistration(chatId, data) {
     try {
         const result = await registerClient(data);
+        // Уведомляем админов о новом клиенте
+        await notifyNewClient({
+            full_name: data.full_name,
+            birth_date: data.birth_date,
+            phone: data.phone,
+            skill_level: 1, // всегда 1 при регистрации
+            child: data.child
+        });
         await bot.sendMessage(chatId,
             '✅ *Регистрация успешно завершена!*\n\n' +
             '🎉 Добро пожаловать в Ski-instruktor!\n\n' +

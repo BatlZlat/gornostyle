@@ -295,6 +295,41 @@ async function notifyAdminWalletRefilled({ clientName, amount, walletNumber, bal
     }
 }
 
+// Функция для отправки уведомления о новом клиенте
+async function notifyNewClient({ full_name, birth_date, phone, skill_level, child }) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+        // Вычисляем возраст
+        const birth = new Date(birth_date);
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+        // Формируем текст
+        let message = '🎉 *УРА! У нас появился новый клиент!*\n\n';
+        message += `👤 *${full_name}* (${age} лет)\n`;
+        if (child && child.full_name && child.birth_date) {
+            // Вычисляем возраст ребенка
+            const childBirth = new Date(child.birth_date);
+            let childAge = today.getFullYear() - childBirth.getFullYear();
+            const cm = today.getMonth() - childBirth.getMonth();
+            if (cm < 0 || (cm === 0 && today.getDate() < childBirth.getDate())) childAge--;
+            message += `👶 *Ребенок:* ${child.full_name} (${childAge} лет)\n`;
+        }
+        message += `📱 *Телефон:* ${phone}\n`;
+        message += `📊 *Уровень:* ${skill_level}/10`;
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о новом клиенте:', error);
+    }
+}
+
 module.exports = {
     bot,
     notifyScheduleCreated,
@@ -304,5 +339,6 @@ module.exports = {
     notifyAdminGroupTrainingCancellation,
     notifyAdminIndividualTrainingCancellation,
     notifyAdminFailedPayment,
-    notifyAdminWalletRefilled
+    notifyAdminWalletRefilled,
+    notifyNewClient
 }; 
