@@ -435,9 +435,14 @@ router.delete('/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // Получаем информацию о тренировке
+        // Получаем информацию о тренировке с деталями
         const trainingResult = await client.query(
-            'SELECT simulator_id, session_date, start_time, end_time, training_type, price, group_id FROM training_sessions WHERE id = $1',
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
             [id]
         );
 
@@ -480,12 +485,45 @@ router.delete('/:id', async (req, res) => {
             totalRefund += price;
         }
 
+        // Формируем подробное описание тренировки с эмодзи
+        const dateObj = new Date(training.session_date);
+        const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+        const dayOfWeek = days[dateObj.getDay()];
+        const dateStr = `${dateObj.toLocaleDateString('ru-RU')} (${dayOfWeek})`;
+        const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+        const endTime = training.end_time ? training.end_time.slice(0,5) : '';
+        const duration = training.duration || 60;
+        const group = training.group_name || '-';
+        const trainer = training.trainer_name || '-';
+        const level = training.skill_level || '-';
+        const maxPart = training.max_participants || '-';
+        const sim = training.simulator_name || `Тренажер ${training.simulator_id}`;
+        const priceStr = Number(training.price).toFixed(2);
+        const participantsCount = participants.length;
+        const trainingInfo =
+`📅 Дата: ${dateStr}
+⏰ Время: ${startTime} - ${endTime}
+⏱ Длительность: ${duration} минут
+👥 Группа: ${group}
+👨‍🏫 Тренер: ${trainer}
+📊 Уровень: ${level}
+👥 Участников: ${participantsCount}/${maxPart}
+🎿 Тренажер: ${sim}
+💰 Стоимость: ${priceStr} руб.`;
+
         // Уведомление клиентам
         const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
         const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
         for (const refund of refunds) {
             if (!refund.telegram_id) continue;
-            const text = `К сожалению, мы вынуждены отменить вашу тренировку. Деньги в размере ${refund.amount} руб. возвращены на ваш счет.\nТренировка могла быть отменена из-за недобора группы или болезни тренера.\nПодробнее вы можете уточнить у администратора: ${ADMIN_PHONE}`;
+            const text =
+`❗️ К сожалению, мы вынуждены отменить вашу тренировку:
+
+${trainingInfo}
+
+Деньги в размере ${refund.amount} руб. возвращены на ваш счет.
+Тренировка могла быть отменена из-за недобора группы или болезни тренера.
+Подробнее вы можете уточнить у администратора: ${ADMIN_PHONE}`;
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -497,11 +535,15 @@ router.delete('/:id', async (req, res) => {
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
         const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
         if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            let adminText = `Тренировка #${id} отменена. Возвраты:\n`;
+            let adminText = `❗️ Тренировка отменена:
+
+${trainingInfo}
+
+Возвраты:\n`;
             for (const refund of refunds) {
-                adminText += `${refund.full_name} — ${refund.amount} руб.\n`;
+                adminText += `👤 ${refund.full_name} — ${refund.amount} руб.\n`;
             }
-            adminText += `Общая сумма возврата: ${totalRefund} руб.`;
+            adminText += `\nОбщая сумма возврата: ${totalRefund} руб.`;
             await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
