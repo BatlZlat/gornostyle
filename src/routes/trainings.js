@@ -213,6 +213,48 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Необходимо указать дату или диапазон дат' });
 });
 
+// Получение архивных тренировок
+router.get('/archive', async (req, res) => {
+    const { date_from, date_to, trainer_id } = req.query;
+    
+    try {
+        let query = `
+            SELECT ts.*, 
+                   g.name as group_name,
+                   t.full_name as trainer_name,
+                   s.name as simulator_name,
+                   (SELECT COUNT(*) FROM session_participants sp WHERE sp.session_id = ts.id) as participants_count
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN simulators s ON ts.simulator_id = s.id
+            WHERE ts.session_date < CURRENT_DATE
+        `;
+        const params = [];
+
+        if (date_from) {
+            query += ' AND ts.session_date >= $1';
+            params.push(date_from);
+        }
+        if (date_to) {
+            query += ' AND ts.session_date <= $' + (params.length + 1);
+            params.push(date_to);
+        }
+        if (trainer_id) {
+            query += ' AND ts.trainer_id = $' + (params.length + 1);
+            params.push(trainer_id);
+        }
+
+        query += ' ORDER BY ts.session_date DESC, ts.start_time DESC';
+
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка при получении архивных тренировок:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
 // Получение одной тренировки по id
 router.get('/:id', async (req, res) => {
     const { id } = req.params;

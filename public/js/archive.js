@@ -9,12 +9,15 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadTrainers() {
         try {
             const response = await fetch('/api/trainers');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const trainers = await response.json();
             
             if (trainerSelect) {
                 trainerSelect.innerHTML = '<option value="">Все тренеры</option>' +
                     trainers.map(trainer => 
-                        `<option value="${trainer.id}">${trainer.name}</option>`
+                        `<option value="${trainer.id}">${trainer.full_name}</option>`
                     ).join('');
             }
         } catch (error) {
@@ -27,23 +30,55 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadArchiveTrainings() {
         try {
             const params = new URLSearchParams();
-            if (dateFrom.value) params.append('date_from', dateFrom.value);
+            
+            // Если не выбрана дата начала, используем дату 30 дней назад
+            if (!dateFrom.value) {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                params.append('date_from', thirtyDaysAgo.toISOString().split('T')[0]);
+            } else {
+                params.append('date_from', dateFrom.value);
+            }
+            
             if (dateTo.value) params.append('date_to', dateTo.value);
             if (trainerSelect.value) params.append('trainer_id', trainerSelect.value);
 
+            console.log('Запрос архивных тренировок с параметрами:', params.toString());
             const response = await fetch(`/api/trainings/archive?${params.toString()}`);
-            const trainings = await response.json();
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Ошибка сервера:', errorData);
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('Полученные данные:', data);
+            
+            // Проверяем, что data является массивом
+            if (!Array.isArray(data)) {
+                console.error('Получены некорректные данные:', data);
+                throw new Error('Получены некорректные данные от сервера');
+            }
             
             if (archiveList) {
-                archiveList.innerHTML = trainings.map(training => `
+                if (data.length === 0) {
+                    archiveList.innerHTML = '<div class="alert alert-info">Нет архивных тренировок за выбранный период</div>';
+                    return;
+                }
+
+                // Сортируем тренировки по дате (от новых к старым)
+                data.sort((a, b) => new Date(b.session_date) - new Date(a.session_date));
+
+                archiveList.innerHTML = data.map(training => `
                     <div class="archive-item">
                         <div class="training-info">
-                            <h3>Тренировка от ${formatDate(training.date)}</h3>
+                            <h3>Тренировка от ${formatDate(training.session_date)}</h3>
                             <p>Время: ${training.start_time} - ${training.end_time}</p>
-                            <p>Тренажер: ${training.simulator_name}</p>
-                            <p>Группа: ${training.group_name}</p>
-                            <p>Тренер: ${training.trainer_name}</p>
-                            <p>Участников: ${training.participants_count}/${training.max_participants}</p>
+                            <p>Тренажер: ${training.simulator_name || 'Не указан'}</p>
+                            <p>Группа: ${training.group_name || 'Не указана'}</p>
+                            <p>Тренер: ${training.trainer_name || 'Не указан'}</p>
+                            <p>Участников: ${training.participants_count || 0}/${training.max_participants || 0}</p>
                         </div>
                         <div class="training-actions">
                             <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">Подробнее</button>
@@ -53,12 +88,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Ошибка при загрузке архивных тренировок:', error);
-            showError('Не удалось загрузить архив тренировок');
+            showError(error.message || 'Не удалось загрузить архив тренировок');
         }
     }
 
     // Форматирование даты
     function formatDate(dateString) {
+        if (!dateString) return 'Дата не указана';
         const date = new Date(dateString);
         return date.toLocaleDateString('ru-RU');
     }
@@ -75,8 +111,35 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Функция отображения ошибок
     function showError(message) {
-        // Здесь можно добавить код для отображения ошибок пользователю
-        console.error(message);
+        // Создаем элемент для ошибки
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.textContent = message;
+
+        // Находим контейнер для ошибок или создаем его
+        let errorContainer = document.querySelector('.error-container');
+        if (!errorContainer) {
+            errorContainer = document.createElement('div');
+            errorContainer.className = 'error-container';
+            const mainContent = document.querySelector('.archive-content') || document.querySelector('main');
+            if (mainContent) {
+                mainContent.insertBefore(errorContainer, mainContent.firstChild);
+            } else {
+                document.body.insertBefore(errorContainer, document.body.firstChild);
+            }
+        }
+
+        // Добавляем ошибку в контейнер
+        errorContainer.appendChild(errorDiv);
+
+        // Удаляем ошибку через 3 секунды
+        setTimeout(() => {
+            errorDiv.remove();
+            // Если контейнер пуст, удаляем его
+            if (errorContainer.children.length === 0) {
+                errorContainer.remove();
+            }
+        }, 3000);
     }
 
     // Инициализация

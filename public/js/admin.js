@@ -301,15 +301,17 @@ async function loadPageContent(page) {
 // Загрузка тренировок
 async function loadTrainings() {
     try {
-        // Определяем первый и последний день текущего месяца
+        // Получаем текущую дату
         const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        const dateFrom = firstDay.toISOString().split('T')[0];
-        const dateTo = lastDay.toISOString().split('T')[0];
+        const today = now.toISOString().split('T')[0];
+        
+        // Устанавливаем дату окончания на 30 дней вперед
+        const endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 30);
+        const dateTo = endDate.toISOString().split('T')[0];
 
-        // Запрашиваем тренировки за месяц с информацией о тренере
-        const response = await fetch(`/api/trainings?date_from=${dateFrom}&date_to=${dateTo}`);
+        // Запрашиваем тренировки с текущей даты
+        const response = await fetch(`/api/trainings?date_from=${today}&date_to=${dateTo}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -329,9 +331,12 @@ async function loadTrainings() {
         }
 
         if (data.length === 0) {
-            trainingList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок за этот месяц</div>';
+            trainingList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок</div>';
             return;
         }
+
+        // Сортируем тренировки по дате (от ближайшей к дальней)
+        data.sort((a, b) => new Date(a.session_date) - new Date(b.session_date));
 
         // Группируем тренировки по дате
         const grouped = {};
@@ -340,15 +345,10 @@ async function loadTrainings() {
             if (!grouped[date]) grouped[date] = [];
             grouped[date].push(training);
         });
-        const sortedDates = Object.keys(grouped).sort((a, b) => {
-            const [da, ma, ya] = a.split('.');
-            const [db, mb, yb] = b.split('.');
-            return new Date(`${ya}-${ma}-${da}`) - new Date(`${yb}-${mb}-${db}`);
-        });
 
         // Формируем HTML
         let html = '';
-        sortedDates.forEach(date => {
+        Object.keys(grouped).forEach(date => {
             html += `
                 <div class="training-date-header">${date}</div>
                 <div class="training-table-container">
