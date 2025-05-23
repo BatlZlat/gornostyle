@@ -173,7 +173,7 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Уведомление администраторам
+        // Отправляем уведомления администраторам
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
         const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
         if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
@@ -567,7 +567,7 @@ router.delete('/:id', async (req, res) => {
         const dateObj = new Date(training.session_date);
         const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
         const dayOfWeek = days[dateObj.getDay()];
-        const dateStr = `${dateObj.toLocaleDateString('ru-RU')} (${dayOfWeek})`;
+        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
         const startTime = training.start_time ? training.start_time.slice(0,5) : '';
         const endTime = training.end_time ? training.end_time.slice(0,5) : '';
         const duration = training.duration || 60;
