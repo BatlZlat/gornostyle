@@ -81,22 +81,53 @@ async function generateUniqueWalletNumber() {
 
 // Регистрация клиента
 async function registerClient(data) {
+    console.log('Начало регистрации клиента:', data);
+    
+    // Проверяем обязательные поля
+    if (!data.full_name || !data.birth_date || !data.phone || !data.telegram_id) {
+        throw new Error('Отсутствуют обязательные поля для регистрации');
+    }
+
     const client = await pool.connect();
     try {
+        console.log('Начало транзакции');
         await client.query('BEGIN');
+        
+        // Вставляем клиента с skill_level = 1 по умолчанию
         const res = await client.query(
-            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level) VALUES ($1, $2, $3, $4, $5, $6, NULL) RETURNING id`,
+            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level) 
+             VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id`,
             [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname]
         );
+        
+        console.log('Клиент создан, ID:', res.rows[0].id);
         const clientId = res.rows[0].id;
+        
+        // Создаем кошелек
         const walletNumber = await generateUniqueWalletNumber();
-        await client.query(`INSERT INTO wallets (client_id, wallet_number, balance) VALUES ($1, $2, 0)`, [clientId, walletNumber]);
-        if (data.child) {
-            await client.query(`INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, NULL, NULL)`, [clientId, data.child.full_name, data.child.birth_date]);
+        console.log('Создание кошелька:', walletNumber);
+        await client.query(
+            `INSERT INTO wallets (client_id, wallet_number, balance) 
+             VALUES ($1, $2, 0)`,
+            [clientId, walletNumber]
+        );
+        
+        // Если есть данные о ребенке, создаем запись
+        if (data.child && data.child.full_name && data.child.birth_date) {
+            console.log('Создание записи о ребенке');
+            await client.query(
+                `INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) 
+                 VALUES ($1, $2, $3, 'ski', 1)`,
+                [clientId, data.child.full_name, data.child.birth_date]
+            );
+            console.log('Запись о ребенке создана');
         }
+        
         await client.query('COMMIT');
+        console.log('Транзакция успешно завершена');
         return { walletNumber: formatWalletNumber(walletNumber) };
     } catch (e) {
+        console.error('Ошибка при регистрации клиента:', e);
         await client.query('ROLLBACK');
         throw e;
     } finally {
@@ -1195,7 +1226,7 @@ bot.on('message', async (msg) => {
         case 'has_child': {
             if (msg.text === 'Да') {
                 const state = userStates.get(chatId);
-                if (state.data.children.length > 1) {
+                if (state.data.children && state.data.children.length > 1) {
                     // Если детей несколько, показываем список
                     const childrenList = state.data.children.map((child, index) => 
                         `${index + 1}. ${child.full_name} (${new Date(child.birth_date).toLocaleDateString()})`
@@ -1249,32 +1280,9 @@ bot.on('message', async (msg) => {
                     );
                 }
             } else if (msg.text === 'Нет') {
-                // Если не хотят записывать ребенка, переходим к выбору типа тренировки для себя
-                const state = userStates.get(chatId);
-                userStates.set(chatId, {
-                    step: 'training_type',
-                    data: {
-                        client_id: state.data.client_id,
-                        is_child: false
-                    }
-                });
-
-                return bot.sendMessage(chatId,
-                    '🎿 *Выберите тип тренировки:*\n\n' +
-                    '• Групповая - тренировка в группе с другими участниками\n' +
-                    '• Индивидуальная - персональная тренировка',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['👥 Групповая'],
-                                ['👤 Индивидуальная'],
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
+                // Завершаем регистрацию!
+                await finishRegistration(chatId, state.data);
+                return;
             }
             break;
         }
