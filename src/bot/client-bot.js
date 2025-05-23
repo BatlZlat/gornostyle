@@ -1225,32 +1225,40 @@ bot.on('message', async (msg) => {
         }
         case 'has_child': {
             if (msg.text === 'Да') {
-                const state = userStates.get(chatId);
-                if (state.data.children && state.data.children.length > 1) {
-                    // Если детей несколько, показываем список
-                    const childrenList = state.data.children.map((child, index) => 
+                // Если детей нет или массив не определён — сразу просим ввести ФИО
+                if (!state.data.children || state.data.children.length === 0) {
+                    state.step = 'add_child_name';
+                    userStates.set(chatId, state);
+                    return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+                        reply_markup: {
+                            keyboard: [['🔙 Отмена']],
+                            resize_keyboard: true
+                        }
+                    });
+                }
+                // Если детей несколько — показываем выбор (этот кейс для личного кабинета)
+                if (state.data.children.length > 1) {
+                    const childrenList = state.data.children.map((child, index) =>
                         `${index + 1}. ${child.full_name} (${new Date(child.birth_date).toLocaleDateString()})`
                     ).join('\n');
-
                     state.step = 'select_child';
                     userStates.set(chatId, state);
-                    
                     return bot.sendMessage(chatId,
-                        '👶 *Выберите ребенка из списка:*\n\n' +
-                        childrenList,
-                        { 
-                            parse_mode: 'Markdown', 
-                            reply_markup: { 
+                        '👶 *Выберите ребенка из списка:*\n\n' + childrenList,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
                                 keyboard: [
                                     ...state.data.children.map((_, i) => [`${i + 1}`]),
                                     ['🔙 Назад в меню']
-                                ], 
-                                resize_keyboard: true 
-                            } 
+                                ],
+                                resize_keyboard: true
+                            }
                         }
                     );
-                } else {
-                    // Если ребенок один, сразу переходим к выбору типа тренировки
+                }
+                // Если один ребенок — сразу переходим к выбору типа тренировки
+                if (state.data.children.length === 1) {
                     const selectedChild = state.data.children[0];
                     userStates.set(chatId, {
                         step: 'training_type',
@@ -1261,7 +1269,6 @@ bot.on('message', async (msg) => {
                             child_name: selectedChild.full_name
                         }
                     });
-
                     return bot.sendMessage(chatId,
                         '🎿 *Выберите тип тренировки:*\n\n' +
                         '• Групповая - тренировка в группе с другими участниками\n' +
@@ -1280,7 +1287,6 @@ bot.on('message', async (msg) => {
                     );
                 }
             } else if (msg.text === 'Нет') {
-                // Завершаем регистрацию!
                 await finishRegistration(chatId, state.data);
                 return;
             }
@@ -3450,34 +3456,45 @@ bot.on('message', async (msg) => {
                 );
             }
 
-            try {
-                await pool.query(
-                    'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
-                    [state.data.client_id, state.data.child_name, birthDate, 'ski', null]
-                );
+            // Если client_id есть — это добавление ребёнка в личном кабинете
+            if (state.data.client_id) {
+                try {
+                    await pool.query(
+                        'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
+                        [state.data.client_id, state.data.child_name, birthDate, 'ski', null]
+                    );
 
-                userStates.delete(chatId);
-                await bot.sendMessage(chatId,
-                    '✅ Ребенок успешно добавлен!',
-                    {
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
+                    userStates.delete(chatId);
+                    await bot.sendMessage(chatId,
+                        '✅ Ребенок успешно добавлен!',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
                         }
-                    }
-                );
-                return showPersonalCabinet(chatId);
-            } catch (error) {
-                console.error('Ошибка при добавлении ребенка:', error);
-                return bot.sendMessage(chatId,
-                    '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
-                    {
-                        reply_markup: {
-                            keyboard: [['🔙 Назад в меню']],
-                            resize_keyboard: true
+                    );
+                    return showPersonalCabinet(chatId);
+                } catch (error) {
+                    console.error('Ошибка при добавлении ребенка:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
                         }
-                    }
-                );
+                    );
+                }
+            } else {
+                // Это этап регистрации — сохраняем данные и завершаем регистрацию
+                state.data.child = {
+                    full_name: state.data.child_name,
+                    birth_date: birthDate
+                };
+                await finishRegistration(chatId, state.data);
+                return;
             }
         }
     }
