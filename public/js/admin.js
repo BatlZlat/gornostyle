@@ -376,6 +376,9 @@ async function loadTrainings() {
                                     <td>${training.skill_level}</td>
                                     <td>${training.price} ₽</td>
                                     <td class="training-actions">
+                                        <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
+                                            Подробнее
+                                        </button>
                                         <button class="btn-secondary" onclick="editTraining(${training.id})">
                                             Редактировать
                                         </button>
@@ -859,40 +862,71 @@ async function loadArchiveTrainings() {
 async function viewTrainingDetails(trainingId) {
     try {
         const response = await fetch(`/api/trainings/${trainingId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const training = await response.json();
         
-        const trainingDetails = document.querySelector('.training-details');
-        if (trainingDetails) {
-            trainingDetails.innerHTML = `
-                <div class="detail-item">
-                    <strong>Дата:</strong> ${formatDate(training.date)}
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Детали тренировки</h3>
+                <div class="training-details">
+                    <div class="detail-group">
+                        <h4>Основная информация</h4>
+                        <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
+                        <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
+                        <p><strong>Тренажёр:</strong> ${training.simulator_id}</p>
+                        <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
+                        <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
+                        <p><strong>Уровень:</strong> ${training.skill_level}</p>
+                        <p><strong>Цена:</strong> ${training.price} ₽</p>
+                    </div>
+                    <div class="detail-group">
+                        <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>
+                        <table class="participants-table">
+                            <thead>
+                                <tr>
+                                    <th>ФИО</th>
+                                    <th>Возраст</th>
+                                    <th>Уровень</th>
+                                    <th>Контактный телефон</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${training.participants ? training.participants.map(participant => {
+                                    const birthDate = new Date(participant.birth_date);
+                                    const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                                    return `
+                                        <tr>
+                                            <td>${participant.full_name}</td>
+                                            <td>${age} лет</td>
+                                            <td>${participant.skill_level || '-'}</td>
+                                            <td>${participant.phone || '-'}</td>
+                                        </tr>
+                                    `;
+                                }).join('') : '<tr><td colspan="4">Нет участников</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="detail-item">
-                    <strong>Начало:</strong> ${training.start_time}
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
                 </div>
-                <div class="detail-item">
-                    <strong>Окончание:</strong> ${training.end_time}
-                </div>
-                <div class="detail-item">
-                    <strong>Группа:</strong> ${training.group_name}
-                </div>
-                <div class="detail-item">
-                    <strong>Уровень:</strong> ${training.skill_level}
-                </div>
-                <div class="detail-item">
-                    <strong>Максимальное количество участников:</strong> ${training.max_participants}
-                </div>
-                <div class="detail-item">
-                    <strong>Участники:</strong>
-                    <ul>
-                        ${training.participants.map(participant => `
-                            <li>${participant.full_name}</li>
-                        `).join('')}
-                    </ul>
-                </div>
-            `;
-        }
-        showModal('view-training-modal');
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
     } catch (error) {
         console.error('Ошибка при загрузке деталей тренировки:', error);
         showError('Не удалось загрузить детали тренировки');
@@ -1276,7 +1310,7 @@ function showEditTrainingModal(training) {
 // --- Обработчик кнопки "Редактировать тренировку" ---
 window.editTraining = function(id) {
     console.log('Вызов editTraining с id:', id);
-    // Найти тренировку в текущем списке (или запросить с сервера)
+    // Найти тренировку в текущем списке (или запросим с сервера)
     const allTrainings = document.querySelectorAll('.training-item');
     let trainingData = null;
     // Можно хранить данные в JS, но для простоты — запросим с сервера
