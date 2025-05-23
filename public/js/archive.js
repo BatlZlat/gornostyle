@@ -70,21 +70,57 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Сортируем тренировки по дате (от новых к старым)
                 data.sort((a, b) => new Date(b.session_date) - new Date(a.session_date));
 
-                archiveList.innerHTML = data.map(training => `
-                    <div class="archive-item">
-                        <div class="training-info">
-                            <h3>Тренировка от ${formatDate(training.session_date)}</h3>
-                            <p>Время: ${training.start_time} - ${training.end_time}</p>
-                            <p>Тренажер: ${training.simulator_name || 'Не указан'}</p>
-                            <p>Группа: ${training.group_name || 'Не указана'}</p>
-                            <p>Тренер: ${training.trainer_name || 'Не указан'}</p>
-                            <p>Участников: ${training.participants_count || 0}/${training.max_participants || 0}</p>
+                // Группируем тренировки по дате
+                const grouped = {};
+                data.forEach(training => {
+                    const date = new Date(training.session_date).toLocaleDateString('ru-RU');
+                    if (!grouped[date]) grouped[date] = [];
+                    grouped[date].push(training);
+                });
+
+                // Формируем HTML
+                let html = '';
+                Object.keys(grouped).forEach(date => {
+                    html += `
+                        <div class="training-date-header">${date}</div>
+                        <div class="training-table-container">
+                            <table class="training-table">
+                                <thead>
+                                    <tr>
+                                        <th>Время</th>
+                                        <th>Группа</th>
+                                        <th>Тренер</th>
+                                        <th>Тренажёр</th>
+                                        <th>Участников</th>
+                                        <th>Уровень</th>
+                                        <th>Цена</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${grouped[date].map(training => `
+                                        <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
+                                            <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                            <td>${training.group_name || 'Не указана'}</td>
+                                            <td>${training.trainer_name || 'Не указан'}</td>
+                                            <td>Тренажёр ${training.simulator_id}</td>
+                                            <td>${training.participants_count || 0}/${training.max_participants || 0}</td>
+                                            <td>${training.skill_level}</td>
+                                            <td>${training.price} ₽</td>
+                                            <td class="training-actions">
+                                                <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
+                                                    Подробнее
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="training-actions">
-                            <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">Подробнее</button>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                });
+
+                archiveList.innerHTML = html;
             }
         } catch (error) {
             console.error('Ошибка при загрузке архивных тренировок:', error);
