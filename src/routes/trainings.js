@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
+const fetch = require('node-fetch');
+require('dotenv').config();
 
 // Создание новой тренировки
 router.post('/', async (req, res) => {
@@ -435,7 +437,7 @@ router.delete('/:id', async (req, res) => {
 
         // Получаем информацию о тренировке
         const trainingResult = await client.query(
-            'SELECT simulator_id, session_date, start_time, end_time, training_type FROM training_sessions WHERE id = $1',
+            'SELECT simulator_id, session_date, start_time, end_time, training_type, price, group_id FROM training_sessions WHERE id = $1',
             [id]
         );
 
@@ -444,6 +446,68 @@ router.delete('/:id', async (req, res) => {
         }
 
         const training = trainingResult.rows[0];
+        const price = Number(training.price);
+
+        // Получаем участников тренировки
+        const participantsResult = await client.query(`
+            SELECT sp.id, sp.client_id, c.full_name, c.telegram_id
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            WHERE sp.session_id = $1
+        `, [id]);
+        const participants = participantsResult.rows;
+
+        let refunds = [];
+        let totalRefund = 0;
+        for (const participant of participants) {
+            // Найти кошелек клиента
+            const walletResult = await client.query('SELECT id, balance FROM wallets WHERE client_id = $1', [participant.client_id]);
+            if (walletResult.rows.length === 0) continue;
+            const wallet = walletResult.rows[0];
+            // Вернуть деньги
+            const newBalance = Number(wallet.balance) + price;
+            await client.query('UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2', [newBalance, wallet.id]);
+            // Записать транзакцию
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [wallet.id, price, 'refund', `Возврат за отмену тренировки #${id}`]
+            );
+            refunds.push({
+                full_name: participant.full_name,
+                telegram_id: participant.telegram_id,
+                amount: price
+            });
+            totalRefund += price;
+        }
+
+        // Уведомление клиентам
+        const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+        const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+        for (const refund of refunds) {
+            if (!refund.telegram_id) continue;
+            const text = `К сожалению, мы вынуждены отменить вашу тренировку. Деньги в размере ${refund.amount} руб. возвращены на ваш счет.\nТренировка могла быть отменена из-за недобора группы или болезни тренера.\nПодробнее вы можете уточнить у администратора: ${ADMIN_PHONE}`;
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: refund.telegram_id, text })
+            });
+        }
+
+        // Уведомление админу
+        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
+        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
+            let adminText = `Тренировка #${id} отменена. Возвраты:\n`;
+            for (const refund of refunds) {
+                adminText += `${refund.full_name} — ${refund.amount} руб.\n`;
+            }
+            adminText += `Общая сумма возврата: ${totalRefund} руб.`;
+            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: ADMIN_TELEGRAM_ID, text: adminText })
+            });
+        }
 
         // Освобождаем все слоты в расписании между start_time и end_time
         await client.query(
