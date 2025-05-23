@@ -73,6 +73,15 @@ async function notifyNewTrainingRequest(trainingData) {
     }
 }
 
+// Функция для форматирования даты
+function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+}
+
 // Функция для отправки уведомления о новой индивидуальной тренировке
 async function notifyNewIndividualTraining(trainingData) {
     try {
@@ -212,13 +221,15 @@ async function notifyAdminIndividualTrainingCancellation(trainingData) {
             return;
         }
 
-        const message = `
-❌ *Отмена индивидуальной тренировки!*
-
-👤 *Клиент:* ${trainingData.client_name}
-📅 *Дата:* ${trainingData.date}
-⏰ *Время:* ${trainingData.time}
-👨‍🏫 *Тренер:* ${trainingData.trainer_name}`;
+        const message = 
+            '❌ *Отмена индивидуальной тренировки!*\n\n' +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
+            `👤 *Участник:* ${trainingData.participant_name} (${trainingData.participant_age} лет)\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `💰 *Стоимость:* ${trainingData.price} руб.`;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });

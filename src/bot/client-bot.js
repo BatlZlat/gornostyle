@@ -3397,13 +3397,27 @@ bot.on('message', async (msg) => {
                 } else {
                     // Получаем параметры индивидуальной тренировки до удаления
                     const indRes = await pool.query(
-                        `SELECT its.preferred_date, its.preferred_time, its.duration, its.simulator_id, its.price, s.name as simulator_name
+                        `SELECT its.*, 
+                                CASE 
+                                    WHEN its.child_id IS NOT NULL THEN c.full_name
+                                    ELSE cl.full_name
+                                END as participant_name,
+                                CASE 
+                                    WHEN its.child_id IS NOT NULL THEN c.birth_date
+                                    ELSE cl.birth_date
+                                END as participant_birth_date,
+                                cl.full_name as client_name,
+                                cl.phone as client_phone,
+                                s.name as simulator_name
                          FROM individual_training_sessions its
+                         LEFT JOIN children c ON c.id = its.child_id
+                         LEFT JOIN clients cl ON cl.id = its.client_id
                          JOIN simulators s ON its.simulator_id = s.id
                          WHERE its.id = $1`,
                         [selectedSession.id]
                     );
                     const ind = indRes.rows[0];
+                    const participantAge = calculateAge(new Date(ind.participant_birth_date));
 
                     // Освобождаем слоты
                     await pool.query(
@@ -3413,10 +3427,6 @@ bot.on('message', async (msg) => {
                         [ind.simulator_id, ind.preferred_date, ind.preferred_time, ind.duration]
                     );
 
-                    // Получаем данные клиента
-                    const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
-                    const client = clientRes.rows[0];
-
                     // Удаляем запись
                     await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
 
@@ -3425,7 +3435,7 @@ bot.on('message', async (msg) => {
                         'SELECT id FROM wallets WHERE client_id = $1',
                         [state.data.client_id]
                     );
-                    
+
                     // Создаем запись о транзакции
                     await pool.query(
                         'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
@@ -3433,22 +3443,23 @@ bot.on('message', async (msg) => {
                             walletResult.rows[0].id,
                             selectedSession.price,
                             'refund',
-                            `Возврат средств за ${selectedSession.session_type === 'group' ? 'групповую' : 'индивидуальную'} тренировку; ${selectedSession.session_type === 'group' ? `Группа: ${groupInfo.group_name},` : `Тренажер: ${ind.simulator_name},`} Дата: ${selectedSession.session_type === 'group' ? groupInfo.session_date : ind.preferred_date}, Время: ${selectedSession.session_type === 'group' ? groupInfo.start_time : ind.preferred_time}`
+                            `Возврат средств за индивидуальную тренировку; Тренажер: ${ind.simulator_name}, Дата: ${ind.preferred_date}, Время: ${ind.preferred_time}`
                         ]
                     );
-                    
+
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
 
                     // Уведомляем админа
                     await notifyAdminIndividualTrainingCancellation({
-                        clientName: client.full_name,
-                        clientPhone: client.phone,
+                        client_name: ind.client_name,
+                        participant_name: ind.participant_name,
+                        participant_age: participantAge,
+                        client_phone: ind.client_phone,
                         date: ind.preferred_date,
                         time: ind.preferred_time,
-                        simulatorName: ind.simulator_name,
-                        refund: selectedSession.price,
-                        adminChatId: process.env.ADMIN_TELEGRAM_ID
+                        trainer_name: ind.with_trainer ? 'С тренером' : 'Без тренера',
+                        price: ind.price
                     });
 
                     // Форматируем дату для сообщения клиенту
