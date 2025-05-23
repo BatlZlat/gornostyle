@@ -168,6 +168,7 @@ bot.onText(/\/start/, async (msg) => {
             '• 🎁 Приобрести подарочные сертификаты\n\n' +
             '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
             {
+                parse_mode: 'Markdown',
                 reply_markup: {
                     keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
                     resize_keyboard: true,
@@ -2053,16 +2054,42 @@ bot.on('message', async (msg) => {
 
                     // Отправляем уведомление администратору
                     const { notifyNewIndividualTraining } = require('./admin-bot');
+
+                    // Получаем полную информацию о клиенте
+                    const clientInfoResult = await pool.query(
+                        'SELECT * FROM clients WHERE id = $1',
+                        [state.data.client_id]
+                    );
+                    const clientData = clientInfoResult.rows[0];
+
+                    let participantName, participantAge, participantPhone;
+
+                    if (state.data.is_child) {
+                        // Получаем информацию о ребенке
+                        const childResult = await pool.query(
+                            'SELECT * FROM children WHERE id = $1',
+                            [state.data.child_id]
+                        );
+                        const childInfo = childResult.rows[0];
+                        participantName = childInfo.full_name;
+                        participantAge = calculateAge(new Date(childInfo.birth_date));
+                        participantPhone = clientData.phone; // Используем телефон родителя
+                    } else {
+                        participantName = clientData.full_name;
+                        participantAge = calculateAge(new Date(clientData.birth_date));
+                        participantPhone = clientData.phone;
+                    }
+
                     await notifyNewIndividualTraining({
-                        client_name: clientInfo.full_name,
-                        client_phone: clientInfo.phone,
-                        child_name: state.data.is_child ? state.data.child_name : null,
+                        client_name: participantName,
+                        client_age: participantAge,
+                        client_phone: participantPhone,
                         trainer_name: state.data.with_trainer ? 'С тренером' : 'Без тренера',
                         equipment_type: state.data.equipment_type,
                         duration: state.data.duration,
                         simulator_id: state.data.simulator_id,
                         price: state.data.price,
-                        date: state.data.preferred_date,
+                        date: formatDate(state.data.preferred_date),
                         time: state.data.preferred_time
                     });
 
@@ -2079,15 +2106,15 @@ bot.on('message', async (msg) => {
                     return bot.sendMessage(chatId,
                         '✅ Вы успешно записались на тренировку!\n\n' +
                         'Детали тренировки:\n' +
-                        `• ФИО участника: ${state.data.is_child ? state.data.child_name : clientInfo.full_name}\n` +
-                        `• Тип тренировки: Индивидуальная\n` +
-                        `• Снаряжение: ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n` +
-                        `• Тренер: ${state.data.with_trainer ? 'С тренером 👨‍🏫' : 'Без тренера'}\n` +
-                        `• Длительность: ${state.data.duration} минут ⏱️\n` +
-                        `• Дата: ${formatDate(state.data.preferred_date)}\n` +
-                        `• Время: ${state.data.preferred_time}\n` +
-                        `• Тренажер: ${state.data.simulator_name} (№${state.data.simulator_id})\n` +
-                        `• Стоимость: ${state.data.price} руб. 💰\n\n` +
+                        `👤 *${state.data.is_child ? 'Участник' : 'Клиент'}:* ${state.data.is_child ? state.data.child_name : clientInfo.full_name}\n` +
+                        `🎯 *Тип тренировки:* Индивидуальная\n` +
+                        `🎿 *Снаряжение:* ${state.data.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n` +
+                        `👨‍🏫 *Тренер:* ${state.data.with_trainer ? 'С тренером' : 'Без тренера'}\n` +
+                        `⏱ *Длительность:* ${state.data.duration} минут\n` +
+                        `📅 *Дата:* ${formatDate(state.data.preferred_date)}\n` +
+                        `⏰ *Время:* ${state.data.preferred_time}\n` +
+                        `🎿 *Тренажер:* ${state.data.simulator_name} (№${state.data.simulator_id})\n` +
+                        `💰 *Стоимость:* ${state.data.price} руб.\n\n` +
                         'Ждем вас на тренировке!',
                         {
                             parse_mode: 'Markdown',
@@ -2880,10 +2907,11 @@ bot.on('message', async (msg) => {
                         if (balance < price) {
                             return bot.sendMessage(chatId,
                                 `❌ Недостаточно средств на балансе.\n\n` +
-                                `Требуется: ${price.toFixed(2)} руб.\n` +
-                                `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                                `Пожалуйста, пополните баланс.`,
+                                `💰 *Требуется:* ${price.toFixed(2)} руб.\n` +
+                                `💳 *Доступно:* ${balance.toFixed(2)} руб.\n\n` +
+                                'Пожалуйста, пополните баланс.',
                                 {
+                                    parse_mode: 'Markdown',
                                     reply_markup: {
                                         keyboard: [
                                             ['💳 Пополнить баланс'],
@@ -2914,10 +2942,11 @@ bot.on('message', async (msg) => {
                         if (participantLevel > selectedSession.skill_level) {
                             return bot.sendMessage(chatId,
                                 `❌ Уровень подготовки не соответствует требованиям тренировки.\n\n` +
-                                `Ваш уровень: ${participantLevel}/10\n` +
-                                `Требуемый уровень: ${selectedSession.skill_level}/10\n\n` +
-                                `Пожалуйста, выберите тренировку соответствующего уровня.`,
+                                `👤 *Ваш уровень:* ${participantLevel}/10\n` +
+                                `👨‍🏫 *Требуемый уровень:* ${selectedSession.skill_level}/10\n\n` +
+                                'Пожалуйста, выберите тренировку соответствующего уровня.',
                                 {
+                                    parse_mode: 'Markdown',
                                     reply_markup: {
                                         keyboard: [['🔙 Назад в меню']],
                                         resize_keyboard: true

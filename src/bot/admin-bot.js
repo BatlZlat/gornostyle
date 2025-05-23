@@ -55,19 +55,18 @@ async function notifyNewTrainingRequest(trainingData) {
         }
 
         const message = `
-🔔 Новая заявка на тренировку!
+🔔 *Новая заявка на тренировку!*
 
-👤 Клиент: ${trainingData.client_name}
-📅 Дата: ${trainingData.date}
-⏰ Время: ${trainingData.time}
-🎯 Тип: ${trainingData.type}
-👥 Группа: ${trainingData.group_name || 'Индивидуальная'}
-👨‍🏫 Тренер: ${trainingData.trainer_name}
-💰 Стоимость: ${trainingData.price} руб.
-        `;
+👤 *Клиент:* ${trainingData.client_name}
+📅 *Дата:* ${trainingData.date}
+⏰ *Время:* ${trainingData.time}
+🎯 *Тип:* ${trainingData.type}
+👥 *Группа:* ${trainingData.group_name || 'Индивидуальная'}
+👨‍🏫 *Тренер:* ${trainingData.trainer_name}
+💰 *Стоимость:* ${trainingData.price} руб.`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message);
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления:', error);
@@ -83,21 +82,20 @@ async function notifyNewIndividualTraining(trainingData) {
             return;
         }
 
-        const message = `
-🔔 Новая индивидуальная тренировка!
-
-👤 Клиент: ${trainingData.client_name}
-📅 Дата: ${trainingData.date}
-⏰ Время: ${trainingData.time}
-👨‍🏫 Тренер: ${trainingData.trainer_name}
-💰 Стоимость: ${trainingData.price} руб.
-        `;
+        const message = 
+            '🔔 *Новая индивидуальная тренировка!*\n\n' +
+            `👤 *Участник:* ${trainingData.client_name} (${trainingData.client_age} лет)\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${trainingData.date}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `💰 *Стоимость:* ${trainingData.price} руб.`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message);
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
-        console.error('Ошибка при отправке уведомления:', error);
+        console.error('Ошибка при отправке уведомления о новой тренировке:', error);
     }
 }
 
@@ -119,22 +117,20 @@ async function notifyNewGroupTrainingParticipant(trainingData) {
         const [hours, minutes] = trainingData.start_time.split(':');
         const formattedTime = `${hours}:${minutes}`;
 
-        const message = 
-            '👥 *Новая запись на групповую тренировку*\n\n' +
-            `👤 *Клиент:* ${trainingData.client_name}\n` +
-            (trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n` : '') +
-            `📱 *Телефон:* ${trainingData.client_phone}\n` +
-            `👥 *Группа:* ${trainingData.group_name}\n` +
-            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
-            `💰 *Стоимость:* ${trainingData.price} руб.\n` +
-            `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
-            `⏰ *Время:* ${formattedTime}\n` +
-            `👥 *Участников:* ${trainingData.current_participants}/${trainingData.max_participants}`;
+        const message = `
+👥 *Новая запись на групповую тренировку!*
+
+👤 *Клиент:* ${trainingData.client_name}
+${trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n` : ''}📱 *Телефон:* ${trainingData.client_phone}
+👥 *Группа:* ${trainingData.group_name}
+🎿 *Тренажер:* ${trainingData.simulator_name}
+💰 *Стоимость:* ${trainingData.price} руб.
+📅 *Дата:* ${formattedDate} (${dayOfWeek})
+⏰ *Время:* ${formattedTime}
+👥 *Участников:* ${trainingData.current_participants}/${trainingData.max_participants}`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message, { 
-                parse_mode: 'Markdown'
-            });
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления о новой записи на групповую тренировку:', error);
@@ -191,17 +187,16 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
         }
 
         const message = `
-❌ Отмена групповой тренировки!
+❌ *Отмена групповой тренировки!*
 
-👤 Клиент: ${trainingData.client_name}
-📅 Дата: ${trainingData.date}
-⏰ Время: ${trainingData.time}
-👥 Группа: ${trainingData.group_name}
-👨‍🏫 Тренер: ${trainingData.trainer_name}
-        `;
+👤 *Клиент:* ${trainingData.client_name}
+📅 *Дата:* ${trainingData.date}
+⏰ *Время:* ${trainingData.time}
+👥 *Группа:* ${trainingData.group_name}
+👨‍🏫 *Тренер:* ${trainingData.trainer_name}`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message);
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления:', error);
@@ -218,16 +213,15 @@ async function notifyAdminIndividualTrainingCancellation(trainingData) {
         }
 
         const message = `
-❌ Отмена индивидуальной тренировки!
+❌ *Отмена индивидуальной тренировки!*
 
-👤 Клиент: ${trainingData.client_name}
-📅 Дата: ${trainingData.date}
-⏰ Время: ${trainingData.time}
-👨‍🏫 Тренер: ${trainingData.trainer_name}
-        `;
+👤 *Клиент:* ${trainingData.client_name}
+📅 *Дата:* ${trainingData.date}
+⏰ *Время:* ${trainingData.time}
+👨‍🏫 *Тренер:* ${trainingData.trainer_name}`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message);
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления:', error);
@@ -243,13 +237,15 @@ async function notifyAdminFailedPayment({ amount, wallet_number, date, time }) {
             return;
         }
 
-        const message = 
-            `❌ Платеж не обработан\n\n` +
-            `💵 Сумма: ${amount} руб.\n` +
-            `📝 Номер кошелька: ${wallet_number}\n` +
-            `📅 Дата: ${date}\n` +
-            `⏰ Время: ${time}\n\n` +
-            `⚠️ Автор платежа не найден. Деньги не зачислены.`;
+        const message = `
+❌ *Платеж не обработан!*
+
+💵 *Сумма:* ${amount} руб.
+📝 *Номер кошелька:* ${wallet_number}
+📅 *Дата:* ${date}
+⏰ *Время:* ${time}
+
+⚠️ Автор платежа не найден. Деньги не зачислены.`;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
@@ -269,16 +265,15 @@ async function notifyAdminWalletRefilled({ clientName, amount, walletNumber, bal
         }
 
         const message = `
-✅ Пополнение кошелька
+✅ *Пополнение кошелька!*
 
-👤 Клиент: ${clientName}
-💳 Кошелек: ${walletNumber}
-💰 Сумма пополнения: ${amount} руб.
-💵 Итоговый баланс: ${balance} руб.
-        `;
+👤 *Клиент:* ${clientName}
+💳 *Кошелек:* ${walletNumber}
+💰 *Сумма пополнения:* ${amount} руб.
+💵 *Итоговый баланс:* ${balance} руб.`;
 
         for (const adminId of adminIds) {
-            await bot.sendMessage(adminId, message);
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления о пополнении кошелька:', error);
