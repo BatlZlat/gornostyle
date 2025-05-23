@@ -241,6 +241,78 @@ function initializeEventListeners() {
             window.location.href = 'dismissed-trainers.html';
         });
     }
+
+    // === Уведомление клиентов ===
+    const notifyBtn = document.getElementById('notify-clients-btn');
+    const notifyModal = document.getElementById('notify-clients-modal');
+    const closeNotifyModal = document.getElementById('close-notify-modal');
+    const notifyForm = document.getElementById('notify-clients-form');
+    const notifyMessage = document.getElementById('notify-message');
+    const notifyPreview = document.getElementById('notify-preview');
+
+    if (notifyBtn && notifyModal) {
+        notifyBtn.addEventListener('click', () => {
+            notifyModal.style.display = 'block';
+            notifyMessage.value = '';
+            notifyPreview.textContent = '';
+
+            // --- Эмодзи панель ---
+            const emojiPanel = document.getElementById('emoji-panel');
+            if (emojiPanel && notifyMessage) {
+                emojiPanel.onclick = function(e) {
+                    if (e.target.classList.contains('emoji-btn')) {
+                        const emoji = e.target.textContent;
+                        const start = notifyMessage.selectionStart;
+                        const end = notifyMessage.selectionEnd;
+                        const value = notifyMessage.value;
+                        notifyMessage.value = value.slice(0, start) + emoji + value.slice(end);
+                        notifyMessage.focus();
+                        notifyMessage.selectionStart = notifyMessage.selectionEnd = start + emoji.length;
+                        notifyPreview.textContent = notifyMessage.value;
+                    }
+                };
+            }
+        });
+    }
+    if (closeNotifyModal && notifyModal) {
+        closeNotifyModal.addEventListener('click', () => {
+            notifyModal.style.display = 'none';
+        });
+    }
+    if (notifyMessage && notifyPreview) {
+        notifyMessage.addEventListener('input', () => {
+            notifyPreview.textContent = notifyMessage.value;
+        });
+    }
+    if (notifyForm) {
+        notifyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = notifyMessage.value.trim();
+            if (!text) return;
+            try {
+                const resp = await fetch('/api/trainings/notify-clients', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    alert(data.message || 'Сообщение отправлено!');
+                    notifyModal.style.display = 'none';
+                } else {
+                    alert(data.error || 'Ошибка при отправке сообщения');
+                }
+            } catch (err) {
+                alert('Ошибка при отправке сообщения');
+            }
+        });
+    }
+    // Закрытие по клику вне окна
+    if (notifyModal) {
+        notifyModal.onclick = (e) => {
+            if (e.target === notifyModal) notifyModal.style.display = 'none';
+        };
+    }
 }
 
 // Переключение страниц
@@ -1576,61 +1648,4 @@ async function exportContacts() {
         console.error('Ошибка при экспорте контактов:', error);
         showError('Не удалось экспортировать контакты');
     }
-}
-
-// === Уведомление клиентов ===
-document.addEventListener('DOMContentLoaded', function() {
-    const notifyBtn = document.getElementById('notify-clients-btn');
-    const notifyModal = document.getElementById('notify-clients-modal');
-    const closeNotifyModal = document.getElementById('close-notify-modal');
-    const notifyForm = document.getElementById('notify-clients-form');
-    const notifyMessage = document.getElementById('notify-message');
-    const notifyPreview = document.getElementById('notify-preview');
-
-    if (notifyBtn && notifyModal) {
-        notifyBtn.addEventListener('click', () => {
-            notifyModal.style.display = 'block';
-            notifyMessage.value = '';
-            notifyPreview.textContent = '';
-        });
-    }
-    if (closeNotifyModal && notifyModal) {
-        closeNotifyModal.addEventListener('click', () => {
-            notifyModal.style.display = 'none';
-        });
-    }
-    if (notifyMessage && notifyPreview) {
-        notifyMessage.addEventListener('input', () => {
-            notifyPreview.textContent = notifyMessage.value;
-        });
-    }
-    if (notifyForm) {
-        notifyForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = notifyMessage.value.trim();
-            if (!text) return;
-            try {
-                const resp = await fetch('/api/trainings/notify-clients', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await resp.json();
-                if (resp.ok) {
-                    alert(data.message || 'Сообщение отправлено!');
-                    notifyModal.style.display = 'none';
-                } else {
-                    alert(data.error || 'Ошибка при отправке сообщения');
-                }
-            } catch (err) {
-                alert('Ошибка при отправке сообщения');
-            }
-        });
-    }
-    // Закрытие по клику вне окна
-    if (notifyModal) {
-        notifyModal.onclick = (e) => {
-            if (e.target === notifyModal) notifyModal.style.display = 'none';
-        };
-    }
-}); 
+} 
