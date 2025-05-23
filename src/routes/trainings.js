@@ -259,16 +259,71 @@ router.get('/archive', async (req, res) => {
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        // Получаем основную информацию о тренировке
         const result = await pool.query(`
-            SELECT ts.*, g.name as group_name, g.description as group_description
+            SELECT ts.*, g.name as group_name, g.description as group_description, t.full_name as trainer_name
             FROM training_sessions ts
             LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
             WHERE ts.id = $1
         `, [id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Тренировка не найдена' });
         }
-        res.json(result.rows[0]);
+        const training = result.rows[0];
+
+        // Получаем участников тренировки
+        const participantsResult = await pool.query(`
+            SELECT 
+                sp.id,
+                sp.is_child,
+                sp.status,
+                c.full_name as client_full_name,
+                c.birth_date as client_birth_date,
+                c.skill_level as client_skill_level,
+                c.phone as client_phone,
+                ch.full_name as child_full_name,
+                ch.birth_date as child_birth_date,
+                ch.skill_level as child_skill_level,
+                ch.id as child_id,
+                par.phone as parent_phone
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            LEFT JOIN clients par ON ch.parent_id = par.id
+            WHERE sp.session_id = $1
+        `, [id]);
+
+        // Проверяем, детская ли это тренировка
+        const isChildrenGroup = training.group_name && training.group_name.toLowerCase().includes('дети');
+
+        // Формируем массив участников с нужными полями
+        const participants = participantsResult.rows.map(row => {
+            if (isChildrenGroup) {
+                // Для детских групп всегда отображаем ФИО ребенка
+                return {
+                    full_name: row.child_full_name || row.client_full_name,
+                    birth_date: row.child_birth_date || row.client_birth_date,
+                    skill_level: row.child_skill_level || row.client_skill_level,
+                    phone: row.parent_phone || row.client_phone,
+                    is_child: true
+                };
+            } else {
+                // Для остальных — ФИО клиента
+                return {
+                    full_name: row.client_full_name,
+                    birth_date: row.client_birth_date,
+                    skill_level: row.client_skill_level,
+                    phone: row.client_phone,
+                    is_child: false
+                };
+            }
+        });
+
+        training.participants = participants;
+        training.participants_count = participants.length;
+
+        res.json(training);
     } catch (error) {
         console.error('Ошибка при получении тренировки по id:', error);
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
