@@ -4,7 +4,7 @@ CREATE TABLE clients (
     full_name VARCHAR(100) NOT NULL,
     birth_date DATE NOT NULL,
     phone VARCHAR(20) NOT NULL,
-    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10),
     telegram_id VARCHAR(100) UNIQUE,
     telegram_username VARCHAR(100),
     nickname VARCHAR(100),

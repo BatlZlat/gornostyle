@@ -581,4 +581,30 @@ ${trainingInfo}
     }
 });
 
+// Рассылка сообщения всем клиентам с telegram_id
+router.post('/notify-clients', async (req, res) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'Нет текста сообщения' });
+
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    try {
+        const result = await pool.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
+        const clients = result.rows;
+
+        let sent = 0;
+        for (const client of clients) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: client.telegram_id, text: message })
+            });
+            sent++;
+        }
+        res.json({ message: `Сообщение отправлено ${sent} клиентам` });
+    } catch (error) {
+        console.error('Ошибка при рассылке:', error);
+        res.status(500).json({ error: 'Ошибка при рассылке' });
+    }
+});
+
 module.exports = router; 
