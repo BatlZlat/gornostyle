@@ -112,6 +112,56 @@ router.post('/', async (req, res) => {
                 'ski'
             ]
         );
+        const trainingId = result.rows[0].id;
+
+        // Получаем детали для уведомления
+        const detailsResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
+            [trainingId]
+        );
+        const training = detailsResult.rows[0];
+
+        // Формируем текст уведомления
+        const trainingText =
+`✅ Создана новая тренировка!
+
+👥 Группа: ${training.group_name || '-'}
+⏰ Время: ${training.start_time ? training.start_time.slice(0,5) : '-'}
+⏱ Длительность: ${training.duration || 60} минут
+👤 Тренер: ${training.trainer_name || '-'}
+👥 Мест: ${training.max_participants}
+📊 Уровень: ${training.skill_level}
+💰 Стоимость: ${Number(training.price).toFixed(2)} руб.`;
+
+        // Уведомление клиентам
+        const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+        const clientsResult = await client.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
+        for (const c of clientsResult.rows) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: c.telegram_id, text: trainingText })
+            });
+        }
+
+        // Уведомление администраторам
+        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
+        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
+            const adminIds = ADMIN_TELEGRAM_ID.split(',').map(id => id.trim()).filter(Boolean);
+            for (const adminId of adminIds) {
+                await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: adminId, text: trainingText })
+                });
+            }
+        }
 
         // Бронируем слоты в расписании
         // Бронируем все слоты между start_time и end_time
@@ -129,7 +179,7 @@ router.post('/', async (req, res) => {
 
         res.status(201).json({ 
             message: 'Тренировка успешно создана',
-            training_id: result.rows[0].id 
+            training_id: trainingId 
         });
     } catch (error) {
         await client.query('ROLLBACK');
