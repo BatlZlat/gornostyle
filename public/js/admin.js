@@ -1138,16 +1138,22 @@ async function savePaymentLink() {
 
 // --- Модальное окно для редактирования тренировки ---
 function showEditTrainingModal(training) {
+    console.log('Вызов showEditTrainingModal с данными:', training);
     // Удаляем старое модальное окно, если есть
     const oldModal = document.getElementById('edit-training-modal');
-    if (oldModal) oldModal.remove();
+    if (oldModal) {
+        console.log('Удаляем старое модальное окно');
+        oldModal.remove();
+    }
 
     // Загружаем данные для выпадающих списков
+    console.log('Загружаем данные для выпадающих списков');
     Promise.all([
         fetch('/api/trainers').then(res => res.json()),
         fetch('/api/groups').then(res => res.json()),
         fetch('/api/simulators').then(res => res.json())
     ]).then(([trainers, groups, simulators]) => {
+        console.log('Получены данные для списков:', { trainers, groups, simulators });
         // Формируем options для select
         const trainerOptions = trainers.map(tr =>
             `<option value="${tr.id}" ${tr.id === training.trainer_id ? 'selected' : ''}>${tr.full_name}</option>`
@@ -1205,11 +1211,9 @@ function showEditTrainingModal(training) {
                     <div class="form-group">
                         <label>Уровень</label>
                         <select name="skill_level" required>
-                            <option value="1" ${training.skill_level === 1 ? 'selected' : ''}>Начальный</option>
-                            <option value="2" ${training.skill_level === 2 ? 'selected' : ''}>Базовый</option>
-                            <option value="3" ${training.skill_level === 3 ? 'selected' : ''}>Средний</option>
-                            <option value="4" ${training.skill_level === 4 ? 'selected' : ''}>Продвинутый</option>
-                            <option value="5" ${training.skill_level === 5 ? 'selected' : ''}>Профессиональный</option>
+                            ${Array.from({length: 10}, (_, i) => i + 1).map(level => 
+                                `<option value="${level}" ${training.skill_level === level ? 'selected' : ''}>${level}</option>`
+                            ).join('')}
                         </select>
                     </div>
                     <div class="form-group">
@@ -1271,14 +1275,27 @@ function showEditTrainingModal(training) {
 
 // --- Обработчик кнопки "Редактировать тренировку" ---
 window.editTraining = function(id) {
+    console.log('Вызов editTraining с id:', id);
     // Найти тренировку в текущем списке (или запросить с сервера)
     const allTrainings = document.querySelectorAll('.training-item');
     let trainingData = null;
     // Можно хранить данные в JS, но для простоты — запросим с сервера
     fetch(`/api/trainings/${id}`)
-        .then(res => res.json())
-        .then(training => showEditTrainingModal(training))
-        .catch(() => showError('Не удалось загрузить данные тренировки'));
+        .then(res => {
+            console.log('Ответ сервера:', res);
+            if (!res.ok) {
+                throw new Error(`HTTP error! status: ${res.status}`);
+            }
+            return res.json();
+        })
+        .then(training => {
+            console.log('Полученные данные тренировки:', training);
+            showEditTrainingModal(training);
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке данных тренировки:', error);
+            showError('Не удалось загрузить данные тренировки');
+        });
 };
 
 // Функция удаления тренировки
