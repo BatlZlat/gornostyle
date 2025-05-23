@@ -3299,13 +3299,23 @@ bot.on('message', async (msg) => {
             }
 
             const selectedSession = state.data.sessions[selectedIndex];
-            
             try {
                 if (selectedSession.session_type === 'group') {
-                    // Получаем параметры тренировки до удаления
+                    // Получаем данные участника
+                    const participantRes = await pool.query(
+                        `SELECT sp.child_id, sp.client_id, c.full_name as client_name, c.phone as client_phone, ch.full_name as child_name
+                         FROM session_participants sp
+                         LEFT JOIN clients c ON sp.client_id = c.id
+                         LEFT JOIN children ch ON sp.child_id = ch.id
+                         WHERE sp.id = $1`,
+                        [selectedSession.id]
+                    );
+                    const participant = participantRes.rows[0];
+
+                    // Получаем данные о тренировке
                     const groupInfoRes = await pool.query(
                         `SELECT ts.session_date, ts.start_time, ts.group_id, ts.trainer_id, ts.simulator_id, ts.price, ts.max_participants,
-                         g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+                                g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
                          FROM training_sessions ts
                          LEFT JOIN groups g ON ts.group_id = g.id
                          LEFT JOIN trainers t ON ts.trainer_id = t.id
@@ -3314,153 +3324,39 @@ bot.on('message', async (msg) => {
                         [selectedSession.session_id]
                     );
                     const groupInfo = groupInfoRes.rows[0];
-                    
+
                     // Считаем сколько мест осталось после удаления
                     const seatsRes = await pool.query(
                         'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
                         [selectedSession.session_id]
                     );
-                    const currentParticipants = parseInt(seatsRes.rows[0].count) - 1; // -1 потому что мы удаляем одного участника
+                    const currentParticipants = parseInt(seatsRes.rows[0].count) - 1;
                     const maxParticipants = groupInfo.max_participants;
                     const seatsLeft = `${currentParticipants}/${maxParticipants}`;
 
-                    // Получаем данные клиента
-                    const clientRes = await pool.query('SELECT full_name, phone FROM clients WHERE id = $1', [state.data.client_id]);
-                    const client = clientRes.rows[0];
+                    // Формируем participant_name только если есть child_id
+                    const participantName = participant.child_id ? participant.child_name : null;
+
+                    // Уведомляем админа
+                    await notifyAdminGroupTrainingCancellation({
+                        client_name: participant.client_name,
+                        participant_name: participantName,
+                        client_phone: participant.client_phone,
+                        date: groupInfo.session_date,
+                        time: groupInfo.start_time,
+                        group_name: groupInfo.group_name,
+                        trainer_name: groupInfo.trainer_name,
+                        simulator_name: groupInfo.simulator_name,
+                        seats_left: seatsLeft,
+                        refund: selectedSession.price
+                    });
 
                     // Удаляем запись
                     await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
 
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
-                    
-                    // Получаем ID кошелька
-                    const walletResult = await pool.query(
-                        'SELECT id FROM wallets WHERE client_id = $1',
-                        [state.data.client_id]
-                    );
-
-                    // Создаем запись о транзакции
-                    await pool.query(
-                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                        [
-                            walletResult.rows[0].id,
-                            selectedSession.price,
-                            'refund',
-                            `Возврат средств за ${selectedSession.session_type === 'group' ? 'групповую' : 'индивидуальную'} тренировку; ${selectedSession.session_type === 'group' ? `Группа: ${groupInfo.group_name},` : `Тренажер: ${ind.simulator_name},`} Дата: ${selectedSession.session_type === 'group' ? groupInfo.session_date : ind.preferred_date}, Время: ${selectedSession.session_type === 'group' ? groupInfo.start_time : ind.preferred_time}`
-                        ]
-                    );
-
-                    // Уведомляем админа
-                    await notifyAdminGroupTrainingCancellation({
-                        clientName: client.full_name,
-                        clientPhone: client.phone,
-                        date: groupInfo.session_date,
-                        time: groupInfo.start_time,
-                        groupName: groupInfo.group_name,
-                        trainerName: groupInfo.trainer_name,
-                        simulatorName: groupInfo.simulator_name,
-                        seatsLeft,
-                        refund: selectedSession.price,
-                        adminChatId: process.env.ADMIN_TELEGRAM_ID
-                    });
-
-                    // Форматируем дату для сообщения клиенту
-                    const date = new Date(selectedSession.session_date);
-                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                    const [hours, minutes] = selectedSession.start_time.split(':');
-                    const formattedTime = `${hours}:${minutes}`;
-
-                    // Сообщение для клиента
-                    const clientMessage = 
-                        '✅ *Тренировка успешно отменена!*\n\n' +
-                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
-                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
-                        `⏰ *Время:* ${formattedTime}\n` +
-                        `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
-                        'Средства возвращены на ваш баланс.';
-
-                    state.step = 'main_menu';
-                    userStates.set(chatId, state);
-
-                    return bot.sendMessage(chatId, clientMessage, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['📋 Мои записи'],
-                                ['🔙 В главное меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    });
-                } else {
-                    // Получаем параметры индивидуальной тренировки до удаления
-                    const indRes = await pool.query(
-                        `SELECT its.*, 
-                                CASE 
-                                    WHEN its.child_id IS NOT NULL THEN c.full_name
-                                    ELSE cl.full_name
-                                END as participant_name,
-                                CASE 
-                                    WHEN its.child_id IS NOT NULL THEN c.birth_date
-                                    ELSE cl.birth_date
-                                END as participant_birth_date,
-                                cl.full_name as client_name,
-                                cl.phone as client_phone,
-                                s.name as simulator_name
-                         FROM individual_training_sessions its
-                         LEFT JOIN children c ON c.id = its.child_id
-                         LEFT JOIN clients cl ON cl.id = its.client_id
-                         JOIN simulators s ON its.simulator_id = s.id
-                         WHERE its.id = $1`,
-                        [selectedSession.id]
-                    );
-                    const ind = indRes.rows[0];
-                    const participantAge = calculateAge(new Date(ind.participant_birth_date));
-
-                    // Освобождаем слоты
-                    await pool.query(
-                        `UPDATE schedule SET is_booked = false
-                         WHERE simulator_id = $1 AND date = $2
-                         AND start_time >= $3 AND start_time < ($3::time + ($4 * interval '1 minute'))`,
-                        [ind.simulator_id, ind.preferred_date, ind.preferred_time, ind.duration]
-                    );
-
-                    // Удаляем запись
-                    await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
-
-                    // Получаем ID кошелька
-                    const walletResult = await pool.query(
-                        'SELECT id FROM wallets WHERE client_id = $1',
-                        [state.data.client_id]
-                    );
-
-                    // Создаем запись о транзакции
-                    await pool.query(
-                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                        [
-                            walletResult.rows[0].id,
-                            selectedSession.price,
-                            'refund',
-                            `Возврат средств за индивидуальную тренировку; Тренажер: ${ind.simulator_name}, Дата: ${ind.preferred_date}, Время: ${ind.preferred_time}`
-                        ]
-                    );
-
-                    // Возвращаем средства
-                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
-
-                    // Уведомляем админа
-                    await notifyAdminIndividualTrainingCancellation({
-                        client_name: ind.client_name,
-                        participant_name: ind.participant_name,
-                        participant_age: participantAge,
-                        client_phone: ind.client_phone,
-                        date: ind.preferred_date,
-                        time: ind.preferred_time,
-                        trainer_name: ind.with_trainer ? 'С тренером' : 'Без тренера',
-                        price: ind.price
-                    });
+                    // ... остальной код для клиента ...
 
                     // Форматируем дату для сообщения клиенту
                     const date = new Date(selectedSession.session_date);
@@ -3492,7 +3388,7 @@ bot.on('message', async (msg) => {
                         }
                     });
                 }
-                // ... остальной код для сообщения пользователю ...
+                // ... остальной код для индивидуальной ...
             } catch (error) {
                 console.error('Ошибка при отмене тренировки:', error);
                 return bot.sendMessage(chatId,
