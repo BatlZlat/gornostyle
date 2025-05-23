@@ -42,23 +42,6 @@ router.post('/', async (req, res) => {
         const endDate = new Date(startDate.getTime() + 60 * 60000);
         const end_time = endDate.toTimeString().slice(0, 5) + ':00';
 
-        // Для групповой тренировки проверяем, что следующий слот доступен
-        if (training_type) {
-            const nextSlotResult = await client.query(
-                `SELECT id FROM schedule 
-                 WHERE simulator_id = $1 
-                 AND date = $2 
-                 AND start_time = $3 
-                 AND is_booked = false 
-                 AND is_holiday = false`,
-                [simulator_id, date, end_time]
-            );
-
-            if (nextSlotResult.rows.length === 0) {
-                return res.status(400).json({ error: 'Следующий слот недоступен для групповой тренировки' });
-            }
-        }
-
         // Проверяем, не занят ли тренажер в это время
         const checkResult = await client.query(
             `SELECT id FROM training_sessions 

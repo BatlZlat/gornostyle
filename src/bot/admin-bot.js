@@ -195,14 +195,18 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
             return;
         }
 
-        const message = `
-❌ *Отмена групповой тренировки!*
-
-👤 *Клиент:* ${trainingData.client_name}
-📅 *Дата:* ${trainingData.date}
-⏰ *Время:* ${trainingData.time}
-👥 *Группа:* ${trainingData.group_name}
-👨‍🏫 *Тренер:* ${trainingData.trainer_name}`;
+        const message =
+            '❌ *Отмена групповой тренировки!*\n\n' +
+            `👤 *Клиент:* ${trainingData.client_name}\n` +
+            (trainingData.participant_name ? `👤 *Участник:* ${trainingData.participant_name}\n` : '') +
+            `📞 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👥 *Группа:* ${trainingData.group_name}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
+            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
