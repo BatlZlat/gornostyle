@@ -19,7 +19,7 @@ CREATE TABLE children (
     full_name VARCHAR(100) NOT NULL,
     birth_date DATE NOT NULL,
     sport_type VARCHAR(20) NOT NULL, -- ski, snowboard
-    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

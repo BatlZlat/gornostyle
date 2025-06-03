@@ -3470,7 +3470,7 @@ bot.on('message', async (msg) => {
                 try {
                     await pool.query(
                         'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
-                        [state.data.client_id, state.data.child_name, birthDate, 'ski', null]
+                        [state.data.client_id, state.data.child_name, birthDate, 'ski', 1]
                     );
 
                     userStates.delete(chatId);
@@ -3969,7 +3969,7 @@ async function showPersonalCabinet(chatId) {
         message += `*Информация о вас:*\n`;
         message += `👤 *ФИО:* ${client.full_name}\n`;
         message += `📅 *Дата рождения:* ${formattedBirthDate} (${clientAge} лет)\n`;
-        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n\n`;
+        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/10\n\n`;
 
         // Информация о детях
         if (childrenResult.rows.length > 0) {
@@ -3980,7 +3980,7 @@ async function showPersonalCabinet(chatId) {
                 message += `\n*Ребенок ${index + 1}:*\n`;
                 message += `👶 *ФИО:* ${child.full_name}\n`;
                 message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
-                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
+                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/10\n`;
             });
         }
 
