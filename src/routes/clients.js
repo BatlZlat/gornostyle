@@ -21,6 +21,7 @@ router.get('/', async (req, res) => {
         const result = await pool.query(`
             SELECT 
                 c.*,
+                ch.id as child_id,
                 ch.full_name as child_name,
                 ch.birth_date as child_birth_date,
                 ch.skill_level as child_skill_level,

@@ -699,7 +699,7 @@ function displayClients() {
                             <td>${client.balance || 0} ₽</td>
                             <td>
                                 <button onclick="editClient(${client.id})" class="edit-button">✏️</button>
-                                <button onclick="deleteClient(${client.id})" class="delete-button">🗑️</button>
+                                ${client.child_id ? `<button onclick="editChild(${client.child_id})" class="edit-button">✏️👶</button>` : ''}
                             </td>
                         </tr>
                     `;
@@ -1568,30 +1568,6 @@ async function editClient(id) {
     }
 }
 
-// Функция удаления клиента
-async function deleteClient(id) {
-    if (!confirm('Вы уверены, что хотите удалить этого клиента?')) {
-        return;
-    }
-
-    try {
-        const response = await fetch(`/api/clients/${id}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Ошибка при удалении клиента');
-        }
-
-        showSuccess('Клиент успешно удален');
-        loadClients(); // Перезагружаем список клиентов
-    } catch (error) {
-        console.error('Ошибка при удалении клиента:', error);
-        showError(error.message || 'Не удалось удалить клиента');
-    }
-}
-
 // Функция для экспорта контактов
 async function exportContacts() {
     try {
@@ -1628,5 +1604,63 @@ async function exportContacts() {
     } catch (error) {
         console.error('Ошибка при экспорте контактов:', error);
         showError('Не удалось экспортировать контакты');
+    }
+}
+
+// В конец файла добавляю функцию editChild
+window.editChild = async function(childId) {
+    try {
+        const response = await fetch(`/api/children/${childId}`);
+        if (!response.ok) throw new Error('Ошибка загрузки данных ребенка');
+        const child = await response.json();
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h2>Редактирование ребенка</h2>
+                <form id="editChildForm">
+                    <div class="form-group">
+                        <label for="child_full_name">ФИО:</label>
+                        <input type="text" id="child_full_name" name="full_name" value="${child.full_name || ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="child_birth_date">Дата рождения:</label>
+                        <input type="date" id="child_birth_date" name="birth_date" value="${child.birth_date ? child.birth_date.split('T')[0] : ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="child_skill_level">Уровень:</label>
+                        <select id="child_skill_level" name="skill_level" required>
+                            ${Array.from({length: 10}, (_, i) => `<option value="${i+1}"${child.skill_level == i+1 ? ' selected' : ''}>${i+1}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        document.getElementById('editChildForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            try {
+                const resp = await fetch(`/api/children/${childId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!resp.ok) throw new Error('Ошибка при сохранении');
+                modal.remove();
+                loadClients();
+                showSuccess('Данные ребенка успешно обновлены');
+            } catch (err) {
+                showError('Не удалось обновить данные ребенка');
+            }
+        });
+    } catch (err) {
+        showError('Не удалось загрузить данные ребенка');
     }
 } 
