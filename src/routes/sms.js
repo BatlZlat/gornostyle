@@ -8,11 +8,16 @@ function parseSmsUniversal(text) {
     // Ищем сумму: +10р, 10р, 100р и т.д.
     const amountMatch = text.match(/(\+?\d+)\s*р/i);
     // Ищем номер кошелька: xxxx-xxxx-xxxx-xxxx (12-20 цифр с дефисами)
-    const walletMatch = text.match(/(\d{4}-\d{4}-\d{4}-\d{4,6})/);
+    let walletMatch = text.match(/(\d{4}-\d{4}-\d{4}-\d{4,6})/);
+    if (!walletMatch) {
+        // Альфабанк: Сообщение: 4857-4961-3108-9823
+        const alfaMatch = text.match(/Сообщение:\s*([\d\-]{16,23})/);
+        if (alfaMatch) walletMatch = [alfaMatch[1]];
+    }
     if (!amountMatch || !walletMatch) return null;
     return {
         amount: parseFloat(amountMatch[1].replace('+', '')),
-        walletNumber: walletMatch[1].replace(/-/g, '')
+        walletNumber: walletMatch[0].replace(/-/g, '')
     };
 }
 
