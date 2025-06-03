@@ -95,8 +95,8 @@ router.put('/:id', async (req, res) => {
             child_skill_level
         });
 
-        // Преобразуем уровни в числовые значения
-        const numericSkillLevel = convertSkillLevel(skill_level);
+        // Преобразуем уровень в число
+        const numericSkillLevel = Number(skill_level);
         const numericChildSkillLevel = convertSkillLevel(child_skill_level);
 
         console.log('Преобразованные уровни:', {
@@ -120,52 +120,6 @@ router.put('/:id', async (req, res) => {
         } catch (error) {
             console.error('Ошибка при обновлении данных клиента:', error);
             throw error;
-        }
-
-        // Обновление или создание данных о ребенке
-        if (child_name) {
-            try {
-                const childResult = await client.query(`
-                    SELECT id FROM children WHERE parent_id = $1
-                `, [id]);
-                console.log('Результат поиска ребенка:', childResult.rows);
-
-                if (childResult.rows.length > 0) {
-                    // Обновляем существующую запись
-                    await client.query(`
-                        UPDATE children 
-                        SET 
-                            full_name = $1,
-                            birth_date = $2,
-                            skill_level = $3,
-                            sport_type = 'ski',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE parent_id = $4
-                    `, [child_name, child_birth_date, numericChildSkillLevel, id]);
-                    console.log('Данные ребенка успешно обновлены');
-                } else {
-                    // Создаем новую запись
-                    await client.query(`
-                        INSERT INTO children (parent_id, full_name, birth_date, skill_level, sport_type)
-                        VALUES ($1, $2, $3, $4, 'ski')
-                    `, [id, child_name, child_birth_date, numericChildSkillLevel]);
-                    console.log('Создана новая запись о ребенке');
-                }
-            } catch (error) {
-                console.error('Ошибка при работе с данными ребенка:', error);
-                throw error;
-            }
-        } else {
-            try {
-                // Если имя ребенка не указано, удаляем запись о ребенке
-                await client.query(`
-                    DELETE FROM children WHERE parent_id = $1
-                `, [id]);
-                console.log('Запись о ребенке удалена');
-            } catch (error) {
-                console.error('Ошибка при удалении данных ребенка:', error);
-                throw error;
-            }
         }
 
         // Обновление баланса

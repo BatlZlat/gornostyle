@@ -1509,31 +1509,12 @@ async function editClient(id) {
                     <div class="form-group">
                         <label for="skill_level">Уровень:</label>
                         <select id="skill_level" name="skill_level" required>
-                            <option value="beginner" ${client.skill_level === 'beginner' ? 'selected' : ''}>Начинающий</option>
-                            <option value="intermediate" ${client.skill_level === 'intermediate' ? 'selected' : ''}>Средний</option>
-                            <option value="advanced" ${client.skill_level === 'advanced' ? 'selected' : ''}>Продвинутый</option>
+                            ${Array.from({length: 10}, (_, i) => `<option value="${i+1}"${client.skill_level == i+1 ? ' selected' : ''}>${i+1}</option>`).join('')}
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="balance">Баланс (₽):</label>
                         <input type="number" id="balance" name="balance" value="${client.balance || 0}" min="0" step="100">
-                    </div>
-                    <div class="form-group">
-                        <label for="child_name">Имя ребёнка:</label>
-                        <input type="text" id="child_name" name="child_name" value="${client.child_name || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label for="child_birth_date">Дата рождения ребёнка:</label>
-                        <input type="date" id="child_birth_date" name="child_birth_date" value="${client.child_birth_date ? client.child_birth_date.split('T')[0] : ''}">
-                    </div>
-                    <div class="form-group">
-                        <label for="child_skill_level">Уровень ребёнка:</label>
-                        <select id="child_skill_level" name="child_skill_level">
-                            <option value="">Не указан</option>
-                            <option value="beginner" ${client.child_skill_level === 'beginner' ? 'selected' : ''}>Начинающий</option>
-                            <option value="intermediate" ${client.child_skill_level === 'intermediate' ? 'selected' : ''}>Средний</option>
-                            <option value="advanced" ${client.child_skill_level === 'advanced' ? 'selected' : ''}>Продвинутый</option>
-                        </select>
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Сохранить</button>
