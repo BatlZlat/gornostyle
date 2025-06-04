@@ -774,31 +774,193 @@ async function loadCertificates() {
     }
 }
 
-// Загрузка финансов
+// === ФИНАНСЫ: UI и логика ===
+
+// Вставка фильтра по датам и кнопок экспорта (если их нет)
+function renderFinancesControls() {
+    let controls = document.getElementById('finances-controls');
+    if (!controls) {
+        controls = document.createElement('div');
+        controls.id = 'finances-controls';
+        controls.style.display = 'flex';
+        controls.style.gap = '16px';
+        controls.style.alignItems = 'center';
+        controls.style.marginBottom = '24px';
+        controls.innerHTML = `
+            <input type="date" id="finances-start-date" style="padding:6px;">
+            <input type="date" id="finances-end-date" style="padding:6px;">
+            <button id="finances-apply-btn" class="btn-primary">Применить</button>
+            <button id="finances-export-full" class="btn-secondary">Экспорт полного отчёта</button>
+            <button id="finances-export-summary" class="btn-secondary">Экспорт итогов</button>
+        `;
+        const financesPage = document.querySelector('.finances-list')?.parentElement || document.querySelector('.finances-list');
+        if (financesPage) financesPage.prepend(controls);
+    }
+    // Установить значения по умолчанию (текущий месяц)
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    document.getElementById('finances-start-date').value = firstDay.toISOString().split('T')[0];
+    document.getElementById('finances-end-date').value = lastDay.toISOString().split('T')[0];
+}
+
+// --- Индикатор загрузки ---
+function showLoading(message = 'Загрузка...') {
+    let overlay = document.getElementById('loadingOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'loadingOverlay';
+        overlay.style.cssText = `
+            position: fixed; top:0; left:0; width:100vw; height:100vh;
+            background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 9999;`;
+        const box = document.createElement('div');
+        box.style.cssText = 'background:white;padding:24px 32px;border-radius:8px;font-size:18px;box-shadow:0 2px 8px #0002;';
+        box.innerText = message;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+    }
+}
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) overlay.remove();
+}
+
+// Основная функция загрузки и отображения финансов
 async function loadFinances() {
+    renderFinancesControls();
+    const startDate = document.getElementById('finances-start-date').value;
+    const endDate = document.getElementById('finances-end-date').value;
     try {
-        const response = await fetch('/api/finances');
-        const finances = await response.json();
-        
+        showLoading('Загрузка финансов...');
+        const response = await fetch(`/api/finances/statistics?start_date=${startDate}&end_date=${endDate}`);
+        if (!response.ok) throw new Error('Ошибка при загрузке статистики');
+        const data = await response.json();
         const financesList = document.querySelector('.finances-list');
-        if (financesList) {
-            financesList.innerHTML = finances.map(transaction => `
-                <div class="finance-item">
-                    <div class="finance-info">
-                        <h3>Транзакция #${transaction.id}</h3>
-                        <p>Сумма: ${transaction.amount} ₽</p>
-                        <p>Тип: ${transaction.type}</p>
-                        <p>Дата: ${formatDate(transaction.created_at)}</p>
-                        <p>Описание: ${transaction.description}</p>
-                    </div>
+        let html = `
+            <div class="finance-summary">
+                <div class="summary-item"><h3>Доходы</h3><p class="amount income">${formatCurrency(data.income)}</p></div>
+                <div class="summary-item"><h3>Расходы</h3><p class="amount expense">${formatCurrency(data.expenses)}</p></div>
+                <div class="summary-item"><h3>Прибыль</h3><p class="amount profit">${formatCurrency(data.profit)}</p></div>
+            </div>
+            <div class="finance-details">
+                <div class="details-section">
+                    <h3>Статистика тренировок</h3>
+                    <ul>
+                        <li>Всего тренировок: ${data.stats.total_sessions}</li>
+                        <li>30-минутных: ${data.stats.sessions_30min}</li>
+                        <li>60-минутных: ${data.stats.sessions_60min}</li>
+                    </ul>
                 </div>
-            `).join('');
+                <div class="details-section">
+                    <h3>Дополнительно</h3>
+                    <ul>
+                        <li>Средняя дневная прибыль: ${formatCurrency(data.stats.avg_daily_profit)}</li>
+                        <li>Лучший день: ${formatDate(data.stats.best_day)}</li>
+                        <li>Прибыль в лучший день: ${formatCurrency(data.stats.best_day_profit)}</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+        // --- Выводим список транзакций ---
+        const txResponse = await fetch(`/api/finances?start_date=${startDate}&end_date=${endDate}`);
+        const txList = await txResponse.json();
+        if (Array.isArray(txList) && txList.length) {
+            html += `
+                <h3 style="margin-top:32px;">Транзакции</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Тип</th><th>Сумма</th><th>Дата</th><th>Описание</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${txList.map(tx => `
+                            <tr>
+                                <td>${tx.id}</td>
+                                <td>${tx.type}</td>
+                                <td>${formatCurrency(tx.amount)}</td>
+                                <td>${formatDate(tx.created_at)}</td>
+                                <td>${tx.description || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } else {
+            html += `<div style="margin-top:32px;color:#888;">Нет транзакций за выбранный период</div>`;
         }
+        if (financesList) financesList.innerHTML = html;
+        hideLoading();
     } catch (error) {
-        console.error('Ошибка при загрузке финансов:', error);
+        hideLoading();
         showError('Не удалось загрузить финансовые данные');
     }
 }
+
+// Слушатели для фильтра и экспорта
+function setupFinancesEvents() {
+    document.addEventListener('click', async (e) => {
+        if (e.target.id === 'finances-apply-btn') {
+            await loadFinances();
+        }
+        if (e.target.id === 'finances-export-full') {
+            await exportFinancesExcel('full');
+        }
+        if (e.target.id === 'finances-export-summary') {
+            await exportFinancesExcel('summary');
+        }
+    });
+}
+
+// Экспорт в Excel
+async function exportFinancesExcel(type) {
+    const startDate = document.getElementById('finances-start-date').value;
+    const endDate = document.getElementById('finances-end-date').value;
+    try {
+        showLoading('Подготовка файла...');
+        const url = new URL('/api/finances/export', window.location.origin);
+        url.searchParams.append('start_date', startDate);
+        url.searchParams.append('end_date', endDate);
+        url.searchParams.append('type', type);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Ошибка при экспорте');
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `finance-report-${startDate}-${endDate}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+        showSuccess('Отчет успешно экспортирован');
+        hideLoading();
+    } catch (error) {
+        hideLoading();
+        showError('Ошибка при экспорте отчета');
+    }
+}
+
+// Форматирование валюты
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    }).format(amount);
+}
+
+// Форматирование даты
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU');
+}
+
+// Переинициализация событий при загрузке страницы
+(function () {
+    setupFinancesEvents();
+})();
 
 // Обработчики форм
 async function handleCreateTraining(event) {

@@ -14,6 +14,7 @@ const pricesRouter = require('./routes/prices');
 const clientsRouter = require('./routes/clients');
 const smsRouter = require('./routes/sms');
 const childrenRouter = require('./routes/children');
+const financesRouter = require('./routes/finances');
 const cron = require('node-cron');
 const fs = require('fs');
 
@@ -49,6 +50,7 @@ app.use('/api/prices', pricesRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/sms', smsRouter);
 app.use('/api/children', childrenRouter);
+app.use('/api/finances', financesRouter);
 
 // API для управления ссылкой оплаты
 app.get('/api/payment-link', (req, res) => {
