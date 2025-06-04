@@ -825,9 +825,53 @@ function hideLoading() {
     if (overlay) overlay.remove();
 }
 
+// --- Форма для редактирования стоимости аренды ---
+function renderRentalCostForm() {
+    let form = document.getElementById('rental-cost-form');
+    if (!form) {
+        form = document.createElement('form');
+        form.id = 'rental-cost-form';
+        form.style = 'margin-bottom:24px;display:flex;gap:16px;align-items:center;';
+        form.innerHTML = `
+            <label>Стоимость аренды 30 мин: <input type="number" id="rental-cost-30" min="0" style="width:90px;"></label>
+            <label>Стоимость аренды 60 мин: <input type="number" id="rental-cost-60" min="0" style="width:90px;"></label>
+            <button type="submit" class="btn-primary">Сохранить</button>
+        `;
+        const controls = document.getElementById('finances-controls');
+        if (controls) controls.parentElement.insertBefore(form, controls.nextSibling);
+    }
+    // Загрузка текущих значений
+    fetch('/api/finances/rental-cost').then(r=>r.json()).then(data=>{
+        document.getElementById('rental-cost-30').value = data.cost_30;
+        document.getElementById('rental-cost-60').value = data.cost_60;
+    });
+    // Обработчик сохранения
+    form.onsubmit = async function(e) {
+        e.preventDefault();
+        const cost_30 = parseInt(document.getElementById('rental-cost-30').value);
+        const cost_60 = parseInt(document.getElementById('rental-cost-60').value);
+        try {
+            showLoading('Сохраняю...');
+            const resp = await fetch('/api/finances/rental-cost', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cost_30, cost_60 })
+            });
+            if (!resp.ok) throw new Error('Ошибка при сохранении');
+            showSuccess('Стоимость аренды сохранена');
+            hideLoading();
+            await loadFinances();
+        } catch (e) {
+            hideLoading();
+            showError('Ошибка при сохранении');
+        }
+    };
+}
+
 // Основная функция загрузки и отображения финансов
 async function loadFinances() {
     renderFinancesControls();
+    renderRentalCostForm();
     const startDate = document.getElementById('finances-start-date').value;
     const endDate = document.getElementById('finances-end-date').value;
     try {
