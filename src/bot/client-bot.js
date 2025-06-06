@@ -2122,6 +2122,29 @@ bot.on('message', async (msg) => {
                         [price, clientInfo.id]
                     );
 
+                    // Получаем ID кошелька
+                    const walletResult = await pool.query(
+                        'SELECT id FROM wallets WHERE client_id = $1',
+                        [state.data.client_id]
+                    );
+
+                    // Форматируем дату и время для description
+                    const transactionDate = new Date(state.data.preferred_date);
+                    const transactionFormattedDate = `${transactionDate.getDate()}.${transactionDate.getMonth() + 1}.${transactionDate.getFullYear()}`;
+                    const [transactionHours, transactionMinutes] = state.data.preferred_time.split(':');
+                    const transactionFormattedTime = `${transactionHours}:${transactionMinutes}`;
+
+                    // Создаем запись о транзакции
+                    await pool.query(
+                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                        [
+                            walletResult.rows[0].id,
+                            state.data.price,
+                            'payment',
+                            `Индивидуальная, ${state.data.is_child ? state.data.child_name : clientInfo.full_name}, Дата: ${transactionFormattedDate}, Время: ${transactionFormattedTime}, Длительность: ${state.data.duration} мин.`
+                        ]
+                    );
+                    
                     // Очищаем состояние
                     userStates.delete(chatId);
 
