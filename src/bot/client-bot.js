@@ -3385,7 +3385,6 @@ bot.on('message', async (msg) => {
 
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
-                    // ... остальной код для клиента ...
 
                     // Форматируем дату для сообщения клиенту
                     const date = new Date(selectedSession.session_date);
@@ -3403,9 +3402,34 @@ bot.on('message', async (msg) => {
                         `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
 
-                    state.step = 'main_menu';
-                    userStates.set(chatId, state);
-
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else if (selectedSession.session_type === 'individual') {
+                    // --- отмена индивидуальной тренировки ---
+                    await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
+                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+                    const clientMessage =
+                        '✅ *Тренировка успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
+                        'Средства возвращены на ваш баланс.';
+                    userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -3417,7 +3441,6 @@ bot.on('message', async (msg) => {
                         }
                     });
                 }
-                // ... остальной код для индивидуальной ...
             } catch (error) {
                 console.error('Ошибка при отмене тренировки:', error);
                 return bot.sendMessage(chatId,
@@ -3430,6 +3453,7 @@ bot.on('message', async (msg) => {
                     }
                 );
             }
+            break;
         }
         case 'add_child_name': {
             if (msg.text === '🔙 Отмена') {
