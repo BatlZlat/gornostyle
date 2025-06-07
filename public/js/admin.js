@@ -223,7 +223,7 @@ function initializeEventListeners() {
                         </div>
                         <div class="modal-actions">
                             <button class="btn-primary" onclick="savePaymentLink()">Сохранить</button>
-                            <button class="btn-secondary" onclick="closeModal(this.parentElement.parentElement.parentElement)">Отмена</button>
+                            <button class="btn-secondary" onclick="closeModal('payment-link-modal')">Отмена</button>
                         </div>
                     </div>
                 `;
