@@ -43,74 +43,114 @@ router.get('/statistics', async (req, res) => {
     try {
         const { start_date, end_date } = req.query;
         const { cost_30, cost_60 } = getRentalCosts();
-        // Доходы (refill)
-        const incomeResult = await pool.query(
-            `SELECT COALESCE(SUM(amount),0) as total FROM transactions WHERE type='refill' AND created_at BETWEEN $1 AND $2`,
+
+        // 1. Поступившие средства на счет (refill)
+        const refillResult = await pool.query(
+            `SELECT COALESCE(SUM(amount),0) as total 
+             FROM transactions 
+             WHERE type='refill' 
+             AND created_at BETWEEN $1 AND $2`,
             [start_date, end_date]
         );
-        const income = parseFloat(incomeResult.rows[0].total);
-        // Прибыль по индивидуальным тренировкам (сумма price)
-        const indProfitRes = await pool.query(`
-            SELECT COALESCE(SUM(price),0) as total
-            FROM individual_training_sessions
-            WHERE preferred_date BETWEEN $1 AND $2
-              AND (
-                preferred_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                OR (
-                  preferred_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                  AND preferred_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
-                )
-              )
-        `, [start_date, end_date]);
-        const indProfit = parseFloat(indProfitRes.rows[0].total);
-        // Расходы (по прошедшим тренировкам)
-        const expensesResult = await pool.query(`
-            WITH completed_sessions AS (
-                SELECT duration FROM training_sessions WHERE session_date BETWEEN $1 AND $2 AND status='completed'
-                UNION ALL
-                SELECT duration FROM individual_training_sessions WHERE preferred_date BETWEEN $1 AND $2
-                  AND (
-                    preferred_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                    OR (
-                      preferred_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                      AND preferred_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
-                    )
-                  )
-            )
-            SELECT 
-                COALESCE(SUM(CASE WHEN duration=60 THEN $3 WHEN duration=30 THEN $4 ELSE 0 END),0) as total_expenses,
-                COUNT(*) as total_sessions,
-                COUNT(CASE WHEN duration=30 THEN 1 END) as sessions_30min,
-                COUNT(CASE WHEN duration=60 THEN 1 END) as sessions_60min
-            FROM completed_sessions
-        `, [start_date, end_date, cost_60, cost_30]);
-        const expenses = parseFloat(expensesResult.rows[0].total_expenses);
-        const stats = {
-            total_sessions: parseInt(expensesResult.rows[0].total_sessions),
-            sessions_30min: parseInt(expensesResult.rows[0].sessions_30min),
-            sessions_60min: parseInt(expensesResult.rows[0].sessions_60min)
-        };
-        // Средняя дневная прибыль и лучший день
-        const dailyProfitResult = await pool.query(`
-            WITH daily_stats AS (
-                SELECT DATE(created_at) as date, SUM(CASE WHEN type='refill' THEN amount ELSE 0 END) as daily_income
-                FROM transactions WHERE created_at BETWEEN $1 AND $2 GROUP BY DATE(created_at)
-            )
-            SELECT COALESCE(AVG(daily_income),0) as avg_daily_profit,
-                (SELECT date FROM daily_stats ORDER BY daily_income DESC LIMIT 1) as best_day,
-                (SELECT daily_income FROM daily_stats ORDER BY daily_income DESC LIMIT 1) as best_day_profit
-            FROM daily_stats
-        `, [start_date, end_date]);
-        stats.avg_daily_profit = parseFloat(dailyProfitResult.rows[0].avg_daily_profit);
-        stats.best_day = dailyProfitResult.rows[0].best_day;
-        stats.best_day_profit = parseFloat(dailyProfitResult.rows[0].best_day_profit);
-        // Итоговая прибыль: сумма price индивидуальных минус расходы
+        const refillIncome = parseFloat(refillResult.rows[0].total);
+
+        // 2. Доход от групповых тренировок
+        const groupIncomeResult = await pool.query(
+            `SELECT COALESCE(SUM(amount),0) as total 
+             FROM transactions 
+             WHERE type='payment' 
+             AND description LIKE '%Группа%'
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const groupIncome = parseFloat(groupIncomeResult.rows[0].total);
+
+        // 3. Доход от индивидуальных тренировок
+        const individualIncomeResult = await pool.query(
+            `SELECT COALESCE(SUM(amount),0) as total 
+             FROM transactions 
+             WHERE type='payment' 
+             AND description LIKE '%Индивидуальная%'
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const individualIncome = parseFloat(individualIncomeResult.rows[0].total);
+
+        // 4. Общий доход от тренировок
+        const totalIncomeResult = await pool.query(
+            `SELECT COALESCE(SUM(amount),0) as total 
+             FROM transactions 
+             WHERE type='payment' 
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const totalIncome = parseFloat(totalIncomeResult.rows[0].total);
+
+        // 5. Расходы с групповых тренировок
+        const groupExpensesResult = await pool.query(
+            `SELECT COUNT(*) as count
+             FROM training_sessions 
+             WHERE session_date BETWEEN $1 AND $2
+             AND (
+                 session_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 OR (
+                     session_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     AND end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
+            [start_date, end_date]
+        );
+        const groupExpenses = groupExpensesResult.rows[0].count * cost_60;
+
+        // 6. Расходы с индивидуальных тренировок
+        const individualExpensesResult = await pool.query(
+            `SELECT 
+                COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
+                COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
+             FROM individual_training_sessions 
+             WHERE preferred_date BETWEEN $1 AND $2
+             AND (
+                 preferred_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 OR (
+                     preferred_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     AND (preferred_time + (duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
+            [start_date, end_date]
+        );
+        const individualExpenses = 
+            (individualExpensesResult.rows[0].count_30 * cost_30) + 
+            (individualExpensesResult.rows[0].count_60 * cost_60);
+
+        // 7. Общие расходы
+        const totalExpenses = groupExpenses + individualExpenses;
+
+        // 8. Прибыль с групповых тренировок
+        const groupProfit = groupIncome - groupExpenses;
+
+        // 9. Прибыль с индивидуальных тренировок
+        const individualProfit = individualIncome - individualExpenses;
+
+        // 10. Общая прибыль
+        const totalProfit = groupProfit + individualProfit;
+
+        // Формируем итоговый ответ
         res.json({
-            income,
-            expenses,
-            profit: indProfit - expenses,
-            stats,
-            rental_cost: { cost_30, cost_60 }
+            refill_income: refillIncome,
+            group_income: groupIncome,
+            individual_income: individualIncome,
+            total_income: totalIncome,
+            group_expenses: groupExpenses,
+            individual_expenses: individualExpenses,
+            total_expenses: totalExpenses,
+            group_profit: groupProfit,
+            individual_profit: individualProfit,
+            total_profit: totalProfit,
+            stats: {
+                group_sessions: parseInt(groupExpensesResult.rows[0].count),
+                individual_sessions_30: parseInt(individualExpensesResult.rows[0].count_30),
+                individual_sessions_60: parseInt(individualExpensesResult.rows[0].count_60)
+            }
         });
     } catch (e) {
         console.error(e);

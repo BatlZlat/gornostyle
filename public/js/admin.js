@@ -882,29 +882,71 @@ async function loadFinances() {
         const financesList = document.querySelector('.finances-list');
         let html = `
             <div class="finance-summary">
-                <div class="summary-item"><h3>Доходы</h3><p class="amount income">${formatCurrency(data.income)}</p></div>
-                <div class="summary-item"><h3>Расходы</h3><p class="amount expense">${formatCurrency(data.expenses)}</p></div>
-                <div class="summary-item"><h3>Прибыль</h3><p class="amount profit">${formatCurrency(data.profit)}</p></div>
+                <div class="summary-section">
+                    <h3>Доходы</h3>
+                    <div class="summary-item">
+                        <span>Поступившие средства:</span>
+                        <span class="amount income">${formatCurrency(data.refill_income)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>От групповых тренировок:</span>
+                        <span class="amount income">${formatCurrency(data.group_income)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>От индивидуальных тренировок:</span>
+                        <span class="amount income">${formatCurrency(data.individual_income)}</span>
+                    </div>
+                    <div class="summary-item total">
+                        <span>Общий доход:</span>
+                        <span class="amount income">${formatCurrency(data.total_income)}</span>
+                    </div>
+                </div>
+
+                <div class="summary-section">
+                    <h3>Расходы</h3>
+                    <div class="summary-item">
+                        <span>Групповые тренировки:</span>
+                        <span class="amount expense">${formatCurrency(data.group_expenses)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Индивидуальные тренировки:</span>
+                        <span class="amount expense">${formatCurrency(data.individual_expenses)}</span>
+                    </div>
+                    <div class="summary-item total">
+                        <span>Общие расходы:</span>
+                        <span class="amount expense">${formatCurrency(data.total_expenses)}</span>
+                    </div>
+                </div>
+
+                <div class="summary-section">
+                    <h3>Прибыль</h3>
+                    <div class="summary-item">
+                        <span>С групповых тренировок:</span>
+                        <span class="amount ${data.group_profit >= 0 ? 'profit' : 'loss'}">${formatCurrency(data.group_profit)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>С индивидуальных тренировок:</span>
+                        <span class="amount ${data.individual_profit >= 0 ? 'profit' : 'loss'}">${formatCurrency(data.individual_profit)}</span>
+                    </div>
+                    <div class="summary-item total">
+                        <span>Общая прибыль:</span>
+                        <span class="amount ${data.total_profit >= 0 ? 'profit' : 'loss'}">${formatCurrency(data.total_profit)}</span>
+                    </div>
+                </div>
             </div>
+
             <div class="finance-details">
                 <div class="details-section">
                     <h3>Статистика тренировок</h3>
                     <ul>
-                        <li>Всего тренировок: ${data.stats.total_sessions}</li>
-                        <li>30-минутных: ${data.stats.sessions_30min}</li>
-                        <li>60-минутных: ${data.stats.sessions_60min}</li>
-                    </ul>
-                </div>
-                <div class="details-section">
-                    <h3>Дополнительно</h3>
-                    <ul>
-                        <li>Средняя дневная прибыль: ${formatCurrency(data.stats.avg_daily_profit)}</li>
-                        <li>Лучший день: ${formatDate(data.stats.best_day)}</li>
-                        <li>Прибыль в лучший день: ${formatCurrency(data.stats.best_day_profit)}</li>
+                        <li>Групповых тренировок: ${data.stats.group_sessions}</li>
+                        <li>Индивидуальных 30-минутных: ${data.stats.individual_sessions_30}</li>
+                        <li>Индивидуальных 60-минутных: ${data.stats.individual_sessions_60}</li>
                     </ul>
                 </div>
             </div>
         `;
+
         // --- Выводим список транзакций ---
         const txResponse = await fetch(`/api/finances?start_date=${startDate}&end_date=${endDate}`);
         const txList = await txResponse.json();
@@ -914,7 +956,11 @@ async function loadFinances() {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Тип</th><th>Сумма</th><th>Дата</th><th>Описание</th>
+                            <th>ID</th>
+                            <th>Тип</th>
+                            <th>Сумма</th>
+                            <th>Дата</th>
+                            <th>Описание</th>
                         </tr>
                     </thead>
                     <tbody>
