@@ -131,17 +131,21 @@ router.get('/statistics', async (req, res) => {
         // 4. Общий доход от тренировок (без возвратов)
         const totalIncome = groupIncome + individualIncome;
 
-        // 5. Расходы с групповых тренировок
+        // 5. Расходы с групповых тренировок (только если есть участники)
         const groupExpensesResult = await pool.query(
             `SELECT COUNT(*) as count
-             FROM training_sessions 
-             WHERE session_date BETWEEN $1 AND $2
+             FROM training_sessions ts
+             WHERE ts.session_date BETWEEN $1 AND $2
              AND (
-                 session_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 ts.session_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
                  OR (
-                     session_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                     AND end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                     ts.session_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     AND ts.end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
+             )
+             AND ts.training_type = TRUE
+             AND EXISTS (
+                 SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
              )`,
             [start_date, end_date]
         );
