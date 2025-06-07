@@ -25,6 +25,12 @@ function setRentalCosts(cost_30, cost_60) {
     process.env.RENTAL_COST_60 = cost_60;
 }
 
+function padDate(dateStr) {
+    // Преобразует 7.6.2025 → 07.06.2025
+    const [d, m, y] = dateStr.split('.');
+    return `${d.padStart(2, '0')}.${m.padStart(2, '0')}.${y}`;
+}
+
 // API: получить стоимость аренды
 router.get('/rental-cost', (req, res) => {
     res.json(getRentalCosts());
@@ -54,37 +60,76 @@ router.get('/statistics', async (req, res) => {
         );
         const refillIncome = parseFloat(refillResult.rows[0].total);
 
-        // 2. Доход от групповых тренировок
-        const groupIncomeResult = await pool.query(
-            `SELECT COALESCE(SUM(amount),0) as total 
-             FROM transactions 
-             WHERE type='payment' 
+        // 2. Доход от групповых тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
+        const groupPayments = await pool.query(
+            `SELECT id, amount, description, created_at FROM transactions
+             WHERE type='payment'
              AND description LIKE '%Группа%'
              AND created_at BETWEEN $1 AND $2`,
             [start_date, end_date]
         );
-        const groupIncome = parseFloat(groupIncomeResult.rows[0].total);
+        let groupIncome = 0;
+        for (const payment of groupPayments.rows) {
+            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
+            if (!match) continue;
+            const dateStr = match[1];
+            const timeStr = match[2];
+            const paddedDate = padDate(dateStr);
+            const refund = await pool.query(
+                `SELECT 1 FROM transactions
+                 WHERE type='amount'
+                 AND (
+                     description LIKE $1 OR description LIKE $2
+                 )
+                 AND created_at BETWEEN $3 AND $4
+                 LIMIT 1`,
+                [
+                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    start_date, end_date
+                ]
+            );
+            if (refund.rows.length === 0) {
+                groupIncome += parseFloat(payment.amount);
+            }
+        }
 
-        // 3. Доход от индивидуальных тренировок
-        const individualIncomeResult = await pool.query(
-            `SELECT COALESCE(SUM(amount),0) as total 
-             FROM transactions 
-             WHERE type='payment' 
+        // 3. Доход от индивидуальных тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
+        const individualPayments = await pool.query(
+            `SELECT id, amount, description, created_at FROM transactions
+             WHERE type='payment'
              AND description LIKE '%Индивидуальная%'
              AND created_at BETWEEN $1 AND $2`,
             [start_date, end_date]
         );
-        const individualIncome = parseFloat(individualIncomeResult.rows[0].total);
+        let individualIncome = 0;
+        for (const payment of individualPayments.rows) {
+            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
+            if (!match) continue;
+            const dateStr = match[1];
+            const timeStr = match[2];
+            const paddedDate = padDate(dateStr);
+            const refund = await pool.query(
+                `SELECT 1 FROM transactions
+                 WHERE type='amount'
+                 AND (
+                     description LIKE $1 OR description LIKE $2
+                 )
+                 AND created_at BETWEEN $3 AND $4
+                 LIMIT 1`,
+                [
+                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    start_date, end_date
+                ]
+            );
+            if (refund.rows.length === 0) {
+                individualIncome += parseFloat(payment.amount);
+            }
+        }
 
-        // 4. Общий доход от тренировок
-        const totalIncomeResult = await pool.query(
-            `SELECT COALESCE(SUM(amount),0) as total 
-             FROM transactions 
-             WHERE type='payment' 
-             AND created_at BETWEEN $1 AND $2`,
-            [start_date, end_date]
-        );
-        const totalIncome = parseFloat(totalIncomeResult.rows[0].total);
+        // 4. Общий доход от тренировок (без возвратов)
+        const totalIncome = groupIncome + individualIncome;
 
         // 5. Расходы с групповых тренировок
         const groupExpensesResult = await pool.query(

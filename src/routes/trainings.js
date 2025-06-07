@@ -536,7 +536,7 @@ router.delete('/:id', async (req, res) => {
             // Записать транзакцию
             await client.query(
                 'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                [wallet.id, price, 'refund', `Возврат за отмену тренировки #${id}`]
+                [wallet.id, price, 'amount', `Возврат за отмену тренировки #${id}`]
             );
             refunds.push({
                 full_name: participant.full_name,

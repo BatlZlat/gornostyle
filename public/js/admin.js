@@ -967,7 +967,7 @@ async function loadFinances() {
                         ${txList.map(tx => `
                             <tr>
                                 <td>${tx.id}</td>
-                                <td>${tx.type}</td>
+                                <td>${getTransactionTypeRu(tx.type)}</td>
                                 <td>${formatCurrency(tx.amount)}</td>
                                 <td>${formatDate(tx.created_at)}</td>
                                 <td>${tx.description || '-'}</td>
@@ -1914,5 +1914,14 @@ window.editChild = async function(childId) {
         });
     } catch (err) {
         showError('Не удалось загрузить данные ребенка');
+    }
+} 
+
+function getTransactionTypeRu(type) {
+    switch (type) {
+        case 'payment': return 'Оплата';
+        case 'refill': return 'Пополнение';
+        case 'amount': return 'Возврат';
+        default: return type;
     }
 } 
