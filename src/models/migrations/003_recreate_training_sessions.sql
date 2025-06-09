@@ -1,12 +1,10 @@
--- Удаляем существующую таблицу
+-- Миграция 003: пересоздание таблицы training_sessions (DROP и CREATE) с добавлением колонки training_type (FALSE = individual, TRUE = group)
 DROP TABLE IF EXISTS training_sessions CASCADE;
-
--- Создаем таблицу заново с каскадным удалением
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
-    simulator_id INTEGER REFERENCES simulators(id) ON DELETE CASCADE,
-    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
-    group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+    simulator_id INTEGER REFERENCES simulators(id),
+    trainer_id INTEGER REFERENCES trainers(id),
+    group_id INTEGER REFERENCES groups(id),
     session_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -17,18 +15,7 @@ CREATE TABLE training_sessions (
     price DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
+    with_trainer BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Создаем индексы
-CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
-CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
-CREATE INDEX idx_training_sessions_simulator ON training_sessions(simulator_id);
-CREATE INDEX idx_training_sessions_group ON training_sessions(group_id);
-
--- Создаем триггер для обновления updated_at
-CREATE TRIGGER update_training_sessions_updated_at
-    BEFORE UPDATE ON training_sessions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column(); 
+); 

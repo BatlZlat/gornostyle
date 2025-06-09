@@ -179,7 +179,7 @@ router.get('/statistics', async (req, res) => {
                  ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
                      ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
-                     AND ts.end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                     AND (ts.start_time + (ts.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )
              AND ts.training_type = TRUE
@@ -407,7 +407,7 @@ router.get('/export', async (req, res) => {
                  ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
                      ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
-                     AND ts.end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                     AND (ts.start_time + (ts.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )
              AND ts.training_type = TRUE

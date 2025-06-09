@@ -1982,34 +1982,7 @@ bot.on('message', async (msg) => {
                         );
                     }
 
-                    // Создаем запись в базе данных
-                    const result = await pool.query(
-                        `INSERT INTO individual_training_sessions (
-                            client_id,
-                            child_id,
-                            equipment_type,
-                            with_trainer,
-                            duration,
-                            preferred_date,
-                            preferred_time,
-                            simulator_id,
-                            price
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                        RETURNING id`,
-                        [
-                            clientInfo.id,
-                            state.data.is_child ? state.data.child_id : null,
-                            state.data.equipment_type,
-                            state.data.with_trainer,
-                            state.data.duration,
-                            state.data.preferred_date,
-                            state.data.preferred_time,
-                            state.data.simulator_id,
-                            state.data.price
-                        ]
-                    );
-
-                    // Бронируем слоты в расписании
+                    // Получаем время и длительность
                     const startTime = state.data.preferred_time;
                     const duration = state.data.duration;
                     const slotsNeeded = Math.ceil(duration / 30); // Количество необходимых 30-минутных слотов
@@ -2067,13 +2040,26 @@ bot.on('message', async (msg) => {
                         );
                     }
 
-                    // Бронируем каждый слот
-                    for (const slot of slotsToBook.rows) {
-                        await pool.query(
-                            'UPDATE schedule SET is_booked = true WHERE id = $1',
-                            [slot.id]
-                        );
-                    }
+                    // Создаем запись об индивидуальной тренировке
+                    // Триггер автоматически забронирует слоты
+                    const result = await pool.query(
+                        `INSERT INTO individual_training_sessions (
+                            client_id, child_id, equipment_type, with_trainer,
+                            duration, preferred_date, preferred_time, simulator_id, price
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        RETURNING id`,
+                        [
+                            state.data.client_id,
+                            state.data.is_child ? state.data.child_id : null,
+                            state.data.equipment_type,
+                            state.data.with_trainer,
+                            state.data.duration,
+                            state.data.preferred_date,
+                            startTime,
+                            state.data.simulator_id,
+                            state.data.price
+                        ]
+                    );
 
                     // Отправляем уведомление администратору
                     const { notifyNewIndividualTraining } = require('./admin-bot');
@@ -3348,6 +3334,44 @@ bot.on('message', async (msg) => {
                     // Удаляем запись
                     await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
 
+                    // Проверяем, остались ли еще участники в группе
+                    const remainingParticipants = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
+                        [selectedSession.session_id]
+                    );
+
+                    // Если участников не осталось, удаляем тренировку и освобождаем слоты
+                    if (remainingParticipants.rows[0].count === '0') {
+                        // Получаем информацию о тренировке перед удалением
+                        const trainingInfo = await pool.query(
+                            'SELECT * FROM training_sessions WHERE id = $1',
+                            [selectedSession.session_id]
+                        );
+
+                        if (trainingInfo.rows.length > 0) {
+                            const training = trainingInfo.rows[0];
+                            
+                            // Освобождаем слоты в расписании
+                            await pool.query(
+                                `UPDATE schedule 
+                                 SET is_booked = false 
+                                 WHERE simulator_id = $1 
+                                 AND date = $2 
+                                 AND start_time >= $3 
+                                 AND start_time < $4`,
+                                [
+                                    training.simulator_id,
+                                    training.session_date,
+                                    training.start_time,
+                                    training.end_time
+                                ]
+                            );
+
+                            // Удаляем тренировку
+                            await pool.query('DELETE FROM training_sessions WHERE id = $1', [selectedSession.session_id]);
+                        }
+                    }
+
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
 
@@ -3417,6 +3441,23 @@ bot.on('message', async (msg) => {
                     );
                     const client = clientRes.rows[0];
 
+                    // Освобождаем слоты в расписании
+                    await pool.query(
+                        `UPDATE schedule 
+                         SET is_booked = false 
+                         WHERE simulator_id = $1 
+                         AND date = $2 
+                         AND start_time >= $3 
+                         AND start_time < $4`,
+                        [
+                            selectedSession.simulator_id,
+                            selectedSession.session_date,
+                            selectedSession.start_time,
+                            selectedSession.end_time
+                        ]
+                    );
+
+                    // Удаляем тренировку и возвращаем средства
                     await pool.query('DELETE FROM individual_training_sessions WHERE id = $1', [selectedSession.id]);
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
                     // Получаем id кошелька
@@ -4127,3 +4168,76 @@ bot.onText(/\/help/, async (msg) => {
         { parse_mode: 'Markdown' }
     );
 });
+
+async function cancelIndividualTraining(sessionId, userId) {
+    try {
+        console.log(`[cancelIndividualTraining] Начало отмены индивидуальной тренировки ${sessionId} для пользователя ${userId}`);
+        
+        // Получаем информацию о тренировке
+        const session = await IndividualTraining.getById(sessionId);
+        if (!session) {
+            console.log(`[cancelIndividualTraining] Тренировка ${sessionId} не найдена`);
+            throw new Error('Тренировка не найдена');
+        }
+
+        console.log(`[cancelIndividualTraining] Информация о тренировке:`, {
+            simulator_id: session.simulator_id,
+            preferred_date: session.preferred_date,
+            preferred_time: session.preferred_time,
+            duration: session.duration
+        });
+
+        // Проверяем текущий статус слотов
+        const slotsBefore = await pool.query(
+            `SELECT id, is_booked FROM schedule 
+             WHERE simulator_id = $1 
+             AND date = $2 
+             AND start_time >= $3 
+             AND start_time < ($3 + ($4 || ' minutes')::interval)`,
+            [session.simulator_id, session.preferred_date, session.preferred_time, session.duration]
+        );
+        console.log(`[cancelIndividualTraining] Статус слотов до отмены:`, slotsBefore.rows);
+
+        // Удаляем тренировку (это должно вызвать триггер)
+        await IndividualTraining.delete(sessionId);
+        console.log(`[cancelIndividualTraining] Тренировка ${sessionId} удалена из базы данных`);
+
+        // Проверяем статус слотов после удаления
+        const slotsAfter = await pool.query(
+            `SELECT id, is_booked FROM schedule 
+             WHERE simulator_id = $1 
+             AND date = $2 
+             AND start_time >= $3 
+             AND start_time < ($3 + ($4 || ' minutes')::interval)`,
+            [session.simulator_id, session.preferred_date, session.preferred_time, session.duration]
+        );
+        console.log(`[cancelIndividualTraining] Статус слотов после отмены:`, slotsAfter.rows);
+
+        // Если триггер не сработал, освобождаем слоты вручную
+        if (slotsAfter.rows.some(slot => slot.is_booked)) {
+            console.log(`[cancelIndividualTraining] Триггер не освободил все слоты, освобождаем вручную`);
+            const result = await pool.query(
+                `UPDATE schedule 
+                 SET is_booked = false 
+                 WHERE simulator_id = $1 
+                 AND date = $2 
+                 AND start_time >= $3 
+                 AND start_time < ($3 + ($4 || ' minutes')::interval)
+                 RETURNING id`,
+                [session.simulator_id, session.preferred_date, session.preferred_time, session.duration]
+            );
+            console.log(`[cancelIndividualTraining] Освобождено слотов вручную: ${result.rows.length}`);
+        }
+
+        // Отправляем уведомление пользователю
+        await bot.telegram.sendMessage(
+            userId,
+            `Ваша индивидуальная тренировка отменена.\nДата: ${formatDate(session.preferred_date)}\nВремя: ${formatTime(session.preferred_time)}\nДлительность: ${session.duration} минут`
+        );
+        console.log(`[cancelIndividualTraining] Уведомление об отмене отправлено пользователю ${userId}`);
+
+    } catch (error) {
+        console.error(`[cancelIndividualTraining] Ошибка при отмене тренировки ${sessionId}:`, error);
+        throw error;
+    }
+}
