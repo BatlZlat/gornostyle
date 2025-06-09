@@ -603,7 +603,11 @@ async function loadTrainers() {
             dismissedButton.className = 'btn-secondary';
             dismissedButton.style.marginBottom = '20px';
             dismissedButton.innerHTML = `Уволенные тренеры (${dismissedTrainers.length})`;
-            dismissedButton.onclick = () => showDismissedTrainersModal(dismissedTrainers);
+            console.log('[loadTrainers] Кнопка "Уволенные тренеры" создана, dismissedTrainers:', dismissedTrainers);
+            dismissedButton.onclick = () => {
+                console.log('[loadTrainers] Кнопка "Уволенные тренеры" нажата');
+                showDismissedTrainersModal(dismissedTrainers);
+            };
             
             // Очищаем список и добавляем кнопку
             trainersList.innerHTML = '';
@@ -634,53 +638,59 @@ async function loadTrainers() {
         console.error('Ошибка при загрузке тренеров:', error);
         showError('Не удалось загрузить тренеров');
     }
+
+    // В loadTrainers сохраняем dismissedTrainers глобально для диагностики
+    window.lastDismissedTrainers = dismissedTrainers;
 }
 
 // Функция для отображения модального окна с уволенными тренерами
 function showDismissedTrainersModal(dismissedTrainers) {
+    console.log('[showDismissedTrainersModal] вызвана, dismissedTrainers:', dismissedTrainers);
     // Маппинг значений для вида спорта
     const sportTypeMapping = {
         'ski': 'Горные лыжи',
         'snowboard': 'Сноуборд'
     };
-    
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 800px;">
-            <h3>Уволенные тренеры</h3>
-            <div class="dismissed-trainers-list">
-                ${dismissedTrainers.length === 0 ? 
-                    '<div class="alert alert-info">Нет уволенных тренеров</div>' :
-                    dismissedTrainers.map(trainer => `
-                        <div class="trainer-item">
-                            <div class="trainer-info">
-                                <h3>${trainer.full_name}</h3>
-                                <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
-                                <p>Телефон: ${trainer.phone}</p>
-                                <p>Дата увольнения: ${formatDate(trainer.dismissed_at)}</p>
+    try {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px;">
+                <h3>Уволенные тренеры</h3>
+                <div class="dismissed-trainers-list">
+                    ${dismissedTrainers.length === 0 ? 
+                        '<div class="alert alert-info">Нет уволенных тренеров</div>' :
+                        dismissedTrainers.map(trainer => `
+                            <div class="trainer-item">
+                                <div class="trainer-info">
+                                    <h3>${trainer.full_name}</h3>
+                                    <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                                    <p>Телефон: ${trainer.phone}</p>
+                                    <p>Дата увольнения: ${formatDate(trainer.dismissed_at)}</p>
+                                </div>
+                                <div class="trainer-actions">
+                                    <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                                    <button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>
+                                </div>
                             </div>
-                            <div class="trainer-actions">
-                                <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
-                                <button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>
-                            </div>
-                        </div>
-                    `).join('')
-                }
+                        `).join('')
+                    }
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
             </div>
-            <div class="modal-actions">
-                <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    // Закрытие по клику вне окна
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.remove();
-    };
+        `;
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+        console.log('[showDismissedTrainersModal] Модальное окно создано и показано');
+    } catch (err) {
+        console.error('[showDismissedTrainersModal] Ошибка:', err);
+    }
 }
 
 // Функция для редактирования тренера
@@ -2232,3 +2242,44 @@ async function viewTrainer(trainerId) {
         showError('Не удалось загрузить данные тренера');
     }
 }
+
+// Диагностика наличия контейнера и кнопки
+setTimeout(() => {
+    const trainersList = document.querySelector('.trainers-list');
+    console.log('[diagnostic] .trainers-list найден:', !!trainersList, trainersList);
+    const dismissedBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Уволенные тренеры'));
+    console.log('[diagnostic] Кнопка "Уволенные тренеры" найдена:', !!dismissedBtn, dismissedBtn);
+}, 1000);
+
+// Глобальный обработчик для всех кнопок "Уволенные тренеры"
+document.addEventListener('click', function(e) {
+    if (e.target.tagName === 'BUTTON' && e.target.textContent.includes('Уволенные тренеры')) {
+        console.log('[global handler] Кнопка "Уволенные тренеры" нажата через глобальный обработчик');
+        // Попробуем найти dismissedTrainers в глобальной области (или пересобрать)
+        if (window.lastDismissedTrainers) {
+            showDismissedTrainersModal(window.lastDismissedTrainers);
+        } else {
+            // Попробуем получить через API
+            fetch('/api/trainers').then(r => r.json()).then(trainers => {
+                const dismissed = trainers.filter(tr => !tr.is_active);
+                window.lastDismissedTrainers = dismissed;
+                showDismissedTrainersModal(dismissed);
+            });
+        }
+    }
+});
+
+// Обработчик для верхней кнопки "Уволенные тренеры"
+document.addEventListener('DOMContentLoaded', function() {
+    const topDismissedBtn = document.getElementById('view-dismissed');
+    if (topDismissedBtn) {
+        topDismissedBtn.addEventListener('click', function() {
+            console.log('[top button] Кнопка "Уволенные тренеры" (верхняя) нажата');
+            // Получаем актуальный список уволенных тренеров
+            fetch('/api/trainers').then(r => r.json()).then(trainers => {
+                const dismissed = trainers.filter(tr => !tr.is_active);
+                showDismissedTrainersModal(dismissed);
+            });
+        });
+    }
+});
