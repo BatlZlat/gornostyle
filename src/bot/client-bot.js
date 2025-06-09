@@ -2971,16 +2971,19 @@ bot.on('message', async (msg) => {
                         const transactionFormattedDate = `${transactionDate.getDate()}.${transactionDate.getMonth() + 1}.${transactionDate.getFullYear()}`;
                         const [transactionHours, transactionMinutes] = selectedSession.start_time.split(':');
                         const transactionFormattedTime = `${transactionHours}:${transactionMinutes}`;
+                        
+                        // Получаем имя участника
+                        const participantName = state.data.selected_child ? state.data.selected_child.full_name : clientData.full_name;
+                        
                         await client.query(
                             'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
                             [
                                 walletResult.rows[0].id,
                                 price,
                                 'payment',
-                                `Группа: ${selectedSession.group_name}, Дата: ${transactionFormattedDate}, Время: ${transactionFormattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                `Группа: ${selectedSession.group_name}, ${participantName}, Дата: ${transactionFormattedDate}, Время: ${transactionFormattedTime}, Длительность: ${selectedSession.duration} мин.`
                             ]
                         );
-
                         // ... остальной код ...
                         console.log('[DEBUG] Перед COMMIT');
                         await client.query('COMMIT');
@@ -3357,13 +3360,15 @@ bot.on('message', async (msg) => {
                         const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                         const [hours, minutes] = selectedSession.start_time.split(':');
                         const formattedTime = `${hours}:${minutes}`;
+                        
+                        // Создаем запись о возврате с тем же форматом, что и оплата
                         await pool.query(
                             'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
                             [
                                 walletId,
                                 selectedSession.price,
                                 'amount',
-                                `Возврат: Группа, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                `Группа: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
                             ]
                         );
                     }

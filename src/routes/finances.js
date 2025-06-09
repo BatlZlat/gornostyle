@@ -62,10 +62,21 @@ router.get('/statistics', async (req, res) => {
 
         // 2. Доход от групповых тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
         const groupPayments = await pool.query(
-            `SELECT id, amount, description, created_at FROM transactions
-             WHERE type='payment'
-             AND description LIKE '%Группа%'
-             AND created_at BETWEEN $1 AND $2`,
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
+             FROM transactions t
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             WHERE t.type='payment'
+             AND t.description LIKE '%Группа%'
+             AND t.created_at BETWEEN $1 AND $2
+             AND (
+                 ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                 OR (
+                     ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                     AND (ts.start_time + (ts.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -83,7 +94,7 @@ router.get('/statistics', async (req, res) => {
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
-            // Ищем возврат по ФИО, дате и времени (оба формата даты)
+            // Ищем возврат по ФИО, дате и времени (оба формата даты), допускаем любые символы перед ФИО
             const refundResult = await pool.query(
                 `SELECT id, description FROM transactions
                  WHERE type='amount'
@@ -92,8 +103,8 @@ router.get('/statistics', async (req, res) => {
                  )
                  AND created_at BETWEEN $3 AND $4`,
                 [
-                    `%Группа, ${fio}, Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Группа, ${fio}, Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
@@ -111,12 +122,23 @@ router.get('/statistics', async (req, res) => {
         // Для отладки: можно вернуть debugGroupIncome в ответе API или залогировать
         // console.log('DEBUG groupIncome:', debugGroupIncome);
 
-        // 3. Доход от индивидуальных тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
+        // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT id, amount, description, created_at FROM transactions
-             WHERE type='payment'
-             AND description LIKE '%Индивидуальная%'
-             AND created_at BETWEEN $1 AND $2`,
+            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+             FROM transactions t
+             JOIN individual_training_sessions its ON 
+                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             WHERE t.type='payment'
+             AND t.description LIKE '%Индивидуальная%'
+             AND t.created_at BETWEEN $1 AND $2
+             AND (
+                 its.preferred_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                 OR (
+                     its.preferred_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                     AND (its.preferred_time + (its.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -154,9 +176,9 @@ router.get('/statistics', async (req, res) => {
              FROM training_sessions ts
              WHERE ts.session_date BETWEEN $1 AND $2
              AND (
-                 ts.session_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
-                     ts.session_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                      AND ts.end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )
@@ -176,9 +198,9 @@ router.get('/statistics', async (req, res) => {
              FROM individual_training_sessions 
              WHERE preferred_date BETWEEN $1 AND $2
              AND (
-                 preferred_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 preferred_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
-                     preferred_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     preferred_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                      AND (preferred_time + (duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )`,
@@ -221,7 +243,8 @@ router.get('/statistics', async (req, res) => {
                 group_sessions: groupSessions,
                 individual_sessions_30: individualSessions30,
                 individual_sessions_60: individualSessions60
-            }
+            },
+            debugGroupIncome
         });
     } catch (e) {
         console.error(e);
@@ -267,10 +290,21 @@ router.get('/export', async (req, res) => {
 
         // 2. Доход от групповых тренировок (без возвратов)
         const groupPayments = await pool.query(
-            `SELECT id, amount, description, created_at FROM transactions
-             WHERE type='payment'
-             AND description LIKE '%Группа%'
-             AND created_at BETWEEN $1 AND $2`,
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
+             FROM transactions t
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             WHERE t.type='payment'
+             AND t.description LIKE '%Группа%'
+             AND t.created_at BETWEEN $1 AND $2
+             AND (
+                 ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                 OR (
+                     ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                     AND (ts.start_time + (ts.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -288,7 +322,7 @@ router.get('/export', async (req, res) => {
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
-            // Ищем возврат по ФИО, дате и времени (оба формата даты)
+            // Ищем возврат по ФИО, дате и времени (оба формата даты), допускаем любые символы перед ФИО
             const refundResult = await pool.query(
                 `SELECT id, description FROM transactions
                  WHERE type='amount'
@@ -297,8 +331,8 @@ router.get('/export', async (req, res) => {
                  )
                  AND created_at BETWEEN $3 AND $4`,
                 [
-                    `%Группа, ${fio}, Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Группа, ${fio}, Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
@@ -318,10 +352,21 @@ router.get('/export', async (req, res) => {
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT id, amount, description, created_at FROM transactions
-             WHERE type='payment'
-             AND description LIKE '%Индивидуальная%'
-             AND created_at BETWEEN $1 AND $2`,
+            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+             FROM transactions t
+             JOIN individual_training_sessions its ON 
+                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             WHERE t.type='payment'
+             AND t.description LIKE '%Индивидуальная%'
+             AND t.created_at BETWEEN $1 AND $2
+             AND (
+                 its.preferred_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                 OR (
+                     its.preferred_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
+                     AND (its.preferred_time + (its.duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
+                 )
+             )`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -359,9 +404,9 @@ router.get('/export', async (req, res) => {
              FROM training_sessions ts
              WHERE ts.session_date BETWEEN $1 AND $2
              AND (
-                 ts.session_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 ts.session_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
-                     ts.session_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     ts.session_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                      AND ts.end_time <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )
@@ -381,9 +426,9 @@ router.get('/export', async (req, res) => {
              FROM individual_training_sessions 
              WHERE preferred_date BETWEEN $1 AND $2
              AND (
-                 preferred_date < (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                 preferred_date < ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                  OR (
-                     preferred_date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                     preferred_date = ((CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')::date)
                      AND (preferred_time + (duration || ' minutes')::interval) <= (CURRENT_TIME AT TIME ZONE 'Asia/Yekaterinburg')
                  )
              )`,
