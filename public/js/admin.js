@@ -505,12 +505,32 @@ async function loadSchedule() {
 
 // Загрузка тренажеров
 async function loadSimulators() {
+    console.log('Начало загрузки тренажеров');
     try {
+        console.log('Отправка запроса к /api/simulators');
         const response = await fetch('/api/simulators');
+        console.log('Получен ответ от сервера:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const simulators = await response.json();
+        console.log('Получены данные тренажеров:', simulators);
         
         const simulatorsList = document.querySelector('.simulators-list');
+        console.log('Найден элемент .simulators-list:', !!simulatorsList);
+        
         if (simulatorsList) {
+            if (!Array.isArray(simulators)) {
+                throw new Error('Получены некорректные данные от сервера: ожидался массив');
+            }
+            
+            if (simulators.length === 0) {
+                simulatorsList.innerHTML = '<div class="alert alert-info">Нет доступных тренажеров</div>';
+                return;
+            }
+            
             simulatorsList.innerHTML = simulators.map(simulator => `
                 <div class="simulator-item">
                     <h3>${simulator.name}</h3>
@@ -528,23 +548,34 @@ async function loadSimulators() {
                                 <label>Начало работы:</label>
                                 <input type="time" 
                                        id="simulator${simulator.id}-start" 
-                                       value="${simulator.working_hours_start}"
+                                       value="${simulator.working_hours_start || '09:00'}"
                                        onchange="updateSimulatorHours(${simulator.id})">
                             </div>
                             <div class="hours-group">
                                 <label>Окончание работы:</label>
                                 <input type="time" 
                                        id="simulator${simulator.id}-end" 
-                                       value="${simulator.working_hours_end}"
+                                       value="${simulator.working_hours_end || '21:00'}"
                                        onchange="updateSimulatorHours(${simulator.id})">
                             </div>
                         </div>
                     </div>
                 </div>
             `).join('');
+            console.log('HTML тренажеров успешно сформирован и вставлен');
+        } else {
+            console.error('Элемент .simulators-list не найден на странице');
         }
     } catch (error) {
         console.error('Ошибка при загрузке тренажеров:', error);
+        const simulatorsList = document.querySelector('.simulators-list');
+        if (simulatorsList) {
+            simulatorsList.innerHTML = `
+                <div class="alert alert-danger">
+                    Ошибка при загрузке тренажеров: ${error.message}
+                </div>
+            `;
+        }
         showError('Не удалось загрузить тренажеры');
     }
 }
@@ -555,30 +586,212 @@ async function loadTrainers() {
         const response = await fetch('/api/trainers');
         const trainers = await response.json();
         
+        // Маппинг значений для вида спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд'
+        };
+        
+        // Разделяем тренеров на активных и уволенных
+        const activeTrainers = trainers.filter(trainer => trainer.is_active);
+        const dismissedTrainers = trainers.filter(trainer => !trainer.is_active);
+        
         const trainersList = document.querySelector('.trainers-list');
         if (trainersList) {
-            trainersList.innerHTML = trainers.map(trainer => `
-                <div class="trainer-item">
-                    <div class="trainer-info">
-                        <h3>${trainer.full_name}</h3>
-                        <p>Вид спорта: ${trainer.sport_type}</p>
-                        <p>Телефон: ${trainer.phone}</p>
-                        <p>Статус: ${trainer.is_active ? 'Работает' : 'Уволен'}</p>
+            // Добавляем кнопку для просмотра уволенных тренеров
+            const dismissedButton = document.createElement('button');
+            dismissedButton.className = 'btn-secondary';
+            dismissedButton.style.marginBottom = '20px';
+            dismissedButton.innerHTML = `Уволенные тренеры (${dismissedTrainers.length})`;
+            dismissedButton.onclick = () => showDismissedTrainersModal(dismissedTrainers);
+            
+            // Очищаем список и добавляем кнопку
+            trainersList.innerHTML = '';
+            trainersList.appendChild(dismissedButton);
+            
+            // Отображаем только активных тренеров
+            if (activeTrainers.length === 0) {
+                trainersList.innerHTML += '<div class="alert alert-info">Нет активных тренеров</div>';
+            } else {
+                trainersList.innerHTML += activeTrainers.map(trainer => `
+                    <div class="trainer-item">
+                        <div class="trainer-info">
+                            <h3>${trainer.full_name}</h3>
+                            <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                            <p>Телефон: ${trainer.phone}</p>
+                            <p>Статус: Работает</p>
+                        </div>
+                        <div class="trainer-actions">
+                            <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                            <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
+                            <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
+                        </div>
                     </div>
-                    <div class="trainer-actions">
-                        <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
-                        ${trainer.is_active ? 
-                            `<button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>` :
-                            `<button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>`
-                        }
-                    </div>
-                </div>
-            `).join('');
+                `).join('');
+            }
         }
     } catch (error) {
         console.error('Ошибка при загрузке тренеров:', error);
         showError('Не удалось загрузить тренеров');
+    }
+}
+
+// Функция для отображения модального окна с уволенными тренерами
+function showDismissedTrainersModal(dismissedTrainers) {
+    // Маппинг значений для вида спорта
+    const sportTypeMapping = {
+        'ski': 'Горные лыжи',
+        'snowboard': 'Сноуборд'
+    };
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <h3>Уволенные тренеры</h3>
+            <div class="dismissed-trainers-list">
+                ${dismissedTrainers.length === 0 ? 
+                    '<div class="alert alert-info">Нет уволенных тренеров</div>' :
+                    dismissedTrainers.map(trainer => `
+                        <div class="trainer-item">
+                            <div class="trainer-info">
+                                <h3>${trainer.full_name}</h3>
+                                <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                                <p>Телефон: ${trainer.phone}</p>
+                                <p>Дата увольнения: ${formatDate(trainer.dismissed_at)}</p>
+                            </div>
+                            <div class="trainer-actions">
+                                <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                                <button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>
+                            </div>
+                        </div>
+                    `).join('')
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+}
+
+// Функция для редактирования тренера
+async function editTrainer(trainerId) {
+    try {
+        const response = await fetch(`/api/trainers/${trainerId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const trainer = await response.json();
+        
+        // Маппинг значений для вида спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд'
+        };
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Редактирование тренера</h3>
+                <form id="editTrainerForm">
+                    <input type="hidden" name="hire_date" value="${trainer.hire_date}">
+                    <input type="hidden" name="is_active" value="${trainer.is_active}">
+                    <input type="hidden" name="dismissal_date" value="${trainer.dismissal_date || ''}">
+                    <div class="trainer-current-info" style="margin-bottom: 20px; padding: 10px; background-color: #f5f5f5; border-radius: 4px;">
+                        <p><strong>Текущая информация:</strong></p>
+                        <p>Дата рождения: ${new Date(trainer.birth_date).toLocaleDateString('ru-RU')}</p>
+                        <p>Дата приема: ${new Date(trainer.hire_date).toLocaleDateString('ru-RU')}</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="full_name">ФИО:</label>
+                        <input type="text" id="full_name" name="full_name" value="${trainer.full_name}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="birth_date">Дата рождения:</label>
+                        <input type="date" id="birth_date" name="birth_date" value="${trainer.birth_date ? new Date(trainer.birth_date).toISOString().split('T')[0] : ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sport_type">Вид спорта:</label>
+                        <select id="sport_type" name="sport_type" required>
+                            <option value="">Выберите вид спорта</option>
+                            ${Object.entries(sportTypeMapping).map(([value, label]) => 
+                                `<option value="${value}" ${trainer.sport_type === value ? 'selected' : ''}>${label}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Телефон:</label>
+                        <input type="tel" id="phone" name="phone" value="${trainer.phone}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email:</label>
+                        <input type="email" id="email" name="email" value="${trainer.email || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Описание:</label>
+                        <textarea id="description" name="description">${trainer.description || ''}</textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+        
+        // Обработка сохранения
+        document.getElementById('editTrainerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                ...trainer,  // Сохраняем все существующие данные тренера
+                ...Object.fromEntries(formData.entries()), // Обновляем только измененные поля
+                id: trainerId // Убеждаемся, что ID не изменился
+            };
+            
+            try {
+                const response = await fetch(`/api/trainers/${trainerId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Ошибка при обновлении тренера');
+                }
+                
+                modal.remove();
+                await loadTrainers();
+                showSuccess('Данные тренера успешно обновлены');
+            } catch (error) {
+                console.error('Ошибка при обновлении тренера:', error);
+                showError(error.message || 'Не удалось обновить данные тренера');
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке данных тренера:', error);
+        showError('Не удалось загрузить данные тренера');
     }
 }
 
@@ -1925,3 +2138,59 @@ function getTransactionTypeRu(type) {
         default: return type;
     }
 } 
+
+// Функция для увольнения тренера
+async function dismissTrainer(trainerId) {
+    if (!confirm('Вы уверены, что хотите уволить этого тренера?')) {
+        return;
+    }
+
+    try {
+        console.log('Отправка запроса на увольнение тренера:', trainerId);
+        const response = await fetch(`/api/trainers/${trainerId}/dismiss`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при увольнении тренера');
+        }
+
+        showSuccess('Тренер успешно уволен');
+        await loadTrainers(); // Перезагружаем список тренеров
+    } catch (error) {
+        console.error('Ошибка при увольнении тренера:', error);
+        showError(error.message || 'Не удалось уволить тренера');
+    }
+}
+
+// Функция для восстановления тренера
+async function rehireTrainer(trainerId) {
+    if (!confirm('Вы уверены, что хотите восстановить этого тренера?')) {
+        return;
+    }
+
+    try {
+        console.log('Отправка запроса на восстановление тренера:', trainerId);
+        const response = await fetch(`/api/trainers/${trainerId}/rehire`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при восстановлении тренера');
+        }
+
+        showSuccess('Тренер успешно восстановлен');
+        await loadTrainers(); // Перезагружаем список тренеров
+    } catch (error) {
+        console.error('Ошибка при восстановлении тренера:', error);
+        showError(error.message || 'Не удалось восстановить тренера');
+    }
+}
