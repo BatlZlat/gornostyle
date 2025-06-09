@@ -2194,3 +2194,41 @@ async function rehireTrainer(trainerId) {
         showError(error.message || 'Не удалось восстановить тренера');
     }
 }
+
+// Функция для просмотра информации о тренере
+async function viewTrainer(trainerId) {
+    try {
+        const response = await fetch(`/api/trainers/${trainerId}`);
+        if (!response.ok) throw new Error('Ошибка загрузки данных тренера');
+        const trainer = await response.json();
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд'
+        };
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Информация о тренере</h3>
+                <div class="trainer-details">
+                    <p><strong>ФИО:</strong> ${trainer.full_name}</p>
+                    <p><strong>Дата рождения:</strong> ${trainer.birth_date ? new Date(trainer.birth_date).toLocaleDateString('ru-RU') : '-'}</p>
+                    <p><strong>Вид спорта:</strong> ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                    <p><strong>Телефон:</strong> ${trainer.phone}</p>
+                    <p><strong>Email:</strong> ${trainer.email || '-'}</p>
+                    <p><strong>Описание:</strong> ${trainer.description || '-'}</p>
+                    <p><strong>Дата приема:</strong> ${trainer.hire_date ? new Date(trainer.hire_date).toLocaleDateString('ru-RU') : '-'}</p>
+                    <p><strong>Статус:</strong> ${trainer.is_active ? 'Работает' : 'Уволен'}</p>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    } catch (error) {
+        showError('Не удалось загрузить данные тренера');
+    }
+}
