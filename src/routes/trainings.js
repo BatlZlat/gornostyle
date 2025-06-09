@@ -533,10 +533,14 @@ router.delete('/:id', async (req, res) => {
             // Вернуть деньги
             const newBalance = Number(wallet.balance) + price;
             await client.query('UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2', [newBalance, wallet.id]);
-            // Записать транзакцию
+            // Сформировать корректный description для возврата
+            const dateObj = new Date(training.session_date);
+            const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+            const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+            const duration = training.duration || 60;
             await client.query(
                 'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                [wallet.id, price, 'amount', `Возврат за отмену тренировки #${id}`]
+                [wallet.id, price, 'amount', `Возврат: Группа, ${participant.full_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`]
             );
             refunds.push({
                 full_name: participant.full_name,

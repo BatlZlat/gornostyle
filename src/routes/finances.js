@@ -69,30 +69,47 @@ router.get('/statistics', async (req, res) => {
             [start_date, end_date]
         );
         let groupIncome = 0;
+        // Для отладки
+        let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) {
+                debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
+                continue;
+            }
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
-            const refund = await pool.query(
-                `SELECT 1 FROM transactions
+            // Ищем возврат по ФИО, дате и времени (оба формата даты)
+            const refundResult = await pool.query(
+                `SELECT id, description FROM transactions
                  WHERE type='amount'
                  AND (
                      description LIKE $1 OR description LIKE $2
                  )
-                 AND created_at BETWEEN $3 AND $4
-                 LIMIT 1`,
+                 AND created_at BETWEEN $3 AND $4`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%Группа, ${fio}, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%Группа, ${fio}, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
-            if (refund.rows.length === 0) {
+            let refundFound = false;
+            for (const refund of refundResult.rows) {
+                refundFound = true;
+                debugGroupIncome.push({id: payment.id, reason: 'refund_found', paymentDesc: payment.description, refundDesc: refund.description});
+                break;
+            }
+            if (!refundFound) {
                 groupIncome += parseFloat(payment.amount);
+                debugGroupIncome.push({id: payment.id, reason: 'income_counted', description: payment.description});
             }
         }
+        // Для отладки: можно вернуть debugGroupIncome в ответе API или залогировать
+        // console.log('DEBUG groupIncome:', debugGroupIncome);
 
         // 3. Доход от индивидуальных тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
         const individualPayments = await pool.query(
@@ -257,30 +274,47 @@ router.get('/export', async (req, res) => {
             [start_date, end_date]
         );
         let groupIncome = 0;
+        // Для отладки
+        let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) {
+                debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
+                continue;
+            }
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
-            const refund = await pool.query(
-                `SELECT 1 FROM transactions
+            // Ищем возврат по ФИО, дате и времени (оба формата даты)
+            const refundResult = await pool.query(
+                `SELECT id, description FROM transactions
                  WHERE type='amount'
                  AND (
                      description LIKE $1 OR description LIKE $2
                  )
-                 AND created_at BETWEEN $3 AND $4
-                 LIMIT 1`,
+                 AND created_at BETWEEN $3 AND $4`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%Группа, ${fio}, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%Группа, ${fio}, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
-            if (refund.rows.length === 0) {
+            let refundFound = false;
+            for (const refund of refundResult.rows) {
+                refundFound = true;
+                debugGroupIncome.push({id: payment.id, reason: 'refund_found', paymentDesc: payment.description, refundDesc: refund.description});
+                break;
+            }
+            if (!refundFound) {
                 groupIncome += parseFloat(payment.amount);
+                debugGroupIncome.push({id: payment.id, reason: 'income_counted', description: payment.description});
             }
         }
+        // Для отладки: можно вернуть debugGroupIncome в ответе API или залогировать
+        // console.log('DEBUG groupIncome:', debugGroupIncome);
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
