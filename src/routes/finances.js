@@ -69,7 +69,8 @@ router.get('/statistics', async (req, res) => {
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Группа%'
-             AND t.created_at BETWEEN $1 AND $2`,
+             AND t.created_at BETWEEN $1 AND $2
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -124,7 +125,8 @@ router.get('/statistics', async (req, res) => {
                 AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
-             AND t.created_at BETWEEN $1 AND $2`,
+             AND t.created_at BETWEEN $1 AND $2
+             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -164,7 +166,8 @@ router.get('/statistics', async (req, res) => {
              AND ts.training_type = TRUE
              AND EXISTS (
                  SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
-             )`,
+             )
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const groupExpenses = groupExpensesResult.rows[0].count * cost_60;
@@ -175,7 +178,8 @@ router.get('/statistics', async (req, res) => {
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
              FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2`,
+             WHERE preferred_date BETWEEN $1 AND $2
+             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
@@ -269,7 +273,8 @@ router.get('/export', async (req, res) => {
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Группа%'
-             AND t.created_at BETWEEN $1 AND $2`,
+             AND t.created_at BETWEEN $1 AND $2
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -324,7 +329,8 @@ router.get('/export', async (req, res) => {
                 AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
-             AND t.created_at BETWEEN $1 AND $2`,
+             AND t.created_at BETWEEN $1 AND $2
+             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -364,7 +370,8 @@ router.get('/export', async (req, res) => {
              AND ts.training_type = TRUE
              AND EXISTS (
                  SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
-             )`,
+             )
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const groupExpenses = groupExpensesResult.rows[0].count * cost_60;
@@ -375,7 +382,8 @@ router.get('/export', async (req, res) => {
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
              FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2`,
+             WHERE preferred_date BETWEEN $1 AND $2
+             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
