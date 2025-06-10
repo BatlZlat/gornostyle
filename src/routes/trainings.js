@@ -882,96 +882,30 @@ router.post('/notify-group/:sessionId', async (req, res) => {
 
     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     try {
-        // Получаем информацию о тренировке и её участниках
+        // Получаем telegram_id всех клиентов-участников тренировки
         const result = await pool.query(`
-            SELECT 
-                ts.id,
-                ts.session_date,
-                ts.start_time,
-                g.name as group_name,
-                c.id as client_id,
-                c.full_name,
-                c.telegram_id
-            FROM training_sessions ts
-            LEFT JOIN groups g ON ts.group_id = g.id
-            LEFT JOIN session_participants sp ON ts.id = sp.session_id
+            SELECT DISTINCT c.telegram_id
+            FROM session_participants sp
             LEFT JOIN clients c ON sp.client_id = c.id
-            WHERE ts.id = $1 AND ts.training_type = true
+            WHERE sp.session_id = $1 AND sp.status = 'confirmed' AND c.telegram_id IS NOT NULL
         `, [sessionId]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+            return res.status(404).json({ error: 'У тренировки нет участников с Telegram' });
         }
 
-        const training = result.rows[0];
-        const participants = result.rows.filter(row => row.client_id !== null);
-
-        if (participants.length === 0) {
-            return res.status(400).json({ error: 'У тренировки нет участников' });
-        }
-
-        // Форматируем дату для уведомления
-        const dateObj = new Date(training.session_date);
-        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
-        const startTime = training.start_time ? training.start_time.slice(0,5) : '';
-
-        // Отправляем сообщения участникам
+        // Уникальные telegram_id
+        const uniqueTelegramIds = [...new Set(result.rows.map(row => row.telegram_id))];
         let sent = 0;
-        for (const participant of participants) {
-            if (!participant.telegram_id) continue;
-
-            const participantMessage = 
-`📢 *Сообщение для участников группы ${training.group_name}*
-
-📅 *Дата тренировки:* ${formattedDate}
-⏰ *Время:* ${startTime}
-
-${message}`;
-
+        for (const telegramId of uniqueTelegramIds) {
             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    chat_id: participant.telegram_id, 
-                    text: participantMessage,
-                    parse_mode: 'Markdown'
-                })
+                body: JSON.stringify({ chat_id: telegramId, text: message })
             });
             sent++;
         }
-
-        // Уведомляем администратора
-        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
-        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            const adminText = 
-`📨 *Отправлено сообщение участникам группы*
-
-👥 *Группа:* ${training.group_name}
-📅 *Дата:* ${formattedDate}
-⏰ *Время:* ${startTime}
-👥 *Отправлено:* ${sent} из ${participants.length} участников
-
-📝 *Текст сообщения:*
-${message}`;
-
-            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    chat_id: ADMIN_TELEGRAM_ID, 
-                    text: adminText,
-                    parse_mode: 'Markdown'
-                })
-            });
-        }
-
-        res.json({ 
-            message: `Сообщение отправлено ${sent} из ${participants.length} участников`,
-            group_name: training.group_name,
-            date: formattedDate,
-            time: startTime
-        });
+        res.json({ message: `Сообщение отправлено ${sent} участникам группы` });
     } catch (error) {
         console.error('Ошибка при отправке сообщений:', error);
         res.status(500).json({ error: 'Ошибка при отправке сообщений' });

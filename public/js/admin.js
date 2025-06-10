@@ -402,8 +402,16 @@ function initializeEventListeners() {
             const response = await fetch('/api/clients');
             const clients = await response.json();
             const clientSelect = document.getElementById('client-select');
-            
-            clientSelect.innerHTML = clients.map(client => 
+            // Фильтруем только уникальных клиентов без parent_id
+            const filteredClients = [];
+            const seenIds = new Set();
+            for (const client of clients) {
+                if (!client.parent_id && !seenIds.has(client.id)) {
+                    filteredClients.push(client);
+                    seenIds.add(client.id);
+                }
+            }
+            clientSelect.innerHTML = filteredClients.map(client =>
                 `<option value="${client.id}">${client.full_name} (${client.phone})</option>`
             ).join('');
         } catch (error) {
