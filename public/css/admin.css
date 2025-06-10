@@ -951,22 +951,34 @@ body {
 }
 
 /* Стили для подсветки дней рождения */
-.training-row.birthday-today {
-    background-color: #d4edda !important;
-    border-left: 4px solid #28a745;
+.birthday-today {
+    background-color: #ffeb3b !important; /* Желтый для сегодняшнего дня рождения */
 }
 
-.training-row.birthday-soon {
-    background-color: #fff3cd !important;
-    border-left: 4px solid #ffc107;
+.birthday-upcoming {
+    background-color: #e3f2fd !important; /* Голубой для ближайших дней рождения */
 }
 
-.training-row.birthday-today:hover {
-    background-color: #c3e6cb !important;
+.birthday-current-month {
+    background-color: #f3e5f5 !important; /* Фиолетовый для дней рождения в текущем месяце */
 }
 
-.training-row.birthday-soon:hover {
-    background-color: #ffeeba !important;
+.birthday-today:hover,
+.birthday-upcoming:hover,
+.birthday-current-month:hover {
+    filter: brightness(0.95);
+}
+
+/* Добавляем иконку дня рождения */
+.birthday-icon {
+    color: #e91e63;
+    margin-left: 4px;
+}
+
+/* Стили для текста с днем рождения */
+.birthday-text {
+    color: #e91e63;
+    font-weight: 500;
 }
 
 /* Стили для деталей клиента */
@@ -1171,4 +1183,23 @@ body {
 
 .data-table tr:hover td {
     background: #f8f9fa;
+}
+
+@keyframes blink-cake {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.birthday-cake-blink {
+  animation: blink-cake 1s infinite;
+}
+
+.birthday-after {
+  background-color: #bdbdbd !important; /* Более тёмный серый для 3 дней после дня рождения */
+}
+
+.birthday-date-red {
+  color: #e53935;
+  font-weight: bold;
+  margin-left: 4px;
 } 

@@ -895,7 +895,85 @@ async function loadClients() {
     }
 }
 
-// Функция для отображения клиентов с учетом фильтров и сортировки
+// Функция для определения дней рождения в текущем месяце
+function isBirthdayInCurrentMonth(birthDate) {
+    const today = new Date();
+    const birthDateObj = new Date(birthDate);
+    return birthDateObj.getMonth() === today.getMonth();
+}
+
+// Функция для определения ближайших дней рождения (10 дней)
+function isBirthdayUpcoming(birthDate) {
+    const today = new Date();
+    const birthDateObj = new Date(birthDate);
+    const currentYear = today.getFullYear();
+    
+    // Устанавливаем год рождения на текущий год
+    birthDateObj.setFullYear(currentYear);
+    
+    // Если день рождения уже прошел в этом году, берем следующий год
+    if (birthDateObj < today) {
+        birthDateObj.setFullYear(currentYear + 1);
+    }
+    
+    // Вычисляем разницу в днях
+    const diffTime = birthDateObj - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays <= 10 && diffDays > 0;
+}
+
+// Функция для определения дня рождения сегодня
+function isBirthdayToday(birthDate) {
+    const today = new Date();
+    const birthDateObj = new Date(birthDate);
+    return birthDateObj.getDate() === today.getDate() && 
+           birthDateObj.getMonth() === today.getMonth();
+}
+
+// Функция для получения класса подсветки дня рождения
+function getBirthdayClass(birthDate) {
+    if (!birthDate) return '';
+    const today = new Date();
+    const date = new Date(birthDate);
+    const currentYear = today.getFullYear();
+    date.setFullYear(currentYear);
+
+    // Разница в днях относительно сегодняшнего дня
+    const diffDays = Math.floor((date - today) / (1000 * 60 * 60 * 24));
+
+    // Если день рождения уже прошёл в этом году, считаем до следующего года
+    if (diffDays < -3) {
+        date.setFullYear(currentYear + 1);
+    }
+    const realDiffDays = Math.floor((date - today) / (1000 * 60 * 60 * 24));
+
+    // Жёлтый фон и обычный 🎂 — только если сегодня день рождения
+    if (date.getDate() === today.getDate() && date.getMonth() === today.getMonth()) {
+        return 'birthday-today';
+    }
+    // Голубой фон и мигающий 🎂 — 3 дня до дня рождения (строго до)
+    if (realDiffDays > 0 && realDiffDays <= 3) {
+        return 'birthday-upcoming';
+    }
+    // Серый фон и мигающий 🎂 — 3 дня после дня рождения (строго после)
+    if (realDiffDays < 0 && realDiffDays >= -3) {
+        return 'birthday-after';
+    }
+    // Фиолетовый фон и мигающий 🎂 — за 10 дней до дня рождения (но не попадает в голубой/жёлтый)
+    if (realDiffDays > 3 && realDiffDays <= 10) {
+        return 'birthday-current-month';
+    }
+    return '';
+}
+
+// Функция для форматирования даты дня рождения
+function formatBirthday(birthDate) {
+    const date = new Date(birthDate);
+    return `${date.getDate()} ${date.toLocaleString('ru', { month: 'long' })}`;
+}
+
+// Обновленная функция отображения клиентов
 function displayClients() {
     const clientsContainer = document.getElementById('clientsContainer');
     const searchInput = document.getElementById('clientSearch');
@@ -930,6 +1008,19 @@ function displayClients() {
                 return (a.child_name || '').localeCompare(b.child_name || '');
             case 'child_name_desc':
                 return (b.child_name || '').localeCompare(a.child_name || '');
+            case 'birthday_current_month':
+                const aBirthMonth = new Date(a.birth_date).getMonth();
+                const bBirthMonth = new Date(b.birth_date).getMonth();
+                const currentMonth = new Date().getMonth();
+                
+                // Сначала сортируем по текущему месяцу
+                if (aBirthMonth === currentMonth && bBirthMonth !== currentMonth) return -1;
+                if (aBirthMonth !== currentMonth && bBirthMonth === currentMonth) return 1;
+                
+                // Затем по дню месяца
+                const aBirthDay = new Date(a.birth_date).getDate();
+                const bBirthDay = new Date(b.birth_date).getDate();
+                return aBirthDay - bBirthDay;
             default:
                 return 0;
         }
@@ -958,24 +1049,40 @@ function displayClients() {
                     const childBirthDate = client.child_birth_date ? new Date(client.child_birth_date) : null;
                     const today = new Date();
                     
-                    const isBirthday = birthDate.getDate() === today.getDate() && 
-                                     birthDate.getMonth() === today.getMonth();
-                    const isChildBirthday = childBirthDate && 
-                                          childBirthDate.getDate() === today.getDate() && 
-                                          childBirthDate.getMonth() === today.getMonth();
+                    const clientBirthdayClass = getBirthdayClass(client.birth_date);
+                    const childBirthdayClass = childBirthDate ? getBirthdayClass(childBirthDate) : '';
                     
                     const clientAge = Math.floor((today - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
                     const childAge = childBirthDate ? 
                         Math.floor((today - childBirthDate) / (365.25 * 24 * 60 * 60 * 1000)) : null;
                     
+                    let clientBirthdayText = '';
+                    if (clientBirthdayClass === 'birthday-today') {
+                        clientBirthdayText = `<span class="birthday-text">🎂<span class='birthday-date-red'>${formatBirthdayShort(client.birth_date)}</span></span>`;
+                    } else if (
+                        clientBirthdayClass === 'birthday-upcoming' ||
+                        clientBirthdayClass === 'birthday-after' ||
+                        clientBirthdayClass === 'birthday-current-month') {
+                        clientBirthdayText = `<span class="birthday-text birthday-cake-blink">🎂<span class='birthday-date-red'>${formatBirthdayShort(client.birth_date)}</span></span>`;
+                    }
+                    let childBirthdayText = '';
+                    if (childBirthdayClass === 'birthday-today') {
+                        childBirthdayText = `<span class="birthday-text">🎂<span class='birthday-date-red'>${formatBirthdayShort(childBirthDate)}</span></span>`;
+                    } else if (
+                        childBirthdayClass === 'birthday-upcoming' ||
+                        childBirthdayClass === 'birthday-after' ||
+                        childBirthdayClass === 'birthday-current-month') {
+                        childBirthdayText = `<span class="birthday-text birthday-cake-blink">🎂<span class='birthday-date-red'>${formatBirthdayShort(childBirthDate)}</span></span>`;
+                    }
+                    
                     return `
-                        <tr class="${isBirthday || isChildBirthday ? 'birthday-row' : ''}">
+                        <tr class="${clientBirthdayClass || childBirthdayClass}">
                             <td>${index + 1}</td>
-                            <td>${client.full_name} ${isBirthday ? '🎂' : ''}</td>
+                            <td>${client.full_name} ${clientBirthdayText}</td>
                             <td>${clientAge} лет</td>
                             <td>${client.phone}</td>
                             <td>${client.skill_level || '-'}</td>
-                            <td>${client.child_name ? client.child_name + (isChildBirthday ? ' 🎂' : '') : '-'}</td>
+                            <td>${client.child_name ? client.child_name + childBirthdayText : '-'}</td>
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>
@@ -990,7 +1097,14 @@ function displayClients() {
         </table>
     `;
 
-    clientsContainer.innerHTML = tableHtml;
+    const legendHtml = `<div style="margin-bottom:8px;font-size:0.98em;">
+      <span style="background:#ffeb3b;padding:2px 8px;border-radius:4px;">Сегодня 🎂</span>
+      <span style="background:#e3f2fd;padding:2px 8px;border-radius:4px;">3 дня до <span class='birthday-text birthday-cake-blink'>🎂</span></span>
+      <span style="background:#bdbdbd;padding:2px 8px;border-radius:4px;">3 дня после <span class='birthday-text birthday-cake-blink'>🎂</span></span>
+      <span style="background:#f3e5f5;padding:2px 8px;border-radius:4px;">10 дней до <span class='birthday-text birthday-cake-blink'>🎂</span></span>
+    </div>`;
+
+    clientsContainer.innerHTML = legendHtml + tableHtml;
 }
 
 // Добавляем обработчики событий для поиска и сортировки
@@ -2034,7 +2148,7 @@ async function editClient(id) {
                     </div>
                     <div class="form-group">
                         <label for="birth_date">Дата рождения:</label>
-                        <input type="date" id="birth_date" name="birth_date" value="${client.birth_date ? client.birth_date.split('T')[0] : ''}" required>
+                        <input type="date" id="birth_date" name="birth_date" value="${formatDateForInput(client.birth_date)}" required>
                     </div>
                     <div class="form-group">
                         <label for="phone">Телефон:</label>
@@ -2159,7 +2273,7 @@ window.editChild = async function(childId) {
                     </div>
                     <div class="form-group">
                         <label for="child_birth_date">Дата рождения:</label>
-                        <input type="date" id="child_birth_date" name="birth_date" value="${child.birth_date ? child.birth_date.split('T')[0] : ''}" required>
+                        <input type="date" id="child_birth_date" name="birth_date" value="${formatDateForInput(child.birth_date)}" required>
                     </div>
                     <div class="form-group">
                         <label for="child_skill_level">Уровень:</label>
@@ -2348,4 +2462,21 @@ function formatDateWithWeekday(dateString) {
     const weekdays = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
     const weekday = weekdays[date.getDay()];
     return `${date.toLocaleDateString('ru-RU')} (${weekday})`;
+}
+
+// Функция для корректного форматирования даты для input type="date"
+function formatDateForInput(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// Для отображения даты рядом с тортиком:
+function formatBirthdayShort(birthDate) {
+    if (!birthDate) return '';
+    const date = new Date(birthDate);
+    return `${date.getDate()} ${date.toLocaleString('ru', { month: 'long' })}`;
 }
