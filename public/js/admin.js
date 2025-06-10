@@ -3,6 +3,7 @@ let currentPage = 'schedule';
 let currentDate = new Date();
 let datePicker;
 let allClients = []; // Глобальная переменная для хранения всех клиентов
+let dismissedTrainers = [];
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
@@ -995,7 +996,7 @@ async function editTrainer(trainerId) {
                     </div>
                     <div class="form-group">
                         <label for="birth_date">Дата рождения:</label>
-                        <input type="date" id="birth_date" name="birth_date" value="${trainer.birth_date ? new Date(trainer.birth_date).toISOString().split('T')[0] : ''}" required>
+                        <input type="date" id="birth_date" name="birth_date" value="${formatDateForInput(trainer.birth_date)}" required>
                     </div>
                     <div class="form-group">
                         <label for="sport_type">Вид спорта:</label>

@@ -36,6 +36,27 @@ function showNotification(message, type = 'success') {
     }, 3000);
 }
 
+// === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ТОКЕНА И fetch С АВТОРИЗАЦИЕЙ ===
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+async function fetchWithAuth(url, options = {}) {
+    const token = getCookie('adminToken');
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+        const headersObj = {};
+        options.headers.forEach((v, k) => { headersObj[k] = v; });
+        options.headers = headersObj;
+    }
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, options);
+}
+
 // Инициализация формы
 async function initializeForm() {
     try {
@@ -104,8 +125,8 @@ async function updateTimeSlots() {
 
     try {
         // Получаем расписание тренажера
-        const schedule = await apiRequest(`/simulators/${simulatorId}/schedule`);
-        const bookings = await apiRequest(`/bookings/simulator/${simulatorId}?date=${selectedDate}`);
+        const schedule = await fetchWithAuth(`/simulators/${simulatorId}/schedule`);
+        const bookings = await fetchWithAuth(`/bookings/simulator/${simulatorId}?date=${selectedDate}`);
 
         // Генерируем временные слоты
         const slots = generateTimeSlots(schedule, bookings, selectedDate, duration);
@@ -190,7 +211,7 @@ async function handleBookingSubmit(e) {
     // Проверяем доступность следующего слота для 60-минутных занятий
     if (duration === 60) {
         try {
-            const response = await fetch(`/api/schedule?date=${trainingDateInput.value}`);
+            const response = await fetchWithAuth(`/api/schedule?date=${trainingDateInput.value}`);
             const schedule = await response.json();
             
             const currentSlotIndex = schedule.findIndex(slot => 
@@ -248,7 +269,7 @@ async function loadAvailableSlots() {
     try {
         if (groupTrainingCheckbox?.checked) {
             console.log('Загрузка групповых тренировок');
-            const response = await fetch(`/api/trainings?date=${date}&type=group`);
+            const response = await fetchWithAuth(`/api/trainings?date=${date}&type=group`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -286,7 +307,7 @@ async function loadAvailableSlots() {
             console.log('Загрузка индивидуальных слотов');
             
             // Получаем статус тренажеров
-            const simulatorsResponse = await fetch('/api/simulators');
+            const simulatorsResponse = await fetchWithAuth('/api/simulators');
             if (!simulatorsResponse.ok) {
                 throw new Error(`HTTP error! status: ${simulatorsResponse.status}`);
             }
@@ -297,7 +318,7 @@ async function loadAvailableSlots() {
             };
 
             // Получаем расписание
-            const response = await fetch(`/api/schedule?date=${date}`);
+            const response = await fetchWithAuth(`/api/schedule?date=${date}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -361,7 +382,7 @@ async function loadAvailableSlots() {
 // Загрузка прайса
 async function loadPrices() {
     try {
-        const response = await fetch('/api/prices');
+        const response = await fetchWithAuth('/api/prices');
         const prices = await response.json();
         
         const priceTable = document.getElementById('price-table');
@@ -411,7 +432,7 @@ async function loadPrices() {
 // Обновление стоимости
 async function updatePrice() {
     try {
-        const response = await fetch('/api/prices');
+        const response = await fetchWithAuth('/api/prices');
         const prices = await response.json();
         
         const duration = parseInt(durationSelect.value);

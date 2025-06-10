@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Функция загрузки списка групп
     async function loadGroups() {
         try {
-            const response = await fetch('/api/groups');
+            const response = await fetchWithAuth('/api/groups');
             if (!response.ok) {
                 throw new Error('Ошибка при загрузке групп');
             }
@@ -53,28 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Функция редактирования группы
     async function editGroup(id) {
-        try {
-            const response = await fetch(`/api/groups/${id}`);
-            if (!response.ok) {
-                throw new Error('Ошибка при получении данных группы');
-            }
-            const group = await response.json();
-            
-            // Заполняем форму данными группы
-            document.getElementById('group-name').value = group.name;
-            document.getElementById('group-description').value = group.description || '';
-            
-            // Изменяем форму для редактирования
-            const form = document.getElementById('create-group-form');
-            form.dataset.editId = id;
-            form.querySelector('button[type="submit"]').textContent = 'Сохранить изменения';
-            
-            // Переходим на страницу редактирования
-            window.location.href = 'create-group.html';
-        } catch (error) {
-            console.error('Ошибка:', error);
-            showError('Не удалось загрузить данные группы');
-        }
+        window.location.href = 'create-group.html?id=' + id;
     }
 
     // Функция удаления группы
@@ -84,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            const response = await fetch(`/api/groups/${id}`, {
+            const response = await fetchWithAuth(`/api/groups/${id}`, {
                 method: 'DELETE'
             });
 
@@ -105,5 +84,26 @@ document.addEventListener('DOMContentLoaded', function() {
         // Здесь можно добавить код для отображения ошибок пользователю
         console.error(message);
         alert(message);
+    }
+
+    // === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ТОКЕНА И fetch С АВТОРИЗАЦИЕЙ ===
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    async function fetchWithAuth(url, options = {}) {
+        const token = getCookie('adminToken');
+        options.headers = options.headers || {};
+        if (options.headers instanceof Headers) {
+            const headersObj = {};
+            options.headers.forEach((v, k) => { headersObj[k] = v; });
+            options.headers = headersObj;
+        }
+        if (token) {
+            options.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return fetch(url, options);
     }
 }); 

@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
 
             try {
-                const response = await fetch('/api/trainers', {
+                const response = await fetchWithAuth('/api/trainers', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -57,4 +57,25 @@ document.addEventListener('DOMContentLoaded', function() {
         successDiv.textContent = message;
         document.querySelector('.form-container').insertBefore(successDiv, document.querySelector('.form-actions'));
     }
-}); 
+});
+
+// === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ТОКЕНА И fetch С АВТОРИЗАЦИЕЙ ===
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+async function fetchWithAuth(url, options = {}) {
+    const token = getCookie('adminToken');
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+        const headersObj = {};
+        options.headers.forEach((v, k) => { headersObj[k] = v; });
+        options.headers = headersObj;
+    }
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, options);
+} 

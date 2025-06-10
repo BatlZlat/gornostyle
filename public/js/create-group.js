@@ -1,4 +1,47 @@
-document.addEventListener('DOMContentLoaded', function() {
+// === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ТОКЕНА И fetch С АВТОРИЗАЦИЕЙ ===
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+async function fetchWithAuth(url, options = {}) {
+    const token = getCookie('adminToken');
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+        const headersObj = {};
+        options.headers.forEach((v, k) => { headersObj[k] = v; });
+        options.headers = headersObj;
+    }
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, options);
+}
+
+// --- Логика для редактирования группы ---
+document.addEventListener('DOMContentLoaded', async function() {
+    const params = new URLSearchParams(window.location.search);
+    const groupId = params.get('id');
+    if (groupId) {
+        try {
+            const response = await fetchWithAuth(`/api/groups/${groupId}`);
+            if (!response.ok) throw new Error('Ошибка при загрузке данных группы');
+            const group = await response.json();
+            document.getElementById('group-name').value = group.name;
+            document.getElementById('group-description').value = group.description || '';
+            // Меняем текст кнопки submit
+            const form = document.getElementById('create-group-form');
+            if (form) {
+                form.dataset.editId = groupId;
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) submitBtn.textContent = 'Сохранить изменения';
+            }
+        } catch (error) {
+            alert('Не удалось загрузить данные группы');
+        }
+    }
+
     const createGroupForm = document.getElementById('create-group-form');
     const errorContainer = document.createElement('div');
     errorContainer.className = 'alert alert-danger';
@@ -27,14 +70,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
             try {
                 console.log('Отправка данных:', formData);
-                const response = await fetch('/api/groups', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
+                let response;
+                if (createGroupForm.dataset.editId) {
+                    // Редактирование
+                    response = await fetchWithAuth(`/api/groups/${createGroupForm.dataset.editId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(formData)
+                    });
+                } else {
+                    // Создание новой группы
+                    response = await fetchWithAuth('/api/groups', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(formData)
+                    });
+                }
 
                 console.log('Получен ответ:', response.status);
                 const contentType = response.headers.get('content-type');
