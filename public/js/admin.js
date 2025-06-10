@@ -1008,19 +1008,13 @@ function displayClients() {
                 return (a.child_name || '').localeCompare(b.child_name || '');
             case 'child_name_desc':
                 return (b.child_name || '').localeCompare(a.child_name || '');
-            case 'birthday_current_month':
-                const aBirthMonth = new Date(a.birth_date).getMonth();
-                const bBirthMonth = new Date(b.birth_date).getMonth();
-                const currentMonth = new Date().getMonth();
-                
-                // Сначала сортируем по текущему месяцу
-                if (aBirthMonth === currentMonth && bBirthMonth !== currentMonth) return -1;
-                if (aBirthMonth !== currentMonth && bBirthMonth === currentMonth) return 1;
-                
-                // Затем по дню месяца
-                const aBirthDay = new Date(a.birth_date).getDate();
-                const bBirthDay = new Date(b.birth_date).getDate();
-                return aBirthDay - bBirthDay;
+            case 'birthday_closest': {
+                // Сортируем по ближайшему дню рождения (клиент или ребёнок)
+                return (
+                    Math.min(daysToNextBirthday(a.birth_date), daysToNextBirthday(a.child_birth_date))
+                    - Math.min(daysToNextBirthday(b.birth_date), daysToNextBirthday(b.child_birth_date))
+                );
+            }
             default:
                 return 0;
         }
@@ -2479,4 +2473,18 @@ function formatBirthdayShort(birthDate) {
     if (!birthDate) return '';
     const date = new Date(birthDate);
     return `${date.getDate()} ${date.toLocaleString('ru', { month: 'long' })}`;
+}
+
+// Функция для вычисления дней до ближайшего дня рождения
+function daysToNextBirthday(birthDate) {
+    if (!birthDate) return Infinity;
+    const today = new Date();
+    const date = new Date(birthDate);
+    date.setFullYear(today.getFullYear());
+    let diff = Math.floor((date - today) / (1000 * 60 * 60 * 24));
+    if (diff < 0) {
+        date.setFullYear(today.getFullYear() + 1);
+        diff = Math.floor((date - today) / (1000 * 60 * 60 * 24));
+    }
+    return diff;
 }
