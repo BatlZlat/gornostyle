@@ -35,4 +35,14 @@ router.put('/:id', async (req, res) => {
     }
 });
 
+// Получить всех детей
+router.get('/', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM children');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: 'Ошибка при получении списка детей' });
+    }
+});
+
 module.exports = router; 

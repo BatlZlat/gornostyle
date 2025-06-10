@@ -2422,35 +2422,66 @@ async function editClient(id) {
 // Функция для экспорта контактов
 async function exportContacts() {
     try {
-        // Создаем CSV контент
-        const headers = ['ФИО', 'Телефон'];
-        const csvContent = [
-            headers.join(','),
-            ...allClients.map(client => [
-                `"${client.full_name}"`,
-                `"${client.phone}"`
-            ].join(','))
-        ].join('\n');
-
-        // Создаем Blob
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        
-        // Создаем ссылку для скачивания
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        // Устанавливаем имя файла с текущей датой
+        // Получаем всех клиентов
+        const clientsResp = await fetch('/api/clients');
+        const clients = await clientsResp.json();
+        // Получаем всех детей
+        const childrenResp = await fetch('/api/children');
+        const children = await childrenResp.json();
+        // Создаём карту родителей для быстрого поиска
+        const parentMap = {};
+        clients.forEach(c => { parentMap[c.id] = c; });
+        // --- Первый лист: Клиенты ---
+        const clientSheetData = [
+            ['ФИО', 'Возраст', 'Дата рождения', 'Телефон', 'Уровень катания', 'telegram_id']
+        ];
+        const today = new Date();
+        // Оставляем только первую строку для каждого уникального client.id
+        const uniqueClients = [];
+        const seenIds = new Set();
+        clients.forEach(client => {
+            if (!seenIds.has(client.id) && !client.parent_id) {
+                uniqueClients.push(client);
+                seenIds.add(client.id);
+            }
+        });
+        uniqueClients.forEach(client => {
+            const birth = new Date(client.birth_date);
+            const age = today.getFullYear() - birth.getFullYear() - (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0);
+            clientSheetData.push([
+                client.full_name,
+                age,
+                formatDateDMY(client.birth_date),
+                client.phone,
+                client.skill_level || '',
+                client.telegram_id || ''
+            ]);
+        });
+        // --- Второй лист: Дети ---
+        const childSheetData = [
+            ['ФИО ребёнка', 'Возраст', 'Дата рождения', 'Уровень катания', 'Родитель', 'Телефон родителя']
+        ];
+        children.forEach(child => {
+            const birth = new Date(child.birth_date);
+            const age = today.getFullYear() - birth.getFullYear() - (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0);
+            const parent = parentMap[child.parent_id] || {};
+            childSheetData.push([
+                child.full_name,
+                age,
+                formatDateDMY(child.birth_date),
+                child.skill_level || '',
+                parent.full_name || '',
+                parent.phone || ''
+            ]);
+        });
+        // --- Формируем Excel-файл ---
+        const wb = XLSX.utils.book_new();
+        const wsClients = XLSX.utils.aoa_to_sheet(clientSheetData);
+        const wsChildren = XLSX.utils.aoa_to_sheet(childSheetData);
+        XLSX.utils.book_append_sheet(wb, wsClients, 'Клиенты');
+        XLSX.utils.book_append_sheet(wb, wsChildren, 'Дети');
         const date = new Date().toISOString().split('T')[0];
-        link.setAttribute('href', url);
-        link.setAttribute('download', `contacts_${date}.csv`);
-        
-        // Добавляем ссылку в DOM и эмулируем клик
-        document.body.appendChild(link);
-        link.click();
-        
-        // Удаляем ссылку
-        document.body.removeChild(link);
-        
+        XLSX.writeFile(wb, `contacts_${date}.xlsx`);
         showSuccess('Контакты успешно экспортированы');
     } catch (error) {
         console.error('Ошибка при экспорте контактов:', error);
@@ -2792,3 +2823,9 @@ window.fetch = async function(url, options = {}) {
     }
     return originalFetch(url, options);
 };
+
+function formatDateDMY(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('ru-RU');
+}
