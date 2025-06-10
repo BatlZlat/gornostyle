@@ -256,24 +256,213 @@ function initializeEventListeners() {
             notifyMessage.value = '';
             notifyPreview.textContent = '';
 
-            // --- Эмодзи панель ---
-            const emojiPanel = document.getElementById('emoji-panel');
-            if (emojiPanel && notifyMessage) {
-                emojiPanel.onclick = function(e) {
-                    if (e.target.classList.contains('emoji-btn')) {
-                        const emoji = e.target.textContent;
-                        const start = notifyMessage.selectionStart;
-                        const end = notifyMessage.selectionEnd;
-                        const value = notifyMessage.value;
-                        notifyMessage.value = value.slice(0, start) + emoji + value.slice(end);
-                        notifyMessage.focus();
-                        notifyMessage.selectionStart = notifyMessage.selectionEnd = start + emoji.length;
-                        notifyPreview.textContent = notifyMessage.value;
-                    }
-                };
-            }
+            // Обновляем HTML модального окна
+            notifyModal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Отправка сообщения</h3>
+                    <form id="notify-clients-form">
+                        <div class="form-group">
+                            <label for="recipient-type">Тип получателей:</label>
+                            <select id="recipient-type" class="form-control">
+                                <option value="all">Все пользователи</option>
+                                <option value="client">Конкретный пользователь</option>
+                                <option value="group">Групповая тренировка</option>
+                            </select>
+                        </div>
+                        
+                        <div id="client-select-container" class="form-group" style="display: none;">
+                            <label for="client-select">Выберите пользователя:</label>
+                            <select id="client-select" class="form-control">
+                                <option value="">Загрузка...</option>
+                            </select>
+                        </div>
+                        
+                        <div id="group-select-container" class="form-group" style="display: none;">
+                            <label for="group-select">Выберите тренировку:</label>
+                            <select id="group-select" class="form-control">
+                                <option value="">Загрузка...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="notify-message">Сообщение:</label>
+                            <textarea id="notify-message" class="form-control" rows="4" placeholder="Введите сообщение..."></textarea>
+                            <div id="emoji-panel" class="emoji-panel">
+                                <button class="emoji-btn">👋</button>
+                                <button class="emoji-btn">🎿</button>
+                                <button class="emoji-btn">⛷️</button>
+                                <button class="emoji-btn">❄️</button>
+                                <button class="emoji-btn">🎯</button>
+                                <button class="emoji-btn">✅</button>
+                                <button class="emoji-btn">❌</button>
+                                <button class="emoji-btn">💰</button>
+                                <button class="emoji-btn">📅</button>
+                                <button class="emoji-btn">⏰</button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Предпросмотр:</label>
+                            <div id="notify-preview" class="preview-box"></div>
+                        </div>
+                        
+                        <div class="modal-actions">
+                            <button type="submit" class="btn-primary">Отправить</button>
+                            <button type="button" class="btn-secondary" id="close-notify-modal">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+
+            // Инициализируем обработчики после обновления HTML
+            initializeNotifyModalHandlers();
         });
     }
+
+    // Функция инициализации обработчиков модального окна
+    function initializeNotifyModalHandlers() {
+        const recipientType = document.getElementById('recipient-type');
+        const clientSelectContainer = document.getElementById('client-select-container');
+        const groupSelectContainer = document.getElementById('group-select-container');
+        const clientSelect = document.getElementById('client-select');
+        const groupSelect = document.getElementById('group-select');
+        const notifyMessage = document.getElementById('notify-message');
+        const notifyPreview = document.getElementById('notify-preview');
+        const notifyForm = document.getElementById('notify-clients-form');
+        const closeNotifyModal = document.getElementById('close-notify-modal');
+        const emojiPanel = document.getElementById('emoji-panel');
+
+        // Обработчик изменения типа получателей
+        recipientType.addEventListener('change', async () => {
+            clientSelectContainer.style.display = recipientType.value === 'client' ? 'block' : 'none';
+            groupSelectContainer.style.display = recipientType.value === 'group' ? 'block' : 'none';
+
+            if (recipientType.value === 'client') {
+                await loadClientsForSelect();
+            } else if (recipientType.value === 'group') {
+                await loadGroupsForSelect();
+            }
+        });
+
+        // Обработчик эмодзи
+        if (emojiPanel && notifyMessage) {
+            emojiPanel.onclick = function(e) {
+                if (e.target.classList.contains('emoji-btn')) {
+                    const emoji = e.target.textContent;
+                    const start = notifyMessage.selectionStart;
+                    const end = notifyMessage.selectionEnd;
+                    const value = notifyMessage.value;
+                    notifyMessage.value = value.slice(0, start) + emoji + value.slice(end);
+                    notifyMessage.focus();
+                    notifyMessage.selectionStart = notifyMessage.selectionEnd = start + emoji.length;
+                    notifyPreview.textContent = notifyMessage.value;
+                }
+            };
+        }
+
+        // Обработчик ввода сообщения
+        if (notifyMessage && notifyPreview) {
+            notifyMessage.addEventListener('input', () => {
+                notifyPreview.textContent = notifyMessage.value;
+            });
+        }
+
+        // Обработчик отправки формы
+        if (notifyForm) {
+            notifyForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const text = notifyMessage.value.trim();
+                if (!text) return;
+
+                const recipientType = document.getElementById('recipient-type').value;
+                let endpoint = '/api/trainings/notify-clients';
+                let body = { message: text };
+
+                if (recipientType === 'client') {
+                    const clientId = document.getElementById('client-select').value;
+                    if (!clientId) {
+                        showError('Выберите пользователя');
+                        return;
+                    }
+                    endpoint = '/api/clients/notify';
+                    body.clientId = clientId;
+                } else if (recipientType === 'group') {
+                    const groupId = document.getElementById('group-select').value;
+                    if (!groupId) {
+                        showError('Выберите тренировку');
+                        return;
+                    }
+                    endpoint = '/api/trainings/notify-group';
+                    body.groupId = groupId;
+                }
+
+                try {
+                    const resp = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        showSuccess(data.message || 'Сообщение отправлено!');
+                        document.getElementById('notify-clients-modal').style.display = 'none';
+                    } else {
+                        showError(data.error || 'Ошибка при отправке сообщения');
+                    }
+                } catch (err) {
+                    showError('Ошибка при отправке сообщения');
+                }
+            });
+        }
+
+        // Обработчик закрытия модального окна
+        if (closeNotifyModal) {
+            closeNotifyModal.addEventListener('click', () => {
+                document.getElementById('notify-clients-modal').style.display = 'none';
+            });
+        }
+
+        // Закрытие по клику вне окна
+        const modal = document.getElementById('notify-clients-modal');
+        if (modal) {
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.style.display = 'none';
+            };
+        }
+    }
+
+    // Функция загрузки списка клиентов для выпадающего списка
+    async function loadClientsForSelect() {
+        try {
+            const response = await fetch('/api/clients');
+            const clients = await response.json();
+            const clientSelect = document.getElementById('client-select');
+            
+            clientSelect.innerHTML = clients.map(client => 
+                `<option value="${client.id}">${client.full_name} (${client.phone})</option>`
+            ).join('');
+        } catch (error) {
+            console.error('Ошибка при загрузке списка клиентов:', error);
+            showError('Не удалось загрузить список клиентов');
+        }
+    }
+
+    // Функция загрузки списка групповых тренировок для выпадающего списка
+    async function loadGroupsForSelect() {
+        try {
+            const response = await fetch('/api/trainings/active-groups');
+            const groups = await response.json();
+            const groupSelect = document.getElementById('group-select');
+            
+            groupSelect.innerHTML = groups.map(group => 
+                `<option value="${group.id}">${group.name} (${formatDate(group.session_date)} ${group.start_time})</option>`
+            ).join('');
+        } catch (error) {
+            console.error('Ошибка при загрузке списка тренировок:', error);
+            showError('Не удалось загрузить список тренировок');
+        }
+    }
+
     if (closeNotifyModal && notifyModal) {
         closeNotifyModal.addEventListener('click', () => {
             notifyModal.style.display = 'none';

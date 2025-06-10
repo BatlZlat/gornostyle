@@ -1202,4 +1202,122 @@ body {
   color: #e53935;
   font-weight: bold;
   margin-left: 4px;
+}
+
+/* Стили для модального окна отправки сообщений */
+#notify-clients-modal .modal-content {
+    max-width: 600px;
+    width: 90%;
+}
+
+#notify-clients-modal .form-group {
+    margin-bottom: 1rem;
+}
+
+#notify-clients-modal label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+#notify-clients-modal select.form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+}
+
+#notify-clients-modal textarea.form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    resize: vertical;
+    min-height: 100px;
+}
+
+#notify-clients-modal .preview-box {
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+    min-height: 50px;
+    margin-top: 0.5rem;
+}
+
+#notify-clients-modal .emoji-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+#notify-clients-modal .emoji-btn {
+    font-size: 1.2rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#notify-clients-modal .emoji-btn:hover {
+    background-color: #f0f0f0;
+}
+
+#notify-clients-modal .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+#notify-clients-modal .btn-primary,
+#notify-clients-modal .btn-secondary {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+#notify-clients-modal .btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+#notify-clients-modal .btn-primary:hover {
+    background-color: #0056b3;
+}
+
+#notify-clients-modal .btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+#notify-clients-modal .btn-secondary:hover {
+    background-color: #545b62;
+}
+
+/* Анимации для появления/исчезновения контейнеров выбора */
+#client-select-container,
+#group-select-container {
+    transition: opacity 0.3s ease-in-out;
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+#client-select-container[style*="display: block"],
+#group-select-container[style*="display: block"] {
+    opacity: 1;
+    height: auto;
+    margin-bottom: 1rem;
 } 

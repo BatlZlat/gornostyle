@@ -83,7 +83,7 @@ CREATE TABLE training_sessions (
     duration INTEGER NOT NULL DEFAULT 60,
     training_type BOOLEAN DEFAULT FALSE, -- FALSE = individual, TRUE = group
     max_participants INTEGER NOT NULL,
-    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10),
     price DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
