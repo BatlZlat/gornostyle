@@ -1329,14 +1329,21 @@ async function loadPrices() {
     try {
         const response = await fetch('/api/prices');
         const prices = await response.json();
-        
-        // Обновляем значения в полях ввода
-        Object.entries(prices).forEach(([key, value]) => {
-            const input = document.querySelector(`[data-price="${key}"]`);
-            if (input) {
-                input.value = value;
+        let missing = 0;
+        document.querySelectorAll('.price-input').forEach(input => {
+            const key = input.dataset.price;
+            if (prices.hasOwnProperty(key)) {
+                input.value = prices[key];
+                input.classList.remove('price-missing');
+            } else {
+                input.value = '';
+                input.classList.add('price-missing');
+                missing++;
             }
         });
+        if (missing > 0) {
+            showError(`В базе отсутствует ${missing} цен(ы) для некоторых комбинаций. Проверьте таблицу prices!`);
+        }
     } catch (error) {
         console.error('Ошибка при загрузке прайса:', error);
         showError('Не удалось загрузить прайс');
@@ -2829,3 +2836,8 @@ function formatDateDMY(dateStr) {
     const d = new Date(dateStr);
     return d.toLocaleDateString('ru-RU');
 }
+
+// Добавляю CSS для подсветки
+const style = document.createElement('style');
+style.innerHTML = `.price-missing { border: 2px solid #e53935 !important; background: #fff3f3 !important; }`;
+document.head.appendChild(style);
