@@ -15,6 +15,8 @@ const clientsRouter = require('./routes/clients');
 const smsRouter = require('./routes/sms');
 const childrenRouter = require('./routes/children');
 const financesRouter = require('./routes/finances');
+const adminAuthRouter = require('./routes/adminAuth');
+const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
 const fs = require('fs');
 
@@ -37,20 +39,27 @@ console.log('Загруженные маршруты:', {
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Middleware для проверки аутентификации
+app.use(verifyAuth);
+
+// Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Маршруты API
-console.log('Регистрация маршрутов API...');
-app.use('/api/schedule', scheduleRouter);
-app.use('/api/simulators', simulatorsRouter);
-app.use('/api/groups', groupsRouter);
-app.use('/api/trainers', trainersRouter);
-app.use('/api/trainings', trainingsRouter);
-app.use('/api/prices', pricesRouter);
-app.use('/api/clients', clientsRouter);
-app.use('/api/sms', smsRouter);
-app.use('/api/children', childrenRouter);
-app.use('/api/finances', financesRouter);
+// Маршруты аутентификации
+app.use('/api/admin', adminAuthRouter);
+
+// Защищенные маршруты
+app.use('/api/groups', verifyToken, groupsRouter);
+app.use('/api/trainers', verifyToken, trainersRouter);
+app.use('/api/trainings', verifyToken, trainingsRouter);
+app.use('/api/schedule', verifyToken, scheduleRouter);
+app.use('/api/simulators', verifyToken, simulatorsRouter);
+app.use('/api/prices', verifyToken, pricesRouter);
+app.use('/api/clients', verifyToken, clientsRouter);
+app.use('/api/finances', verifyToken, financesRouter);
+app.use('/api/sms', verifyToken, smsRouter);
+app.use('/api/children', verifyToken, childrenRouter);
 
 // API для управления ссылкой оплаты
 app.get('/api/payment-link', (req, res) => {

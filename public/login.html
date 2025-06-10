@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в панель администратора</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --error-color: #e74c3c;
+            --success-color: #27ae60;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f6fa;
+        }
+
+        .login-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .login-header h1 {
+            color: var(--primary-color);
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+        }
+
+        .error-message {
+            color: var(--error-color);
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-login:hover {
+            background-color: #2980b9;
+        }
+
+        .btn-login:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        #debug-log {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Вход в панель администратора</h1>
+        </div>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="login">Логин</label>
+                <input type="text" id="login" name="login" required>
+                <div class="error-message" id="loginError"></div>
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required>
+                <div class="error-message" id="passwordError"></div>
+            </div>
+            <button type="submit" class="btn-login" id="loginButton">Войти</button>
+        </form>
+    </div>
+
+    <div id="debug-log"></div>
+
+    <script>
+        // Функция для логирования
+        function log(message, type = 'info') {
+            const debugLog = document.getElementById('debug-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] [${type}] ${message}`;
+            console.log(logMessage);
+            debugLog.innerHTML += `<div>${logMessage}</div>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+
+        // Вспомогательная функция для работы с cookie
+        function setCookie(name, value, days) {
+            let expires = '';
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days*24*60*60*1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "")  + expires + "; path=/";
+        }
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+        function deleteCookie(name) {
+            document.cookie = name + '=; Max-Age=0; path=/';
+        }
+
+        // Функция для проверки токена
+        async function checkToken() {
+            log('Начало проверки токена');
+            const token = getCookie('adminToken');
+            if (!token) {
+                log('Токен не найден в cookie');
+                return false;
+            }
+
+            log('Токен найден, проверяем валидность');
+            try {
+                const response = await fetch('/api/admin/verify', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                log(`Ответ сервера: ${response.status} ${response.statusText}`);
+                const data = await response.json();
+                log(`Данные ответа: ${JSON.stringify(data)}`);
+
+                if (response.ok) {
+                    log('Токен валиден, перенаправляем на admin.html');
+                    window.location.href = '/admin.html';
+                    return true;
+                } else {
+                    log('Токен невалиден, удаляем из cookie');
+                    deleteCookie('adminToken');
+                    return false;
+                }
+            } catch (error) {
+                log(`Ошибка при проверке токена: ${error.message}`, 'error');
+                deleteCookie('adminToken');
+                return false;
+            }
+        }
+
+        // Проверяем токен только один раз при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Страница загружена, начинаем проверку токена');
+            checkToken();
+        });
+
+        // Обработчик формы входа
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            log('Начало процесса входа');
+            
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+            const loginError = document.getElementById('loginError');
+            const passwordError = document.getElementById('passwordError');
+            const loginButton = document.getElementById('loginButton');
+
+            log(`Попытка входа с логином: ${login}`);
+
+            // Сброс ошибок
+            loginError.style.display = 'none';
+            passwordError.style.display = 'none';
+            loginButton.disabled = true;
+
+            try {
+                log('Отправка запроса на сервер');
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ login, password })
+                });
+
+                log(`Получен ответ от сервера: ${response.status} ${response.statusText}`);
+                const data = await response.json();
+                log(`Данные ответа: ${JSON.stringify(data)}`);
+
+                if (response.ok) {
+                    log('Вход успешен, сохраняем токен в cookie');
+                    setCookie('adminToken', data.token, 1); // 1 день
+                    log('Перенаправляем на admin.html');
+                    window.location.href = '/admin.html';
+                } else {
+                    if (data.error === 'invalid_credentials') {
+                        log('Неверные учетные данные');
+                        loginError.textContent = 'Неверный логин или пароль';
+                        loginError.style.display = 'block';
+                    } else {
+                        log(`Ошибка входа: ${data.error}`);
+                        loginError.textContent = 'Произошла ошибка при входе';
+                        loginError.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                log(`Ошибка при входе: ${error.message}`, 'error');
+                loginError.textContent = 'Ошибка соединения с сервером';
+                loginError.style.display = 'block';
+            } finally {
+                loginButton.disabled = false;
+                log('Завершение процесса входа');
+            }
+        });
+
+        // Добавляем обработчик для отслеживания перенаправлений
+        window.addEventListener('beforeunload', () => {
+            log('Страница будет перезагружена/перенаправлена');
+        });
+    </script>
+</body>
+</html> 
