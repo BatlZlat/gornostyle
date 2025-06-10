@@ -413,7 +413,7 @@ async function loadTrainings() {
         // Группируем тренировки по дате
         const grouped = {};
         data.forEach(training => {
-            const date = new Date(training.session_date).toLocaleDateString('ru-RU');
+            const date = training.session_date;
             if (!grouped[date]) grouped[date] = [];
             grouped[date].push(training);
         });
@@ -422,13 +422,14 @@ async function loadTrainings() {
         let html = '';
         Object.keys(grouped).forEach(date => {
             html += `
-                <div class="training-date-header">${date}</div>
+                <div class="training-date-header">${formatDateWithWeekday(date)}</div>
                 <div class="training-table-container">
                     <table class="training-table">
                         <thead>
                             <tr>
                                 <th>Время</th>
-                                <th>Группа</th>
+                                <th>Тип</th>
+                                <th>Название</th>
                                 <th>Тренер</th>
                                 <th>Тренажёр</th>
                                 <th>Участников</th>
@@ -441,11 +442,12 @@ async function loadTrainings() {
                             ${grouped[date].map(training => `
                                 <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
                                     <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
-                                    <td>${training.group_name || 'Не указана'}</td>
+                                    <td>${training.training_type ? 'Групповая' : 'Индивидуальная'}</td>
+                                    <td>${training.group_name || '-'}</td>
                                     <td>${training.trainer_full_name || 'Не указан'}</td>
                                     <td>Тренажёр ${training.simulator_id}</td>
-                                    <td>${training.max_participants}</td>
-                                    <td>${training.skill_level}</td>
+                                    <td>${training.current_participants || 0}/${training.max_participants}</td>
+                                    <td>${training.skill_level || '-'}</td>
                                     <td>${training.price} ₽</td>
                                     <td class="training-actions">
                                         <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
@@ -483,20 +485,77 @@ async function loadTrainings() {
 // Загрузка расписания
 async function loadSchedule() {
     try {
-        const date = datePicker ? datePicker.value : new Date().toISOString().split('T')[0];
-        const response = await fetch(`/api/schedule?date=${date}`);
-        const schedule = await response.json();
-        
-        const scheduleList = document.querySelector('.schedule-list');
-        if (scheduleList) {
-            scheduleList.innerHTML = schedule.map(slot => `
-                <div class="schedule-slot">
-                    <div class="slot-time">${slot.start_time} - ${slot.end_time}</div>
-                    <div class="slot-simulator">Тренажер ${slot.simulator_id}</div>
-                    <div class="slot-status">${slot.is_available ? 'Свободен' : 'Занят'}</div>
-                </div>
-            `).join('');
+        const response = await fetch('/api/schedule/admin');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
+        const data = await response.json();
+        console.log('Полученные данные:', data);
+        
+        if (!data || !Array.isArray(data)) {
+            console.error('Получены некорректные данные:', data);
+            throw new Error('Получены некорректные данные от сервера');
+        }
+
+        const scheduleList = document.querySelector('.schedule-list');
+        if (!scheduleList) {
+            console.error('Элемент .schedule-list не найден на странице');
+            return;
+        }
+
+        if (data.length === 0) {
+            scheduleList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок на ближайшие 7 дней</div>';
+            return;
+        }
+
+        // Группируем тренировки по дате
+        const grouped = {};
+        data.forEach(training => {
+            const date = training.date;
+            if (!grouped[date]) grouped[date] = [];
+            grouped[date].push(training);
+        });
+
+        // Формируем HTML
+        let html = '';
+        Object.keys(grouped).forEach(date => {
+            html += `
+                <div class="training-date-header">${formatDateWithWeekday(date)}</div>
+                <div class="training-table-container">
+                    <table class="training-table">
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>Тип</th>
+                                <th>Название</th>
+                                <th>Тренер</th>
+                                <th>Тренажёр</th>
+                                <th>Участников</th>
+                                <th>Уровень</th>
+                                <th>Цена</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${grouped[date].map(training => `
+                                <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
+                                    <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                    <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
+                                    <td>${training.group_name || '-'}</td>
+                                    <td>${training.trainer_name || 'Не указан'}</td>
+                                    <td>${training.simulator_name}</td>
+                                    <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
+                                    <td>${training.skill_level || '-'}</td>
+                                    <td>${training.price} ₽</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        });
+
+        scheduleList.innerHTML = html;
     } catch (error) {
         console.error('Ошибка при загрузке расписания:', error);
         showError('Не удалось загрузить расписание');
@@ -2283,3 +2342,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function formatDateWithWeekday(dateString) {
+    const date = new Date(dateString);
+    const weekdays = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+    const weekday = weekdays[date.getDay()];
+    return `${date.toLocaleDateString('ru-RU')} (${weekday})`;
+}
