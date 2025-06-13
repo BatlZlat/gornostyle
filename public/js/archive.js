@@ -123,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <tbody>
                                     ${grouped[date].map(training => `
                                         <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
-                                            <td>${toYekaterinburgTime(training.date, training.start_time)} - ${toYekaterinburgTime(training.date, training.end_time)}</td>
+                                            <td>${toYekaterinburgTime(training.date.split('T')[0], training.start_time)} - ${toYekaterinburgTime(training.date.split('T')[0], training.end_time)}</td>
                                             <td>${training.group_name || 'Не указана'}</td>
                                             <td>${training.trainer_name || 'Не указан'}</td>
                                             <td>${training.simulator_name || `Тренажёр ${training.simulator_id}`}</td>
