@@ -657,7 +657,7 @@ async function loadTrainings() {
                                     <td>Тренажёр ${training.simulator_id}</td>
                                     <td>${training.current_participants || 0}/${training.max_participants}</td>
                                     <td>${training.skill_level || '-'}</td>
-                                    <td>${training.price} ₽</td>
+                                    <td>${training.price != null ? training.price : '-'} ₽</td>
                                     <td class="training-actions">
                                         <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
                                             Подробнее
@@ -1812,7 +1812,7 @@ async function viewTrainingDetails(trainingId) {
                         <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
                         <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
                         <p><strong>Уровень:</strong> ${training.skill_level}</p>
-                        <p><strong>Цена:</strong> ${training.price} ₽</p>
+                        <p><strong>Цена:</strong> ${training.price != null ? training.price : '-'} ₽</p>
                     </div>
                     <div class="detail-group">
                         <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>

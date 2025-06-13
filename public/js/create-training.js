@@ -150,15 +150,12 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const response = await fetch('/api/prices');
             const prices = await response.json();
-            const found = Object.values(prices).find(p =>
-                p.type === 'group' &&
-                p.with_trainer === withTrainer &&
-                p.participants === participants &&
-                p.duration === 60
-            );
-            if (found) {
-                priceField.textContent = `Стоимость: ${found.price} ₽`;
-                priceField.dataset.price = found.price;
+            // Формируем ключ для поиска цены
+            const key = `group_${withTrainer ? 'true' : 'false'}_60_${participants}`;
+            const price = prices[key];
+            if (price !== undefined) {
+                priceField.textContent = `Стоимость: ${price} ₽`;
+                priceField.dataset.price = price;
             } else {
                 priceField.textContent = 'Нет цены для выбранных параметров';
                 priceField.dataset.price = '';
