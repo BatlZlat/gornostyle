@@ -993,3 +993,165 @@ JWT_SECRET=секретный_ключ_для_jwt
 
 ## Уроки
 (Будет заполнено по мере реализации) 
+
+# План реализации архивных индивидуальных тренировок
+
+## Фон и мотивация
+Необходимо расширить функционал страницы архива тренировок, добавив отображение индивидуальных тренировок в существующую таблицу. Это позволит администраторам иметь полную картину всех проведенных занятий, как групповых, так и индивидуальных.
+
+## Ключевые задачи и анализ
+1. Интеграция индивидуальных тренировок в существующую таблицу
+2. Получение дополнительной информации о клиентах/детях
+3. Расчет статистики по тренировкам
+4. Обновление UI для отображения расширенной информации
+
+## Разбивка задач
+
+### 1. Обновление API
+- [ ] Создать новый эндпоинт `/api/trainings/archive` для получения объединенных данных
+- [ ] Модифицировать SQL-запрос для объединения данных из `training_sessions` и `individual_training_sessions`
+- [ ] Добавить JOIN с таблицами `clients` и `children` для получения информации об участниках
+- [ ] Реализовать расчет статистики по тренировкам
+
+### 2. Обновление фронтенда
+- [ ] Модифицировать функцию `loadArchiveTrainings()` для работы с новым API
+- [ ] Обновить отображение таблицы для корректного показа индивидуальных тренировок
+- [ ] Добавить отображение дополнительной информации в деталях тренировки
+- [ ] Реализовать расчет и отображение статистики
+
+### 3. Детали реализации таблицы
+- [ ] Формат данных для каждой колонки:
+  1. **Время**:
+     - Формат: "HH:MM - HH:MM"
+     - Групповые: `start_time` - `end_time` из `training_sessions`
+     - Индивидуальные: `preferred_time` - (`preferred_time` + `duration` минут)
+     - Пример: "12:00 - 13:00"
+
+  2. **Группа**:
+     - Групповые: `groups.name`
+     - Индивидуальные: статический текст "Индивидуальная"
+
+  3. **Тренер**:
+     - Групповые: `trainers.full_name`
+     - Индивидуальные: 
+       - Если `with_trainer = true`: "С тренером"
+       - Если `with_trainer = false`: "Без тренера"
+
+  4. **Тренажёр**:
+     - Для обоих типов: "Тренажёр {simulator_id}"
+     - Берется из `simulator_id` в обеих таблицах
+
+  5. **Участников**:
+     - Групповые: "{current_count}/{max_participants}"
+     - Индивидуальные: ФИО участника
+       - Если `child_id` не null: `full_name` из `children`
+       - Если `client_id` не null: `full_name` из `clients`
+
+  6. **Уровень**:
+     - Групповые: `skill_level` из `training_sessions`
+     - Индивидуальные:
+       - Если `child_id` не null: `skill_level` из `children`
+       - Если `client_id` не null: `skill_level` из `clients`
+
+  7. **Цена**:
+     - Для обоих типов: "{price} ₽"
+     - Берется из поля `price` в соответствующих таблицах
+
+  8. **Действия**:
+     - Для обоих типов: кнопка "Подробнее"
+     - При нажатии открывает детальную информацию о тренировке
+
+- [ ] SQL-запрос для объединения данных:
+```sql
+WITH archive_trainings AS (
+    -- Групповые тренировки
+    SELECT 
+        ts.id,
+        ts.session_date as date,
+        ts.start_time,
+        ts.end_time,
+        FALSE as is_individual,
+        g.name as group_name,
+        t.full_name as trainer_name,
+        ts.simulator_id,
+        COUNT(sp.id) as current_participants,
+        ts.max_participants,
+        ts.skill_level,
+        ts.price,
+        ts.equipment_type,
+        ts.with_trainer,
+        NULL as participant_name
+    FROM training_sessions ts
+    LEFT JOIN groups g ON ts.group_id = g.id
+    LEFT JOIN trainers t ON ts.trainer_id = t.id
+    LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+        AND sp.status = 'confirmed'
+    WHERE ts.session_date < CURRENT_DATE
+        AND ts.status = 'completed'
+    GROUP BY ts.id, g.name, t.full_name
+
+    UNION ALL
+
+    -- Индивидуальные тренировки
+    SELECT 
+        its.id,
+        its.preferred_date as date,
+        its.preferred_time as start_time,
+        (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
+        TRUE as is_individual,
+        'Индивидуальная' as group_name,
+        CASE 
+            WHEN its.with_trainer THEN 'С тренером'
+            ELSE 'Без тренера'
+        END as trainer_name,
+        its.simulator_id,
+        1 as current_participants,
+        1 as max_participants,
+        COALESCE(c.skill_level, ch.skill_level) as skill_level,
+        its.price,
+        its.equipment_type,
+        its.with_trainer,
+        COALESCE(c.full_name, ch.full_name) as participant_name
+    FROM individual_training_sessions its
+    LEFT JOIN clients c ON its.client_id = c.id
+    LEFT JOIN children ch ON its.child_id = ch.id
+    WHERE its.preferred_date < CURRENT_DATE
+)
+SELECT 
+    id,
+    date,
+    start_time,
+    end_time,
+    is_individual,
+    group_name,
+    trainer_name,
+    simulator_id,
+    CASE 
+        WHEN is_individual THEN participant_name
+        ELSE current_participants::text || '/' || max_participants::text
+    END as participants,
+    skill_level,
+    price,
+    equipment_type,
+    with_trainer
+FROM archive_trainings
+ORDER BY date DESC, start_time DESC;
+```
+
+## Критерии успеха
+1. Все индивидуальные тренировки корректно отображаются в таблице
+2. Информация о клиентах/детях доступна в деталях тренировки
+3. Статистика корректно рассчитывается и отображается
+4. UI остается консистентным и удобным для использования
+
+## Текущий статус
+- Начальная стадия планирования
+- Требуется подтверждение плана от пользователя
+
+## Обратная связь или запросы на помощь
+- Требуется подтверждение плана реализации
+- Нужно уточнить, какие дополнительные поля статистики могут быть полезны
+- Возможно потребуется оптимизация SQL-запросов для больших объемов данных
+
+## Уроки
+- Пока нет 

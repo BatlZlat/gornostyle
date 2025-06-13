@@ -91,20 +91,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
 
-                // Сортируем тренировки по дате (от новых к старым)
-                data.sort((a, b) => new Date(b.session_date) - new Date(a.session_date));
-
                 // Группируем тренировки по дате
                 const grouped = {};
                 data.forEach(training => {
-                    const date = new Date(training.session_date).toLocaleDateString('ru-RU');
+                    const date = new Date(training.date).toLocaleDateString('ru-RU');
                     if (!grouped[date]) grouped[date] = [];
                     grouped[date].push(training);
                 });
 
                 // Формируем HTML
                 let html = '';
-                Object.keys(grouped).forEach(date => {
+                Object.keys(grouped).sort((a, b) => {
+                    return new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-'));
+                }).forEach(date => {
                     html += `
                         <div class="training-date-header">${date}</div>
                         <div class="training-table-container">
@@ -124,15 +123,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <tbody>
                                     ${grouped[date].map(training => `
                                         <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
-                                            <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                            <td>${toYekaterinburgTime(training.date, training.start_time)} - ${toYekaterinburgTime(training.date, training.end_time)}</td>
                                             <td>${training.group_name || 'Не указана'}</td>
                                             <td>${training.trainer_name || 'Не указан'}</td>
-                                            <td>Тренажёр ${training.simulator_id}</td>
-                                            <td>${training.participants_count || 0}/${training.max_participants || 0}</td>
-                                            <td>${training.skill_level}</td>
+                                            <td>${training.simulator_name || `Тренажёр ${training.simulator_id}`}</td>
+                                            <td>${training.participants}</td>
+                                            <td>${training.skill_level || '-'}</td>
                                             <td>${training.price} ₽</td>
                                             <td class="training-actions">
-                                                <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
+                                                <button class="btn-secondary" onclick="viewTrainingDetails(${training.id}, ${training.is_individual})">
                                                     Подробнее
                                                 </button>
                                             </td>
@@ -165,8 +164,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Функция просмотра деталей тренировки
-    window.viewTrainingDetails = function(trainingId) {
-        window.location.href = `training-details.html?id=${trainingId}`;
+    window.viewTrainingDetails = function(trainingId, isIndividual) {
+        window.location.href = `training-details.html?id=${trainingId}&type=${isIndividual ? 'individual' : 'group'}`;
     };
 
     // Функция отображения ошибок
@@ -200,6 +199,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 errorContainer.remove();
             }
         }, 3000);
+    }
+
+    // Функция преобразования времени в Asia/Yekaterinburg
+    function toYekaterinburgTime(date, time) {
+        if (!date || !time) return '';
+        // Если время уже в формате HH:mm, добавим :00
+        let t = time.length === 5 ? time + ':00' : time;
+        // Формируем строку для UTC
+        const utcDate = new Date(`${date}T${t}Z`);
+        return utcDate.toLocaleTimeString('ru-RU', {
+            timeZone: 'Asia/Yekaterinburg',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
     }
 
     // Инициализация

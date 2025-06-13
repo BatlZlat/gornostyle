@@ -210,33 +210,105 @@ router.get('/archive', async (req, res) => {
     
     try {
         let query = `
-            SELECT ts.*, 
-                   g.name as group_name,
-                   t.full_name as trainer_name,
-                   s.name as simulator_name,
-                   (SELECT COUNT(*) FROM session_participants sp WHERE sp.session_id = ts.id) as participants_count
-            FROM training_sessions ts
-            LEFT JOIN groups g ON ts.group_id = g.id
-            LEFT JOIN trainers t ON ts.trainer_id = t.id
-            LEFT JOIN simulators s ON ts.simulator_id = s.id
-            WHERE ts.session_date < CURRENT_DATE
+            WITH archive_trainings AS (
+                -- Групповые тренировки
+                SELECT 
+                    ts.id,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    FALSE as is_individual,
+                    g.name as group_name,
+                    t.full_name as trainer_name,
+                    ts.simulator_id,
+                    s.name as simulator_name,
+                    COUNT(sp.id) as current_participants,
+                    ts.max_participants,
+                    ts.skill_level,
+                    ts.price,
+                    ts.equipment_type,
+                    ts.with_trainer,
+                    NULL as participant_name
+                FROM training_sessions ts
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN simulators s ON ts.simulator_id = s.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
+                WHERE (ts.session_date < CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time < CURRENT_TIME))
+                GROUP BY ts.id, g.name, t.full_name, s.name
+
+                UNION ALL
+
+                -- Индивидуальные тренировки
+                SELECT 
+                    its.id,
+                    its.preferred_date as date,
+                    its.preferred_time as start_time,
+                    (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
+                    TRUE as is_individual,
+                    'Индивидуальная' as group_name,
+                    CASE 
+                        WHEN its.with_trainer THEN 'С тренером'
+                        ELSE 'Без тренера'
+                    END as trainer_name,
+                    its.simulator_id,
+                    s.name as simulator_name,
+                    1 as current_participants,
+                    1 as max_participants,
+                    COALESCE(c.skill_level, ch.skill_level) as skill_level,
+                    its.price,
+                    its.equipment_type,
+                    its.with_trainer,
+                    COALESCE(c.full_name, ch.full_name) as participant_name
+                FROM individual_training_sessions its
+                LEFT JOIN simulators s ON its.simulator_id = s.id
+                LEFT JOIN clients c ON its.client_id = c.id
+                LEFT JOIN children ch ON its.child_id = ch.id
+                WHERE its.preferred_date < CURRENT_DATE
+                    AND its.preferred_date >= CURRENT_DATE - INTERVAL '30 days'
+            )
+            SELECT 
+                id,
+                date,
+                start_time,
+                end_time,
+                is_individual,
+                group_name,
+                trainer_name,
+                simulator_id,
+                simulator_name,
+                CASE 
+                    WHEN is_individual THEN participant_name
+                    ELSE current_participants::text || '/' || max_participants::text
+                END as participants,
+                skill_level,
+                price,
+                equipment_type,
+                with_trainer
+            FROM archive_trainings
+            WHERE 1=1
         `;
         const params = [];
+        let paramIndex = 1;
 
         if (date_from) {
-            query += ' AND ts.session_date >= $1';
+            query += ` AND date >= $${paramIndex}`;
             params.push(date_from);
+            paramIndex++;
         }
         if (date_to) {
-            query += ' AND ts.session_date <= $' + (params.length + 1);
+            query += ` AND date <= $${paramIndex}`;
             params.push(date_to);
+            paramIndex++;
         }
         if (trainer_id) {
-            query += ' AND ts.trainer_id = $' + (params.length + 1);
+            query += ` AND trainer_id = $${paramIndex}`;
             params.push(trainer_id);
+            paramIndex++;
         }
 
-        query += ' ORDER BY ts.session_date DESC, ts.start_time DESC';
+        query += ' ORDER BY date DESC, start_time DESC';
 
         const result = await pool.query(query, params);
         res.json(result.rows);
