@@ -13,10 +13,18 @@ const verifyToken = (req, res, next) => {
     const token = authHeader.split(' ')[1];
 
     try {
+        // Проверяем специальный токен для MacroDroid
+        if (token === process.env.MACRODROID_TOKEN) {
+            req.user = { sub: 'macrodroid' };
+            return next();
+        }
+
+        // Проверяем обычный JWT токен
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
     } catch (error) {
+        console.error('Ошибка при проверке токена:', error);
         return res.status(401).json({ error: 'Недействительный токен' });
     }
 };

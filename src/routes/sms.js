@@ -3,60 +3,130 @@ const router = express.Router();
 const { pool } = require('../db');
 const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-bot');
 
+// Логируем значение MACRODROID_TOKEN для отладки
+console.log('MACRODROID_TOKEN (из process.env):', process.env.MACRODROID_TOKEN);
+
 // Универсальный парсер суммы и кошелька
 function parseSmsUniversal(text) {
-    // Ищем сумму: +10р, 10р, 100р и т.д.
-    const amountMatch = text.match(/(\+?\d+)\s*р/i);
-    // Ищем номер кошелька: xxxx-xxxx-xxxx-xxxx (12-20 цифр с дефисами)
-    let walletMatch = text.match(/(\d{4}-\d{4}-\d{4}-\d{4,6})/);
-    if (!walletMatch) {
-        // Альфабанк: Сообщение: 4857-4961-3108-9823
-        const alfaMatch = text.match(/Сообщение:\s*([\d\-]{16,23})/);
-        if (alfaMatch) walletMatch = [alfaMatch[1]];
+    // Нормализация текста
+    const normalizedText = text
+        .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ') // Замена всех видов пробелов
+        .replace(/["'«»]/g, '"') // Нормализация кавычек
+        .replace(/\s+/g, ' ') // Нормализация пробелов
+        .trim();
+
+    // Поиск суммы (основной приоритет)
+    const amountPatterns = [
+        // Число перед буквой р (русской или английской), допускаем точку/запятую после "р"
+        /(\+?(?:\d{1,3}(?:\s\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?))\s*[рp](?:[.,]?|\b)/i,
+        // Дополнительные паттерны (на всякий случай), допускаем точку/запятую после слова
+        /(\+?(?:\d{1,3}(?:\s\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?))\s*(?:руб|рубль|рублей|₽)[.,]?/i
+    ];
+
+    // Поиск номера кошелька
+    const walletPatterns = [
+        // После ключевых слов, допускаем точку или запятую после номера
+        /(?:сообщение|номер|кошелек|счет|карта|перевод)[:]\s*([\d\-]{16,23})[.,]?/i,
+        // В кавычках, допускаем точку или запятую после номера
+        /["']([\d\-]{16,23})["'][.,]?/,
+        // Просто последовательность цифр с разделителями, допускаем точку или запятую после номера
+        /(\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4})[.,]?/,
+        // Любая последовательность из 16+ цифр, допускаем точку или запятую после номера
+        /(\d{16,})[.,]?/
+    ];
+
+    // Поиск суммы (основной приоритет)
+    let amount = null;
+    for (const pattern of amountPatterns) {
+        const match = normalizedText.match(pattern);
+        if (match) {
+            amount = parseFloat(match[1].replace(/\s/g, '').replace(',', '.').replace('+', ''));
+            if (!isNaN(amount)) {
+                break;
+            }
+        }
     }
-    if (!amountMatch || !walletMatch) return null;
+
+    // Поиск номера кошелька
+    let walletNumber = null;
+    for (const pattern of walletPatterns) {
+        const match = normalizedText.match(pattern);
+        if (match) {
+            // Очистка номера от всех нецифровых символов
+            walletNumber = match[1].replace(/[^\d]/g, '');
+            if (walletNumber.length >= 16) {
+                walletNumber = walletNumber.slice(0, 16);
+                break;
+            }
+        }
+    }
+
+    // Логирование процесса парсинга
+    console.log('Парсинг СМС:', {
+        original_text: text,
+        normalized_text: normalizedText,
+        found_amount: amount,
+        found_wallet: walletNumber,
+        timestamp: new Date().toISOString()
+    });
+
+    // Валидация результатов
+    if (!amount) {
+        console.log('Не удалось найти сумму в СМС:', {
+            text: normalizedText,
+            error: 'Сумма не найдена'
+        });
+        return null;
+    }
+
+    if (!walletNumber) {
+        console.log('Не удалось найти номер кошелька в СМС:', {
+            text: normalizedText,
+            error: 'Номер кошелька не найден'
+        });
+        return null;
+    }
+
     return {
-        amount: parseFloat(amountMatch[1].replace('+', '')),
-        walletNumber: walletMatch[0].replace(/-/g, '')
+        amount,
+        walletNumber,
+        originalText: text,
+        parsedAt: new Date().toISOString()
     };
 }
 
-// Функция для извлечения номера кошелька
-function extractWalletNumber(walletNumber) {
+// Функция для сохранения СМС в лог
+async function logSms(smsText, parsedData, errorType = null, errorDetails = null) {
     try {
-        // Удаляем дефисы и проверяем длину (от 12 до 20 символов)
-        const cleanNumber = walletNumber.replace(/-/g, '');
-        if (cleanNumber.length < 12 || cleanNumber.length > 20) {
-            throw new Error('Неверный формат номера кошелька');
-        }
-        return cleanNumber;
+        await pool.query(
+            `INSERT INTO sms_log (
+                sms_text,
+                parsed_data,
+                error_type,
+                error_details,
+                processing_status
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [
+                smsText,
+                parsedData ? JSON.stringify(parsedData) : null,
+                errorType,
+                errorDetails,
+                parsedData ? 'success' : 'failed'
+            ]
+        );
     } catch (error) {
-        console.error('Ошибка при извлечении номера кошелька:', error);
-        throw error;
-    }
-}
-
-// Функция для извлечения суммы
-function extractAmount(amount) {
-    try {
-        // Удаляем + если есть и проверяем что это число
-        const cleanAmount = amount.replace('+', '');
-        const numAmount = parseFloat(cleanAmount);
-        if (isNaN(numAmount)) {
-            throw new Error('Неверный формат суммы');
-        }
-        return numAmount;
-    } catch (error) {
-        console.error('Ошибка при извлечении суммы:', error);
-        throw error;
+        console.error('Ошибка при сохранении СМС в лог:', error);
     }
 }
 
 // Обработка СМС
 router.post('/process', async (req, res) => {
+    // Логируем заголовок Authorization для отладки
+    console.log('Authorization header:', req.headers.authorization);
     let { sms_text } = req.body;
 
     if (!sms_text) {
+        await logSms(null, null, 'validation_error', 'Текст СМС не указан');
         return res.status(400).json({ error: 'Текст СМС не указан' });
     }
 
@@ -82,18 +152,15 @@ router.post('/process', async (req, res) => {
         const normalizedText = sms_text.replace(/[\r\n]+/g, ' ');
         // Универсальный парсинг
         const parsed = parseSmsUniversal(normalizedText);
+        
         if (!parsed) {
             console.log('Не удалось извлечь сумму или номер кошелька:', sms_text);
+            await logSms(sms_text, null, 'parsing_error', 'Не удалось извлечь сумму или номер кошелька');
             return res.status(200).json({ message: 'Не удалось извлечь сумму или номер кошелька' });
         }
+
         const { amount, walletNumber } = parsed;
         console.log('Извлеченные данные:', { amount, walletNumber });
-
-        const cleanWalletNumber = extractWalletNumber(walletNumber);
-        // Исправляем extractAmount: приводим к строке
-        const cleanAmount = extractAmount(String(amount));
-
-        console.log('Очищенные данные:', { cleanAmount, cleanWalletNumber });
 
         // Проверяем существование таблиц
         const tablesExist = await pool.query(`
@@ -104,21 +171,26 @@ router.post('/process', async (req, res) => {
             EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_name = 'failed_payments'
-            ) as failed_payments_exist
+            ) as failed_payments_exist,
+            EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'sms_log'
+            ) as sms_log_exist
         `);
 
-        if (!tablesExist.rows[0].wallets_exist || !tablesExist.rows[0].failed_payments_exist) {
+        if (!tablesExist.rows[0].wallets_exist || !tablesExist.rows[0].failed_payments_exist || !tablesExist.rows[0].sms_log_exist) {
             throw new Error('Необходимые таблицы не существуют');
         }
 
         // Получаем текущий баланс и имя клиента
         const walletInfo = await pool.query(
             `SELECT w.balance, c.full_name FROM wallets w JOIN clients c ON w.client_id = c.id WHERE w.wallet_number = $1`,
-            [cleanWalletNumber]
+            [walletNumber]
         );
+
         if (walletInfo.rows.length === 0) {
-            // Кошелек не найден, обработка как раньше
-            console.log('Кошелек не найден:', cleanWalletNumber);
+            // Кошелек не найден, сохраняем в failed_payments и логируем
+            console.log('Кошелек не найден:', walletNumber);
             await pool.query(
                 `INSERT INTO failed_payments (
                     amount, 
@@ -126,11 +198,12 @@ router.post('/process', async (req, res) => {
                     sms_text, 
                     error_type
                 ) VALUES ($1, $2, $3, $4)`,
-                [cleanAmount, cleanWalletNumber, sms_text, 'wallet_not_found']
+                [amount, walletNumber, sms_text, 'wallet_not_found']
             );
+            await logSms(sms_text, parsed, 'wallet_not_found', 'Кошелек не найден в базе данных');
             await notifyAdminFailedPayment({
-                amount: cleanAmount,
-                wallet_number: cleanWalletNumber,
+                amount,
+                wallet_number: walletNumber,
                 date: new Date().toLocaleDateString(),
                 time: new Date().toLocaleTimeString()
             });
@@ -139,47 +212,76 @@ router.post('/process', async (req, res) => {
                 saved_to_failed: true
             });
         }
+
         const oldBalance = parseFloat(walletInfo.rows[0].balance);
         const clientName = walletInfo.rows[0].full_name;
-        const newBalance = oldBalance + cleanAmount;
+        const newBalance = oldBalance + amount;
 
-        // Обновляем баланс кошелька
-        await pool.query(
-            `UPDATE wallets SET balance = $1, last_updated = CURRENT_TIMESTAMP WHERE wallet_number = $2`,
-            [newBalance, cleanWalletNumber]
-        );
+        // Начинаем транзакцию
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        // Создаем запись о транзакции
-        await pool.query(
-            `INSERT INTO transactions (wallet_id, amount, type, description)
-            VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, $3, $4)`,
-            [cleanWalletNumber, cleanAmount, 'refill', 'Пополнение через СБП']
-        );
+            // Обновляем баланс кошелька
+            await client.query(
+                `UPDATE wallets SET balance = $1, last_updated = CURRENT_TIMESTAMP WHERE wallet_number = $2`,
+                [newBalance, walletNumber]
+            );
 
-        // Уведомляем администратора о пополнении
-        await notifyAdminWalletRefilled({
-            clientName,
-            amount: cleanAmount,
-            walletNumber: cleanWalletNumber,
-            balance: newBalance
-        });
+            // Создаем запись о транзакции
+            await client.query(
+                `INSERT INTO transactions (wallet_id, amount, type, description)
+                VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, $3, $4)`,
+                [walletNumber, amount, 'refill', 'Пополнение через СБП']
+            );
 
-        console.log('Платеж успешно обработан:', {
-            wallet_number: cleanWalletNumber,
-            client_name: clientName,
-            amount: cleanAmount,
-            new_balance: newBalance
-        });
+            // Обновляем статус в sms_log
+            await client.query(
+                `UPDATE sms_log 
+                 SET processing_status = 'completed', processed_at = CURRENT_TIMESTAMP 
+                 WHERE id = (
+                     SELECT id FROM sms_log
+                     WHERE sms_text = $1 AND processing_status = 'success'
+                     ORDER BY created_at DESC
+                     LIMIT 1
+                 )`,
+                [sms_text]
+            );
 
-        res.json({ 
-            message: 'Платеж успешно обработан',
-            wallet_number: cleanWalletNumber,
-            client_name: clientName,
-            new_balance: newBalance
-        });
+            await client.query('COMMIT');
+
+            // Уведомляем администратора о пополнении
+            await notifyAdminWalletRefilled({
+                clientName,
+                amount,
+                walletNumber,
+                balance: newBalance
+            });
+
+            console.log('Платеж успешно обработан:', {
+                wallet_number: walletNumber,
+                client_name: clientName,
+                amount,
+                new_balance: newBalance
+            });
+
+            res.json({ 
+                message: 'Платеж успешно обработан',
+                wallet_number: walletNumber,
+                client_name: clientName,
+                new_balance: newBalance
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
 
     } catch (error) {
         console.error('Ошибка при обработке СМС:', error);
+        await logSms(sms_text, null, 'processing_error', error.message);
         res.status(500).json({ 
             error: 'Внутренняя ошибка сервера',
             details: error.message

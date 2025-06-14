@@ -211,6 +211,18 @@ CREATE TABLE failed_payments (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица логов СМС
+CREATE TABLE sms_log (
+    id SERIAL PRIMARY KEY,
+    sms_text TEXT NOT NULL,
+    parsed_data JSONB,
+    error_type VARCHAR(50),
+    error_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP,
+    processing_status VARCHAR(20) DEFAULT 'pending'
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -237,6 +249,8 @@ CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(s
 CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
 CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
+CREATE INDEX idx_sms_log_created_at ON sms_log(created_at);
+CREATE INDEX idx_sms_log_processing_status ON sms_log(processing_status);
 
 -- Создание триггеров для обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -351,6 +365,4 @@ DROP TRIGGER IF EXISTS individual_training_sessions_schedule_trigger ON individu
 CREATE TRIGGER individual_training_sessions_schedule_trigger
 AFTER INSERT OR DELETE ON individual_training_sessions
 FOR EACH ROW
-EXECUTE FUNCTION update_individual_training_slots();
-
--- Удаляем старую таблицу group_training_requests 
+EXECUTE FUNCTION update_individual_training_slots(); 
