@@ -2639,7 +2639,8 @@ bot.on('message', async (msg) => {
                         // Проверяем наличие детей у клиента
                         const childrenResult = await pool.query(
                             `SELECT id, full_name, 
-                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age,
+                                skill_level
                             FROM children 
                             WHERE parent_id = $1 AND 
                                 EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 16`,
@@ -2674,14 +2675,14 @@ bot.on('message', async (msg) => {
 
                         let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
-                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
+                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level} уровень)\n`;
                         });
 
                         return bot.sendMessage(chatId, message, {
                             parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [
-                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name}`]),
+                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name} (${child.skill_level} ур.)`]),
                                     ['🔙 Назад в меню']
                                 ],
                                 resize_keyboard: true
