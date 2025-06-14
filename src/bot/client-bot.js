@@ -1428,6 +1428,7 @@ bot.on('message', async (msg) => {
                             
                             message += `${index + 1}. *${formattedDate} (${dayOfWeek}) ${formattedTime}*\n`;
                             message += `   👥 ${session.group_name} (${session.current_participants}/${session.max_participants})\n`;
+                            message += `   📊 Уровень: ${session.skill_level}/10\n`;
                             message += `   💰 ${session.price} руб.\n\n`;
                         });
 
