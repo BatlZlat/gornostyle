@@ -1420,28 +1420,22 @@ bot.on('message', async (msg) => {
                         
                         // Добавляем информацию о каждой тренировке
                         result.rows.forEach((session, index) => {
-                            const date = new Date(session.session_date);
-                            const dayOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][date.getDay()];
-                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                            const [hours, minutes] = session.start_time.split(':');
-                            const formattedTime = `${hours}:${minutes}`;
-                            
-                            message += `${index + 1}. *${formattedDate} (${dayOfWeek}) ${formattedTime}*\n`;
-                            message += `   👥 ${session.group_name} (${session.current_participants}/${session.max_participants})\n`;
-                            message += `   📊 Уровень: ${session.skill_level}/10\n`;
-                            message += `   💰 ${session.price} руб.\n\n`;
+                            const date = new Date(session.session_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'numeric', year: 'numeric', weekday: 'short' });
+                            const weekday = date.split(',')[1].trim();
+                            const dateStr = date.split(',')[0].trim();
+                            const groupName = session.group_name || (session.equipment_type === 'ski' ? 'Горнолыжники' : (session.equipment_type === 'snowboard' ? 'Сноубордисты' : 'Группа')) + (session.group_name?.toLowerCase().includes('дети') ? ' дети' : ' взрослые');
+                            const currentParticipants = session.current_participants || 0;
+                            const maxParticipants = session.max_participants;
+                            const price = parseFloat(session.price).toFixed(2);
+                            const skillLevel = session.skill_level;
+                            message += `${index + 1}. ${dateStr} (${weekday}) ${session.start_time}\n`;
+                            message += `   👥 ${groupName} (${currentParticipants}/${maxParticipants})\n`;
+                            message += `   📊 Уровень: ${skillLevel}/10\n`;
+                            message += `   💰 ${price} руб.\n\n`;
                         });
-
-                        message += 'Чтобы выбрать тренировку, введите её номер в чат.\n';
-                        message += 'Например: 1 - для выбора первой тренировки';
-
-                        return bot.sendMessage(chatId, message, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [['🔙 Назад в меню']],
-                                resize_keyboard: true
-                            }
-                        });
+                        message += "Чтобы выбрать тренировку, введите её номер в чат.\nНапример: 1 - для выбора первой тренировки\n\n";
+                        message += "⚠️ Важно: При записи на тренировку убедитесь, что ваш уровень подготовки соответствует или выше указанного уровня тренировки. Это обеспечит комфортное и эффективное обучение для всех участников группы.";
+                        return bot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } });
                     } catch (error) {
                         console.error('Ошибка при получении списка тренировок:', error);
                         return bot.sendMessage(chatId,
