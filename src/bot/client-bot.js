@@ -2814,23 +2814,12 @@ bot.on('message', async (msg) => {
             const state = userStates.get(chatId);
             
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_children.length) {
-                // Получаем баланс клиента
-                const balanceResult = await pool.query(
-                    'SELECT balance FROM wallets WHERE client_id = $1',
-                    [state.data.client_id]
-                );
-                const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
-                
-                // Сохраняем баланс в состоянии
-                state.data.client_balance = balance;
-                userStates.set(chatId, state);
-
                 return bot.sendMessage(chatId,
                     '❌ Пожалуйста, выберите ребенка из списка.',
                     {
                         reply_markup: {
                             keyboard: [
-                                ...state.data.available_children.map(child => [`${child.full_name}`]),
+                                ...state.data.available_children.map((child, i) => [`${i + 1}. ${child.full_name} (${child.skill_level} ур.)`]),
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
@@ -2841,6 +2830,24 @@ bot.on('message', async (msg) => {
 
             const selectedChild = state.data.available_children[selectedIndex];
             const selectedSession = state.data.selected_session;
+
+            // Проверяем уровень подготовки ребенка
+            if (selectedChild.skill_level < selectedSession.skill_level) {
+                return bot.sendMessage(chatId,
+                    `❌ Нельзя записать ребенка на эту тренировку.\n\n` +
+                    `Уровень подготовки ребенка (${selectedChild.skill_level}) ниже требуемого уровня тренировки (${selectedSession.skill_level}).\n\n` +
+                    `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока уровень подготовки ребенка повысится.`,
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['🎿 Выбрать другую тренировку'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
 
             // Получаем баланс клиента
             const balanceResult = await pool.query(
