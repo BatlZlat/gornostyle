@@ -185,95 +185,8 @@ async function finishRegistration(chatId, data) {
     }
 }
 
-// Константы для типов сообщений
-const MESSAGE_TYPES = {
-    text: 'текстовое сообщение',
-    voice: 'голосовое сообщение',
-    photo: 'фотография',
-    video: 'видео',
-    document: 'документ',
-    animation: 'анимация (GIF)',
-    sticker: 'стикер'
-};
-
-const UNSUPPORTED_MESSAGE_RESPONSES = {
-    voice: "🎙 Спасибо за голосовое сообщение! Пока я учусь понимать голос, давайте общаться текстом 😊",
-    photo: "📸 Красивое фото! Но я пока работаю только с текстовыми сообщениями 📝",
-    video: "🎥 Отличное видео! Но я пока принимаю только текстовые сообщения 📝",
-    document: "📄 Спасибо за документ! Я пока работаю только с текстовыми сообщениями 📝",
-    animation: "🎭 Забавная GIF-ка! Но я пока принимаю только текстовые сообщения 📝",
-    sticker: "😊 Спасибо за стикер! Давайте общаться текстом 📝"
-};
-
-// Базовый обработчик сообщений
-async function handleMessage(msg) {
-    const chatId = msg.chat.id;
-    
-    // Логирование входящего сообщения
-    console.log('Получено сообщение:', {
-        chatId,
-        messageType: msg.type || 'unknown',
-        hasText: !!msg.text,
-        timestamp: new Date().toISOString()
-    });
-
-    try {
-        // Обработка команд
-        if (msg.text && msg.text.startsWith('/')) {
-            const command = msg.text.split(' ')[0].toLowerCase();
-            switch (command) {
-                case '/start':
-                    return handleStartCommand(msg);
-                case '/help':
-                    return handleHelpCommand(msg);
-                default:
-                    return bot.sendMessage(chatId, 
-                        '❓ Неизвестная команда. Используйте /help для получения списка доступных команд.',
-                        { parse_mode: 'Markdown' }
-                    );
-            }
-        }
-
-        // Обработка неподдерживаемых типов сообщений
-        if (!msg.text) {
-            const messageType = Object.keys(MESSAGE_TYPES).find(type => msg[type]);
-            if (messageType && UNSUPPORTED_MESSAGE_RESPONSES[messageType]) {
-                return bot.sendMessage(chatId, UNSUPPORTED_MESSAGE_RESPONSES[messageType], {
-                    reply_markup: {
-                        keyboard: [['🔙 В главное меню']],
-                        resize_keyboard: true
-                    }
-                });
-            }
-            return bot.sendMessage(chatId, 
-                '📝 Пожалуйста, отправьте текстовое сообщение. Я пока учусь работать только с текстом 😊',
-                {
-                    reply_markup: {
-                        keyboard: [['🔙 В главное меню']],
-                        resize_keyboard: true
-                    }
-                }
-            );
-        }
-
-        // Обработка текстовых сообщений
-        return handleTextMessage(msg);
-    } catch (error) {
-        console.error('Ошибка при обработке сообщения:', error);
-        return bot.sendMessage(chatId,
-            '❌ Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
-            {
-                reply_markup: {
-                    keyboard: [['🔙 В главное меню']],
-                    resize_keyboard: true
-                }
-            }
-        );
-    }
-}
-
-// Обработчик команды /start
-async function handleStartCommand(msg) {
+// /start
+bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const telegramId = msg.from.id.toString();
     const username = msg.from.username || '';
@@ -293,6 +206,7 @@ async function handleStartCommand(msg) {
             '• 💳 Управлять вашим балансом\n' +
             '• 🎁 Приобрести подарочные сертификаты\n\n' +
             '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
+            
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
@@ -307,33 +221,18 @@ async function handleStartCommand(msg) {
             data: { telegram_id: telegramId, username, nickname }
         });
     } else {
-        await showMainMenu(chatId);
+        await bot.sendMessage(chatId, '🎿 *С возвращением!* Чем могу помочь?', { parse_mode: 'Markdown' });
+        showMainMenu(chatId);
     }
-}
+});
 
-// Обработчик команды /help
-async function handleHelpCommand(msg) {
-    const chatId = msg.chat.id;
-    const adminPhone = process.env.ADMIN_PHONE || 'не указан';
-    await bot.sendMessage(chatId,
-        'ℹ️ *Справка по работе с ботом Ski-instruktor*\n\n' +
-        '• /start — начать или перезапустить работу с ботом\n\n' +
-        '— *Записывайтесь на тренировки, управляйте своими занятиями и балансом прямо в Telegram!*\n\n' +
-        '👥 *Групповые тренировки выгоднее!* Если не удалось собрать свою команду, просто оставьте заявку через пункт меню "Записаться на тренировку" → "Предложить тренировку". Мы с радостью поможем вам найти единомышленников и собрать команду мечты! 🏂\n\n' +
-        '👶 *Есть дети?* Добавляйте их в личном кабинете и записывайте на тренировки. Пусть растут чемпионами!\n\n' +
-        '💳 *Пополнение баланса* — легко и просто! Пополняйте счет на любую сумму. Главное — не забудьте указать номер вашего кошелька в комментарии к платежу. Если забыли — не беда, поддержка всегда на связи! 😉\n\n' +
-        '🎁 *Подарочные сертификаты* — отличный способ порадовать друга или близкого. Дарите спорт и хорошее настроение!\n\n' +
-        `• Если возникли вопросы — пишите или звоните в поддержку: ${adminPhone}\n\n`,
-        { parse_mode: 'Markdown' }
-    );
-}
-
-// Обработчик текстовых сообщений
-async function handleTextMessage(msg) {
+// Регистрация и меню
+bot.on('message', async (msg) => {
+    if (msg.text.startsWith('/')) return;
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
 
-    // Глобальная обработка сообщений
+    // Глобальная обработка "Сертификаты"
     if (msg.text === '🎁 Сертификаты') {
         return bot.sendMessage(chatId,
             'Функционал для Сертификаты находится в разработке\n\nСкоро здесь появится возможность приобретать и дарить сертификаты.',
@@ -348,15 +247,14 @@ async function handleTextMessage(msg) {
         );
     }
     
+    // Глобальная обработка "Личный кабинет"
     if (msg.text === '👤 Личный кабинет') {
         await showPersonalCabinet(chatId);
-        return;
     }
 
+    // Глобальная обработка "В главное меню"
     if (msg.text === '🔙 В главное меню' || msg.text === '🔙 Назад в меню') {
-        const client = state && state.data && state.data.client_id ? 
-            { id: state.data.client_id } : 
-            await getClientByTelegramId(msg.from.id.toString());
+        const client = state && state.data && state.data.client_id ? { id: state.data.client_id } : await getClientByTelegramId(msg.from.id.toString());
         userStates.set(chatId, { step: 'main_menu', data: { client_id: client ? client.id : undefined } });
         return showMainMenu(chatId);
     }
@@ -381,38 +279,205 @@ async function handleTextMessage(msg) {
             }
         });
     }
+    
+    // Глобальная обработка "Мои записи"
+    if (msg.text === '📋 Мои записи') {
+        let clientId = state && state.data && state.data.client_id;
+        if (!clientId) {
+            const client = await getClientByTelegramId(msg.from.id.toString());
+            if (!client) {
+                return bot.sendMessage(chatId,
+                    '❌ Вы не зарегистрированы в системе. Пожалуйста, начните с команды /start',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            clientId = client.id;
+        }
+        userStates.set(chatId, { step: 'main_menu', data: { client_id: clientId } });
+        try {
+            const sql = `WITH client_sessions AS (
+                -- Групповые тренировки
+                SELECT 
+                    sp.id,
+                    sp.session_id,
+                    sp.child_id,
+                    COALESCE(c.full_name, cl.full_name) as participant_name,
+                    ts.session_date,
+                    ts.start_time,
+                    ts.duration,
+                    ts.equipment_type,
+                    s.name as simulator_name,
+                    g.name as group_name,
+                    t.full_name as trainer_name,
+                    ts.skill_level,
+                    ts.price,
+                    ts.max_participants,
+                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id) as current_participants,
+                    'group' as session_type
+                FROM session_participants sp
+                JOIN training_sessions ts ON sp.session_id = ts.id
+                JOIN simulators s ON ts.simulator_id = s.id
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN children c ON sp.child_id = c.id
+                JOIN clients cl ON sp.client_id = cl.id
+                WHERE sp.client_id = $1
+                AND ts.status = 'scheduled'
+                AND (
+                  (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                )
+                UNION ALL
+                -- Индивидуальные тренировки
+                SELECT 
+                    its.id,
+                    its.id as session_id,
+                    its.child_id,
+                    COALESCE(c.full_name, cl.full_name) as participant_name,
+                    its.preferred_date as session_date,
+                    its.preferred_time as start_time,
+                    its.duration,
+                    its.equipment_type,
+                    s.name as simulator_name,
+                    NULL as group_name,
+                    NULL as trainer_name,
+                    NULL as skill_level,
+                    its.price,
+                    NULL as max_participants,
+                    NULL as current_participants,
+                    'individual' as session_type
+                FROM individual_training_sessions its
+                JOIN simulators s ON its.simulator_id = s.id
+                LEFT JOIN children c ON its.child_id = c.id
+                JOIN clients cl ON its.client_id = cl.id
+                WHERE its.client_id = $1
+                AND (
+                  (its.preferred_date::timestamp + its.preferred_time::interval + (its.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                )
+            )
+            SELECT * FROM client_sessions
+            ORDER BY session_date, start_time`;
 
-    // Глобальная обработка "Записаться на тренировку"
+            console.log('--- [МОИ ЗАПИСИ] clientId:', clientId);
+            console.log('--- [МОИ ЗАПИСИ] SQL:', sql);
+
+            const result = await pool.query(sql, [clientId]);
+
+            console.log('--- [МОИ ЗАПИСИ] Найдено:', result.rows.length);
+            result.rows.forEach((row, i) => console.log(`[МОИ ЗАПИСИ] ${i+1}:`, row));
+            // --- КОНЕЦ ЛОГОВ ---
+
+            if (result.rows.length === 0) {
+                return bot.sendMessage(chatId,
+                    'У вас пока нет записей на тренировки.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            let message = '📋 *Ваши записи на тренировки:*\n\n';
+            result.rows.forEach((session, index) => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                message += `*Запись ${index + 1}:*\n`;
+                message += `👤 *Участник:* ${session.participant_name}\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `⏱ *Длительность:* ${session.duration} минут\n`;
+                if (session.session_type === 'individual') {
+                    message += `🏂 *Тип:* ${session.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
+                } else {
+                    message += `👥 *Группа:* ${session.group_name}\n`;
+                    message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                    message += `📊 *Уровень:* ${session.skill_level}/10\n`;
+                    message += `👥 *Участников:* ${session.current_participants}/${session.max_participants}\n`;
+                }
+                message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n\n`;
+            });
+            message += 'Для отмены тренировки нажмите "Отменить тренировку"';
+            userStates.set(chatId, { step: 'view_sessions', data: { client_id: clientId, sessions: result.rows } });
+            return bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [
+                        ['❌ Отменить тренировку'],
+                        ['🔙 В главное меню']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        } catch (error) {
+            console.error('--- [МОИ ЗАПИСИ] ОШИБКА:', error);
+            return bot.sendMessage(chatId,
+                'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 В главное меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    console.log('Получено сообщение:', {
+        text: msg.text,
+        chatId: chatId,
+        currentState: state ? state.step : 'no state',
+        stateData: state ? state.data : null
+    });
+
+    // Обработка кнопок "Назад"
+    if (msg.text === '🔙 Назад в меню') {
+        userStates.delete(chatId);
+        return showMainMenu(chatId);
+    }
+
+    // Обработка кнопки "Записаться на тренировку"
     if (msg.text === '📝 Записаться на тренировку') {
+        // Получаем информацию о клиенте
         const client = await getClientByTelegramId(msg.from.id.toString());
         if (!client) {
-            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+            return bot.sendMessage(chatId,
+                '❌ Вы не зарегистрированы в системе. Пожалуйста, начните с команды /start',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
 
-        // Получаем список детей клиента
-        const childrenResult = await pool.query(
-            'SELECT id, full_name FROM children WHERE parent_id = $1',
-            [client.id]
-        );
-
+        // Устанавливаем начальное состояние
         userStates.set(chatId, {
-            step: 'training_type',
-            data: { 
-                client_id: client.id,
-                children: childrenResult.rows
+            step: 'select_location',
+            data: {
+                client_id: client.id
             }
         });
 
         return bot.sendMessage(chatId,
-            '🎿 *Выберите тип тренировки:*\n\n' +
-            '• Групповая - тренировка в группе с другими участниками\n' +
-            '• Индивидуальная - персональная тренировка',
+            '🏔 *Выберите место тренировки:*\n\n' +
+            '• 🎿 Горнолыжный тренажер\n' +
+            '• ⛷ Кулига. естественный склон',
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     keyboard: [
-                        ['👥 Групповая'],
-                        ['👤 Индивидуальная'],
+                        ['🎿 Горнолыжный тренажер'],
+                        ['⛷ Кулига. естественный склон'],
                         ['🔙 Назад в меню']
                     ],
                     resize_keyboard: true
@@ -3515,28 +3580,13 @@ async function handleTextMessage(msg) {
                 return showPersonalCabinet(chatId);
             }
 
-            if (msg.text.length < 2) {
-                return bot.sendMessage(chatId,
-                    '❌ Имя должно содержать минимум 2 символа. Пожалуйста, попробуйте еще раз.',
-                    {
-                        reply_markup: {
-                            keyboard: [['🔙 Отмена']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            }
-
-            userStates.set(chatId, {
-                step: 'add_child_birth_date',
-                data: { ...state.data, child_name: msg.text }
-            });
+            state.data.child_name = msg.text;
+            state.step = 'add_child_birth_date';
+            userStates.set(chatId, state);
 
             return bot.sendMessage(chatId,
-                '📅 *Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:*\n\n' +
-                'Например: 01.01.2015',
+                '📅 Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:',
                 {
-                    parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [['🔙 Отмена']],
                         resize_keyboard: true
@@ -3554,8 +3604,7 @@ async function handleTextMessage(msg) {
             const birthDate = validateDate(msg.text);
             if (!birthDate) {
                 return bot.sendMessage(chatId,
-                    '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\n' +
-                    'Например: 01.01.2015',
+                    '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ:',
                     {
                         reply_markup: {
                             keyboard: [['🔙 Отмена']],
@@ -3565,180 +3614,50 @@ async function handleTextMessage(msg) {
                 );
             }
 
-            try {
-                await pool.query(
-                    'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
-                    [state.data.client_id, state.data.child_name, birthDate, 'ski', 1]
-                );
+            // Если client_id есть — это добавление ребёнка в личном кабинете
+            if (state.data.client_id) {
+                try {
+                    await pool.query(
+                        'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
+                        [state.data.client_id, state.data.child_name, birthDate, 'ski', 1]
+                    );
 
-                userStates.delete(chatId);
-                await bot.sendMessage(chatId,
-                    '✅ *Ребенок успешно добавлен!*',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['🔙 В главное меню']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-                return showPersonalCabinet(chatId);
-            } catch (error) {
-                console.error('Ошибка при добавлении ребенка:', error);
-                return bot.sendMessage(chatId,
-                    '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже.',
-                    {
-                        reply_markup: {
-                            keyboard: [['🔙 В главное меню']],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-            }
-        }
-
-        case 'training_type': {
-            if (msg.text === '👥 Групповая') {
-                // Если есть дети, предлагаем выбрать для кого тренировка
-                if (state.data.children && state.data.children.length > 0) {
-                    let message = '👤 *Для кого тренировка?*\n\n';
-                    message += '1. Для себя\n';
-                    state.data.children.forEach((child, index) => {
-                        message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
-                    });
-
-                    userStates.set(chatId, {
-                        step: 'group_training_for',
-                        data: { ...state.data }
-                    });
-
-                    return bot.sendMessage(chatId, message, {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['1. Для себя'],
-                                ...state.data.children.map(child => [`Для ребенка: ${child.full_name}`]),
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    });
-                } else {
-                    // Если детей нет, сразу для себя
-                    userStates.set(chatId, {
-                        step: 'group_equipment_type',
-                        data: { 
-                            ...state.data,
-                            is_child: false
-                        }
-                    });
-
-                    return bot.sendMessage(chatId,
-                        '🎿 *Выберите тип снаряжения:*\n\n' +
-                        '• 🎿 Горные лыжи\n' +
-                        '• 🏂 Сноуборд',
+                    userStates.delete(chatId);
+                    await bot.sendMessage(chatId,
+                        '✅ Ребенок успешно добавлен!',
                         {
-                            parse_mode: 'Markdown',
                             reply_markup: {
-                                keyboard: [
-                                    ['🎿 Горные лыжи'],
-                                    ['🏂 Сноуборд'],
-                                    ['🔙 Назад в меню']
-                                ],
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                    return showPersonalCabinet(chatId);
+                } catch (error) {
+                    console.error('Ошибка при добавлении ребенка:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
                             }
                         }
                     );
                 }
-            } else if (msg.text === '👤 Индивидуальная') {
-                // Для индивидуальной тренировки используем существующую функцию
-                return askIndividualForWhom(chatId, state.data.client_id);
-            }
-            break;
-        }
-
-        case 'group_training_for': {
-            if (msg.text === '1. Для себя') {
-                userStates.set(chatId, {
-                    step: 'group_equipment_type',
-                    data: { 
-                        ...state.data,
-                        is_child: false
-                    }
-                });
-
-                return bot.sendMessage(chatId,
-                    '🎿 *Выберите тип снаряжения:*\n\n' +
-                    '• 🎿 Горные лыжи\n' +
-                    '• 🏂 Сноуборд',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['🎿 Горные лыжи'],
-                                ['🏂 Сноуборд'],
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
             } else {
-                // Для ребенка
-                const childName = msg.text.replace('Для ребенка: ', '');
-                const selectedChild = state.data.children.find(child => child.full_name === childName);
-                
-                if (!selectedChild) {
-                    return bot.sendMessage(chatId,
-                        '❌ Произошла ошибка при выборе ребенка. Пожалуйста, попробуйте еще раз.',
-                        {
-                            reply_markup: {
-                                keyboard: [
-                                    ['1. Для себя'],
-                                    ...state.data.children.map(child => [`Для ребенка: ${child.full_name}`]),
-                                    ['🔙 Назад в меню']
-                                ],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                }
-
-                userStates.set(chatId, {
-                    step: 'group_equipment_type',
-                    data: { 
-                        ...state.data,
-                        is_child: true,
-                        child_id: selectedChild.id,
-                        child_name: selectedChild.full_name
-                    }
-                });
-
-                return bot.sendMessage(chatId,
-                    '🎿 *Выберите тип снаряжения:*\n\n' +
-                    '• 🎿 Горные лыжи\n' +
-                    '• 🏂 Сноуборд',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['🎿 Горные лыжи'],
-                                ['🏂 Сноуборд'],
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
+                // Это этап регистрации — сохраняем данные и завершаем регистрацию
+                state.data.child = {
+                    full_name: state.data.child_name,
+                    birth_date: birthDate
+                };
+                await finishRegistration(chatId, state.data);
+                return;
             }
         }
-
-        // ... rest of the states ...
     }
-}
-
-// Заменяем существующие обработчики на новый
-bot.on('message', handleMessage);
+    return;
+});
 
 // Добавляем обработчик callback_query для инлайн-кнопок
 bot.on('callback_query', async (callbackQuery) => {
@@ -4038,6 +3957,113 @@ async function handleTopUpBalance(chatId, clientId) {
         );
     }
 }
+
+// В обработчике сообщений
+bot.on('message', async (msg) => {
+    if (msg.text.startsWith('/')) return;
+    const chatId = msg.chat.id;
+    const state = userStates.get(chatId);
+
+    // ... existing code ...
+
+    if (msg.text === '💰 Кошелек') {
+        try {
+            const clientResult = await pool.query(
+                'SELECT c.id, c.full_name, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
+                [chatId]
+            );
+
+            if (!clientResult.rows[0]) {
+                return bot.sendMessage(chatId,
+                    '❌ Ошибка: кошелек не найден. Пожалуйста, обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            const { id: clientId, full_name, wallet_number: walletNumber, balance } = clientResult.rows[0];
+            const formattedWalletNumber = formatWalletNumber(walletNumber);
+
+            await bot.sendMessage(chatId,
+                `💳 *Информация о кошельке*\n\n` +
+                `👤 *Владелец:* ${full_name}\n` +
+                `💳 *Номер кошелька*: \`${formattedWalletNumber}\`\n` +
+                `💰 *Текущий баланс*: ${parseFloat(balance).toFixed(2)} руб.\n\n` +
+                `Выберите действие:`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['💳 Пополнить баланс'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('Ошибка при получении информации о кошельке:', error);
+            await bot.sendMessage(chatId,
+                '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    if (msg.text === '💳 Пополнить баланс') {
+        try {
+            const state = userStates.get(chatId);
+            let clientId;
+
+            if (state && state.client_id) {
+                clientId = state.client_id;
+            } else {
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [chatId]
+                );
+
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+
+                clientId = clientResult.rows[0].id;
+            }
+
+            await handleTopUpBalance(chatId, clientId);
+        } catch (error) {
+            console.error('Ошибка при обработке пополнения баланса:', error);
+            await bot.sendMessage(chatId,
+                '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    // ... existing code ...
+});
 
 // Функция для расчета возраста
 function calculateAge(birthDate) {
