@@ -3861,10 +3861,9 @@ async function showMyBookings(chatId) {
             return;
         }
 
-        // Получаем все записи клиента и его детей
-        const result = await pool.query(
+        // --- Групповые тренировки ---
+        const groupResult = await pool.query(
             `WITH client_sessions AS (
-                -- Групповые тренировки
                 SELECT 
                     sp.id,
                     sp.session_id,
@@ -3901,7 +3900,39 @@ async function showMyBookings(chatId) {
             [client.id]
         );
 
-        if (result.rows.length === 0) {
+        // --- Индивидуальные тренировки ---
+        const individualResult = await pool.query(
+            `SELECT 
+                its.id,
+                its.child_id,
+                COALESCE(ch.full_name, cl.full_name) as participant_name,
+                its.preferred_date as session_date,
+                its.preferred_time as start_time,
+                its.duration,
+                its.equipment_type,
+                s.name as simulator_name,
+                NULL as group_name,
+                NULL as trainer_name,
+                NULL as skill_level,
+                its.price,
+                1 as max_participants,
+                1 as current_participants,
+                'individual' as session_type,
+                its.with_trainer
+            FROM individual_training_sessions its
+            JOIN simulators s ON its.simulator_id = s.id
+            LEFT JOIN children ch ON its.child_id = ch.id
+            JOIN clients cl ON its.client_id = cl.id
+            WHERE (its.client_id = $1 OR ch.parent_id = $1)
+            AND (its.preferred_date::timestamp + its.preferred_time::interval + (its.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+            ORDER BY its.preferred_date, its.preferred_time`,
+            [client.id]
+        );
+
+        // --- Формируем общий список ---
+        const groupSessions = groupResult.rows;
+        const individualSessions = individualResult.rows;
+        if (groupSessions.length === 0 && individualSessions.length === 0) {
             await bot.sendMessage(chatId, 'У вас пока нет записей на тренировки.', {
                 reply_markup: {
                     keyboard: [['🔙 В главное меню']],
@@ -3912,41 +3943,52 @@ async function showMyBookings(chatId) {
         }
 
         let message = '📋 *Ваши записи на тренировки:*\n\n';
-        
-        result.rows.forEach(session => {
-            const date = new Date(session.session_date);
-            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-            const [hours, minutes] = session.start_time.split(':');
-            const formattedTime = `${hours}:${minutes}`;
-
-            message += `👤 *Участник:* ${session.participant_name}\n`;
-            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
-            message += `⏰ *Время:* ${formattedTime}\n`;
-            message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
-            if (session.group_name) {
-                message += `👥 *Группа:* ${session.group_name}\n`;
-            }
-            if (session.trainer_name) {
-                message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
-            }
-            if (session.skill_level) {
-                message += `📊 *Уровень:* ${session.skill_level}\n`;
-            }
-            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n\n`;
-        });
-
+        let allSessions = [];
+        let counter = 1;
+        if (groupSessions.length > 0) {
+            message += '\n*Групповые тренировки:*\n';
+            groupSessions.forEach(session => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                message += `${counter}. ${session.participant_name} — ${formattedDate} (${dayOfWeek}) ${formattedTime}\n`;
+                message += `   Группа: ${session.group_name}\n`;
+                message += `   Тренажер: ${session.simulator_name}\n`;
+                if (session.trainer_name) message += `   Тренер: ${session.trainer_name}\n`;
+                message += `   Стоимость: ${Number(session.price).toFixed(2)} руб.\n\n`;
+                allSessions.push({ ...session, session_type: 'group' });
+                counter++;
+            });
+        }
+        if (individualSessions.length > 0) {
+            message += '\n*Индивидуальные тренировки:*\n';
+            individualSessions.forEach(session => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                message += `${counter}. ${session.participant_name} — ${formattedDate} (${dayOfWeek}) ${formattedTime}\n`;
+                message += `   Снаряжение: ${session.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
+                message += `   ${session.with_trainer ? 'С тренером' : 'Без тренера'}\n`;
+                message += `   Тренажер: ${session.simulator_name}\n`;
+                message += `   Длительность: ${session.duration} мин\n`;
+                message += `   Стоимость: ${Number(session.price).toFixed(2)} руб.\n\n`;
+                allSessions.push({ ...session, session_type: 'individual' });
+                counter++;
+            });
+        }
         message += 'Для отмены тренировки нажмите "Отменить тренировку"';
-
-        // Сохраняем список записей в состоянии
+        // Сохраняем оба списка в состоянии
         userStates.set(chatId, { 
             step: 'view_sessions', 
             data: { 
                 client_id: client.id,
-                sessions: result.rows 
+                sessions: allSessions 
             } 
         });
-
         await bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: {
