@@ -2,6 +2,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
 const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-bot');
+const { Booking } = require('../models/Booking');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -332,6 +333,11 @@ async function handleHelpCommand(msg) {
 async function handleTextMessage(msg) {
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
+
+    // Обработка кнопки "Мои записи" независимо от состояния
+    if (msg.text === '📋 Мои записи') {
+        return showMyBookings(chatId);
+    }
 
     // Глобальная обработка сообщений
     if (msg.text === '🎁 Сертификаты') {
@@ -3159,33 +3165,34 @@ async function handleTextMessage(msg) {
                         const [hours, minutes] = session.start_time.split(':');
                         const formattedTime = `${hours}:${minutes}`;
 
-                        message += `*Запись ${index + 1}:*\n`;
                         message += `👤 *Участник:* ${session.participant_name}\n`;
                         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                         message += `⏰ *Время:* ${formattedTime}\n`;
-                        message += `⏱ *Длительность:* ${session.duration} минут\n`;
-                        
-                        if (session.session_type === 'individual') {
-                            message += `🏂 *Тип:* ${session.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
-                        } else {
-                            message += `👥 *Группа:* ${session.group_name}\n`;
-                            message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
-                            message += `📊 *Уровень:* ${session.skill_level}/10\n`;
-                            message += `👥 *Участников:* ${session.current_participants}/${session.max_participants}\n`;
-                        }
-                        
                         message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                        if (session.group_name) {
+                            message += `👥 *Группа:* ${session.group_name}\n`;
+                        }
+                        if (session.trainer_name) {
+                            message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                        }
+                        if (session.skill_level) {
+                            message += `📊 *Уровень:* ${session.skill_level}\n`;
+                        }
                         message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n\n`;
                     });
 
                     message += 'Для отмены тренировки нажмите "Отменить тренировку"';
 
                     // Сохраняем список записей в состоянии
-                    state.data.sessions = result.rows;
-                    state.step = 'view_sessions';
-                    userStates.set(chatId, state);
+                    userStates.set(chatId, { 
+                        step: 'view_sessions', 
+                        data: { 
+                            client_id: state.data.client_id,
+                            sessions: result.rows 
+                        } 
+                    });
 
-                    return bot.sendMessage(chatId, message, {
+                    await bot.sendMessage(chatId, message, {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [
@@ -3197,15 +3204,12 @@ async function handleTextMessage(msg) {
                     });
                 } catch (error) {
                     console.error('Ошибка при получении записей:', error);
-                    return bot.sendMessage(chatId,
-                        'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.',
-                        {
-                            reply_markup: {
-                                keyboard: [['🔙 В главное меню']],
-                                resize_keyboard: true
-                            }
+                    await bot.sendMessage(chatId, 'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.', {
+                        reply_markup: {
+                            keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
                         }
-                    );
+                    });
                 }
             }
             // ... existing code ...
@@ -3923,34 +3927,144 @@ async function showMyBookings(chatId) {
             return;
         }
 
-        const sessions = await Booking.findByUser(client.id);
-        
-        if (!sessions || sessions.length === 0) {
-            await bot.sendMessage(chatId, 'У вас пока нет записей на тренировки.');
+        // Получаем все записи клиента и его детей
+        const result = await pool.query(
+            `WITH client_sessions AS (
+                -- Групповые тренировки
+                SELECT 
+                    sp.id,
+                    sp.session_id,
+                    sp.child_id,
+                    COALESCE(c.full_name, cl.full_name) as participant_name,
+                    ts.session_date,
+                    ts.start_time,
+                    ts.duration,
+                    ts.equipment_type,
+                    s.name as simulator_name,
+                    g.name as group_name,
+                    t.full_name as trainer_name,
+                    ts.skill_level,
+                    ts.price,
+                    ts.max_participants,
+                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id) as current_participants,
+                    'group' as session_type
+                FROM session_participants sp
+                JOIN training_sessions ts ON sp.session_id = ts.id
+                JOIN simulators s ON ts.simulator_id = s.id
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN children c ON sp.child_id = c.id
+                JOIN clients cl ON sp.client_id = cl.id
+                WHERE sp.client_id = $1
+                AND ts.status = 'scheduled'
+                AND (
+                    ts.session_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                    OR (
+                        ts.session_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
+                        AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                    )
+                )
+                UNION ALL
+                -- Индивидуальные тренировки
+                SELECT 
+                    its.id,
+                    its.id as session_id,
+                    its.child_id,
+                    COALESCE(c.full_name, cl.full_name) as participant_name,
+                    (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date as session_date,
+                    its.preferred_time as start_time,
+                    its.duration,
+                    its.equipment_type,
+                    s.name as simulator_name,
+                    NULL as group_name,
+                    NULL as trainer_name,
+                    NULL as skill_level,
+                    its.price,
+                    NULL as max_participants,
+                    NULL as current_participants,
+                    'individual' as session_type
+                FROM individual_training_sessions its
+                JOIN simulators s ON its.simulator_id = s.id
+                LEFT JOIN children c ON its.child_id = c.id
+                JOIN clients cl ON its.client_id = cl.id
+                WHERE its.client_id = $1
+                AND (
+                  (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date > (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                  OR (
+                    (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
+                    AND its.preferred_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                  )
+                )
+            )
+            SELECT * FROM client_sessions
+            ORDER BY session_date, start_time`,
+            [client.id]
+        );
+
+        if (result.rows.length === 0) {
+            await bot.sendMessage(chatId, 'У вас пока нет записей на тренировки.', {
+                reply_markup: {
+                    keyboard: [['🔙 В главное меню']],
+                    resize_keyboard: true
+                }
+            });
             return;
         }
 
-        let message = '📋 Ваши записи на тренировки:\n\n';
+        let message = '📋 *Ваши записи на тренировки:*\n\n';
         
-        sessions.forEach(session => {
-            const price = session.price ? Number(session.price) : 0;
-            const formattedPrice = price.toFixed(2);
-            
-            message += `🏂 Тренировка: ${session.simulator_name}\n`;
-            message += `📅 Дата: ${formatDate(session.session_date)}\n`;
-            message += `⏰ Время: ${session.start_time} - ${session.end_time}\n`;
-            message += `👤 ${session.is_child ? 'Ребенок' : 'Клиент'}: ${session.is_child ? session.child_name : session.client_name}\n`;
-            message += `💰 Стоимость: ${formattedPrice} руб.\n`;
-            if (session.skill_level) {
-                message += `📊 Уровень: ${session.skill_level}\n`;
+        result.rows.forEach(session => {
+            const date = new Date(session.session_date);
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            const [hours, minutes] = session.start_time.split(':');
+            const formattedTime = `${hours}:${minutes}`;
+
+            message += `👤 *Участник:* ${session.participant_name}\n`;
+            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+            message += `⏰ *Время:* ${formattedTime}\n`;
+            message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+            if (session.group_name) {
+                message += `👥 *Группа:* ${session.group_name}\n`;
             }
-            message += `🏷️ Статус: ${getStatusText(session.participant_status)}\n\n`;
+            if (session.trainer_name) {
+                message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+            }
+            if (session.skill_level) {
+                message += `📊 *Уровень:* ${session.skill_level}\n`;
+            }
+            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n\n`;
         });
 
-        await bot.sendMessage(chatId, message);
+        message += 'Для отмены тренировки нажмите "Отменить тренировку"';
+
+        // Сохраняем список записей в состоянии
+        userStates.set(chatId, { 
+            step: 'view_sessions', 
+            data: { 
+                client_id: client.id,
+                sessions: result.rows 
+            } 
+        });
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['❌ Отменить тренировку'],
+                    ['🔙 В главное меню']
+                ],
+                resize_keyboard: true
+            }
+        });
     } catch (error) {
         console.error('Ошибка при получении записей:', error);
-        await bot.sendMessage(chatId, 'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.');
+        await bot.sendMessage(chatId, 'Произошла ошибка при получении записей. Пожалуйста, попробуйте позже.', {
+            reply_markup: {
+                keyboard: [['🔙 В главное меню']],
+                resize_keyboard: true
+            }
+        });
     }
 }
 
