@@ -318,81 +318,6 @@ router.get('/archive', async (req, res) => {
     }
 });
 
-// Получение тренировки по ID (должен быть после /active-groups)
-router.get('/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        // Получаем основную информацию о тренировке
-        const result = await pool.query(`
-            SELECT ts.*, g.name as group_name, g.description as group_description, t.full_name as trainer_name
-            FROM training_sessions ts
-            LEFT JOIN groups g ON ts.group_id = g.id
-            LEFT JOIN trainers t ON ts.trainer_id = t.id
-            WHERE ts.id = $1
-        `, [id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Тренировка не найдена' });
-        }
-        const training = result.rows[0];
-
-        // Получаем участников тренировки
-        const participantsResult = await pool.query(`
-            SELECT 
-                sp.id,
-                sp.is_child,
-                sp.status,
-                c.full_name as client_full_name,
-                c.birth_date as client_birth_date,
-                c.skill_level as client_skill_level,
-                c.phone as client_phone,
-                ch.full_name as child_full_name,
-                ch.birth_date as child_birth_date,
-                ch.skill_level as child_skill_level,
-                ch.id as child_id,
-                par.phone as parent_phone
-            FROM session_participants sp
-            LEFT JOIN clients c ON sp.client_id = c.id
-            LEFT JOIN children ch ON sp.child_id = ch.id
-            LEFT JOIN clients par ON ch.parent_id = par.id
-            WHERE sp.session_id = $1
-        `, [id]);
-
-        // Проверяем, детская ли это тренировка
-        const isChildrenGroup = training.group_name && training.group_name.toLowerCase().includes('дети');
-
-        // Формируем массив участников с нужными полями
-        const participants = participantsResult.rows.map(row => {
-            if (isChildrenGroup) {
-                // Для детских групп всегда отображаем ФИО ребенка
-                return {
-                    full_name: row.child_full_name || row.client_full_name,
-                    birth_date: row.child_birth_date || row.client_birth_date,
-                    skill_level: row.child_skill_level || row.client_skill_level,
-                    phone: row.parent_phone || row.client_phone,
-                    is_child: true
-                };
-            } else {
-                // Для остальных — ФИО клиента
-                return {
-                    full_name: row.client_full_name,
-                    birth_date: row.client_birth_date,
-                    skill_level: row.client_skill_level,
-                    phone: row.client_phone,
-                    is_child: false
-                };
-            }
-        });
-
-        training.participants = participants;
-        training.participants_count = participants.length;
-
-        res.json(training);
-    } catch (error) {
-        console.error('Ошибка при получении тренировки по id:', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
-    }
-});
-
 // Получение активных групповых тренировок (должен быть перед /:id)
 router.get('/active-groups', async (req, res) => {
     console.log('Запрос на получение активных групповых тренировок');
@@ -528,6 +453,81 @@ router.get('/active-groups', async (req, res) => {
             console.log('Освобождаем соединение с базой данных');
             client.release();
         }
+    }
+});
+
+// Получение тренировки по ID (должен быть после /active-groups)
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Получаем основную информацию о тренировке
+        const result = await pool.query(`
+            SELECT ts.*, g.name as group_name, g.description as group_description, t.full_name as trainer_name
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            WHERE ts.id = $1
+        `, [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+        const training = result.rows[0];
+
+        // Получаем участников тренировки
+        const participantsResult = await pool.query(`
+            SELECT 
+                sp.id,
+                sp.is_child,
+                sp.status,
+                c.full_name as client_full_name,
+                c.birth_date as client_birth_date,
+                c.skill_level as client_skill_level,
+                c.phone as client_phone,
+                ch.full_name as child_full_name,
+                ch.birth_date as child_birth_date,
+                ch.skill_level as child_skill_level,
+                ch.id as child_id,
+                par.phone as parent_phone
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            LEFT JOIN clients par ON ch.parent_id = par.id
+            WHERE sp.session_id = $1
+        `, [id]);
+
+        // Проверяем, детская ли это тренировка
+        const isChildrenGroup = training.group_name && training.group_name.toLowerCase().includes('дети');
+
+        // Формируем массив участников с нужными полями
+        const participants = participantsResult.rows.map(row => {
+            if (isChildrenGroup) {
+                // Для детских групп всегда отображаем ФИО ребенка
+                return {
+                    full_name: row.child_full_name || row.client_full_name,
+                    birth_date: row.child_birth_date || row.client_birth_date,
+                    skill_level: row.child_skill_level || row.client_skill_level,
+                    phone: row.parent_phone || row.client_phone,
+                    is_child: true
+                };
+            } else {
+                // Для остальных — ФИО клиента
+                return {
+                    full_name: row.client_full_name,
+                    birth_date: row.client_birth_date,
+                    skill_level: row.client_skill_level,
+                    phone: row.client_phone,
+                    is_child: false
+                };
+            }
+        });
+
+        training.participants = participants;
+        training.participants_count = participants.length;
+
+        res.json(training);
+    } catch (error) {
+        console.error('Ошибка при получении тренировки по id:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
 });
 
@@ -806,45 +806,6 @@ ${trainingInfo}
             });
         }
 
-        // Уведомление админу
-        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
-        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            let adminText = `❗️ Тренировка отменена:
-
-${trainingInfo}
-
-Возвраты:\n`;
-            for (const refund of refunds) {
-                adminText += `👤 ${refund.full_name} — ${refund.amount} руб.\n`;
-            }
-            adminText += `\nОбщая сумма возврата: ${totalRefund} руб.`;
-            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: ADMIN_TELEGRAM_ID, text: adminText })
-            });
-        }
-
-        // Освобождаем все слоты в расписании между start_time и end_time
-        await client.query(
-            `UPDATE schedule 
-             SET is_booked = false 
-             WHERE simulator_id = $1 
-             AND date = $2 
-             AND start_time >= $3 
-             AND start_time < $4`,
-            [
-                training.simulator_id, 
-                training.session_date, 
-                training.start_time, 
-                training.end_time
-            ]
-        );
-
-        // Удаляем тренировку
-        await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
-
         await client.query('COMMIT');
         res.json({ message: 'Тренировка успешно удалена' });
     } catch (error) {
@@ -856,134 +817,108 @@ ${trainingInfo}
     }
 });
 
-// Рассылка сообщения всем клиентам с telegram_id
-router.post('/notify-clients', async (req, res) => {
+// Отправка уведомлений участникам группы
+router.post('/notify-group/:id', async (req, res) => {
+    const { id } = req.params;
     const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'Нет текста сообщения' });
+    const client = await pool.connect();
 
-    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     try {
-        const result = await pool.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
-        const clients = result.rows;
+        await client.query('BEGIN');
 
-        let sent = 0;
-        for (const client of clients) {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: client.telegram_id, text: message })
-            });
-            sent++;
-        }
-        res.json({ message: `Сообщение отправлено ${sent} клиентам` });
-    } catch (error) {
-        console.error('Ошибка при рассылке:', error);
-        res.status(500).json({ error: 'Ошибка при рассылке' });
-    }
-});
-
-// Отправка сообщения конкретному клиенту
-router.post('/notify-client/:clientId', async (req, res) => {
-    const { clientId } = req.params;
-    const { message } = req.body;
-    
-    if (!message) {
-        return res.status(400).json({ error: 'Нет текста сообщения' });
-    }
-
-    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-    try {
-        // Получаем telegram_id клиента
-        const result = await pool.query(
-            'SELECT telegram_id, full_name FROM clients WHERE id = $1',
-            [clientId]
+        // Получаем информацию о тренировке
+        const trainingResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
+            [id]
         );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Клиент не найден' });
+        if (trainingResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
         }
 
-        const client = result.rows[0];
-        if (!client.telegram_id) {
-            return res.status(400).json({ error: 'У клиента не указан Telegram ID' });
+        const training = trainingResult.rows[0];
+
+        // Получаем участников тренировки
+        const participantsResult = await client.query(
+            `SELECT c.telegram_id, c.full_name
+             FROM session_participants sp
+             JOIN clients c ON sp.client_id = c.id
+             WHERE sp.session_id = $1 AND sp.status = 'confirmed' AND c.telegram_id IS NOT NULL`,
+            [id]
+        );
+
+        if (participantsResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Нет участников с Telegram ID для отправки уведомлений' });
         }
 
-        // Отправляем сообщение
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                chat_id: client.telegram_id, 
-                text: message,
-                parse_mode: 'Markdown'
-            })
+        // Форматируем дату и время
+        const dateObj = new Date(training.session_date);
+        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+        const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+        const endTime = training.end_time ? training.end_time.slice(0,5) : '';
+
+        // Формируем текст уведомления
+        const notificationText = message || 
+`📢 *Уведомление о тренировке*
+
+👥 *Группа:* ${training.group_name}
+📅 *Дата:* ${formattedDate}
+⏰ *Время:* ${startTime} - ${endTime}
+👤 *Тренер:* ${training.trainer_name}
+🎿 *Тренажер:* ${training.simulator_name}`;
+
+        // Отправляем уведомления через Telegram
+        const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+        const results = [];
+
+        for (const participant of participantsResult.rows) {
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: participant.telegram_id,
+                        text: notificationText,
+                        parse_mode: 'Markdown'
+                    })
+                });
+
+                const result = await response.json();
+                results.push({
+                    client_name: participant.full_name,
+                    success: result.ok,
+                    error: result.ok ? null : result.description
+                });
+            } catch (error) {
+                results.push({
+                    client_name: participant.full_name,
+                    success: false,
+                    error: error.message
+                });
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            message: 'Уведомления отправлены',
+            results: results
         });
 
-        // Уведомляем администратора
-        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
-        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            const adminText = `📨 *Отправлено сообщение клиенту*\n\n👤 *Клиент:* ${client.full_name}\n\n📝 *Текст:*\n${message}`;
-            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    chat_id: ADMIN_TELEGRAM_ID, 
-                    text: adminText,
-                    parse_mode: 'Markdown'
-                })
-            });
-        }
-
-        res.json({ 
-            message: 'Сообщение успешно отправлено',
-            client_name: client.full_name
-        });
     } catch (error) {
-        console.error('Ошибка при отправке сообщения:', error);
-        res.status(500).json({ error: 'Ошибка при отправке сообщения' });
+        await client.query('ROLLBACK');
+        console.error('Ошибка при отправке уведомлений:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
+    } finally {
+        client.release();
     }
 });
 
-// Отправка сообщения участникам групповой тренировки
-router.post('/notify-group/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-    const { message } = req.body;
-    
-    if (!message) {
-        return res.status(400).json({ error: 'Нет текста сообщения' });
-    }
-
-    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-    try {
-        // Получаем telegram_id всех клиентов-участников тренировки
-        const result = await pool.query(`
-            SELECT DISTINCT c.telegram_id
-            FROM session_participants sp
-            LEFT JOIN clients c ON sp.client_id = c.id
-            WHERE sp.session_id = $1 AND sp.status = 'confirmed' AND c.telegram_id IS NOT NULL
-        `, [sessionId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'У тренировки нет участников с Telegram' });
-        }
-
-        // Уникальные telegram_id
-        const uniqueTelegramIds = [...new Set(result.rows.map(row => row.telegram_id))];
-        let sent = 0;
-        for (const telegramId of uniqueTelegramIds) {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: telegramId, text: message })
-            });
-            sent++;
-        }
-        res.json({ message: `Сообщение отправлено ${sent} участникам группы` });
-    } catch (error) {
-        console.error('Ошибка при отправке сообщений:', error);
-        res.status(500).json({ error: 'Ошибка при отправке сообщений' });
-    }
-});
-
-module.exports = router; 
+module.exports = router;
