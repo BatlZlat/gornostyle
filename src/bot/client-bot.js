@@ -210,6 +210,11 @@ const UNSUPPORTED_MESSAGE_RESPONSES = {
 async function handleMessage(msg) {
     const chatId = msg.chat.id;
     
+    // Не обрабатывать /start и /help здесь, чтобы не было двойного ответа
+    if (msg.text && (msg.text.trim() === '/start' || msg.text.trim() === '/help')) {
+        return;
+    }
+
     // Логирование входящего сообщения
     console.log('Получено сообщение:', {
         chatId,
@@ -223,8 +228,8 @@ async function handleMessage(msg) {
         if (msg.text && msg.text.startsWith('/')) {
             const command = msg.text.split(' ')[0].toLowerCase();
             switch (command) {
-                case '/start':
-                    return handleStartCommand(msg);
+                // case '/start':
+                //     return handleStartCommand(msg);
                 case '/help':
                     return handleHelpCommand(msg);
                 default:
@@ -270,45 +275,6 @@ async function handleMessage(msg) {
                 }
             }
         );
-    }
-}
-
-// Обработчик команды /start
-async function handleStartCommand(msg) {
-    const chatId = msg.chat.id;
-    const telegramId = msg.from.id.toString();
-    const username = msg.from.username || '';
-    const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
-    const client = await getClientByTelegramId(telegramId);
-    
-    // Очищаем предыдущее состояние
-    userStates.delete(chatId);
-    
-    if (!client) {
-        await bot.sendMessage(chatId,
-            '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
-            '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
-            'Я помогу вам:\n' +
-            '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
-            '• ⛷ Забронировать занятия в Кулиге зимой\n' +
-            '• 💳 Управлять вашим балансом\n' +
-            '• 🎁 Приобрести подарочные сертификаты\n\n' +
-            '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
-                    resize_keyboard: true,
-                    one_time_keyboard: true
-                }
-            }
-        );
-        userStates.set(chatId, {
-            step: 'wait_start',
-            data: { telegram_id: telegramId, username, nickname }
-        });
-    } else {
-        await showMainMenu(chatId);
     }
 }
 
@@ -4481,3 +4447,41 @@ async function cancelIndividualTraining(sessionId, userId) {
         throw error;
     }
 }
+
+bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
+    const username = msg.from.username || '';
+    const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
+    const client = await getClientByTelegramId(telegramId);
+
+    // Очищаем предыдущее состояние
+    userStates.delete(chatId);
+
+    if (!client) {
+        await bot.sendMessage(chatId,
+            '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
+            '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
+            'Я помогу вам:\n' +
+            '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
+            '• ⛷ Забронировать занятия в Кулиге зимой\n' +
+            '• 💳 Управлять вашим балансом\n' +
+            '• 🎁 Приобрести подарочные сертификаты\n\n' +
+            '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
+                    resize_keyboard: true,
+                    one_time_keyboard: true
+                }
+            }
+        );
+        userStates.set(chatId, {
+            step: 'wait_start',
+            data: { telegram_id: telegramId, username, nickname }
+        });
+    } else {
+        await showMainMenu(chatId);
+    }
+});
