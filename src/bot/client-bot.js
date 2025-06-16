@@ -3123,41 +3123,58 @@ async function handleTextMessage(msg) {
                     }
 
                     // Формируем сообщение для каждой записи
-                    let message = '📋 *Ваши записи на тренировки:*\n\n';
-                    result.rows.forEach((session, index) => {
-                        const date = new Date(session.session_date);
-                        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                        const [hours, minutes] = session.start_time.split(':');
-                        const formattedTime = `${hours}:${minutes}`;
-
-                        message += `👤 *Участник:* ${session.participant_name}\n`;
-                        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
-                        message += `⏰ *Время:* ${formattedTime}\n`;
-                        message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
-                        if (session.group_name) {
+                    let message = `📋 *Ваши записи на тренировки:*\n\n`;
+                    let allSessions = [];
+                    let counter = 1;
+                    if (groupSessions.length > 0) {
+                        message += '\n👥 *Групповые тренировки:*\n';
+                        groupSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
                             message += `👥 *Группа:* ${session.group_name}\n`;
-                        }
-                        if (session.trainer_name) {
-                            message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
-                        }
-                        if (session.skill_level) {
-                            message += `📊 *Уровень:* ${session.skill_level}\n`;
-                        }
-                        message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n\n`;
-                    });
-
-                    message += 'Для отмены тренировки нажмите "Отменить тренировку"';
-
-                    // Сохраняем список записей в состоянии
+                            message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                            if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                            if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
+                            allSessions.push({ ...session, session_type: 'group' });
+                            counter++;
+                        });
+                    }
+                    if (individualSessions.length > 0) {
+                        message += '\n👤 *Индивидуальные тренировки:*\n';
+                        individualSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
+                            message += `🎿 *Снаряжение:* ${session.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
+                            message += `👨‍🏫 *${session.with_trainer ? 'С тренером' : 'Без тренера'}*\n`;
+                            message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                            message += `⏱ *Длительность:* ${session.duration} мин\n`;
+                            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
+                            allSessions.push({ ...session, session_type: 'individual' });
+                            counter++;
+                        });
+                    }
+                    message += '\nДля отмены тренировки нажмите "Отменить тренировку"';
+                    // Сохраняем оба списка в состоянии
                     userStates.set(chatId, { 
                         step: 'view_sessions', 
                         data: { 
                             client_id: state.data.client_id,
-                            sessions: result.rows 
+                            sessions: allSessions 
                         } 
                     });
-
                     await bot.sendMessage(chatId, message, {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -3942,45 +3959,50 @@ async function showMyBookings(chatId) {
             return;
         }
 
-        let message = '📋 *Ваши записи на тренировки:*\n\n';
+        let message = `📋 *Ваши записи на тренировки:*\n\n`;
         let allSessions = [];
         let counter = 1;
         if (groupSessions.length > 0) {
-            message += '\n*Групповые тренировки:*\n';
+            message += '\n👥 *Групповые тренировки:*\n';
             groupSessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
-                message += `${counter}. ${session.participant_name} — ${formattedDate} (${dayOfWeek}) ${formattedTime}\n`;
-                message += `   Группа: ${session.group_name}\n`;
-                message += `   Тренажер: ${session.simulator_name}\n`;
-                if (session.trainer_name) message += `   Тренер: ${session.trainer_name}\n`;
-                message += `   Стоимость: ${Number(session.price).toFixed(2)} руб.\n\n`;
+                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `👥 *Группа:* ${session.group_name}\n`;
+                message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                 allSessions.push({ ...session, session_type: 'group' });
                 counter++;
             });
         }
         if (individualSessions.length > 0) {
-            message += '\n*Индивидуальные тренировки:*\n';
+            message += '\n👤 *Индивидуальные тренировки:*\n';
             individualSessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
-                message += `${counter}. ${session.participant_name} — ${formattedDate} (${dayOfWeek}) ${formattedTime}\n`;
-                message += `   Снаряжение: ${session.equipment_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
-                message += `   ${session.with_trainer ? 'С тренером' : 'Без тренера'}\n`;
-                message += `   Тренажер: ${session.simulator_name}\n`;
-                message += `   Длительность: ${session.duration} мин\n`;
-                message += `   Стоимость: ${Number(session.price).toFixed(2)} руб.\n\n`;
+                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `🎿 *Снаряжение:* ${session.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
+                message += `👨‍🏫 *${session.with_trainer ? 'С тренером' : 'Без тренера'}*\n`;
+                message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
+                message += `⏱ *Длительность:* ${session.duration} мин\n`;
+                message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                 allSessions.push({ ...session, session_type: 'individual' });
                 counter++;
             });
         }
-        message += 'Для отмены тренировки нажмите "Отменить тренировку"';
+        message += '\nДля отмены тренировки нажмите "Отменить тренировку"';
         // Сохраняем оба списка в состоянии
         userStates.set(chatId, { 
             step: 'view_sessions', 
