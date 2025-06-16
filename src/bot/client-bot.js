@@ -976,23 +976,23 @@ async function handleTextMessage(msg) {
 
                     // Создаем запись о предложении тренировки
                     const result = await pool.query(
-                        `INSERT INTO training_suggestions (
-                            client_id, child_id, has_group, group_size, training_for,
-                            training_frequency, sport_type, skill_level,
-                            preferred_date, preferred_time, status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+                        `INSERT INTO training_requests (
+                            client_id, child_id, equipment_type, duration,
+                            preferred_date, preferred_time, has_group, group_size,
+                            training_frequency, skill_level
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                         RETURNING id`,
                         [
                             clientInfo.id,
                             childId,
+                            state.data.sport_type,
+                            60, // стандартная длительность 60 минут
+                            state.data.preferred_date,
+                            state.data.preferred_time,
                             state.data.has_group,
                             state.data.group_size,
-                            state.data.training_for,
                             state.data.training_frequency,
-                            state.data.sport_type,
-                            state.data.skill_level,
-                            state.data.preferred_date,
-                            state.data.preferred_time
+                            state.data.skill_level
                         ]
                     );
 
@@ -1001,14 +1001,12 @@ async function handleTextMessage(msg) {
                         id: result.rows[0].id,
                         client_name: clientInfo.full_name,
                         client_phone: clientInfo.phone,
-                        has_group: state.data.has_group,
-                        group_size: state.data.group_size,
-                        training_for: state.data.training_for,
-                        training_frequency: state.data.training_frequency,
-                        sport_type: state.data.sport_type,
-                        skill_level: state.data.skill_level,
-                        preferred_date: state.data.preferred_date,
-                        preferred_time: state.data.preferred_time
+                        date: state.data.preferred_date,
+                        time: state.data.preferred_time,
+                        type: state.data.has_group ? 'Групповая' : 'Индивидуальная',
+                        group_name: state.data.has_group ? `Группа ${state.data.group_size} чел.` : null,
+                        trainer_name: 'Будет назначен',
+                        price: 'Будет рассчитана'
                     });
 
                     // Очищаем состояние
