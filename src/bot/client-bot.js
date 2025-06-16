@@ -3072,7 +3072,7 @@ async function handleTextMessage(msg) {
                                 sp.id,
                                 sp.session_id,
                                 sp.child_id,
-                                c.full_name as participant_name,
+                                COALESCE(c.full_name, cl.full_name) as participant_name,
                                 ts.session_date,
                                 ts.start_time,
                                 ts.duration,
