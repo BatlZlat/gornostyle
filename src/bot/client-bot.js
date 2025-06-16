@@ -334,6 +334,62 @@ async function handleTextMessage(msg) {
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
 
+        // Обработка кнопки "Кошелек"
+        if (msg.text === '💰 Кошелек') {
+            try {
+                const clientResult = await pool.query(
+                    'SELECT c.id, c.full_name, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
+                    [msg.from.id.toString()]
+                );
+    
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: кошелек не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 В главное меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+    
+                const { id: clientId, full_name, wallet_number: walletNumber, balance } = clientResult.rows[0];
+                const formattedWalletNumber = formatWalletNumber(walletNumber);
+    
+                await bot.sendMessage(chatId,
+                    `💳 *Информация о кошельке*\n\n` +
+                    `👤 *Владелец:* ${full_name}\n` +
+                    `💳 *Номер кошелька*: \`${formattedWalletNumber}\`\n` +
+                    `💰 *Текущий баланс*: ${parseFloat(balance).toFixed(2)} руб.\n\n` +
+                    `Выберите действие:`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['💳 Пополнить баланс'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                return;
+            } catch (error) {
+                console.error('Ошибка при получении информации о кошельке:', error);
+                await bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                return;
+            }
+        }
+
     // Обработка кнопки "Мои записи" независимо от состояния
     if (msg.text === '📋 Мои записи') {
         return showMyBookings(chatId);
