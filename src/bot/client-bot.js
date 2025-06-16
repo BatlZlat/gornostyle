@@ -1169,6 +1169,11 @@ async function handleTextMessage(msg) {
         }
         case 'has_child': {
             if (msg.text === 'Да') {
+                // Если это регистрация нового клиента (нет client_id), инициализируем объект child
+                if (!state.data.client_id) {
+                    state.data.child = {};
+                }
+                
                 // Если детей нет или массив не определён — сразу просим ввести ФИО
                 if (!state.data.children || state.data.children.length === 0) {
                     state.step = 'add_child_name';
@@ -3527,6 +3532,11 @@ async function handleTextMessage(msg) {
                 );
             }
 
+            // Если это регистрация нового клиента, сохраняем в объекте child
+            if (state.data.child) {
+                state.data.child.full_name = msg.text;
+            }
+            
             userStates.set(chatId, {
                 step: 'add_child_birth_date',
                 data: { ...state.data, child_name: msg.text }
@@ -3565,6 +3575,14 @@ async function handleTextMessage(msg) {
                 );
             }
 
+            // Если это регистрация нового клиента, сохраняем дату в объекте child и завершаем регистрацию
+            if (state.data.child) {
+                state.data.child.birth_date = birthDate;
+                await finishRegistration(chatId, state.data);
+                return;
+            }
+
+            // Если это добавление ребенка через личный кабинет, используем существующую логику
             try {
                 await pool.query(
                     'INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) VALUES ($1, $2, $3, $4, $5)',
