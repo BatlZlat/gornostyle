@@ -3,9 +3,6 @@ const router = express.Router();
 const { pool } = require('../db');
 const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-bot');
 
-// Логируем значение MACRODROID_TOKEN для отладки
-console.log('MACRODROID_TOKEN (из process.env):', process.env.MACRODROID_TOKEN);
-
 // Универсальный парсер суммы и кошелька
 function parseSmsUniversal(text) {
     // Нормализация текста
