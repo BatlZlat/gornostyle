@@ -444,7 +444,9 @@ router.get('/active-groups', async (req, res) => {
                 COALESCE(g.name, 'Группа не указана') as group_name,
                 COALESCE(t.full_name, 'Тренер не назначен') as trainer_name,
                 COALESCE(s.name, 'Тренажер не указан') as simulator_name,
-                (SELECT COUNT(*) FROM session_participants sp WHERE sp.session_id = ts.id AND sp.status = 'confirmed') as current_participants
+                (SELECT COUNT(*) FROM session_participants sp 
+                 WHERE sp.session_id = ts.id 
+                 AND sp.status = 'confirmed') as current_participants
             FROM training_sessions ts
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN trainers t ON ts.trainer_id = t.id

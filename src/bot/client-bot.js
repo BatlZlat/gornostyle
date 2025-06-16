@@ -3089,7 +3089,7 @@ async function handleTextMessage(msg) {
                                 ts.skill_level,
                                 ts.price,
                                 ts.max_participants,
-                                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id) as current_participants,
+                                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                                 'group' as session_type
                             FROM session_participants sp
                             JOIN training_sessions ts ON sp.session_id = ts.id
@@ -3100,43 +3100,9 @@ async function handleTextMessage(msg) {
                             JOIN clients cl ON sp.client_id = cl.id
                             WHERE sp.client_id = $1
                             AND ts.status = 'scheduled'
+                            AND sp.status = 'confirmed'
                             AND (
-                                ts.session_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
-                                OR (
-                                    ts.session_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
-                                    AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
-                                )
-                            )
-                            UNION ALL
-                            -- Индивидуальные тренировки
-                            SELECT 
-                                its.id,
-                                its.id as session_id,
-                                its.child_id,
-                                COALESCE(c.full_name, cl.full_name) as participant_name,
-                                (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date as session_date,
-                                its.preferred_time as start_time,
-                                its.duration,
-                                its.equipment_type,
-                                s.name as simulator_name,
-                                NULL as group_name,
-                                NULL as trainer_name,
-                                NULL as skill_level,
-                                its.price,
-                                NULL as max_participants,
-                                NULL as current_participants,
-                                'individual' as session_type
-                            FROM individual_training_sessions its
-                            JOIN simulators s ON its.simulator_id = s.id
-                            LEFT JOIN children c ON its.child_id = c.id
-                            JOIN clients cl ON its.client_id = cl.id
-                            WHERE its.client_id = $1
-                            AND (
-                              (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date > (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                              OR (
-                                (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                                AND its.preferred_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
-                              )
+                              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                             )
                         )
                         SELECT * FROM client_sessions
@@ -3333,46 +3299,14 @@ async function handleTextMessage(msg) {
                         refund: selectedSession.price
                     });
 
-                    // Удаляем запись
-                    await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
+                    // Вместо удаления меняем статус на 'cancelled'
+                    await pool.query('UPDATE session_participants SET status = $1 WHERE id = $2', ['cancelled', selectedSession.id]);
 
-                    // Проверяем, остались ли еще участники в группе
+                    // Проверяем, остались ли еще участники в группе (только с подтвержденным статусом)
                     const remainingParticipants = await pool.query(
-                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
-                        [selectedSession.session_id]
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
                     );
-
-                    // Если участников не осталось, удаляем тренировку и освобождаем слоты
-                    if (remainingParticipants.rows[0].count === '0') {
-                        // Получаем информацию о тренировке перед удалением
-                        const trainingInfo = await pool.query(
-                            'SELECT * FROM training_sessions WHERE id = $1',
-                            [selectedSession.session_id]
-                        );
-
-                        if (trainingInfo.rows.length > 0) {
-                            const training = trainingInfo.rows[0];
-                            
-                            // Освобождаем слоты в расписании
-                            await pool.query(
-                                `UPDATE schedule 
-                                 SET is_booked = false 
-                                 WHERE simulator_id = $1 
-                                 AND date = $2 
-                                 AND start_time >= $3 
-                                 AND start_time < $4`,
-                                [
-                                    training.simulator_id,
-                                    training.session_date,
-                                    training.start_time,
-                                    training.end_time
-                                ]
-                            );
-
-                            // Удаляем тренировку
-                            await pool.query('DELETE FROM training_sessions WHERE id = $1', [selectedSession.session_id]);
-                        }
-                    }
 
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
@@ -3946,7 +3880,7 @@ async function showMyBookings(chatId) {
                     ts.skill_level,
                     ts.price,
                     ts.max_participants,
-                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id) as current_participants,
+                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                     'group' as session_type
                 FROM session_participants sp
                 JOIN training_sessions ts ON sp.session_id = ts.id
@@ -3957,43 +3891,9 @@ async function showMyBookings(chatId) {
                 JOIN clients cl ON sp.client_id = cl.id
                 WHERE sp.client_id = $1
                 AND ts.status = 'scheduled'
+                AND sp.status = 'confirmed'
                 AND (
-                    ts.session_date > CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
-                    OR (
-                        ts.session_date = CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg'
-                        AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
-                    )
-                )
-                UNION ALL
-                -- Индивидуальные тренировки
-                SELECT 
-                    its.id,
-                    its.id as session_id,
-                    its.child_id,
-                    COALESCE(c.full_name, cl.full_name) as participant_name,
-                    (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date as session_date,
-                    its.preferred_time as start_time,
-                    its.duration,
-                    its.equipment_type,
-                    s.name as simulator_name,
-                    NULL as group_name,
-                    NULL as trainer_name,
-                    NULL as skill_level,
-                    its.price,
-                    NULL as max_participants,
-                    NULL as current_participants,
-                    'individual' as session_type
-                FROM individual_training_sessions its
-                JOIN simulators s ON its.simulator_id = s.id
-                LEFT JOIN children c ON its.child_id = c.id
-                JOIN clients cl ON its.client_id = cl.id
-                WHERE its.client_id = $1
-                AND (
-                  (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date > (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                  OR (
-                    (its.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')::date = (CURRENT_DATE AT TIME ZONE 'Asia/Yekaterinburg')
-                    AND its.preferred_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
-                  )
+                  (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                 )
             )
             SELECT * FROM client_sessions
