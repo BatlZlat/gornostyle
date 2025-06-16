@@ -390,6 +390,47 @@ async function handleTextMessage(msg) {
             }
         }
 
+    // Обработка кнопки "Пополнить баланс"
+    if (msg.text === '💳 Пополнить баланс') {
+        try {
+            let clientId;
+            if (state && state.data && state.data.client_id) {
+                clientId = state.data.client_id;
+            } else {
+                const clientResult = await pool.query(
+                    'SELECT id FROM clients WHERE telegram_id = $1',
+                    [msg.from.id.toString()]
+                );
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId,
+                        '❌ Ошибка: клиент не найден. Пожалуйста, обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 В главное меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                clientId = clientResult.rows[0].id;
+            }
+            await handleTopUpBalance(chatId, clientId);
+            return;
+        } catch (error) {
+            console.error('Ошибка при обработке пополнения баланса:', error);
+            await bot.sendMessage(chatId,
+                '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 В главное меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+            return;
+        }
+    }
+
     // Обработка кнопки "Мои записи" независимо от состояния
     if (msg.text === '📋 Мои записи') {
         return showMyBookings(chatId);
