@@ -570,6 +570,7 @@ CREATE TABLE certificates (
   -- Индексы для оптимизации запросов
   CREATE INDEX IF NOT EXISTS idx_sms_log_created_at ON sms_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_sms_log_processing_status ON sms_log(processing_status);
+  
   ```
 - [ ] Создать универсальную функцию парсинга
   ```javascript
