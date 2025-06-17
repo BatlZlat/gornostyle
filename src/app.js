@@ -24,16 +24,7 @@ const fs = require('fs');
 require('./bot/client-bot');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-console.log('Инициализация приложения...');
-console.log('Загруженные маршруты:', {
-    schedule: !!scheduleRouter,
-    simulators: !!simulatorsRouter,
-    groups: !!groupsRouter,
-    trainers: !!trainersRouter,
-    trainings: !!trainingsRouter
-});
+const PORT = process.env.PORT;
 
 // Настройка middleware
 app.use(cors());
@@ -95,10 +86,10 @@ app.put('/api/payment-link', (req, res) => {
 
 // Настройка cron-задачи
 const cronExpression = `0 ${CRON_SETTINGS.minute} ${CRON_SETTINGS.hour} ${CRON_SETTINGS.day} * *`;
-console.log('\n=== Настройка cron-задачи ===');
-console.log('Текущие настройки:', CRON_SETTINGS);
-console.log('Cron-выражение:', cronExpression);
-console.log('Текущее время:', new Date().toLocaleString('ru-RU'));
+// console.log('\n=== Настройка cron-задачи ===');
+// console.log('Текущие настройки:', CRON_SETTINGS);
+// console.log('Cron-выражение:', cronExpression);
+// console.log('Текущее время:', new Date().toLocaleString('ru-RU'));
 
 // Функция для проверки следующего запуска
 function getNextRunTime() {
@@ -117,18 +108,18 @@ function getNextRunTime() {
     return nextRun;
 }
 
-console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
+// console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
 
 // Запускаем задачу по расписанию
 const task = cron.schedule(cronExpression, async () => {
-    console.log('\n=== Запуск создания расписания на следующий месяц ===');
-    console.log('Время запуска:', new Date().toLocaleString('ru-RU'));
+    // console.log('\n=== Запуск создания расписания на следующий месяц ===');
+    // console.log('Время запуска:', new Date().toLocaleString('ru-RU'));
     try {
         await createNextMonthSchedule();
-        console.log('Расписание успешно создано');
-        console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
+        // console.log('Расписание успешно создано');
+        // console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
     } catch (error) {
-        console.error('Ошибка при создании расписания:', error);
+        // console.error('Ошибка при создании расписания:', error);
     }
 }, {
     scheduled: true,
@@ -137,7 +128,7 @@ const task = cron.schedule(cronExpression, async () => {
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
-    console.error('Ошибка сервера:', err);
+    // console.error('Ошибка сервера:', err);
     res.status(500).json({ 
         success: false, 
         error: 'Внутренняя ошибка сервера',
@@ -147,7 +138,7 @@ app.use((err, req, res, next) => {
 
 // Обработка 404 ошибок
 app.use((req, res) => {
-    console.log('404 - Маршрут не найден:', req.method, req.url);
+    // console.log('404 - Маршрут не найден:', req.method, req.url);
     res.status(404).json({ 
         success: false, 
         error: 'Маршрут не найден',
@@ -157,8 +148,8 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\nСервер запущен на порту ${PORT}`);
-    console.log('Cron-задача активна и ожидает следующего запуска');
+    // console.log(`\nСервер запущен на порту ${PORT}`);
+    // console.log('Cron-задача активна и ожидает следующего запуска');
 });
 
 module.exports = app; 

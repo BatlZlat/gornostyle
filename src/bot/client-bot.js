@@ -36,15 +36,23 @@ function showMainMenu(chatId) {
 // Валидация
 function validateDate(dateStr) {
     const [day, month, year] = dateStr.split('.');
+    
+    // Проверяем, что все части даты являются числами
+    if (!day || !month || !year || isNaN(day) || isNaN(month) || isNaN(year)) {
+        return null;
+    }
+    
     // Создаем дату в UTC с учетом часового пояса Екатеринбурга (UTC+5)
-    const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day), 0, 0, 0));
+    
     // Проверяем корректность даты
     if (date.getUTCDate() !== parseInt(day) || 
         date.getUTCMonth() !== parseInt(month) - 1 || 
         date.getUTCFullYear() !== parseInt(year)) {
         return null;
     }
-    // Возвращаем дату в формате YYYY-MM-DD
+    
+    // Возвращаем дату в формате YYYY-MM-DD для PostgreSQL
     return date.toISOString().split('T')[0];
 }
 function validatePhone(phone) {
@@ -716,16 +724,24 @@ async function handleTextMessage(msg) {
                 }
 
                 let message = '👶 *Выберите ребенка:*\n\n';
-                message += '1. Для себя\n';
-                childrenResult.rows.forEach((child, index) => {
-                    message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
-                });
+                // Убираем пункт "Для себя" при выборе "для себя и ребенка"
+                if (trainingFor === 'both') {
+                    childrenResult.rows.forEach((child, index) => {
+                        message += `${index + 1}. Для ребенка: ${child.full_name}\n`;
+                    });
+                } else {
+                    message += '1. Для себя\n';
+                    childrenResult.rows.forEach((child, index) => {
+                        message += `${index + 2}. Для ребенка: ${child.full_name}\n`;
+                    });
+                }
 
                 return bot.sendMessage(chatId, message, {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [
-                            ['1. Для себя'],
+                            // Убираем кнопку "Для себя" при выборе "для себя и ребенка"
+                            ...(trainingFor === 'both' ? [] : [['1. Для себя']]),
                             ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
                             ['🔙 Назад в меню']
                         ],
@@ -747,7 +763,8 @@ async function handleTextMessage(msg) {
                         {
                             reply_markup: {
                                 keyboard: [
-                                    ['1. Для себя'],
+                                    // Убираем кнопку "Для себя" при выборе "для себя и ребенка"
+                                    ...(state.data.training_for === 'both' ? [] : [['1. Для себя']]),
                                     ...childrenResult.rows.map(child => [`Для ребенка: ${child.full_name}`]),
                                     ['🔙 Назад в меню']
                                 ],
@@ -757,12 +774,14 @@ async function handleTextMessage(msg) {
                     );
                 }
 
-                trainingFor = 'child';
+                // Сохраняем training_for как 'both' если это был выбор "для себя и ребенка"
+                const finalTrainingFor = state.data.training_for === 'both' ? 'both' : 'child';
+                
                 userStates.set(chatId, {
                     step: 'suggest_training_frequency',
                     data: { 
                         ...state.data, 
-                        training_for: trainingFor,
+                        training_for: finalTrainingFor,
                         child_id: selectedChild.id,
                         child_name: selectedChild.full_name
                     }
@@ -875,7 +894,8 @@ async function handleTextMessage(msg) {
         }
 
         case 'suggest_preferred_date': {
-            if (!validateDate(msg.text)) {
+            const validatedDate = validateDate(msg.text);
+            if (!validatedDate) {
                 return bot.sendMessage(chatId,
                     '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\n' +
                     'Например: 01.01.2024',
@@ -889,7 +909,9 @@ async function handleTextMessage(msg) {
             }
 
             const state = userStates.get(chatId);
-            state.data.preferred_date = msg.text;
+            // Сохраняем дату в формате YYYY-MM-DD для БД и исходную строку для отображения
+            state.data.preferred_date = validatedDate;
+            state.data.preferred_date_display = msg.text;
             state.step = 'suggest_preferred_time';
             userStates.set(chatId, state);
             
@@ -939,7 +961,7 @@ async function handleTextMessage(msg) {
             message += `🔄 Частота: ${state.data.training_frequency === 'once' ? 'Разово' : 'Регулярно'}\n`;
             message += `🎿 Вид спорта: ${state.data.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
             message += `📊 Уровень: ${state.data.skill_level}/10\n`;
-            message += `📅 Дата: ${formatDate(state.data.preferred_date)}\n`;
+            message += `📅 Дата: ${state.data.preferred_date_display || formatDate(state.data.preferred_date)}\n`;
             message += `⏰ Время: ${state.data.preferred_time}\n\n`;
             message += 'Всё верно?';
 
@@ -3992,7 +4014,26 @@ async function askIndividualForWhom(chatId, clientId) {
 // Функция для форматирования даты в формат ДД.ММ.ГГГГ
 function formatDate(dateStr) {
     if (!dateStr) return '';
+    
+    // Если дата уже в формате DD.MM.YYYY, возвращаем как есть
+    if (typeof dateStr === 'string' && dateStr.includes('.')) {
+        return dateStr;
+    }
+    
+    // Если дата в формате YYYY-MM-DD, преобразуем в DD.MM.YYYY
+    if (typeof dateStr === 'string' && dateStr.includes('-')) {
+        const [year, month, day] = dateStr.split('-');
+        return `${day}.${month}.${year}`;
+    }
+    
+    // Если это объект Date, преобразуем в DD.MM.YYYY
     const date = dateStr instanceof Date ? dateStr : new Date(dateStr);
+    
+    // Проверяем, что дата валидна
+    if (isNaN(date.getTime())) {
+        return '';
+    }
+    
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
