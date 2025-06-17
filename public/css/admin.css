@@ -1320,4 +1320,217 @@ body {
     opacity: 1;
     height: auto;
     margin-bottom: 1rem;
+}
+
+/* === СТИЛИ ДЛЯ СТРАНИЦЫ ЗАЯВОК === */
+
+.applications-controls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.filter-select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    font-size: 1rem;
+    min-width: 150px;
+}
+
+.date-filter {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    font-size: 1rem;
+}
+
+/* Стили для статусов заявок */
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-new {
+    background-color: #e3f2fd;
+    color: #1976d2;
+}
+
+.status-processing {
+    background-color: #fff3e0;
+    color: #f57c00;
+}
+
+.status-approved {
+    background-color: #e8f5e8;
+    color: #388e3c;
+}
+
+.status-rejected {
+    background-color: #ffebee;
+    color: #d32f2f;
+}
+
+.status-completed {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+}
+
+/* Стили для приоритетов заявок */
+.priority-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.priority-low {
+    background-color: #f5f5f5;
+    color: #757575;
+}
+
+.priority-medium {
+    background-color: #e8f5e8;
+    color: #388e3c;
+}
+
+.priority-high {
+    background-color: #fff3e0;
+    color: #f57c00;
+}
+
+.priority-urgent {
+    background-color: #ffebee;
+    color: #d32f2f;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Стили для строк таблицы заявок */
+.application-row {
+    transition: background-color 0.2s;
+}
+
+.application-row:hover {
+    background-color: #f8f9fa;
+}
+
+.application-status-new {
+    border-left: 4px solid #1976d2;
+}
+
+.application-status-processing {
+    border-left: 4px solid #f57c00;
+}
+
+.application-status-approved {
+    border-left: 4px solid #388e3c;
+}
+
+.application-status-rejected {
+    border-left: 4px solid #d32f2f;
+}
+
+.application-status-completed {
+    border-left: 4px solid #7b1fa2;
+}
+
+/* Стили для действий с заявками */
+.application-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-start;
+}
+
+.application-actions .btn-secondary,
+.application-actions .btn-danger {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+}
+
+/* Стили для деталей заявки */
+.application-details {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.application-details .detail-group {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.application-details .detail-group h4 {
+    margin: 0 0 15px 0;
+    color: #2c3e50;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.application-details .detail-group p {
+    margin: 8px 0;
+    color: #495057;
+}
+
+.application-details .detail-group strong {
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+/* Адаптивность для страницы заявок */
+@media (max-width: 768px) {
+    .applications-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .filter-controls {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .filter-select,
+    .date-filter {
+        width: 100%;
+    }
+    
+    .application-actions {
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+    
+    .application-actions .btn-secondary,
+    .application-actions .btn-danger {
+        width: 100%;
+        text-align: center;
+    }
 } 
