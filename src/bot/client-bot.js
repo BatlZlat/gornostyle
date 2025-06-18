@@ -240,6 +240,8 @@ async function handleMessage(msg) {
                 //     return handleStartCommand(msg);
                 case '/help':
                     return handleHelpCommand(msg);
+                case '/price':
+                    return handlePriceCommand(msg);
                 default:
                     return bot.sendMessage(chatId, 
                         '❓ Неизвестная команда. Используйте /help для получения списка доступных команд.',
@@ -301,6 +303,76 @@ async function handleHelpCommand(msg) {
         `• Если возникли вопросы — пишите или звоните в поддержку: ${adminPhone}\n\n`,
         { parse_mode: 'Markdown' }
     );
+}
+
+// Обработчик команды /price
+async function handlePriceCommand(msg) {
+    const chatId = msg.chat.id;
+    const adminPhone = process.env.ADMIN_PHONE || 'не указан';
+
+    // Получаем текущую дату в Екатеринбурге
+    const now = new Date();
+    const yekatTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Yekaterinburg' }));
+    const day = yekatTime.getDate().toString().padStart(2, '0');
+    const month = (yekatTime.getMonth() + 1).toString().padStart(2, '0');
+    const year = yekatTime.getFullYear();
+    const dateStr = `${day}.${month}.${year}`;
+
+    // Получаем прайс из базы
+    let prices;
+    try {
+        const res = await pool.query('SELECT * FROM prices ORDER BY type, with_trainer DESC, participants, duration');
+        prices = res.rows;
+    } catch (e) {
+        console.error('Ошибка при получении прайса:', e);
+        await bot.sendMessage(chatId, '❌ Не удалось получить прайс. Попробуйте позже.');
+        return;
+    }
+
+    // Группируем прайс
+    const individual = prices.filter(p => p.type === 'individual');
+    const group = prices.filter(p => p.type === 'group');
+
+    // Индивидуальные
+    const indWithTrainer = individual.filter(p => p.with_trainer);
+    const indWithoutTrainer = individual.filter(p => !p.with_trainer);
+
+    // Групповые
+    const groupWithTrainer = group.filter(p => p.with_trainer);
+    const groupWithoutTrainer = group.filter(p => !p.with_trainer);
+
+    // Формируем текст
+    let message = `💸 *Актуальный прайс на тренировки*\nна дату: ${dateStr}\n\n`;
+
+    // Индивидуальные
+    message += '👤 *Индивидуальные тренировки:*\n';
+    message += '👨‍🏫 С тренером:\n';
+    indWithTrainer.forEach(p => {
+        message += `⏱ ${p.duration} минут — ${Number(p.price).toLocaleString('ru-RU')} руб.\n`;
+    });
+    message += '(Быстрый прогресс и максимум внимания! 🚀)\n\n';
+    message += '👤 Без тренера:\n';
+    indWithoutTrainer.forEach(p => {
+        message += `⏱ ${p.duration} минут — ${Number(p.price).toLocaleString('ru-RU')} руб.\n`;
+    });
+    message += '(Только для уверенных райдеров! 😎)\n\n';
+    message += '---\n\n';
+
+    // Групповые
+    message += '👥 *Групповые тренировки (60 минут):*\n(Чем больше народу — тем выгоднее! 🥳)\n\n';
+    message += 'С тренером:\n';
+    groupWithTrainer.forEach(p => {
+        message += `• ${p.participants} чел — ${Number(p.price).toLocaleString('ru-RU')} руб./чел\n`;
+    });
+    message += '\nБез тренера:\n';
+    groupWithoutTrainer.forEach(p => {
+        message += `• ${p.participants} чел — ${Number(p.price).toLocaleString('ru-RU')} руб./чел\n`;
+    });
+    message += '\n*Запишись с друзьями и катай дешевле!*\n\n---\n\n';
+
+    message += `❓ Остались вопросы?\nПишите или звоните администратору: ${adminPhone}`;
+
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 }
 
 // Обработчик текстовых сообщений
