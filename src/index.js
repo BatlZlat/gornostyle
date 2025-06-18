@@ -34,7 +34,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 app.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
+    // console.log(`Сервер запущен на порту ${PORT}`);
 }); 

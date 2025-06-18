@@ -14,8 +14,9 @@
         
         <div class="admin-content">
             <nav class="admin-menu">
-                <button class="menu-item" data-page="training">Тренировки</button>
                 <button class="menu-item active" data-page="schedule">Расписание</button>
+                <button class="menu-item" data-page="training">Тренировки</button>
+                <button class="menu-item" data-page="applications">Заявки</button>
                 <button class="menu-item" data-page="simulators">Тренажеры</button>
                 <button class="menu-item" data-page="trainers">Тренера</button>
                 <button class="menu-item" data-page="clients">Клиенты</button>
@@ -38,6 +39,36 @@
                     </div>
                     <div class="training-list">
                         <!-- Список тренировок будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница заявок -->
+                <div class="page-content" id="applications-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Заявки</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="create-application">Создать заявку</button>
+                            <button class="btn-secondary" id="export-applications">Экспорт заявок</button>
+                        </div>
+                    </div>
+                    <div class="applications-controls">
+                        <div class="filter-controls">
+                            <select id="status-filter" class="filter-select">
+                                <option value="all">Все статусы</option>
+                                <option value="new">Новые</option>
+                                <option value="processing">В обработке</option>
+                                <option value="approved">Одобренные</option>
+                                <option value="rejected">Отклоненные</option>
+                                <option value="completed">Завершенные</option>
+                            </select>
+                            <input type="date" id="date-filter" class="date-filter" placeholder="Фильтр по дате">
+                        </div>
+                        <div class="search-controls">
+                            <input type="text" id="application-search" placeholder="Поиск по клиенту или описанию" class="search-input">
+                        </div>
+                    </div>
+                    <div class="applications-list">
+                        <!-- Список заявок будет загружен динамически -->
                     </div>
                 </div>
 

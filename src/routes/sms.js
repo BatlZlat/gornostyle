@@ -59,28 +59,28 @@ function parseSmsUniversal(text) {
     }
 
     // Логирование процесса парсинга
-    console.log('Парсинг СМС:', {
-        original_text: text,
-        normalized_text: normalizedText,
-        found_amount: amount,
-        found_wallet: walletNumber,
-        timestamp: new Date().toISOString()
-    });
+    // console.log('Парсинг СМС:', {
+    //     original_text: text,
+    //     normalized_text: normalizedText,
+    //     found_amount: amount,
+    //     found_wallet: walletNumber,
+    //     timestamp: new Date().toISOString()
+    // });
 
     // Валидация результатов
     if (!amount) {
-        console.log('Не удалось найти сумму в СМС:', {
-            text: normalizedText,
-            error: 'Сумма не найдена'
-        });
+        // console.log('Не удалось найти сумму в СМС:', {
+        //     text: normalizedText,
+        //     error: 'Сумма не найдена'
+        // });
         return null;
     }
 
     if (!walletNumber) {
-        console.log('Не удалось найти номер кошелька в СМС:', {
-            text: normalizedText,
-            error: 'Номер кошелька не найден'
-        });
+        // console.log('Не удалось найти номер кошелька в СМС:', {
+        //     text: normalizedText,
+        //     error: 'Номер кошелька не найден'
+        // });
         return null;
     }
 
@@ -119,7 +119,7 @@ async function logSms(smsText, parsedData, errorType = null, errorDetails = null
 // Обработка СМС
 router.post('/process', async (req, res) => {
     // Логируем заголовок Authorization для отладки
-    console.log('Authorization header:', req.headers.authorization);
+    // console.log('Authorization header:', req.headers.authorization);
     let { sms_text } = req.body;
 
     if (!sms_text) {
@@ -142,7 +142,7 @@ router.post('/process', async (req, res) => {
     }
 
     // Логируем реальный текст СМС
-    console.log('Получено СМС от MacroDroid:', JSON.stringify(sms_text));
+    // console.log('Получено СМС от MacroDroid:', JSON.stringify(sms_text));
 
     try {
         // Удаляем переводы строк для универсального парсинга
@@ -151,13 +151,13 @@ router.post('/process', async (req, res) => {
         const parsed = parseSmsUniversal(normalizedText);
         
         if (!parsed) {
-            console.log('Не удалось извлечь сумму или номер кошелька:', sms_text);
+            // console.log('Не удалось извлечь сумму или номер кошелька:', sms_text);
             await logSms(sms_text, null, 'parsing_error', 'Не удалось извлечь сумму или номер кошелька');
             return res.status(200).json({ message: 'Не удалось извлечь сумму или номер кошелька' });
         }
 
         const { amount, walletNumber } = parsed;
-        console.log('Извлеченные данные:', { amount, walletNumber });
+        // console.log('Извлеченные данные:', { amount, walletNumber });
 
         // Проверяем существование таблиц
         const tablesExist = await pool.query(`
@@ -187,7 +187,7 @@ router.post('/process', async (req, res) => {
 
         if (walletInfo.rows.length === 0) {
             // Кошелек не найден, сохраняем в failed_payments и логируем
-            console.log('Кошелек не найден:', walletNumber);
+            // console.log('Кошелек не найден:', walletNumber);
             await pool.query(
                 `INSERT INTO failed_payments (
                     amount, 
@@ -255,12 +255,12 @@ router.post('/process', async (req, res) => {
                 balance: newBalance
             });
 
-            console.log('Платеж успешно обработан:', {
-                wallet_number: walletNumber,
-                client_name: clientName,
-                amount,
-                new_balance: newBalance
-            });
+            // console.log('Платеж успешно обработан:', {
+            //     wallet_number: walletNumber,
+            //     client_name: clientName,
+            //     amount,
+            //     new_balance: newBalance
+            // });
 
             res.json({ 
                 message: 'Платеж успешно обработан',

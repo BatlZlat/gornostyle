@@ -5,6 +5,12 @@ let datePicker;
 let allClients = []; // Глобальная переменная для хранения всех клиентов
 let dismissedTrainers = [];
 
+// Глобальные переменные для заявок
+let allApplications = [];
+let currentApplicationsFilter = 'all';
+let currentApplicationsDate = '';
+let currentApplicationsSearch = '';
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     initializeNavigation();
@@ -522,6 +528,46 @@ function initializeEventListeners() {
             if (e.target === notifyModal) notifyModal.style.display = 'none';
         };
     }
+
+    // Обработчики для страницы заявок
+    const createApplicationBtn = document.getElementById('create-application');
+    if (createApplicationBtn) {
+        createApplicationBtn.addEventListener('click', () => {
+            showCreateApplicationModal();
+        });
+    }
+
+    const exportApplicationsBtn = document.getElementById('export-applications');
+    if (exportApplicationsBtn) {
+        exportApplicationsBtn.addEventListener('click', () => {
+            exportApplications();
+        });
+    }
+
+    // Обработчики фильтров заявок
+    const statusFilter = document.getElementById('status-filter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', (e) => {
+            currentApplicationsFilter = e.target.value;
+            displayApplications();
+        });
+    }
+
+    const dateFilter = document.getElementById('date-filter');
+    if (dateFilter) {
+        dateFilter.addEventListener('change', (e) => {
+            currentApplicationsDate = e.target.value;
+            displayApplications();
+        });
+    }
+
+    const applicationSearch = document.getElementById('application-search');
+    if (applicationSearch) {
+        applicationSearch.addEventListener('input', (e) => {
+            currentApplicationsSearch = e.target.value.toLowerCase();
+            displayApplications();
+        });
+    }
 }
 
 // Переключение страниц
@@ -557,6 +603,9 @@ async function loadPageContent(page) {
             break;
         case 'schedule':
             await loadSchedule();
+            break;
+        case 'applications':
+            await loadApplications();
             break;
         case 'simulators':
             await loadSimulators();
@@ -2841,3 +2890,478 @@ function formatDateDMY(dateStr) {
 const style = document.createElement('style');
 style.innerHTML = `.price-missing { border: 2px solid #e53935 !important; background: #fff3f3 !important; }`;
 document.head.appendChild(style);
+
+// === ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАЯВКАМИ ===
+
+// Загрузка заявок с сервера
+async function loadApplications() {
+    try {
+        showLoading('Загрузка заявок...');
+        
+        const response = await fetch('/api/applications');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        allApplications = await response.json();
+        console.log('Загружены заявки:', allApplications);
+        
+        displayApplications();
+        hideLoading();
+    } catch (error) {
+        console.error('Ошибка при загрузке заявок:', error);
+        showError('Не удалось загрузить заявки');
+        hideLoading();
+    }
+}
+
+// Отображение заявок с учетом фильтров
+function displayApplications() {
+    const applicationsList = document.querySelector('.applications-list');
+    if (!applicationsList) return;
+
+    // Фильтруем заявки
+    let filteredApplications = allApplications.filter(application => {
+        // Фильтр по статусу
+        if (currentApplicationsFilter !== 'all' && application.status !== currentApplicationsFilter) {
+            return false;
+        }
+        
+        // Фильтр по дате
+        if (currentApplicationsDate) {
+            const applicationDate = new Date(application.created_at).toISOString().split('T')[0];
+            if (applicationDate !== currentApplicationsDate) {
+                return false;
+            }
+        }
+        
+        // Фильтр по поиску
+        if (currentApplicationsSearch) {
+            const searchTerm = currentApplicationsSearch;
+            const clientName = application.client_name ? application.client_name.toLowerCase() : '';
+            const description = application.description ? application.description.toLowerCase() : '';
+            
+            if (!clientName.includes(searchTerm) && !description.includes(searchTerm)) {
+                return false;
+            }
+        }
+        
+        return true;
+    });
+
+    // Сортируем по дате создания (новые первые)
+    filteredApplications.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    if (filteredApplications.length === 0) {
+        applicationsList.innerHTML = '<div class="alert alert-info">Заявки не найдены</div>';
+        return;
+    }
+
+    // Формируем HTML таблицы
+    const tableHtml = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Дата</th>
+                    <th>Клиент</th>
+                    <th>Тип заявки</th>
+                    <th>Описание</th>
+                    <th>Статус</th>
+                    <th>Приоритет</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredApplications.map((application, index) => `
+                    <tr class="application-row application-status-${application.status}">
+                        <td>${index + 1}</td>
+                        <td>${formatDate(application.created_at)}</td>
+                        <td>${application.client_name || 'Не указан'}</td>
+                        <td>${getApplicationTypeRu(application.type)}</td>
+                        <td>${application.description || '-'}</td>
+                        <td>
+                            <span class="status-badge status-${application.status}">
+                                ${getStatusRu(application.status)}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="priority-badge priority-${application.priority}">
+                                ${getPriorityRu(application.priority)}
+                            </span>
+                        </td>
+                        <td class="application-actions">
+                            <button class="btn-secondary" onclick="viewApplication(${application.id})">
+                                Просмотр
+                            </button>
+                            <button class="btn-secondary" onclick="editApplication(${application.id})">
+                                Редактировать
+                            </button>
+                            <button class="btn-danger" onclick="deleteApplication(${application.id})">
+                                Удалить
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    applicationsList.innerHTML = tableHtml;
+}
+
+// Модальное окно создания заявки
+function showCreateApplicationModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Создать новую заявку</h3>
+            <form id="create-application-form">
+                <div class="form-group">
+                    <label for="client-select">Клиент:</label>
+                    <select id="client-select" name="client_id" required>
+                        <option value="">Выберите клиента</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="application-type">Тип заявки:</label>
+                    <select id="application-type" name="type" required>
+                        <option value="">Выберите тип</option>
+                        <option value="training">Запрос на тренировку</option>
+                        <option value="equipment">Запрос на оборудование</option>
+                        <option value="schedule">Запрос на изменение расписания</option>
+                        <option value="payment">Вопрос по оплате</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="application-priority">Приоритет:</label>
+                    <select id="application-priority" name="priority" required>
+                        <option value="low">Низкий</option>
+                        <option value="medium" selected>Средний</option>
+                        <option value="high">Высокий</option>
+                        <option value="urgent">Срочный</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="application-description">Описание:</label>
+                    <textarea id="application-description" name="description" rows="4" required 
+                              placeholder="Опишите детали заявки..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Создать заявку</button>
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+
+    // Загружаем список клиентов
+    loadClientsForApplicationSelect();
+
+    // Обработка отправки формы
+    document.getElementById('create-application-form').addEventListener('submit', handleCreateApplication);
+
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+}
+
+// Загрузка клиентов для выпадающего списка
+async function loadClientsForApplicationSelect() {
+    try {
+        const response = await fetch('/api/clients');
+        const clients = await response.json();
+        
+        const clientSelect = document.getElementById('client-select');
+        if (clientSelect) {
+            // Фильтруем только уникальных клиентов без parent_id
+            const filteredClients = [];
+            const seenIds = new Set();
+            for (const client of clients) {
+                if (!client.parent_id && !seenIds.has(client.id)) {
+                    filteredClients.push(client);
+                    seenIds.add(client.id);
+                }
+            }
+            
+            clientSelect.innerHTML = '<option value="">Выберите клиента</option>' +
+                filteredClients.map(client =>
+                    `<option value="${client.id}">${client.full_name} (${client.phone})</option>`
+                ).join('');
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке списка клиентов:', error);
+        showError('Не удалось загрузить список клиентов');
+    }
+}
+
+// Обработка создания заявки
+async function handleCreateApplication(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        showLoading('Создание заявки...');
+        
+        const response = await fetch('/api/applications', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при создании заявки');
+        }
+        
+        showSuccess('Заявка успешно создана');
+        event.target.closest('.modal').remove();
+        loadApplications();
+        hideLoading();
+    } catch (error) {
+        console.error('Ошибка при создании заявки:', error);
+        showError(error.message || 'Не удалось создать заявку');
+        hideLoading();
+    }
+}
+
+// Просмотр заявки
+async function viewApplication(applicationId) {
+    try {
+        const response = await fetch(`/api/applications/${applicationId}`);
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных заявки');
+        }
+        
+        const application = await response.json();
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Детали заявки #${application.id}</h3>
+                <div class="application-details">
+                    <div class="detail-group">
+                        <h4>Основная информация</h4>
+                        <p><strong>Дата создания:</strong> ${formatDate(application.created_at)}</p>
+                        <p><strong>Клиент:</strong> ${application.client_name || 'Не указан'}</p>
+                        <p><strong>Тип заявки:</strong> ${getApplicationTypeRu(application.type)}</p>
+                        <p><strong>Приоритет:</strong> ${getPriorityRu(application.priority)}</p>
+                        <p><strong>Статус:</strong> ${getStatusRu(application.status)}</p>
+                    </div>
+                    <div class="detail-group">
+                        <h4>Описание</h4>
+                        <p>${application.description || 'Описание отсутствует'}</p>
+                    </div>
+                    ${application.comments ? `
+                        <div class="detail-group">
+                            <h4>Комментарии</h4>
+                            <p>${application.comments}</p>
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="form-actions">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке заявки:', error);
+        showError('Не удалось загрузить данные заявки');
+    }
+}
+
+// Редактирование заявки
+async function editApplication(applicationId) {
+    try {
+        const response = await fetch(`/api/applications/${applicationId}`);
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных заявки');
+        }
+        
+        const application = await response.json();
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Редактирование заявки #${application.id}</h3>
+                <form id="edit-application-form">
+                    <div class="form-group">
+                        <label for="edit-status">Статус:</label>
+                        <select id="edit-status" name="status" required>
+                            <option value="new" ${application.status === 'new' ? 'selected' : ''}>Новая</option>
+                            <option value="processing" ${application.status === 'processing' ? 'selected' : ''}>В обработке</option>
+                            <option value="approved" ${application.status === 'approved' ? 'selected' : ''}>Одобренная</option>
+                            <option value="rejected" ${application.status === 'rejected' ? 'selected' : ''}>Отклоненная</option>
+                            <option value="completed" ${application.status === 'completed' ? 'selected' : ''}>Завершенная</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-priority">Приоритет:</label>
+                        <select id="edit-priority" name="priority" required>
+                            <option value="low" ${application.priority === 'low' ? 'selected' : ''}>Низкий</option>
+                            <option value="medium" ${application.priority === 'medium' ? 'selected' : ''}>Средний</option>
+                            <option value="high" ${application.priority === 'high' ? 'selected' : ''}>Высокий</option>
+                            <option value="urgent" ${application.priority === 'urgent' ? 'selected' : ''}>Срочный</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-description">Описание:</label>
+                        <textarea id="edit-description" name="description" rows="4" required>${application.description || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-comments">Комментарии:</label>
+                        <textarea id="edit-comments" name="comments" rows="3">${application.comments || ''}</textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        
+        // Обработка сохранения
+        document.getElementById('edit-application-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            try {
+                const response = await fetch(`/api/applications/${applicationId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Ошибка при обновлении заявки');
+                }
+                
+                showSuccess('Заявка успешно обновлена');
+                modal.remove();
+                loadApplications();
+            } catch (error) {
+                console.error('Ошибка при обновлении заявки:', error);
+                showError(error.message || 'Не удалось обновить заявку');
+            }
+        });
+        
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке заявки:', error);
+        showError('Не удалось загрузить данные заявки');
+    }
+}
+
+// Удаление заявки
+async function deleteApplication(applicationId) {
+    if (!confirm('Вы уверены, что хотите удалить эту заявку?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/applications/${applicationId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка при удалении заявки');
+        }
+        
+        showSuccess('Заявка успешно удалена');
+        loadApplications();
+    } catch (error) {
+        console.error('Ошибка при удалении заявки:', error);
+        showError(error.message || 'Не удалось удалить заявку');
+    }
+}
+
+// Экспорт заявок
+async function exportApplications() {
+    try {
+        showLoading('Подготовка файла...');
+        
+        const response = await fetch('/api/applications/export');
+        if (!response.ok) {
+            throw new Error('Ошибка при экспорте');
+        }
+        
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `applications_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+        
+        showSuccess('Заявки успешно экспортированы');
+        hideLoading();
+    } catch (error) {
+        console.error('Ошибка при экспорте заявок:', error);
+        showError('Не удалось экспортировать заявки');
+        hideLoading();
+    }
+}
+
+// Вспомогательные функции для заявок
+function getApplicationTypeRu(type) {
+    const types = {
+        'training': 'Запрос на тренировку',
+        'equipment': 'Запрос на оборудование',
+        'schedule': 'Запрос на изменение расписания',
+        'payment': 'Вопрос по оплате',
+        'other': 'Другое'
+    };
+    return types[type] || type;
+}
+
+function getStatusRu(status) {
+    const statuses = {
+        'new': 'Новая',
+        'processing': 'В обработке',
+        'approved': 'Одобренная',
+        'rejected': 'Отклоненная',
+        'completed': 'Завершенная'
+    };
+    return statuses[status] || status;
+}
+
+function getPriorityRu(priority) {
+    const priorities = {
+        'low': 'Низкий',
+        'medium': 'Средний',
+        'high': 'Высокий',
+        'urgent': 'Срочный'
+    };
+    return priorities[priority] || priority;
+}
