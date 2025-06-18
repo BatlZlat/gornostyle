@@ -921,4 +921,77 @@ router.post('/notify-group/:id', async (req, res) => {
     }
 });
 
+// Массовая рассылка всем клиентам
+router.post('/notify-clients', async (req, res) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'Нет текста сообщения' });
+
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    try {
+        const result = await pool.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
+        const clients = result.rows;
+
+        let sent = 0;
+        for (const client of clients) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: client.telegram_id, text: message })
+            });
+            sent++;
+        }
+        res.json({ message: `Сообщение отправлено ${sent} клиентам` });
+    } catch (error) {
+        console.error('Ошибка при рассылке:', error);
+        res.status(500).json({ error: 'Ошибка при рассылке' });
+    }
+});
+
+// Отправка сообщения конкретному клиенту
+router.post('/notify-client/:clientId', async (req, res) => {
+    const { clientId } = req.params;
+    const { message } = req.body;
+    
+    if (!message) {
+        return res.status(400).json({ error: 'Нет текста сообщения' });
+    }
+
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    try {
+        // Получаем telegram_id клиента
+        const result = await pool.query(
+            'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+            [clientId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        const client = result.rows[0];
+        if (!client.telegram_id) {
+            return res.status(400).json({ error: 'У клиента не указан Telegram ID' });
+        }
+
+        // Отправляем сообщение
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                chat_id: client.telegram_id, 
+                text: message,
+                parse_mode: 'Markdown'
+            })
+        });
+
+        res.json({ 
+            message: 'Сообщение успешно отправлено',
+            client_name: client.full_name
+        });
+    } catch (error) {
+        console.error('Ошибка при отправке сообщения:', error);
+        res.status(500).json({ error: 'Ошибка при отправке сообщения' });
+    }
+});
+
 module.exports = router;
