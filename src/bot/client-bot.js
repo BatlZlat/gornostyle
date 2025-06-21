@@ -242,6 +242,8 @@ async function handleMessage(msg) {
                     return handleHelpCommand(msg);
                 case '/price':
                     return handlePriceCommand(msg);
+                case '/address':
+                    return handleAddressCommand(msg);
                 default:
                     return bot.sendMessage(chatId, 
                         '❓ Неизвестная команда. Используйте /help для получения списка доступных команд.',
@@ -375,6 +377,39 @@ async function handlePriceCommand(msg) {
     await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 }
 
+// Обработчик команды /address
+async function handleAddressCommand(msg) {
+    const chatId = msg.chat.id;
+    const adminTelegram = process.env.ADMIN_TELEGRAM_USERNAME || 'не указан';
+    const adminPhone = process.env.ADMIN_PHONE || 'не указан';
+
+    const message = 
+        '<b>🏗️ Адрес и контакты</b>\n\n' +
+        '<b>🏗️ Наш адрес:</b>\n' +
+        'Пока наши строения новые, адреса еще делаются, но мы уже ждем вас! \n\n' +
+        '<b>📍 Ориентир:</b> улица Источник, 2А, село Яр\n' +
+        '<b>🚪 Въезд:</b> напротив этого дома, распашные железные ворота с кирпичным забором\n\n' +
+        '<b>🗺️ Как добраться:</b>\n' +
+        'Район Мыса, Поселок Яр → проезжаем мимо горячего источника → доезжаем до кирпичного забора → едем вдоль забора → как только забор заканчивается, сразу направо в открытые ворота!\n\n' +
+        '<b>🗺️ Наше точное местоположение:</b>\n' +
+        '• 🟡 Яндекс Карты: <a href="https://clck.ru/3MiVTy">Открыть карту</a>\n' +
+        '• 🔵 Google Maps: <a href="https://golnk.ru/XA1zz">Открыть карту</a>\n' +
+        '• 🟢 2ГИС: <a href="https://go.2gis.com/HMDnG">Открыть карту</a>\n\n' +
+        '<b>💡 Совет:</b> Если заблудились — звоните, мы вам поможем найти нас! 🚗\n\n' +
+        '<b>📞 Контакты для связи:</b>\n' +
+        `• Telegram: ${adminTelegram}\n` +
+        `• Телефон: ${adminPhone}`;
+
+    await bot.sendMessage(chatId, message, { 
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: {
+            keyboard: [['🔙 Назад в меню']],
+            resize_keyboard: true
+        }
+    });
+}
+
 // Обработчик текстовых сообщений
 async function handleTextMessage(msg) {
     const chatId = msg.chat.id;
@@ -495,6 +530,11 @@ async function handleTextMessage(msg) {
                 }
             }
         );
+    }
+
+    // Обработка кнопки "Адрес и контакты"
+    if (msg.text === '📍 Адрес и контакты') {
+        return handleAddressCommand(msg);
     }
     
     if (msg.text === '👤 Личный кабинет') {
