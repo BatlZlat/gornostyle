@@ -244,6 +244,8 @@ async function handleMessage(msg) {
                     return handlePriceCommand(msg);
                 case '/address':
                     return handleAddressCommand(msg);
+                case '/band':
+                    return handleTeamCommand(msg);
                 default:
                     return bot.sendMessage(chatId, 
                         '❓ Неизвестная команда. Используйте /help для получения списка доступных команд.',
@@ -408,6 +410,81 @@ async function handleAddressCommand(msg) {
             resize_keyboard: true
         }
     });
+}
+
+// Обработчик команды /band
+async function handleTeamCommand(msg) {
+    const chatId = msg.chat.id;
+
+    try {
+        // Получаем всех активных тренеров
+        const trainersResult = await pool.query(
+            'SELECT full_name, birth_date, sport_type, phone FROM trainers WHERE is_active = true ORDER BY full_name'
+        );
+
+        if (trainersResult.rows.length === 0) {
+            return bot.sendMessage(chatId,
+                '👥 <b>Наша команда</b>\n\n' +
+                'Пока информация о тренерах обновляется. Скоро здесь появится полная информация о нашей команде! 🏂',
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        let message = '<b>👥 Наша команда</b>\n\n';
+        message += '<b>🏂 Профессиональные тренеры:</b>\n\n';
+
+        trainersResult.rows.forEach((trainer, index) => {
+            const age = calculateAge(trainer.birth_date);
+            const sportType = getSportTypeDisplay(trainer.sport_type);
+            
+            message += `<b>${index + 1}. ${trainer.full_name}</b>\n`;
+            message += `📅 Возраст: ${age} лет\n`;
+            message += `🎿 Вид спорта: ${sportType}\n`;
+            message += `📞 Телефон: <code>${trainer.phone}</code>\n\n`;
+        });
+
+        message += '💪 <b>Наши тренеры — опытные профессионалы, которые помогут вам освоить горные лыжи и сноуборд, летом и зимой!</b>';
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при получении информации о команде:', error);
+        await bot.sendMessage(chatId,
+            '❌ Произошла ошибка при получении информации о команде. Пожалуйста, попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// Вспомогательная функция для отображения типа спорта
+function getSportTypeDisplay(sportType) {
+    switch (sportType) {
+        case 'ski':
+            return 'Горные лыжи 🎿';
+        case 'snowboard':
+            return 'Сноуборд 🏂';
+        case 'both':
+            return 'Горные лыжи и сноуборд 🎿🏂';
+        default:
+            return sportType;
+    }
 }
 
 // Обработчик текстовых сообщений
