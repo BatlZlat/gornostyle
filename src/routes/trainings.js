@@ -542,10 +542,13 @@ router.get('/', async (req, res) => {
                 SELECT ts.*, 
                        g.name as group_name, 
                        g.description as group_description,
-                       t.full_name as trainer_full_name
+                       t.full_name as trainer_full_name,
+                       COUNT(sp.id) as current_participants
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
                 LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
                 WHERE ts.session_date >= $1 AND ts.session_date <= $2
             `;
             const params = [date_from, date_to];
@@ -556,6 +559,7 @@ router.get('/', async (req, res) => {
                 query += ' AND ts.training_type = false';
             }
 
+            query += ' GROUP BY ts.id, g.name, g.description, t.full_name';
             query += ' ORDER BY ts.session_date, ts.start_time';
 
             const result = await pool.query(query, params);
@@ -574,10 +578,13 @@ router.get('/', async (req, res) => {
                 SELECT ts.*, 
                        g.name as group_name, 
                        g.description as group_description,
-                       t.full_name as trainer_full_name
+                       t.full_name as trainer_full_name,
+                       COUNT(sp.id) as current_participants
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
                 LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
                 WHERE ts.session_date = $1
             `;
             const params = [date];
@@ -588,6 +595,7 @@ router.get('/', async (req, res) => {
                 query += ' AND ts.training_type = false';
             }
 
+            query += ' GROUP BY ts.id, g.name, g.description, t.full_name';
             query += ' ORDER BY ts.start_time';
 
             const result = await pool.query(query, params);
