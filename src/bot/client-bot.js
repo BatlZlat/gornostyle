@@ -1443,7 +1443,7 @@ async function handleTextMessage(msg) {
                                 ts.price,
                                 ts.skill_level,
                                 ts.equipment_type,
-                                COUNT(sp.id) as current_participants
+                                COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) as current_participants
                             FROM training_sessions ts
                             LEFT JOIN groups g ON ts.group_id = g.id
                             LEFT JOIN simulators s ON ts.simulator_id = s.id
@@ -1460,7 +1460,7 @@ async function handleTextMessage(msg) {
                                 )
                             )
                             GROUP BY ts.id, g.name, s.name, t.full_name
-                            HAVING COUNT(sp.id) < ts.max_participants
+                            HAVING COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) < ts.max_participants
                             ORDER BY ts.session_date, ts.start_time`
                         );
 
