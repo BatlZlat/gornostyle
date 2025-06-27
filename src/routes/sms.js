@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-bot');
+const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-notify');
 
 // Универсальный парсер суммы и кошелька
 function parseSmsUniversal(text) {

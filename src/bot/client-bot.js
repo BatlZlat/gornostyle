@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-bot');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
 
 // Настройка подключения к БД
@@ -2131,7 +2131,7 @@ async function handleTextMessage(msg) {
                     );
 
                     // Отправляем уведомление администратору
-                    const { notifyNewIndividualTraining } = require('./admin-bot');
+                    const { notifyNewIndividualTraining } = require('./admin-notify');
 
                     // Получаем полную информацию о клиенте
                     const clientInfoResult = await pool.query(
@@ -3153,7 +3153,7 @@ async function handleTextMessage(msg) {
 
                     // Отправляем уведомление администратору
                     try {
-                        const { notifyNewGroupTrainingParticipant } = require('./admin-bot');
+                        const { notifyNewGroupTrainingParticipant } = require('./admin-notify');
                         await notifyNewGroupTrainingParticipant({
                             ...selectedSession,
                             client_name: clientData.full_name,
@@ -4448,7 +4448,7 @@ async function handleWalletTopUp(chatId, clientId, amount) {
         await bot.sendMessage(chatId, clientMessage);
 
         // Отправляем уведомление администратору
-        const { notifyAdminWalletRefilled } = require('./admin-bot');
+        const { notifyAdminWalletRefilled } = require('./admin-notify');
         await notifyAdminWalletRefilled({
             clientName: client.name,
             amount: amount,
