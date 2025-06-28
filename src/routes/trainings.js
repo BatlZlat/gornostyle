@@ -498,29 +498,32 @@ router.get('/:id', async (req, res) => {
         // Проверяем, детская ли это тренировка
         const isChildrenGroup = training.group_name && training.group_name.toLowerCase().includes('дети');
 
-        // Формируем массив участников с нужными полями
-        const participants = participantsResult.rows.map(row => {
-            if (isChildrenGroup) {
-                // Для детских групп всегда отображаем ФИО ребенка
-                return {
-                    full_name: row.child_full_name || row.client_full_name,
-                    birth_date: row.child_birth_date || row.client_birth_date,
-                    skill_level: row.child_skill_level || row.client_skill_level,
-                    phone: row.parent_phone || row.client_phone,
-                    is_child: true
-                };
-            } else {
-                // Для остальных — ФИО клиента
-                return {
-                    full_name: row.client_full_name,
-                    birth_date: row.client_birth_date,
-                    skill_level: row.client_skill_level,
-                    phone: row.client_phone,
-                    is_child: false
-                };
-            }
-        });
-
+        // Формируем массив участников с нужными полями (только confirmed)
+        const participants = participantsResult.rows
+            .filter(row => row.status === 'confirmed')
+            .map(row => {
+                if (isChildrenGroup) {
+                    // Для детских групп всегда отображаем ФИО ребенка
+                    return {
+                        full_name: row.child_full_name || row.client_full_name,
+                        birth_date: row.child_birth_date || row.client_birth_date,
+                        skill_level: row.child_skill_level || row.client_skill_level,
+                        phone: row.parent_phone || row.client_phone,
+                        is_child: true,
+                        status: row.status
+                    };
+                } else {
+                    // Для остальных — ФИО клиента
+                    return {
+                        full_name: row.client_full_name,
+                        birth_date: row.client_birth_date,
+                        skill_level: row.client_skill_level,
+                        phone: row.client_phone,
+                        is_child: false,
+                        status: row.status
+                    };
+                }
+            });
         training.participants = participants;
         training.participants_count = participants.length;
 
