@@ -1,5 +1,5 @@
 const { pool } = require('../db');
-const { notifyScheduleCreated } = require('../bot/admin-bot');
+const { notifyScheduleCreated } = require('../bot/admin-notify');
 const moment = require('moment-timezone');
 
 // Настройки для cron

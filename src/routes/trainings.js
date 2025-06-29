@@ -498,29 +498,32 @@ router.get('/:id', async (req, res) => {
         // Проверяем, детская ли это тренировка
         const isChildrenGroup = training.group_name && training.group_name.toLowerCase().includes('дети');
 
-        // Формируем массив участников с нужными полями
-        const participants = participantsResult.rows.map(row => {
-            if (isChildrenGroup) {
-                // Для детских групп всегда отображаем ФИО ребенка
-                return {
-                    full_name: row.child_full_name || row.client_full_name,
-                    birth_date: row.child_birth_date || row.client_birth_date,
-                    skill_level: row.child_skill_level || row.client_skill_level,
-                    phone: row.parent_phone || row.client_phone,
-                    is_child: true
-                };
-            } else {
-                // Для остальных — ФИО клиента
-                return {
-                    full_name: row.client_full_name,
-                    birth_date: row.client_birth_date,
-                    skill_level: row.client_skill_level,
-                    phone: row.client_phone,
-                    is_child: false
-                };
-            }
-        });
-
+        // Формируем массив участников с нужными полями (только confirmed)
+        const participants = participantsResult.rows
+            .filter(row => row.status === 'confirmed')
+            .map(row => {
+                if (isChildrenGroup) {
+                    // Для детских групп всегда отображаем ФИО ребенка
+                    return {
+                        full_name: row.child_full_name || row.client_full_name,
+                        birth_date: row.child_birth_date || row.client_birth_date,
+                        skill_level: row.child_skill_level || row.client_skill_level,
+                        phone: row.parent_phone || row.client_phone,
+                        is_child: true,
+                        status: row.status
+                    };
+                } else {
+                    // Для остальных — ФИО клиента
+                    return {
+                        full_name: row.client_full_name,
+                        birth_date: row.client_birth_date,
+                        skill_level: row.client_skill_level,
+                        phone: row.client_phone,
+                        is_child: false,
+                        status: row.status
+                    };
+                }
+            });
         training.participants = participants;
         training.participants_count = participants.length;
 
@@ -542,10 +545,13 @@ router.get('/', async (req, res) => {
                 SELECT ts.*, 
                        g.name as group_name, 
                        g.description as group_description,
-                       t.full_name as trainer_full_name
+                       t.full_name as trainer_full_name,
+                       COUNT(sp.id) as current_participants
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
                 LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
                 WHERE ts.session_date >= $1 AND ts.session_date <= $2
             `;
             const params = [date_from, date_to];
@@ -556,6 +562,7 @@ router.get('/', async (req, res) => {
                 query += ' AND ts.training_type = false';
             }
 
+            query += ' GROUP BY ts.id, g.name, g.description, t.full_name';
             query += ' ORDER BY ts.session_date, ts.start_time';
 
             const result = await pool.query(query, params);
@@ -574,10 +581,13 @@ router.get('/', async (req, res) => {
                 SELECT ts.*, 
                        g.name as group_name, 
                        g.description as group_description,
-                       t.full_name as trainer_full_name
+                       t.full_name as trainer_full_name,
+                       COUNT(sp.id) as current_participants
                 FROM training_sessions ts
                 LEFT JOIN groups g ON ts.group_id = g.id
                 LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
                 WHERE ts.session_date = $1
             `;
             const params = [date];
@@ -588,6 +598,7 @@ router.get('/', async (req, res) => {
                 query += ' AND ts.training_type = false';
             }
 
+            query += ' GROUP BY ts.id, g.name, g.description, t.full_name';
             query += ' ORDER BY ts.start_time';
 
             const result = await pool.query(query, params);
