@@ -293,6 +293,7 @@ function initializeEventListeners() {
                             <label for="notify-message">Сообщение:</label>
                             <textarea id="notify-message" class="form-control" rows="4" placeholder="Введите сообщение..."></textarea>
                             <div id="emoji-panel" class="emoji-panel">
+                                <!-- Существующие смайлики -->
                                 <button type="button" class="emoji-btn">👋</button>
                                 <button type="button" class="emoji-btn">🎿</button>
                                 <button type="button" class="emoji-btn">⛷️</button>
@@ -303,6 +304,40 @@ function initializeEventListeners() {
                                 <button type="button" class="emoji-btn">💰</button>
                                 <button type="button" class="emoji-btn">📅</button>
                                 <button type="button" class="emoji-btn">⏰</button>
+                                
+                                <!-- Новые эмоции -->
+                                <button type="button" class="emoji-btn">😊</button>
+                                <button type="button" class="emoji-btn">😄</button>
+                                <button type="button" class="emoji-btn">👍</button>
+                                <button type="button" class="emoji-btn">👎</button>
+                                <button type="button" class="emoji-btn">😍</button>
+                                <button type="button" class="emoji-btn">😢</button>
+                                <button type="button" class="emoji-btn">😤</button>
+                                <button type="button" class="emoji-btn">🤔</button>
+                                
+                                <!-- Спортивные -->
+                                <button type="button" class="emoji-btn">🏂</button>
+                                <button type="button" class="emoji-btn">🏆</button>
+                                <button type="button" class="emoji-btn">🥇</button>
+                                <button type="button" class="emoji-btn">💪</button>
+                                <button type="button" class="emoji-btn">🔥</button>
+                                
+                                <!-- Рукопожатия и жесты -->
+                                <button type="button" class="emoji-btn">🤝</button>
+                                <button type="button" class="emoji-btn">🙏</button>
+                                <button type="button" class="emoji-btn">✋</button>
+                                <button type="button" class="emoji-btn">👌</button>
+                                <button type="button" class="emoji-btn">🤙</button>
+                                
+                                <!-- Погода -->
+                                <button type="button" class="emoji-btn">🌞</button>
+                                <button type="button" class="emoji-btn">🌨️</button>
+                                <button type="button" class="emoji-btn">🌪️</button>
+                                
+                                <!-- Уведомления -->
+                                <button type="button" class="emoji-btn">🔔</button>
+                                <button type="button" class="emoji-btn">📢</button>
+                                <button type="button" class="emoji-btn">⚠️</button>
                             </div>
                         </div>
                         
