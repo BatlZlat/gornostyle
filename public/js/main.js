@@ -78,35 +78,6 @@ async function checkAvailability(simulatorId, date, startTime, endTime) {
     }
 }
 
-// Обработчики событий
-loginBtn.addEventListener('click', () => {
-    loginModal.style.display = 'block';
-});
-
-closeBtn.addEventListener('click', () => {
-    loginModal.style.display = 'none';
-});
-
-window.addEventListener('click', (event) => {
-    if (event.target === loginModal) {
-        loginModal.style.display = 'none';
-    }
-});
-
-loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-
-    try {
-        await login(email, password);
-        loginModal.style.display = 'none';
-        showNotification('Вы успешно вошли в систему');
-    } catch (error) {
-        showNotification('Ошибка входа. Проверьте email и пароль.', 'error');
-    }
-});
-
 // Функции для обновления UI
 function updateUIForLoggedInUser() {
     loginBtn.style.display = 'none';
@@ -153,6 +124,14 @@ document.addEventListener('DOMContentLoaded', function() {
     initSmoothScrolling();
     initFormHandlers();
     initAnimations();
+    // Подстановка телефона в шапке
+    const navPhone = document.querySelector('.nav-phone');
+    if (navPhone) {
+        const phone = navPhone.getAttribute('data-phone');
+        if (phone) {
+            navPhone.innerHTML = `<a href="tel:${phone}">${phone}</a>`;
+        }
+    }
 });
 
 // Мобильное меню

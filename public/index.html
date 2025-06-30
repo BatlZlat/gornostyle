@@ -14,16 +14,15 @@
         <div class="container">
             <nav class="nav">
                 <div class="nav-logo">
-                    <h2>GornoStyle</h2>
+                    <h2>Горностайл72</h2>
                 </div>
                 <ul class="nav-menu">
                     <li><a href="#about">О нас</a></li>
-                    <li><a href="#news">Новости</a></li>
                     <li><a href="#prices">Цены</a></li>
                     <li><a href="#contact">Контакты</a></li>
                 </ul>
-                <div class="nav-phone">
-                    <a href="tel:+74991102141">+7 499 110-21-41</a>
+                <div class="nav-phone" data-phone="+7 999 123-45-67">
+                    <a href="#">Загрузка...</a>
                 </div>
                 <div class="nav-toggle">
                     <span></span>
@@ -34,78 +33,91 @@
         </div>
     </header>
 
-    <!-- Hero Section -->
-    <section class="hero">
-        <div class="container">
-            <div class="hero-content">
-                <h1>Горнолыжный клуб GornoStyle</h1>
-                <p>Обучаем на тренажерах с бесконечным склоном</p>
-                <div class="hero-alert">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <span>Важная информация! Мы переезжаем на новое место около м. Румянцево. Открытие планируем в июле.</span>
+    <!-- Hero Split Section -->
+    <section class="hero-split">
+        <div class="hero-split__left">
+            <div class="hero-split__content">
+                <div class="hero-split__subtitle">ПЕРВЫЙ ГОРНОЛЫЖНЫЙ ТРЕНАЖЁР В ТЮМЕНИ</div>
+                <h1 class="hero-split__title">Горностайл72</h1>
+                <div class="hero-split__desc">Учитесь кататься на лыжах круглый год — в центре Тюмени, на современном тренажёре!</div>
+                <ul class="hero-split__list">
+                    <li>Реалистичная имитация настоящего склона</li>
+                    <li>Индивидуальные и групповые занятия</li>
+                    <li>Всё оборудование предоставляем</li>
+                    <li>Безопасно, удобно, интересно</li>
+                </ul>
+                <a class="btn btn-yellow hero-split__btn" href="https://t.me/Gornostay72Bot" target="_blank">
+                    Записаться через Telegram
+                </a>
+                <div class="hero-split__contacts">
+                    <!-- Для реального внедрения используйте серверную подстановку переменных -->
+                    <!-- Пример для EJS: <%= process.env.ADMIN_PHONE %> -->
+                    <div>Менеджер: <a href="tel:+79991234567"><span class="phone">+7 999 123-45-67</span></a></div>
+                    <div>Email: <a href="mailto:info@gornostyle72.ru"><span class="email">info@gornostyle72.ru</span></a></div>
                 </div>
-                <button class="btn btn-primary">Записаться</button>
+            </div>
+        </div>
+        <div class="hero-split__right">
+            <div class="hero-split__photo-placeholder">
+                <span>Здесь будет фотография тренажёра или клуба<br> (заменить после получения фото)</span>
             </div>
         </div>
     </section>
 
-    <!-- Callback Form -->
-    <section class="callback">
-        <div class="container">
-            <div class="callback-content">
-                <h3>Мы перезвоним вам</h3>
-                <p>Просто введите свои контактные данные</p>
-                <form class="callback-form">
-                    <div class="form-group">
-                        <input type="text" placeholder="Ваше имя" required>
-                    </div>
-                    <div class="form-group">
-                        <input type="email" placeholder="Email" required>
-                    </div>
-                    <div class="form-group">
-                        <input type="tel" placeholder="Телефон" required>
-                    </div>
-                    <button type="submit" class="btn btn-secondary">Отправить</button>
-                    <p class="form-note">Нажимая на эту кнопку, вы соглашаетесь на обработку персональных данных</p>
-                </form>
+    <!-- Блок НАШИ ПАРТНЁРЫ -->
+    <section class="partners">
+        <div class="partners__container">
+            <h2 class="partners__title">Наши партнёры</h2>
+            <div class="partners__list">
+                <!-- Здесь будут логотипы и ссылки на сайты партнёров -->
+                <div class="partner-item">Партнёр 1</div>
+                <div class="partner-item">Партнёр 2</div>
+                <div class="partner-item">Партнёр 3</div>
             </div>
         </div>
     </section>
 
-    <!-- How It Works -->
-    <section class="how-it-works" id="about">
-        <div class="container">
-            <h2>Как мы работаем?</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-cog"></i>
-                    </div>
-                    <h3>Как работает тренажёр?</h3>
-                    <p>Принцип действия горнолыжного тренажёра достаточно прост — специальная лента закольцована и движется по подобию беговой дорожки. Естественно он существенно превосходит в размере беговые дорожки, и его поверхность имеет особые свойства, которые позволяют имитировать свойства снега.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-graduation-cap"></i>
-                    </div>
-                    <h3>Обучайтесь с нуля</h3>
-                    <p>На наших тренажерах можно научиться кататься без страха и без получения травм. Профессиональные инструкторы подготовят вас к покорению настоящих вершин вне зависимости от вашего возраста!</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-calendar-alt"></i>
-                    </div>
-                    <h3>Катайтесь в любое время года</h3>
-                    <p>Вы можете кататься всегда, даже когда за окном +35! А также не нужно таскать с собой тяжеленные лыжи и ботинки! Вы можете оставить их на хранение и пользоваться только когда приходите</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-trophy"></i>
-                    </div>
-                    <h3>Оттачивайте мастерство</h3>
-                    <p>В отличие от неровных поверхностей склонов, на наших тренажерах можно максимально точно отработать технику катания. Также инструктор будет наблюдать за вашими движениями в течение всего времени катания.</p>
-                </div>
-            </div>
+    <!-- Как работает тренажёр? -->
+    <section class="info-block info-block--left-text">
+        <div class="info-block__content">
+            <h2>Как работает тренажёр?</h2>
+            <p>Наш тренажёр — это инновационная платформа с движущейся поверхностью, которая точно имитирует ощущения настоящего горнолыжного склона. Благодаря специальному покрытию и регулируемой скорости, вы сможете тренироваться в любых условиях и совершенствовать технику круглый год.</p>
+        </div>
+        <div class="info-block__photo">
+            <div class="info-photo-placeholder">Фото тренажёра (заменить после получения)</div>
+        </div>
+    </section>
+
+    <!-- Катайтесь в любое время года -->
+    <section class="info-block info-block--right-text">
+        <div class="info-block__photo">
+            <div class="info-photo-placeholder">Фото клуба (заменить после получения)</div>
+        </div>
+        <div class="info-block__content">
+            <h2>Катайтесь в любое время года</h2>
+            <p>Неважно, зима или лето — наш клуб всегда открыт для тренировок! Вам не нужно ждать снега или ехать в горы: просто приходите и катайтесь, когда удобно. Всё необходимое оборудование уже на месте.</p>
+        </div>
+    </section>
+
+    <!-- Обучайтесь с нуля -->
+    <section class="info-block info-block--left-text">
+        <div class="info-block__content">
+            <h2>Обучайтесь с нуля</h2>
+            <p>Даже если вы никогда не стояли на лыжах, у нас вы быстро освоите базовые навыки. Индивидуальный подход и поддержка опытных инструкторов помогут вам уверенно сделать первые шаги и полюбить горные лыжи.</p>
+        </div>
+        <div class="info-block__photo">
+            <div class="info-photo-placeholder">Фото инструктора/ученика (заменить после получения)</div>
+        </div>
+    </section>
+
+    <!-- Оттачивайте мастерство -->
+    <section class="info-block info-block--right-text">
+        <div class="info-block__photo">
+            <div class="info-photo-placeholder">Фото процесса тренировки (заменить после получения)</div>
+        </div>
+        <div class="info-block__content">
+            <h2>Оттачивайте мастерство</h2>
+            <p>Хотите улучшить технику или подготовиться к сезону? На тренажёре можно безопасно и эффективно отрабатывать сложные элементы, корректировать ошибки и добиваться стабильного прогресса под контролем тренера.</p>
         </div>
     </section>
 
