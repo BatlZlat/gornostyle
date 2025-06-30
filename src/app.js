@@ -43,7 +43,8 @@ app.get('/', (req, res) => {
     res.render('index', {
         adminPhone: process.env.ADMIN_PHONE,
         contactEmail: process.env.CONTACT_EMAIL,
-        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME
     });
 });
 
