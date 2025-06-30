@@ -4638,6 +4638,15 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        if (data.startsWith('copy_bot_name_')) {
+            const botUsername = data.replace('copy_bot_name_', '');
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: `Имя бота скопировано: @${botUsername}`,
+                show_alert: true
+            });
+            return;
+        }
+
         if (data.startsWith('time_')) {
             const [, simulatorId, time] = data.split('_');
             
@@ -5329,27 +5338,33 @@ bot.onText(/\/start/, async (msg) => {
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {
     const chatId = msg.chat.id;
-    const botShareLink = process.env.BOT_SHARE_LINK || 'https://t.me/Ski_Instruktor72_bot';
     const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+    const botShareLink = `https://t.me/${botUsername}`;
 
     const message = `🎿 <b>Поделитесь нашим ботом с друзьями!</b>\n\n` +
+        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
         `🏂 <b>Ski-instruktor</b> — ваш помощник для записи на горнолыжный тренажер\n\n` +
-        `✨ <b>Что умеет наш бот:</b>\n` +
+        `✨ <b>Основные возможности:</b>\n` +
         `• 📝 Запись на групповые и индивидуальные тренировки\n` +
         `• 👥 Управление детскими занятиями\n` +
         `• 💰 Пополнение баланса\n` +
         `• 📋 Просмотр своих записей\n` +
-        `• 🎁 Подарочные сертификаты\n` +
-        `• 📍 Подскажет адрес\n` +
+        `• 🎁 Подарочные сертификаты\n\n` +
+        `📋 <b>Дополнительное меню (синяя кнопка справа):</b>\n` +
+        `• 📍 Бот подскажет адрес\n` +
         `• 👥 Поделится информацией о тренере\n` +
-        `• 💰 Всегда актуальная информация цен\n\n` +
-        `🎯 <b>Поделитесь ссылкой:</b>\n` +
-        `<code>${botShareLink}</code>\n\n` +
+        `• 💰 Покажет актуальные цены\n\n` +
+        `🎯 <b>Перейти в бота можно щелкнув по имени ниже:</b>\n` +
+        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
         `💡 <b>Или просто перешлите это сообщение друзьям!</b>`;
 
     await bot.sendMessage(chatId, message, {
         parse_mode: 'HTML',
         reply_markup: {
+            inline_keyboard: [
+                [{ text: `🚀 Зайти в бота @${botUsername}`, url: botShareLink }],
+                [{ text: `📋 Скопировать имя бота`, callback_data: `copy_bot_name_${botUsername}` }]
+            ],
             keyboard: [['🔙 В главное меню']],
             resize_keyboard: true
         }
