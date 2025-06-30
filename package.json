@@ -8,7 +8,11 @@
     "dev": "nodemon src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "init-db": "node src/scripts/initDb.js",
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:logs": "pm2 logs gornostyle"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +23,7 @@
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "ejs": "^3.1.10",
     "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",

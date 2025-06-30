@@ -26,6 +26,10 @@ require('./bot/client-bot');
 const app = express();
 const PORT = process.env.PORT;
 
+// Настройка EJS (только для главной страницы)
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, '../views'));
+
 // Настройка middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -33,6 +37,15 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Middleware для проверки аутентификации
 app.use(verifyAuth);
+
+// Главная страница с EJS (только для корня)
+app.get('/', (req, res) => {
+    res.render('index', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME
+    });
+});
 
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
