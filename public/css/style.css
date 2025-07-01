@@ -96,6 +96,32 @@ body {
     box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
 }
 
+/* Инвертированный стиль для иконки Telegram */
+.nav-contact-icon.telegram-inverted {
+    background-color: white;
+    border: 2px solid var(--secondary-color);
+}
+
+.nav-contact-icon.telegram-inverted:hover {
+    background-color: #f8f9fa;
+    border-color: var(--accent-color);
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.nav-contact-icon.telegram-inverted i {
+    font-size: 2.6rem;
+    color: var(--secondary-color);
+}
+
+.nav-contact-icon.telegram-inverted:hover i {
+    color: var(--accent-color);
+}
+
+/* Увеличенная иконка для ВКонтакте */
+.nav-contact-icon .fa-vk {
+    font-size: 1.5rem;
+}
+
 .nav-contact-icon i {
     font-size: 1rem;
 }
@@ -549,58 +575,23 @@ body {
 }
 
 .footer-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    text-align: center;
     margin-bottom: 2rem;
-    flex-wrap: wrap;
-    gap: 2rem;
 }
 
-.footer-logo h3 {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.footer-logo p {
-    color: var(--light-gray);
-}
-
-.footer-links {
-    display: flex;
-    gap: 2rem;
-}
-
-.footer-links a {
+.footer-info h3 {
     color: var(--white);
-    text-decoration: none;
-    transition: color 0.3s ease;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
 }
 
-.footer-links a:hover {
-    color: var(--secondary-color);
-}
-
-.footer-social {
-    display: flex;
-    gap: 1rem;
-}
-
-.footer-social a {
-    width: 40px;
-    height: 40px;
-    background-color: var(--secondary-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--white);
-    text-decoration: none;
-    transition: background-color 0.3s ease;
-}
-
-.footer-social a:hover {
-    background-color: #0056b3;
+.footer-info p {
+    color: #ccc;
+    font-size: 1.1rem;
+    line-height: 1.5;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
 .footer-bottom {
@@ -654,13 +645,9 @@ body {
         align-items: center;
     }
     
-    .footer-content {
-        flex-direction: column;
-        text-align: center;
-    }
-    
-    .footer-links {
-        justify-content: center;
+    .footer-info p {
+        font-size: 1rem;
+        line-height: 1.4;
     }
 }
 
@@ -826,11 +813,13 @@ body {
     box-shadow: 0 2px 16px rgba(255,230,0,0.06);
     margin-bottom: 0;
 }
+
 .partners__container {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 0 20px;
 }
+
 .partners__title {
     text-align: center;
     font-size: 2rem;
@@ -839,39 +828,86 @@ body {
     margin-bottom: 2rem;
     letter-spacing: 1px;
 }
-.partners__list {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 2.5rem;
+
+.partners__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    justify-items: center;
 }
-.partner-item {
-    min-width: 120px;
-    min-height: 60px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(44,62,80,0.07);
+
+.partner-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    text-decoration: none;
+    color: inherit;
+    max-width: 320px;
+    width: 100%;
+}
+
+.partner-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+.partner-image {
+    width: 100%;
+    height: 245px;
+    overflow: hidden;
+    position: relative;
+}
+
+.partner-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.partner-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #f0f0f0;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
-    color: #bfa100;
+    color: #999;
+    font-style: italic;
+}
+
+.partner-name {
+    padding: 1.5rem;
+    text-align: center;
     font-weight: 600;
-    padding: 16px 32px;
-    transition: box-shadow 0.2s;
+    font-size: 1.1rem;
+    color: var(--primary-color);
 }
-.partner-item:hover {
-    box-shadow: 0 6px 24px rgba(255,230,0,0.18);
-    background: #fffde4;
+
+.partner-card.placeholder {
+    pointer-events: none;
+    opacity: 0.6;
 }
+
 @media (max-width: 768px) {
-    .partners__list {
-        gap: 1.2rem;
+    .partners__grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
     }
-    .partner-item {
-        min-width: 90px;
+    
+    .partner-card {
+        max-width: 100%;
+    }
+    
+    .partner-image {
+        height: 200px;
+    }
+    
+    .partner-name {
+        padding: 1rem;
         font-size: 1rem;
-        padding: 10px 12px;
     }
 }
 

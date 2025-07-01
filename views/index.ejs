@@ -25,8 +25,8 @@
                     <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
                         <i class="fas fa-phone"></i>
                     </a>
-                    <a href="https://t.me/<%= botUsername %>" class="nav-contact-icon" title="Telegram бот" target="_blank">
-                        <i class="fab fa-telegram"></i>
+                    <a href="https://t.me/<%= botUsername %>" class="nav-contact-icon telegram-inverted" title="Telegram бот" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
                     </a>
                     <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
                         <i class="fab fa-vk"></i>
@@ -70,18 +70,7 @@
         </div>
     </section>
 
-    <!-- Блок НАШИ ПАРТНЁРЫ -->
-    <section class="partners">
-        <div class="partners__container">
-            <h2 class="partners__title">Наши партнёры</h2>
-            <div class="partners__list">
-                <!-- Здесь будут логотипы и ссылки на сайты партнёров -->
-                <div class="partner-item">Партнёр 1</div>
-                <div class="partner-item">Партнёр 2</div>
-                <div class="partner-item">Партнёр 3</div>
-            </div>
-        </div>
-    </section>
+
 
     <!-- Как работает тренажёр? -->
     <section class="info-block info-block--left-text">
@@ -368,27 +357,48 @@
         </div>
     </section>
 
+    <!-- Блок НАШИ ПАРТНЁРЫ -->
+    <section class="partners">
+        <div class="partners__container">
+            <h2 class="partners__title">Наши партнёры</h2>
+            <div class="partners__grid">
+                <!-- Партнёр 1 - Максимум72 -->
+                <a href="http://максимум72.рф" class="partner-card" target="_blank">
+                    <div class="partner-image">
+                        <img src="images/partners/maximum72.jpg" alt="Максимум72 - Верёвочный парк">
+                    </div>
+                    <div class="partner-name">Maximum</div>
+                </a>
+                
+                <!-- Добавьте сюда других партнёров по аналогии -->
+                <div class="partner-card placeholder">
+                    <div class="partner-image">
+                        <div class="partner-placeholder">Место для партнёра</div>
+                    </div>
+                    <div class="partner-name">Партнёр 2</div>
+                </div>
+                
+                <div class="partner-card placeholder">
+                    <div class="partner-image">
+                        <div class="partner-placeholder">Место для партнёра</div>
+                    </div>
+                    <div class="partner-name">Партнёр 3</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
             <div class="footer-content">
-                <div class="footer-logo">
-                    <h3>GornoStyle</h3>
-                    <p>Горнолыжный тренажерный комплекс</p>
-                </div>
-                <div class="footer-links">
-                    <a href="#about">О нас</a>
-                    <a href="#prices">Цены</a>
-                    <a href="#contact">Контакты</a>
-                </div>
-                <div class="footer-social">
-                    <a href="#"><i class="fab fa-telegram"></i></a>
-                    <a href="#"><i class="fab fa-whatsapp"></i></a>
-                    <a href="#"><i class="fab fa-instagram"></i></a>
+                <div class="footer-info">
+                    <h3>Горностайл72</h3>
+                    <p>Всесезонный горнолыжный тренажёрный комплекс для взрослых и детей с любым уровнем подготовки</p>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; GornoStyle 2024. Все права защищены.</p>
+                <p>&copy; Горностайл72 2025. Все права защищены.</p>
             </div>
         </div>
     </footer>
