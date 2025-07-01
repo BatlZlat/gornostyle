@@ -351,23 +351,16 @@ function hideNotification(notification) {
 
 // Загрузка команды тренеров с каруселью
 async function loadTeamMembers() {
-    console.log('loadTeamMembers: Начало загрузки команды');
     const teamCarousel = document.getElementById('team-carousel');
-    if (!teamCarousel) {
-        console.log('loadTeamMembers: Элемент team-carousel не найден');
-        return;
-    }
-    console.log('loadTeamMembers: Элемент team-carousel найден');
+    if (!teamCarousel) return;
     
     try {
-        console.log('loadTeamMembers: Запрос к API...');
         const response = await fetch('/api/public/trainers');
         if (!response.ok) {
             throw new Error('Ошибка загрузки команды');
         }
         
         const trainers = await response.json();
-        console.log('loadTeamMembers: Получены данные тренеров:', trainers);
         
         // Маппинг видов спорта
         const sportTypeMapping = {
@@ -381,7 +374,7 @@ async function loadTeamMembers() {
             return;
         }
         
-        const html = trainers.map(trainer => `
+        teamCarousel.innerHTML = trainers.map(trainer => `
             <div class="team-member">
                 <div class="member-photo">
                     ${trainer.photo_url ? 
@@ -398,11 +391,7 @@ async function loadTeamMembers() {
             </div>
         `).join('');
         
-        console.log('loadTeamMembers: Сгенерированный HTML:', html);
-        teamCarousel.innerHTML = html;
-        console.log('loadTeamMembers: HTML установлен в карусель');
-        
-        // Простая проверка - показываем все элементы без карусели для отладки
+        // Настраиваем отображение без карусели
         teamCarousel.style.overflow = 'visible';
         teamCarousel.style.flexWrap = 'wrap';
         teamCarousel.style.justifyContent = 'center';
@@ -415,11 +404,6 @@ async function loadTeamMembers() {
         if (prevBtn) prevBtn.style.display = 'none';
         if (nextBtn) nextBtn.style.display = 'none';
         if (dotsContainer) dotsContainer.style.display = 'none';
-        
-        console.log('loadTeamMembers: Тренеры загружены успешно, всего:', trainers.length);
-        
-        // Временно отключаем карусель для отладки
-        // initTeamCarousel(trainers.length);
         
     } catch (error) {
         console.error('Ошибка при загрузке команды:', error);
@@ -447,31 +431,13 @@ async function loadTeamMembers() {
         if (prevBtn) prevBtn.style.display = 'none';
         if (nextBtn) nextBtn.style.display = 'none';
         if (dotsContainer) dotsContainer.style.display = 'none';
-        
-        // Временно отключаем карусель
-        // initTeamCarousel(1);
     }
 }
 
-// Инициализация карусели команды
+// Инициализация карусели команды (в настоящее время не используется)
 function initTeamCarousel(totalItems) {
-    console.log('initTeamCarousel: Инициализация с', totalItems, 'элементами');
-    const carousel = document.getElementById('team-carousel');
-    const prevBtn = document.getElementById('carousel-prev');
-    const nextBtn = document.getElementById('carousel-next');
-    const dotsContainer = document.getElementById('carousel-dots');
-    
-    console.log('initTeamCarousel: Найденные элементы:', {
-        carousel: !!carousel,
-        prevBtn: !!prevBtn,
-        nextBtn: !!nextBtn,
-        dotsContainer: !!dotsContainer
-    });
-    
-    if (!carousel || !prevBtn || !nextBtn || !dotsContainer) {
-        console.log('initTeamCarousel: Некоторые элементы не найдены, выход');
-        return;
-    }
+    // Функция отключена, так как используется простое отображение с переносом
+    return;
     
     let currentIndex = 0;
     const itemWidth = 350; // ширина одного элемента с отступом
