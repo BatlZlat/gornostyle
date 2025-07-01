@@ -67,6 +67,23 @@ app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
 
+// Публичный API для получения активных тренеров (для главной страницы)
+app.get('/api/public/trainers', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT full_name, sport_type, description, photo_url 
+            FROM trainers 
+            WHERE is_active = true 
+            ORDER BY full_name
+        `);
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка при получении тренеров для главной страницы:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
 // API для управления ссылкой оплаты
 app.get('/api/payment-link', (req, res) => {
     const paymentLink = process.env.PAYMENT_LINK || '';

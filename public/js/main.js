@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initSmoothScrolling();
     initFormHandlers();
     initAnimations();
+    loadTeamMembers();
     // Иконки контактов уже настроены через EJS в HTML
 });
 
@@ -346,6 +347,60 @@ function hideNotification(notification) {
             notification.parentNode.removeChild(notification);
         }
     }, 300);
+}
+
+// Загрузка команды тренеров
+async function loadTeamMembers() {
+    const teamGrid = document.getElementById('team-grid');
+    if (!teamGrid) return;
+    
+    try {
+        const response = await fetch('/api/public/trainers');
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки команды');
+        }
+        
+        const trainers = await response.json();
+        
+        // Маппинг видов спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Горные лыжи и сноуборд'
+        };
+        
+        if (trainers.length === 0) {
+            teamGrid.innerHTML = '<div class="team-member"><p>Информация о команде скоро появится</p></div>';
+            return;
+        }
+        
+        teamGrid.innerHTML = trainers.map(trainer => `
+            <div class="team-member">
+                <div class="member-photo">
+                    ${trainer.photo_url ? 
+                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` :
+                        `<i class="fas fa-user"></i>`
+                    }
+                </div>
+                <h4>${trainer.full_name}</h4>
+                <p class="member-title">Инструктор по ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                <p class="member-details">${trainer.description || 'Профессиональный инструктор'}</p>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке команды:', error);
+        teamGrid.innerHTML = `
+            <div class="team-member">
+                <div class="member-photo">
+                    <i class="fas fa-user"></i>
+                </div>
+                <h4>Команда</h4>
+                <p class="member-title">Профессиональные инструкторы</p>
+                <p class="member-details">Информация скоро появится</p>
+            </div>
+        `;
+    }
 }
 
 // Добавляем CSS для анимаций

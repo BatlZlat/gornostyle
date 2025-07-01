@@ -230,7 +230,6 @@ body {
 .training-item,
 .schedule-slot,
 .simulator-item,
-.trainer-item,
 .client-item,
 .certificate-item,
 .finance-item {
@@ -238,6 +237,30 @@ body {
     padding: 1rem;
     border-radius: 4px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.trainer-item {
+    background-color: white;
+    padding: 1rem;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.trainer-photo {
+    flex-shrink: 0;
+}
+
+.trainer-info {
+    flex: 1;
+}
+
+.trainer-actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 0.5rem;
 }
 
 /* Расписание */

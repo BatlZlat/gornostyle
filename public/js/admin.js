@@ -971,6 +971,12 @@ async function loadTrainers() {
             } else {
                 trainersList.innerHTML += activeTrainers.map(trainer => `
                     <div class="trainer-item">
+                        <div class="trainer-photo">
+                            ${trainer.photo_url ? 
+                                `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                                `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                            }
+                        </div>
                         <div class="trainer-info">
                             <h3>${trainer.full_name}</h3>
                             <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
@@ -1100,6 +1106,17 @@ async function editTrainer(trainerId) {
                         <input type="email" id="email" name="email" value="${trainer.email || ''}">
                     </div>
                     <div class="form-group">
+                        <label for="trainer_photo">Фото тренера:</label>
+                        <div class="current-photo" style="margin-bottom: 10px;">
+                            ${trainer.photo_url ? 
+                                `<img id="current-trainer-photo" src="${trainer.photo_url}" alt="${trainer.full_name}" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">` :
+                                `<div class="no-photo" style="width: 150px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin-bottom: 10px;">Нет фото</div>`
+                            }
+                        </div>
+                        <input type="file" id="trainer_photo" name="trainer_photo" accept="image/*" onchange="previewTrainerPhoto(this)">
+                        <small style="color: #666; display: block; margin-top: 5px;">Фото будет автоматически сжато до высоты 200px</small>
+                    </div>
+                    <div class="form-group">
                         <label for="description">Описание:</label>
                         <textarea id="description" name="description">${trainer.description || ''}</textarea>
                     </div>
@@ -1122,14 +1139,47 @@ async function editTrainer(trainerId) {
         // Обработка сохранения
         document.getElementById('editTrainerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = {
-                ...trainer,  // Сохраняем все существующие данные тренера
-                ...Object.fromEntries(formData.entries()), // Обновляем только измененные поля
-                id: trainerId // Убеждаемся, что ID не изменился
-            };
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            // Проверяем, есть ли загруженное фото
+            const photoFile = form.querySelector('#trainer_photo').files[0];
             
             try {
+                let currentTrainer = { ...trainer };
+                
+                // Если есть новое фото, сначала загружаем его
+                if (photoFile) {
+                    const photoFormData = new FormData();
+                    photoFormData.append('photo', photoFile);
+                    
+                    const photoResponse = await fetch(`/api/trainers/${trainerId}/upload-photo`, {
+                        method: 'POST',
+                        body: photoFormData
+                    });
+                    
+                    if (!photoResponse.ok) {
+                        const photoError = await photoResponse.json();
+                        throw new Error(photoError.error || 'Ошибка при загрузке фото');
+                    }
+                    
+                    const photoResult = await photoResponse.json();
+                    currentTrainer.photo_url = photoResult.photo_url;
+                }
+                
+                // Обновляем остальные данные тренера
+                const data = {
+                    ...currentTrainer,  // Сохраняем все существующие данные тренера
+                    full_name: formData.get('full_name'),
+                    phone: formData.get('phone'),
+                    birth_date: formData.get('birth_date'),
+                    sport_type: formData.get('sport_type'),
+                    description: formData.get('description'),
+                    hire_date: formData.get('hire_date'),
+                    is_active: formData.get('is_active'),
+                    id: trainerId // Убеждаемся, что ID не изменился
+                };
+                
                 const response = await fetch(`/api/trainers/${trainerId}`, {
                     method: 'PUT',
                     headers: {
@@ -1140,7 +1190,7 @@ async function editTrainer(trainerId) {
                 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.message || 'Ошибка при обновлении тренера');
+                    throw new Error(error.error || 'Ошибка при обновлении тренера');
                 }
                 
                 modal.remove();
@@ -2718,6 +2768,12 @@ async function viewTrainer(trainerId) {
         modal.innerHTML = `
             <div class="modal-content">
                 <h3>Информация о тренере</h3>
+                <div class="trainer-photo-view" style="text-align: center; margin-bottom: 20px;">
+                    ${trainer.photo_url ? 
+                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="max-width: 200px; height: auto; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">` :
+                        `<div class="no-photo" style="width: 200px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin: 0 auto;">Нет фото</div>`
+                    }
+                </div>
                 <div class="trainer-details">
                     <p><strong>ФИО:</strong> ${trainer.full_name}</p>
                     <p><strong>Дата рождения:</strong> ${trainer.birth_date ? new Date(trainer.birth_date).toLocaleDateString('ru-RU') : '-'}</p>
@@ -3399,4 +3455,24 @@ function getPriorityRu(priority) {
         'urgent': 'Срочный'
     };
     return priorities[priority] || priority;
+}
+
+// Функция предпросмотра фото тренера
+function previewTrainerPhoto(input) {
+    const file = input.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const currentPhoto = document.getElementById('current-trainer-photo');
+            const noPhotoDiv = document.querySelector('.current-photo .no-photo');
+            
+            if (currentPhoto) {
+                currentPhoto.src = e.target.result;
+            } else if (noPhotoDiv) {
+                // Заменяем div "Нет фото" на изображение
+                noPhotoDiv.outerHTML = `<img id="current-trainer-photo" src="${e.target.result}" alt="Предпросмотр" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">`;
+            }
+        };
+        reader.readAsDataURL(file);
+    }
 }
