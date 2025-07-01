@@ -383,7 +383,6 @@ async function loadTeamMembers() {
                     }
                 </div>
                 <h4>${trainer.full_name}</h4>
-                <p class="member-age">${trainer.age || 'Возраст не указан'} лет</p>
                 <div class="member-sport">
                     ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}
                 </div>
@@ -413,7 +412,6 @@ async function loadTeamMembers() {
                     <i class="fas fa-user"></i>
                 </div>
                 <h4>Команда</h4>
-                <p class="member-age">Профессиональные инструкторы</p>
                 <div class="member-sport">Горные лыжи и сноуборд</div>
                 <p class="member-description">Информация скоро появится</p>
             </div>
