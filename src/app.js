@@ -44,7 +44,8 @@ app.get('/', (req, res) => {
         adminPhone: process.env.ADMIN_PHONE,
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
-        botUsername: process.env.BOT_USERNAME
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP
     });
 });
 

@@ -21,8 +21,16 @@
                     <li><a href="#prices">Цены</a></li>
                     <li><a href="#contact">Контакты</a></li>
                 </ul>
-                <div class="nav-phone">
-                    <a href="tel:<%= adminPhone %>"><%= adminPhone %></a>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="https://t.me/<%= botUsername %>" class="nav-contact-icon" title="Telegram бот" target="_blank">
+                        <i class="fab fa-telegram"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
                 </div>
                 <div class="nav-toggle">
                     <span></span>
@@ -39,7 +47,7 @@
             <div class="hero-split__content">
                 <div class="hero-split__subtitle">ПЕРВЫЙ ГОРНОЛЫЖНЫЙ ТРЕНАЖЁР В ТЮМЕНИ</div>
                 <h1 class="hero-split__title">Горностайл72</h1>
-                <div class="hero-split__desc">Учитесь кататься на лыжах круглый год — в центре Тюмени, на современном тренажёре!</div>
+                <div class="hero-split__desc">Учитесь кататься на лыжах круглый год — в Тюмени, на современном тренажёре!</div>
                 <ul class="hero-split__list">
                     <li>Реалистичная имитация настоящего склона</li>
                     <li>Индивидуальные и групповые занятия</li>
@@ -50,7 +58,7 @@
                     Записаться через Telegram
                 </a>
                 <div class="hero-split__contacts">
-                    <div>Менеджер: <a href="tel:<%= adminPhone %>"><span class="phone"><%= adminPhone %></span></a></div>
+                    <div>Тел: <a href="tel:<%= adminPhone %>"><span class="phone"><%= adminPhone %></span></a></div>
                     <div>Email: <a href="mailto:<%= contactEmail %>"><span class="email"><%= contactEmail %></span></a></div>
                 </div>
             </div>

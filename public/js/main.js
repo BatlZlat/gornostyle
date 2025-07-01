@@ -124,14 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initSmoothScrolling();
     initFormHandlers();
     initAnimations();
-    // Подстановка телефона в шапке
-    const navPhone = document.querySelector('.nav-phone');
-    if (navPhone) {
-        const phone = navPhone.getAttribute('data-phone');
-        if (phone) {
-            navPhone.innerHTML = `<a href="tel:${phone}">${phone}</a>`;
-        }
-    }
+    // Иконки контактов уже настроены через EJS в HTML
 });
 
 // Мобильное меню

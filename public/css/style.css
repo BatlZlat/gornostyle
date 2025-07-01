@@ -70,11 +70,34 @@ body {
     color: var(--secondary-color);
 }
 
-.nav-phone a {
-    color: var(--secondary-color);
+.nav-contacts {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.nav-contact-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: var(--secondary-color);
+    color: var(--white);
     text-decoration: none;
-    font-weight: 600;
     font-size: 1.1rem;
+    transition: all 0.3s ease;
+}
+
+.nav-contact-icon:hover {
+    background-color: var(--accent-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.nav-contact-icon i {
+    font-size: 1rem;
 }
 
 .nav-toggle {
@@ -595,6 +618,16 @@ body {
     
     .nav-toggle {
         display: flex;
+    }
+    
+    .nav-contacts {
+        gap: 0.5rem;
+    }
+    
+    .nav-contact-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
     }
     
     .hero h1 {
