@@ -349,18 +349,25 @@ function hideNotification(notification) {
     }, 300);
 }
 
-// Загрузка команды тренеров
+// Загрузка команды тренеров с каруселью
 async function loadTeamMembers() {
-    const teamGrid = document.getElementById('team-grid');
-    if (!teamGrid) return;
+    console.log('loadTeamMembers: Начало загрузки команды');
+    const teamCarousel = document.getElementById('team-carousel');
+    if (!teamCarousel) {
+        console.log('loadTeamMembers: Элемент team-carousel не найден');
+        return;
+    }
+    console.log('loadTeamMembers: Элемент team-carousel найден');
     
     try {
+        console.log('loadTeamMembers: Запрос к API...');
         const response = await fetch('/api/public/trainers');
         if (!response.ok) {
             throw new Error('Ошибка загрузки команды');
         }
         
         const trainers = await response.json();
+        console.log('loadTeamMembers: Получены данные тренеров:', trainers);
         
         // Маппинг видов спорта
         const sportTypeMapping = {
@@ -370,53 +377,222 @@ async function loadTeamMembers() {
         };
         
         if (trainers.length === 0) {
-            teamGrid.innerHTML = '<div class="team-member"><p>Информация о команде скоро появится</p></div>';
+            teamCarousel.innerHTML = '<div class="team-member"><p>Информация о команде скоро появится</p></div>';
             return;
         }
         
-        teamGrid.innerHTML = trainers.map(trainer => `
+        const html = trainers.map(trainer => `
             <div class="team-member">
                 <div class="member-photo">
                     ${trainer.photo_url ? 
-                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` :
+                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}">` :
                         `<i class="fas fa-user"></i>`
                     }
                 </div>
                 <h4>${trainer.full_name}</h4>
-                <p class="member-title">Инструктор по ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
-                <p class="member-details">${trainer.description || 'Профессиональный инструктор'}</p>
+                <p class="member-age">${trainer.age || 'Возраст не указан'} лет</p>
+                <div class="member-sport">
+                    ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}
+                </div>
+                <p class="member-description">${trainer.description || 'Профессиональный инструктор'}</p>
             </div>
         `).join('');
         
+        console.log('loadTeamMembers: Сгенерированный HTML:', html);
+        teamCarousel.innerHTML = html;
+        console.log('loadTeamMembers: HTML установлен в карусель');
+        
+        // Простая проверка - показываем все элементы без карусели для отладки
+        teamCarousel.style.overflow = 'visible';
+        teamCarousel.style.flexWrap = 'wrap';
+        teamCarousel.style.justifyContent = 'center';
+        
+        // Скрываем элементы управления каруселью
+        const prevBtn = document.getElementById('carousel-prev');
+        const nextBtn = document.getElementById('carousel-next');
+        const dotsContainer = document.getElementById('carousel-dots');
+        
+        if (prevBtn) prevBtn.style.display = 'none';
+        if (nextBtn) nextBtn.style.display = 'none';
+        if (dotsContainer) dotsContainer.style.display = 'none';
+        
+        console.log('loadTeamMembers: Тренеры загружены успешно, всего:', trainers.length);
+        
+        // Временно отключаем карусель для отладки
+        // initTeamCarousel(trainers.length);
+        
     } catch (error) {
         console.error('Ошибка при загрузке команды:', error);
-        teamGrid.innerHTML = `
+        teamCarousel.innerHTML = `
             <div class="team-member">
                 <div class="member-photo">
                     <i class="fas fa-user"></i>
                 </div>
                 <h4>Команда</h4>
-                <p class="member-title">Профессиональные инструкторы</p>
-                <p class="member-details">Информация скоро появится</p>
+                <p class="member-age">Профессиональные инструкторы</p>
+                <div class="member-sport">Горные лыжи и сноуборд</div>
+                <p class="member-description">Информация скоро появится</p>
             </div>
         `;
+        
+        teamCarousel.style.overflow = 'visible';
+        teamCarousel.style.flexWrap = 'wrap';
+        teamCarousel.style.justifyContent = 'center';
+        
+        // Скрываем элементы управления каруселью при ошибке
+        const prevBtn = document.getElementById('carousel-prev');
+        const nextBtn = document.getElementById('carousel-next');
+        const dotsContainer = document.getElementById('carousel-dots');
+        
+        if (prevBtn) prevBtn.style.display = 'none';
+        if (nextBtn) nextBtn.style.display = 'none';
+        if (dotsContainer) dotsContainer.style.display = 'none';
+        
+        // Временно отключаем карусель
+        // initTeamCarousel(1);
     }
+}
+
+// Инициализация карусели команды
+function initTeamCarousel(totalItems) {
+    console.log('initTeamCarousel: Инициализация с', totalItems, 'элементами');
+    const carousel = document.getElementById('team-carousel');
+    const prevBtn = document.getElementById('carousel-prev');
+    const nextBtn = document.getElementById('carousel-next');
+    const dotsContainer = document.getElementById('carousel-dots');
+    
+    console.log('initTeamCarousel: Найденные элементы:', {
+        carousel: !!carousel,
+        prevBtn: !!prevBtn,
+        nextBtn: !!nextBtn,
+        dotsContainer: !!dotsContainer
+    });
+    
+    if (!carousel || !prevBtn || !nextBtn || !dotsContainer) {
+        console.log('initTeamCarousel: Некоторые элементы не найдены, выход');
+        return;
+    }
+    
+    let currentIndex = 0;
+    const itemWidth = 350; // ширина одного элемента с отступом
+    const visibleItems = Math.floor(carousel.parentElement.offsetWidth / itemWidth) || 1;
+    const maxIndex = Math.max(0, totalItems - visibleItems);
+    
+    // Создаем точки навигации
+    dotsContainer.innerHTML = '';
+    const dotsCount = Math.ceil(totalItems / visibleItems);
+    for (let i = 0; i < dotsCount; i++) {
+        const dot = document.createElement('button');
+        dot.className = `carousel-dot ${i === 0 ? 'active' : ''}`;
+        dot.addEventListener('click', () => goToSlide(i * visibleItems));
+        dotsContainer.appendChild(dot);
+    }
+    
+    function updateCarousel() {
+        const translateX = -currentIndex * itemWidth;
+        carousel.style.transform = `translateX(${translateX}px)`;
+        
+        // Обновляем состояние кнопок
+        prevBtn.disabled = currentIndex === 0;
+        nextBtn.disabled = currentIndex >= maxIndex;
+        
+        // Обновляем точки
+        const activeDotIndex = Math.floor(currentIndex / visibleItems);
+        document.querySelectorAll('.carousel-dot').forEach((dot, index) => {
+            dot.classList.toggle('active', index === activeDotIndex);
+        });
+    }
+    
+    function goToSlide(index) {
+        currentIndex = Math.max(0, Math.min(index, maxIndex));
+        updateCarousel();
+    }
+    
+    // Обработчики кнопок
+    prevBtn.addEventListener('click', () => {
+        if (currentIndex > 0) {
+            goToSlide(currentIndex - 1);
+        }
+    });
+    
+    nextBtn.addEventListener('click', () => {
+        if (currentIndex < maxIndex) {
+            goToSlide(currentIndex + 1);
+        }
+    });
+    
+    // Скрываем элементы управления если все элементы видны
+    if (totalItems <= visibleItems) {
+        prevBtn.style.display = 'none';
+        nextBtn.style.display = 'none';
+        dotsContainer.style.display = 'none';
+    } else {
+        prevBtn.style.display = 'flex';
+        nextBtn.style.display = 'flex';
+        dotsContainer.style.display = 'flex';
+    }
+    
+    // Поддержка свайпов на мобильных устройствах
+    let startX = 0;
+    let isDragging = false;
+    
+    carousel.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+    });
+    
+    carousel.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+    });
+    
+    carousel.addEventListener('touchend', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        
+        const endX = e.changedTouches[0].clientX;
+        const diff = startX - endX;
+        
+        if (Math.abs(diff) > 50) { // минимальная дистанция для свайпа
+            if (diff > 0 && currentIndex < maxIndex) {
+                goToSlide(currentIndex + 1);
+            } else if (diff < 0 && currentIndex > 0) {
+                goToSlide(currentIndex - 1);
+            }
+        }
+    });
+    
+    // Адаптивность при изменении размера окна
+    window.addEventListener('resize', () => {
+        const newVisibleItems = Math.floor(carousel.parentElement.offsetWidth / itemWidth) || 1;
+        if (newVisibleItems !== visibleItems) {
+            // Перезапускаем карусель с новыми параметрами
+            setTimeout(() => initTeamCarousel(totalItems), 100);
+        }
+    });
+    
+    // Инициализация
+    updateCarousel();
 }
 
 // Добавляем CSS для анимаций
 const style = document.createElement('style');
 style.textContent = `
     .feature-card,
-    .advantage-item,
-    .team-member {
+    .advantage-item {
         opacity: 0;
         transform: translateY(30px);
         transition: opacity 0.6s ease, transform 0.6s ease;
     }
     
     .feature-card.animate-in,
-    .advantage-item.animate-in,
-    .team-member.animate-in {
+    .advantage-item.animate-in {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    
+    /* Анимация для команды в карусели */
+    .team-carousel .team-member {
         opacity: 1;
         transform: translateY(0);
     }

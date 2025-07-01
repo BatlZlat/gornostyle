@@ -71,7 +71,13 @@ app.use('/api/children', verifyToken, childrenRouter);
 app.get('/api/public/trainers', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT full_name, sport_type, description, photo_url 
+            SELECT 
+                full_name, 
+                sport_type, 
+                description, 
+                photo_url,
+                birth_date,
+                EXTRACT(YEAR FROM AGE(birth_date)) as age
             FROM trainers 
             WHERE is_active = true 
             ORDER BY full_name

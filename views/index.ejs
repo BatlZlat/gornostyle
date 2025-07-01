@@ -307,9 +307,20 @@
         <div class="container">
             <h2>Наша команда</h2>
             <p class="team-intro">Мы постоянно учимся и повышаем наши профессиональные навыки, чтобы наши ученики видели прогресс уже с первого занятия.</p>
-            <div class="team-grid" id="team-grid">
-                <!-- Команда будет загружена динамически -->
-                <div class="team-loading">Загрузка команды...</div>
+            <div class="team-carousel-container">
+                <div class="team-carousel" id="team-carousel">
+                    <!-- Команда будет загружена динамически -->
+                    <div class="team-loading">Загрузка команды...</div>
+                </div>
+                <button class="carousel-btn carousel-prev" id="carousel-prev">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button class="carousel-btn carousel-next" id="carousel-next">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="carousel-dots" id="carousel-dots">
+                    <!-- Точки будут добавлены динамически -->
+                </div>
             </div>
         </div>
     </section>

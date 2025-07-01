@@ -466,10 +466,19 @@ body {
     margin-right: auto;
 }
 
-.team-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
+/* Карусель команды */
+.team-carousel-container {
+    position: relative;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.team-carousel {
+    display: flex;
+    overflow: hidden;
+    scroll-behavior: smooth;
+    gap: 30px;
+    padding: 20px 0;
 }
 
 .team-member {
@@ -479,6 +488,8 @@ body {
     text-align: center;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
     transition: transform 0.3s ease;
+    min-width: 320px;
+    flex-shrink: 0;
 }
 
 .team-member:hover {
@@ -486,14 +497,22 @@ body {
 }
 
 .member-photo {
-    width: 120px;
-    height: 120px;
+    width: 150px;
+    height: 150px;
     background-color: var(--light-gray);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     margin: 0 auto 1.5rem;
+    overflow: hidden;
+}
+
+.member-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
 }
 
 .member-photo i {
@@ -505,6 +524,103 @@ body {
     font-size: 1.3rem;
     margin-bottom: 0.5rem;
     color: var(--primary-color);
+    font-weight: 600;
+}
+
+.member-age {
+    color: var(--gray);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.member-sport {
+    color: var(--secondary-color);
+    font-weight: 500;
+    margin-bottom: 1rem;
+    padding: 5px 15px;
+    background: rgba(52, 152, 219, 0.1);
+    border-radius: 20px;
+    display: inline-block;
+}
+
+.member-description {
+    color: var(--gray);
+    line-height: 1.6;
+    font-size: 0.9rem;
+}
+
+/* Кнопки карусели */
+.carousel-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--white);
+    border: none;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.carousel-btn:hover {
+    background: var(--primary-color);
+    color: var(--white);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.carousel-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: translateY(-50%);
+}
+
+.carousel-prev {
+    left: -25px;
+}
+
+.carousel-next {
+    right: -25px;
+}
+
+/* Точки карусели */
+.carousel-dots {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 30px;
+}
+
+.carousel-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.carousel-dot.active {
+    background: var(--secondary-color);
+}
+
+.carousel-dot:hover {
+    background: var(--primary-color);
+}
+
+/* Старые стили для совместимости */
+.team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
 }
 
 .member-title {
@@ -640,6 +756,31 @@ body {
         grid-template-columns: 1fr;
     }
     
+    /* Адаптивность карусели команды */
+    .team-member {
+        min-width: 280px;
+        padding: 1.5rem;
+    }
+    
+    .member-photo {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .carousel-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+    }
+    
+    .carousel-prev {
+        left: -20px;
+    }
+    
+    .carousel-next {
+        right: -20px;
+    }
+    
     .contact-info {
         flex-direction: column;
         align-items: center;
@@ -672,6 +813,16 @@ body {
     .feature-card,
     .team-member {
         padding: 1.5rem;
+        min-width: 250px;
+    }
+    
+    /* Для очень маленьких экранов */
+    .carousel-prev {
+        left: 10px;
+    }
+    
+    .carousel-next {
+        right: 10px;
     }
 }
 
