@@ -696,9 +696,11 @@ body {
     text-transform: uppercase;
     letter-spacing: 2px;
     color: var(--primary-color);
-    font-size: 1.1rem;
-    font-weight: 500;
+    font-size: 1.4rem;
+    font-weight: 700;
     margin-bottom: 1.5rem;
+    text-align: center;
+    line-height: 1.3;
 }
 .hero-split__title {
     font-size: 3.2rem;
@@ -786,6 +788,7 @@ body {
 }
 @media (max-width: 480px) {
     .hero-split__content { padding: 18px 2vw; }
+    .hero-split__subtitle { font-size: 1.1rem; }
     .hero-split__title { font-size: 1.5rem; }
     .hero-split__desc { font-size: 1rem; }
     .hero-split__btn { font-size: 1rem; padding: 0.8rem 1.2rem; }
