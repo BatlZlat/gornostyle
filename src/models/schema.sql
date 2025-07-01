@@ -36,7 +36,8 @@ CREATE TABLE trainers (
     hire_date DATE NOT NULL,
     dismissal_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    photo_url VARCHAR(255)
 );
 
 -- Таблица администраторов
@@ -178,7 +179,9 @@ CREATE TABLE training_requests (
     training_frequency VARCHAR(20), -- 'regular' или 'one-time'
     skill_level INTEGER CHECK (skill_level BETWEEN 0 AND 10),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    group_id INTEGER REFERENCES application_groups(id),
+    group_status VARCHAR(50) DEFAULT 'ungrouped'
 );
 
 -- Добавляем новую таблицу для индивидуальных тренировок
@@ -223,6 +226,81 @@ CREATE TABLE sms_log (
     processing_status VARCHAR(20) DEFAULT 'pending'
 );
 
+-- Таблица миграций
+CREATE TABLE migrations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица групп заявок
+CREATE TABLE application_groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    preferred_date DATE NOT NULL,
+    preferred_time TIME NOT NULL,
+    equipment_type VARCHAR(50) NOT NULL,
+    skill_level INTEGER,
+    max_participants INTEGER NOT NULL DEFAULT 4,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    compatibility_score DECIMAL(5,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица участников групп заявок
+CREATE TABLE application_group_members (
+    id SERIAL PRIMARY KEY,
+    group_id INTEGER REFERENCES application_groups(id) ON DELETE CASCADE,
+    request_id INTEGER REFERENCES training_requests(id) ON DELETE CASCADE,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(group_id, request_id)
+);
+
+-- Таблица сообщений
+CREATE TABLE messages (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    text TEXT NOT NULL,
+    created_by INTEGER REFERENCES administrators(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица получателей сообщений
+CREATE TABLE message_recipients (
+    id SERIAL PRIMARY KEY,
+    message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+    recipient_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error TEXT,
+    sent_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица настроек группировки
+CREATE TABLE grouping_settings (
+    id SERIAL PRIMARY KEY,
+    min_group_size INTEGER NOT NULL DEFAULT 2,
+    max_group_size INTEGER NOT NULL DEFAULT 4,
+    max_group_size_exception INTEGER NOT NULL DEFAULT 6,
+    time_range_minutes INTEGER NOT NULL DEFAULT 30,
+    min_age INTEGER NOT NULL DEFAULT 4,
+    max_age_diff INTEGER NOT NULL DEFAULT 3,
+    allow_mixed_groups BOOLEAN NOT NULL DEFAULT FALSE,
+    date_weight INTEGER NOT NULL DEFAULT 40,
+    time_weight INTEGER NOT NULL DEFAULT 30,
+    equipment_weight INTEGER NOT NULL DEFAULT 20,
+    age_weight INTEGER NOT NULL DEFAULT 10,
+    skill_weight INTEGER NOT NULL DEFAULT 10,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -251,6 +329,23 @@ CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
 CREATE INDEX idx_sms_log_created_at ON sms_log(created_at);
 CREATE INDEX idx_sms_log_processing_status ON sms_log(processing_status);
+CREATE INDEX idx_training_requests_equipment ON training_requests(equipment_type);
+CREATE INDEX idx_training_requests_group_id ON training_requests(group_id);
+CREATE INDEX idx_training_requests_group_status ON training_requests(group_status);
+CREATE INDEX idx_training_requests_has_group ON training_requests(has_group);
+CREATE INDEX idx_application_groups_date ON application_groups(preferred_date);
+CREATE INDEX idx_application_groups_equipment ON application_groups(equipment_type);
+CREATE INDEX idx_application_groups_skill ON application_groups(skill_level);
+CREATE INDEX idx_application_groups_status ON application_groups(status);
+CREATE INDEX idx_application_group_members_group ON application_group_members(group_id);
+CREATE INDEX idx_application_group_members_request ON application_group_members(request_id);
+CREATE INDEX idx_application_group_members_status ON application_group_members(status);
+CREATE INDEX idx_messages_created_at ON messages(created_at);
+CREATE INDEX idx_messages_created_by ON messages(created_by);
+CREATE INDEX idx_message_recipients_message ON message_recipients(message_id);
+CREATE INDEX idx_message_recipients_recipient ON message_recipients(recipient_id);
+CREATE INDEX idx_message_recipients_status ON message_recipients(status);
+CREATE INDEX idx_grouping_settings_active ON grouping_settings(is_active);
 
 -- Создание триггеров для обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -302,8 +397,28 @@ CREATE TRIGGER update_schedule_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_schedule_settings_updated_at
-    BEFORE UPDATE ON schedule_settings
+CREATE TRIGGER update_application_groups_updated_at
+    BEFORE UPDATE ON application_groups
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_application_group_members_updated_at
+    BEFORE UPDATE ON application_group_members
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_messages_updated_at
+    BEFORE UPDATE ON messages
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_message_recipients_updated_at
+    BEFORE UPDATE ON message_recipients
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_grouping_settings_updated_at
+    BEFORE UPDATE ON grouping_settings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
