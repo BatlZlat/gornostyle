@@ -45,7 +45,10 @@ app.get('/', (req, res) => {
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
-        vkGroup: process.env.VK_GROUP
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Горностайл72 - Горнолыжный тренажёр в Тюмени'
     });
 });
 
@@ -56,7 +59,10 @@ app.get('/prices', (req, res) => {
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
-        vkGroup: process.env.VK_GROUP
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Цены на тренировки - Горностайл72'
     });
 });
 
@@ -67,7 +73,10 @@ app.get('/schedule', (req, res) => {
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
-        vkGroup: process.env.VK_GROUP
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'График работы - Горностайл72'
     });
 });
 
