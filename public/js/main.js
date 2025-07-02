@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initFormHandlers();
     initAnimations();
     loadTeamMembers();
+    initYandexMap();
     // Иконки контактов уже настроены через EJS в HTML
 });
 
@@ -606,4 +607,48 @@ style.textContent = `
         opacity: 0.8;
     }
 `;
-document.head.appendChild(style); 
+document.head.appendChild(style);
+
+// Инициализация Яндекс карты
+function initYandexMap() {
+    const mapContainer = document.getElementById('yandex-map');
+    
+    if (!mapContainer) {
+        return; // Карта не найдена на странице
+    }
+    
+    // Проверяем, загружена ли уже Яндекс карта
+    if (window.ymaps) {
+        createMap();
+    } else {
+        // Загружаем API Яндекс карт (бесплатная версия)
+        const script = document.createElement('script');
+        script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU';
+        script.onload = createMap;
+        document.head.appendChild(script);
+    }
+    
+    function createMap() {
+        ymaps.ready(function() {
+            const map = new ymaps.Map('yandex-map', {
+                center: [57.166163, 65.688886], // Координаты клуба
+                zoom: 15,
+                controls: ['zoomControl', 'fullscreenControl']
+            });
+            
+            // Добавляем метку с иконкой кубка (стандарт для горнолыжных комплексов)
+            const placemark = new ymaps.Placemark([57.166163, 65.688886], {
+                balloonContent: 'Горностайл72<br>Горнолыжный тренажёрный комплекс'
+            }, {
+                preset: 'islands#redSportIcon'
+            });
+            
+            map.geoObjects.add(placemark);
+            
+            // Открываем баллун при клике на метку
+            placemark.events.add('click', function() {
+                placemark.balloon.open();
+            });
+        });
+    }
+} 

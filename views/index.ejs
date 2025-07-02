@@ -343,18 +343,65 @@
     <section class="contact" id="contact">
         <div class="container">
             <h2>Как добраться</h2>
-            <div class="contact-info">
+            <div class="contact-content">
+                <div class="contact-info">
+                    <div class="contact-description">
+                        <div class="description-section">
+                            <h3><i class="fas fa-building"></i> Наш адрес</h3>
+                            <p>Пока наше здание новое, адрес ещё делается, но мы уже открыты и ждём вас!</p>
+                        </div>
+                        
+                        <div class="description-section">
+                            <h3><i class="fas fa-map-marker-alt"></i> Ориентир</h3>
+                            <p><strong>Улица Источник, 2А, село Яр</strong><br>
+                            <strong>Въезд:</strong> напротив этого дома, распашные железные ворота с кирпичным забором</p>
+                        </div>
+                        
+                        <div class="description-section">
+                            <h3><i class="fas fa-route"></i> Как добраться</h3>
+                            <p>Район Мыса, Поселок Яр → проезжаем мимо горячего источника → доезжаем до кирпичного забора → едем вдоль забора → как только забор заканчивается, сразу направо в открытые ворота!</p>
+                        </div>
+                        
+                        <div class="description-section">
+                            <h3><i class="fas fa-map"></i> Наше точное местоположение</h3>
+                            <div class="map-links">
+                                <a href="https://clck.ru/3MiVTy" target="_blank" class="map-link">
+                                    <i class="fas fa-map-marked-alt" style="color: #FF0000;"></i>
+                                    Яндекс Карты
+                                </a>
+                                <a href="https://golnk.ru/XA1zz" target="_blank" class="map-link">
+                                    <i class="fas fa-map-marked-alt" style="color: #4285F4;"></i>
+                                    Google Maps
+                                </a>
+                                <a href="https://go.2gis.com/HMDnG" target="_blank" class="map-link">
+                                    <i class="fas fa-map-marked-alt" style="color: #2ECC71;"></i>
+                                    2ГИС
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="description-section">
+                            <h3><i class="fas fa-lightbulb"></i> Совет</h3>
+                            <p>Если заблудились — звоните, мы вам поможем найти нас! 🚗</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="contact-map">
+                    <div id="yandex-map"></div>
+                </div>
+            </div>
+            <div class="contact-buttons">
+                <div class="contact-item">
+                    <i class="fas fa-user-tie"></i>
+                    <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank">Telegram администратора</a>
+                </div>
                 <div class="contact-item">
                     <i class="fas fa-phone"></i>
-                    <a href="tel:+74991102141">+7 (499) 110-21-41</a>
+                    <a href="tel:<%= adminPhone %>"><%= adminPhone %></a>
                 </div>
                 <div class="contact-item">
-                    <i class="fas fa-envelope"></i>
-                    <a href="mailto:hello@gornostyle.ru">hello@gornostyle.ru</a>
-                </div>
-                <div class="contact-item">
-                    <i class="fas fa-map-marker-alt"></i>
-                    <span>м. Румянцево, Москва</span>
+                    <i class="fab fa-telegram-plane"></i>
+                    <a href="https://t.me/<%= botUsername %>" target="_blank">Telegram бот</a>
                 </div>
             </div>
         </div>
@@ -368,7 +415,7 @@
                 <!-- Партнёр 1 - Максимум72 -->
                 <a href="http://максимум72.рф" class="partner-card" target="_blank">
                     <div class="partner-image">
-                        <img src="images/partners/maximum72.jpg" alt="Максимум72 - Верёвочный парк">
+                        <img src="images/partners/maximum72.png" alt="Максимум72 - Верёвочный парк">
                     </div>
                     <div class="partner-name">Maximum</div>
                 </a>
