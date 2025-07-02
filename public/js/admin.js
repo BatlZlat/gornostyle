@@ -1168,7 +1168,7 @@ async function editTrainer(trainerId) {
                 }
                 
                 // Обновляем остальные данные тренера
-                const data = {
+            const data = {
                     ...currentTrainer,  // Сохраняем все существующие данные тренера
                     full_name: formData.get('full_name'),
                     phone: formData.get('phone'),
@@ -1177,9 +1177,9 @@ async function editTrainer(trainerId) {
                     description: formData.get('description'),
                     hire_date: formData.get('hire_date'),
                     is_active: formData.get('is_active'),
-                    id: trainerId // Убеждаемся, что ID не изменился
-                };
-                
+                id: trainerId // Убеждаемся, что ID не изменился
+            };
+            
                 const response = await fetch(`/api/trainers/${trainerId}`, {
                     method: 'PUT',
                     headers: {

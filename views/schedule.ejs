@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>График работы - Горностайл72</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .schedule-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .schedule-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .schedule-header h1 {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+        
+        .schedule-section {
+            background: var(--light-bg);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .schedule-section h2 {
+            color: var(--primary-color);
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .schedule-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--accent-color);
+        }
+        
+        .schedule-icon {
+            font-size: 2rem;
+            color: var(--accent-color);
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        .schedule-text {
+            flex: 1;
+        }
+        
+        .schedule-text h3 {
+            color: var(--primary-color);
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+        }
+        
+        .schedule-text p {
+            color: var(--gray);
+            margin: 0;
+        }
+        
+        .warning-section {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .warning-section h3 {
+            color: #856404;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .warning-section ul {
+            color: #856404;
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .warning-section li {
+            margin-bottom: 8px;
+        }
+        
+        .contact-info {
+            background: none;
+            color: var(--accent-color);
+            padding: 0;
+            border-radius: 0;
+            text-align: center;
+            margin-top: 24px;
+            margin-bottom: 0;
+            box-shadow: none;
+        }
+        
+        .contact-info h3 {
+            margin-bottom: 0.2em;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        .contact-info a {
+            color: var(--accent-color);
+            text-decoration: underline;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-left: 0.5em;
+        }
+        
+        .contact-info a:hover {
+            color: var(--secondary-color);
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+        
+        @media (max-width: 768px) {
+            .schedule-container {
+                padding: 20px 15px;
+            }
+            
+            .schedule-header h1 {
+                font-size: 2rem;
+            }
+            
+            .schedule-section {
+                padding: 20px;
+            }
+            
+            .schedule-info {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .contact-info a {
+                display: block;
+                margin-bottom: 0.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <h2>Горностайл72</h2>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule" class="active">График работы</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="https://t.me/<%= botUsername %>" class="nav-contact-icon telegram-inverted" title="Telegram бот" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <div class="schedule-container">
+        <a href="/" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            Вернуться на главную
+        </a>
+        
+        <div class="schedule-header">
+            <h1>🕒 График работы</h1>
+        </div>
+
+        <!-- Основной график работы -->
+        <div class="schedule-section">
+            <h2><i class="fas fa-clock"></i> Режим работы</h2>
+            
+            <div class="schedule-info">
+                <div class="schedule-icon">
+                    <i class="fas fa-calendar-alt"></i>
+                </div>
+                <div class="schedule-text">
+                    <h3>Работаем каждый день</h3>
+                    <p>с 10:00 до 21:00</p>
+                </div>
+            </div>
+            
+            <div class="schedule-info">
+                <div class="schedule-icon">
+                    <i class="fas fa-snowflake"></i>
+                </div>
+                <div class="schedule-text">
+                    <h3>Всесезонный режим</h3>
+                    <p>Тренировки доступны круглый год, независимо от погоды</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Важная информация -->
+        <div class="schedule-section">
+            <h2><i class="fas fa-exclamation-triangle"></i> Важная информация</h2>
+            
+            <div class="warning-section">
+                <h3><i class="fas fa-info-circle"></i> Правила записи</h3>
+                <ul>
+                    <li><strong>Запись на тренировку обязательна заранее</strong> - мы не принимаем посетителей без предварительной записи</li>
+                    <li>Рекомендуем записываться минимум за 1 день до желаемой даты</li>
+                    <li>В выходные и праздничные дни запись может быть ограничена</li>
+                    <li>Для групповых тренировок требуется минимум 2 человека</li>
+                    <li>Старайтесь не занимать время подряд, без большой необходимости, подробнее можно прочитать о <a href="/rules" style="color:var(--accent-color);text-decoration:underline;">правилах записи на тренировку</a> в пункте "Правила записи"</li>
+                </ul>
+            </div>
+            
+            <div class="warning-section">
+                <h3><i class="fas fa-clock"></i> Время тренировок</h3>
+                <ul>
+                    <li>Индивидуальные занятия: 30 или 60 минут</li>
+                    <li>Групповые занятия: 60 минут</li>
+                    <li>Старайтесь не занимать время подряд, без большой необходимости, подробнее можно прочитать о правилах записи на тренировку в пункте "Правила записи"</li>
+                    <li>Последняя возможная запись в 20:30</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Контакты для записи -->
+        <div class="contact-info">
+            <h3><i class="fas fa-phone"></i> Способы записи:</h3>
+            <a href="tel:<%= adminPhone %>"><%= adminPhone %></a>
+            <span style="margin: 0 0.5em;">|</span>
+            <a href="https://t.me/<%= botUsername %>" target="_blank"><i class="fab fa-telegram-plane"></i> Telegram-бот</a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-info">
+                    <h3>Горностайл72</h3>
+                    <p>Всесезонный горнолыжный тренажёрный комплекс для взрослых и детей с любым уровнем подготовки</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; Горностайл72 2025. Все права защищены.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Мобильное меню
+        document.addEventListener('DOMContentLoaded', function() {
+            const navToggle = document.querySelector('.nav-toggle');
+            const navMenu = document.querySelector('.nav-menu');
+            
+            if (navToggle && navMenu) {
+                navToggle.addEventListener('click', function() {
+                    navMenu.classList.toggle('active');
+                    navToggle.classList.toggle('active');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

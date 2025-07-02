@@ -49,6 +49,33 @@ app.get('/', (req, res) => {
     });
 });
 
+// Страница цен
+app.get('/prices', (req, res) => {
+    res.render('prices', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP
+    });
+});
+
+// Страница графика работы
+app.get('/schedule', (req, res) => {
+    res.render('schedule', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP
+    });
+});
+
+// Страница правил записи
+app.get('/rules', (req, res) => {
+    res.render('rules');
+});
+
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
 

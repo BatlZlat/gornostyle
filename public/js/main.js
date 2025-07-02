@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser = JSON.parse(savedUser);
         updateUIForLoggedInUser();
     }
-});
+}); 
 
 // Основной JavaScript файл для главной страницы
 
