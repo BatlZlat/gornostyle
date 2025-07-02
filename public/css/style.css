@@ -1028,7 +1028,7 @@ body {
     transform: translateY(-2px);
 }
 .hero-split__right {
-    background: #e9ecef;
+    background: #fff;
     position: relative;
 }
 .hero-split__photo-placeholder {
