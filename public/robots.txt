@@ -1,0 +1,36 @@
+User-agent: *
+Allow: /
+
+# Разрешаем индексацию всех страниц
+Allow: /prices
+Allow: /schedule
+Allow: /rules
+Allow: /faq
+
+# Запрещаем индексацию служебных файлов и папок
+Disallow: /admin/
+Disallow: /logs/
+Disallow: /node_modules/
+Disallow: /src/
+Disallow: /scripts/
+Disallow: /db/
+Disallow: /config/
+Disallow: /middleware/
+Disallow: /controllers/
+Disallow: /models/
+Disallow: /routes/
+Disallow: /views/
+Disallow: /ecosystem.config.js
+Disallow: /package.json
+Disallow: /package-lock.json
+Disallow: /test_db.js
+Disallow: /scratchpad.txt
+Disallow: /.env
+Disallow: /.git/
+Disallow: /.cursor/
+
+# Указываем расположение sitemap
+Sitemap: https://gornostyle72.ru/sitemap.xml
+
+# Время задержки между запросами (в секундах)
+Crawl-delay: 1 

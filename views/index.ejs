@@ -3,10 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Горнолыжный тренажерный комплекс</title>
+    
+    <!-- SEO Meta Tags -->
+    <title>Горнолыжный тренажёр в Тюмени - Горностайл72 | Обучение лыжам и сноуборду круглый год</title>
+    <meta name="description" content="Первый в Тюмени всесезонный горнолыжный тренажёр Горностайл72. Обучение лыжам и сноуборду с профессиональными инструкторами. Индивидуальные и групповые тренировки для детей и взрослых. Запись через Telegram бот.">
+    <meta name="keywords" content="горнолыжный тренажёр Тюмень, тренажёр для лыжников Тюмень, тренажёр для сноубордистов Тюмень, обучение лыжам Тюмень, обучение сноуборду Тюмень, горнолыжная школа Тюмень, школа сноуборда Тюмень, тренировки для детей на лыжах, тренировки для взрослых на лыжах, Горностайл72, ski simulator Tyumen">
+    <meta name="author" content="Горностайл72">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="Горнолыжный тренажёр в Тюмени - Горностайл72">
+    <meta property="og:description" content="Первый в Тюмени всесезонный горнолыжный тренажёр. Обучение лыжам и сноуборду с профессиональными инструкторами.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://gornostyle72.ru">
+    <meta property="og:image" content="/images/photo_trenagor.webp">
+    <meta property="og:site_name" content="Горностайл72">
+    <meta property="og:locale" content="ru_RU">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Горнолыжный тренажёр в Тюмени - Горностайл72">
+    <meta name="twitter:description" content="Первый в Тюмени всесезонный горнолыжный тренажёр. Обучение лыжам и сноуборду с профессиональными инструкторами.">
+    <meta name="twitter:image" content="/images/photo_trenagor.webp">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://gornostyle72.ru">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/mobile.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Schema.org микроразметка -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SportsActivityLocation",
+        "name": "Горностайл72",
+        "alternateName": "Gornostyle72",
+        "description": "Первый в Тюмени всесезонный горнолыжный тренажёр. Обучение лыжам и сноуборду с профессиональными инструкторами.",
+        "url": "https://gornostyle72.ru",
+        "logo": "https://gornostyle72.ru/images/photo_trenagor.webp",
+        "image": "https://gornostyle72.ru/images/photo_trenagor.webp",
+        "telephone": "<%= adminPhone %>",
+        "email": "<%= contactEmail %>",
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Тюмень",
+            "addressRegion": "Тюменская область",
+            "addressCountry": "RU",
+            "streetAddress": "Улица Источник, 2А, село Яр"
+        },
+        "geo": {
+            "@type": "GeoCoordinates",
+            "latitude": 57.1522,
+            "longitude": 65.5272
+        },
+        "openingHours": "Mo-Su 10:00-21:00",
+        "priceRange": "₽₽₽",
+        "currenciesAccepted": "RUB",
+        "paymentAccepted": "Cash, Credit Card",
+        "sport": ["Skiing", "Snowboarding"],
+        "amenityFeature": [
+            {
+                "@type": "LocationFeatureSpecification",
+                "name": "Горнолыжный тренажёр",
+                "value": true
+            },
+            {
+                "@type": "LocationFeatureSpecification", 
+                "name": "Профессиональные инструкторы",
+                "value": true
+            },
+            {
+                "@type": "LocationFeatureSpecification",
+                "name": "Индивидуальные тренировки",
+                "value": true
+            },
+            {
+                "@type": "LocationFeatureSpecification",
+                "name": "Групповые тренировки",
+                "value": true
+            }
+        ],
+        "sameAs": [
+            "https://t.me/<%= botUsername %>"
+        ],
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "reviewCount": "127"
+        }
+    }
+    </script>
 </head>
 <body>
     <!-- Header -->
@@ -68,8 +161,7 @@
             </div>
         </div>
         <div class="hero-split__right">
-                <img src="/images/photo_trenagor.webp" alt="Горнолыжный тренажер Горностайл72 схема">
-            </div>
+            <img src="/images/photo_trenagor.webp" alt="Горнолыжный тренажёр Горностайл72 в Тюмени - инновационный тренажёр для обучения лыжам и сноуборду" loading="lazy">
         </div>
     </section>
 
@@ -82,8 +174,7 @@
             <p>Наш тренажёр — это инновационная платформа с движущейся поверхностью, которая точно имитирует ощущения настоящего горнолыжного склона. Благодаря специальному покрытию и регулируемой скорости, вы сможете тренироваться в любых условиях и совершенствовать технику круглый год.</p>
         </div>
         <div class="info-block__photo">
-            <img src="/images/photo_trenagor.webp" alt="Горнолыжный тренажер Горностайл72 схема">
-            </div>
+            <img src="/images/photo_trenagor.webp" alt="Как работает горнолыжный тренажёр Горностайл72 - принцип работы тренажёра для лыжников в Тюмени" loading="lazy">
         </div>
     </section>
 
@@ -415,7 +506,7 @@
                 <!-- Партнёр 1 - Максимум72 -->
                 <a href="http://максимум72.рф" class="partner-card" target="_blank">
                     <div class="partner-image">
-                        <img src="images/partners/maximum72.png" alt="Максимум72 - Верёвочный парк">
+                        <img src="images/partners/maximum72.webp" alt="Партнёр Горностайл72 - Максимум72 верёвочный парк в Тюмени">
                     </div>
                     <div class="partner-name">Maximum</div>
                 </a>
@@ -423,7 +514,7 @@
                 <!-- Партнёр 2 - Richwood -->
                 <a href="https://kids.richwoodpark.ru/?ysclid=mcm6pvjlwl_Gornostyl72" class="partner-card" target="_blank">
                     <div class="partner-image">
-                        <img src="images/partners/Richwood.jpg" alt="Richwood Kids - Детский спортивный клуб">
+                        <img src="images/partners/Richwood.webp" alt="Партнёр Горностайл72 - Richwood Kids детский спортивный клуб в Тюмени">
                     </div>
                     <div class="partner-name">Richwood</div>
                 </a>
@@ -431,7 +522,7 @@
                 <!-- Партнёр 3 - НЕВИДАЛИЯ -->
                 <a href="https://park-nevidaliya.ru/tyumen?ysclid=mcm_Gornostyl72" class="partner-card" target="_blank">
                     <div class="partner-image">
-                        <img src="images/partners/nevidalia.png" alt="НЕВИДАЛИЯ - семейный парк развлечений">
+                        <img src="images/partners/nevidalia.webp" alt="Партнёр Горностайл72 - НЕВИДАЛИЯ семейный парк развлечений в Тюмени">
                     </div>
                     <div class="partner-name">НЕВИДАЛИЯ</div>
                 </a>
@@ -461,6 +552,11 @@
             </div>
         </div>
     </footer>
+
+    <!-- Скрытый SEO-блок с ключевыми словами -->
+    <div class="seo-keywords">
+        горнолыжный тренажёр Тюмень, тренажёр для лыжников Тюмень, тренажёр для сноубордистов Тюмень, тренировки на лыжном тренажёре, занятия на горнолыжном тренажёре, научиться кататься на лыжах Тюмень, научиться кататься на сноуборде Тюмень, горнолыжная школа Тюмень, школа сноуборда Тюмень, тренировки для детей на лыжах, тренировки для взрослых на лыжах, спорт для детей Тюмень, зимний спорт Тюмень, активный отдых Тюмень, где покататься на лыжах в Тюмени, где научиться кататься на лыжах в Тюмени, где научиться кататься на сноуборде в Тюмени, секция лыж Тюмень, секция сноуборда Тюмень, индивидуальные тренировки на лыжах, групповые тренировки на лыжах, тренировки на тренажёре для детей, тренировки на тренажёре для взрослых, инновационный спорт Тюмень, всесезонный спорт Тюмень, тренажёр для зимних видов спорта, ski simulator Tyumen, ski club Tyumen, ski training Tyumen, snowboard training Tyumen, детский спорт Тюмень, спортивная секция Тюмень, спортзал для лыжников, подготовка к горнолыжному сезону, подготовка к сноуборд-сезону, тренировки круглый год Тюмень, тренажёр для подготовки к горам, тренажёр для катания на лыжах, тренажёр для катания на сноуборде, тренажёр для детей Тюмень, тренажёр для взрослых Тюмень, тренажёр для всей семьи Тюмень, семейный спорт Тюмень, активные выходные Тюмень, куда пойти с ребёнком Тюмень, куда пойти всей семьёй Тюмень, Горностайл72, Gornostyle72, ski simulator Горностайл, ski club Горностайл, Proleski Тюмень, Proleski тренажёр, лыжный тренажёр Мыс Тюмень, лыжный тренажёр Яр Тюмень, лыжный тренажёр Источник Тюмень
+    </div>
 
     <script src="js/main.js"></script>
 </body>

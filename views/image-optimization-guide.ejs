@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Руководство по оптимизации изображений - Горностайл72</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .example {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        code {
+            background: #e0e0e0;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Руководство по оптимизации изображений</h1>
+    
+    <h2>1. Использование WebP с fallback</h2>
+    <p>Для лучшей производительности используйте элемент <code>&lt;picture&gt;</code>:</p>
+    
+    <div class="example">
+        <h3>Пример для изображений партнёров:</h3>
+        <pre><code>&lt;picture&gt;
+    &lt;source srcset="images/partners/maximum72.webp" type="image/webp"&gt;
+    &lt;img src="images/partners/maximum72.png" alt="Партнёр Горностайл72 - Максимум72 верёвочный парк в Тюмени"&gt;
+&lt;/picture&gt;</code></pre>
+    </div>
+    
+    <div class="example">
+        <h3>Пример для фотографий тренеров:</h3>
+        <pre><code>&lt;picture&gt;
+    &lt;source srcset="images/trainers/pervuhin-aleksey.webp" type="image/webp"&gt;
+    &lt;img src="images/trainers/pervuhin-aleksey.jpg" alt="Инструктор Первухин Алексей - горнолыжный тренажёр Горностайл72"&gt;
+&lt;/picture&gt;</code></pre>
+    </div>
+    
+    <h2>2. Lazy Loading</h2>
+    <p>Добавляйте атрибут <code>loading="lazy"</code> для изображений ниже fold:</p>
+    
+    <div class="example">
+        <pre><code>&lt;img src="images/partners/nevidalia.webp" 
+     alt="Партнёр Горностайл72 - НЕВИДАЛИЯ семейный парк развлечений в Тюмени"
+     loading="lazy"&gt;</code></pre>
+    </div>
+    
+    <h2>3. Responsive Images</h2>
+    <p>Для адаптивных изображений используйте <code>srcset</code>:</p>
+    
+    <div class="example">
+        <pre><code>&lt;picture&gt;
+    &lt;source media="(min-width: 768px)" 
+            srcset="images/partners/maximum72-large.webp"&gt;
+    &lt;source media="(min-width: 480px)" 
+            srcset="images/partners/maximum72-medium.webp"&gt;
+    &lt;img src="images/partners/maximum72-small.webp" 
+         alt="Партнёр Горностайл72 - Максимум72 верёвочный парк в Тюмени"&gt;
+&lt;/picture&gt;</code></pre>
+    </div>
+    
+    <h2>4. Рекомендуемые размеры</h2>
+    <ul>
+        <li><strong>Партнёры:</strong> 800x800px (webp: ~50KB)</li>
+        <li><strong>Тренеры:</strong> 400x400px (webp: ~30KB)</li>
+        <li><strong>Главное изображение:</strong> 1200x800px (webp: ~100KB)</li>
+    </ul>
+    
+    <h2>5. SEO-оптимизация alt-текстов</h2>
+    <p>Все изображения должны иметь осмысленные alt-тексты с ключевыми словами:</p>
+    
+    <div class="example">
+        <ul>
+            <li><code>alt="Горнолыжный тренажёр Горностайл72 в Тюмени - инновационный тренажёр для обучения лыжам и сноуборду"</code></li>
+            <li><code>alt="Инструктор Первухин Алексей - профессиональный тренер по лыжам в Тюмени"</code></li>
+            <li><code>alt="Партнёр Горностайл72 - Максимум72 верёвочный парк в Тюмени"</code></li>
+        </ul>
+    </div>
+    
+    <h2>6. Запуск оптимизации</h2>
+    <p>Для оптимизации изображений выполните:</p>
+    
+    <div class="example">
+        <pre><code># Установить ImageMagick (если не установлен)
+sudo apt-get install imagemagick
+
+# Запустить оптимизацию
+./scripts/optimize-images.sh</code></pre>
+    </div>
+    
+    <h2>7. Проверка производительности</h2>
+    <p>После оптимизации проверьте сайт с помощью:</p>
+    <ul>
+        <li><a href="https://pagespeed.web.dev/" target="_blank">Google PageSpeed Insights</a></li>
+        <li><a href="https://gtmetrix.com/" target="_blank">GTmetrix</a></li>
+        <li><a href="https://web.dev/measure/" target="_blank">Web.dev Measure</a></li>
+    </ul>
+</body>
+</html> 
