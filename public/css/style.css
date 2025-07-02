@@ -1141,17 +1141,17 @@ body {
 }
 
 .partner-image {
-    width: 100%;
-    height: 245px;
-    overflow: hidden;
-    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    margin-bottom: 1rem;
 }
-
 .partner-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center;
+    max-width: 90%;
+    max-height: 200px;
+    object-fit: contain;
+    display: block;
 }
 
 .partner-placeholder {
