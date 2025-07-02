@@ -199,7 +199,7 @@ router.post('/:id/upload-photo', upload.single('photo'), async (req, res) => {
         }
 
         const trainer = trainerResult.rows[0];
-        const filename = transliterateToFilename(trainer.full_name) + '.jpg';
+        const filename = transliterateToFilename(trainer.full_name) + '.webp';
         const filepath = path.join('public', 'images', 'trainers', filename);
         
         // Создаем папку если её нет
@@ -208,14 +208,21 @@ router.post('/:id/upload-photo', upload.single('photo'), async (req, res) => {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        // Обрабатываем изображение: сжимаем до 200px высоты с сохранением пропорций
+        console.log(`🖼️ Загружаем фото для тренера ${trainer.full_name} (ID: ${id})`);
+        console.log(`📁 Файл будет сохранен как: ${filename}`);
+        console.log(`📍 Полный путь: ${filepath}`);
+        
+        // Обрабатываем изображение: сжимаем до 200px высоты с сохранением пропорций и конвертируем в WebP
         await sharp(req.file.buffer)
             .resize({ height: 200, fit: 'cover', position: 'centre' })
-            .jpeg({ quality: 85, progressive: true })
+            .webp({ quality: 85, effort: 6 })
             .toFile(filepath);
+            
+        console.log(`✅ Фото успешно сохранено в WebP формате`);
 
-        // Обновляем путь к фото в базе данных
-        const photoUrl = `/images/trainers/${filename}`;
+        // Обновляем путь к фото в базе данных с версионированием для избежания кэширования
+        const timestamp = Date.now();
+        const photoUrl = `/images/trainers/${filename}?v=${timestamp}`;
         await pool.query(
             'UPDATE trainers SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             [photoUrl, id]

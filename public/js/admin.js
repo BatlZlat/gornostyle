@@ -1114,7 +1114,7 @@ async function editTrainer(trainerId) {
                             }
                         </div>
                         <input type="file" id="trainer_photo" name="trainer_photo" accept="image/*" onchange="previewTrainerPhoto(this)">
-                        <small style="color: #666; display: block; margin-top: 5px;">Фото будет автоматически сжато до высоты 200px</small>
+                        <small style="color: #666; display: block; margin-top: 5px;">Фото будет автоматически сжато до высоты 200px и конвертировано в WebP формат</small>
                     </div>
                     <div class="form-group">
                         <label for="description">Описание:</label>

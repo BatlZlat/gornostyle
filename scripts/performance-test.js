@@ -43,11 +43,11 @@ console.log(`  Общий размер CSS: ${formatBytes(totalCssSize)}\n`);
 console.log('🖼️  Анализ изображений:');
 const imageFiles = [
     'public/images/photo_trenagor.webp',
-    'public/images/partners/maximum72.png',
-    'public/images/partners/nevidalia.png',
-    'public/images/partners/Richwood.jpg',
-    'public/images/trainers/pervuhin-aleksey.jpg',
-    'public/images/trainers/tebyakin-danil.jpg'
+    'public/images/partners/maximum72.webp',
+    'public/images/partners/nevidalia.webp',
+    'public/images/partners/Richwood.webp',
+    'public/images/trainers/pervuhin-aleksey.webp',
+    'public/images/trainers/tebyakin-danil.webp'
 ];
 
 let totalImageSize = 0;
