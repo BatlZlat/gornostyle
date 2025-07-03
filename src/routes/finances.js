@@ -61,6 +61,7 @@ router.get('/statistics', async (req, res) => {
         const refillIncome = parseFloat(refillResult.rows[0].total);
 
         // 2. Доход от групповых тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
+        // ВАЖНО: учитываем только тренировки с участниками
         const groupPayments = await pool.query(
             `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
@@ -70,7 +71,11 @@ router.get('/statistics', async (req, res) => {
              WHERE t.type='payment'
              AND t.description LIKE '%Группа%'
              AND t.created_at BETWEEN $1 AND $2
-             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))
+             AND EXISTS (
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
+             )`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -165,7 +170,8 @@ router.get('/statistics', async (req, res) => {
              WHERE ts.session_date BETWEEN $1 AND $2
              AND ts.training_type = TRUE
              AND EXISTS (
-                 SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
              )
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -369,7 +375,8 @@ router.get('/export', async (req, res) => {
              WHERE ts.session_date BETWEEN $1 AND $2
              AND ts.training_type = TRUE
              AND EXISTS (
-                 SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
              )
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -433,6 +440,7 @@ router.get('/export', async (req, res) => {
             JOIN training_sessions ts ON sp.session_id = ts.id
             JOIN clients c ON sp.client_id = c.id
             WHERE ts.training_type = TRUE
+              AND sp.status = 'confirmed'
               AND ts.session_date BETWEEN $1 AND $2
             ORDER BY ts.session_date, ts.start_time
         `, [start_date, end_date]);
@@ -498,6 +506,10 @@ router.get('/export', async (req, res) => {
                 FROM training_sessions ts
                 WHERE ts.training_type = TRUE
                   AND ts.session_date BETWEEN $1 AND $2
+                  AND EXISTS (
+                      SELECT 1 FROM session_participants sp 
+                      WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
+                  )
                 GROUP BY trainer_id
             ) g ON t.id = g.trainer_id
             LEFT JOIN (
