@@ -217,7 +217,7 @@ router.post('/:id/upload-photo', upload.single('photo'), async (req, res) => {
             .resize({ height: 200, fit: 'cover', position: 'centre' })
             .webp({ quality: 85, effort: 6 })
             .toFile(filepath);
-            
+
         console.log(`✅ Фото успешно сохранено в WebP формате`);
 
         // Обновляем путь к фото в базе данных с версионированием для избежания кэширования

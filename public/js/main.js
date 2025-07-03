@@ -607,7 +607,7 @@ style.textContent = `
         opacity: 0.8;
     }
 `;
-document.head.appendChild(style);
+document.head.appendChild(style); 
 
 // Инициализация Яндекс карты
 function initYandexMap() {

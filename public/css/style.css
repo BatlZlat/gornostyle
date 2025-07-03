@@ -972,6 +972,7 @@ body {
     display: flex;
     min-height: 100vh;
     background: var(--light-bg);
+    margin-bottom: 50px;
 }
 .hero-split__left, .hero-split__right {
     flex: 1 1 50%;
@@ -1416,4 +1417,16 @@ body {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+}
+
+.header-logo {
+    height: 44px;
+    margin-left: 16px;
+    vertical-align: middle;
+}
+@media (max-width: 600px) {
+    .header-logo {
+        height: 32px;
+        margin-left: 8px;
+    }
 } 
