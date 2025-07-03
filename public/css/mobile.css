@@ -38,7 +38,7 @@
     
     .nav-menu a {
         font-size: 1.1rem;
-        padding: 0.25rem 0;
+        padding: 0.12rem 0;
         display: block;
         border-bottom: 1px solid var(--light-gray);
         margin: 0;
@@ -61,6 +61,58 @@
         width: 50px;
         height: 50px;
         font-size: 1.3rem;
+    }
+
+    /* Партнёры: центрирование логотипа по высоте */
+    .partner-card {
+        min-height: 140px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 0.5rem 0.5rem 1.2rem 0.5rem;
+    }
+    .partner-image {
+        min-height: 100px;
+        height: auto;
+        padding: 16px 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0.5rem;
+        transform: none;
+        box-sizing: border-box;
+        width: 100%;
+    }
+    .partner-image img {
+        max-height: 80px;
+        width: auto;
+        max-width: 90%;
+        display: block;
+        margin: 0 auto;
+    }
+
+    /* Команда: фото тренеров без обрезки, показывать полностью */
+    .member-photo {
+        width: 100%;
+        height: auto;
+        border-radius: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+    .member-photo img {
+        width: 100%;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+        display: block;
+        max-width: 100%;
+        max-height: 180px;
+        background: none;
     }
 }
 
@@ -183,18 +235,6 @@
         padding: 1.5rem;
     }
     
-    .member-photo {
-        width: 80px;
-        height: 80px;
-        margin-bottom: 1rem;
-        border-radius: 0;
-    }
-    
-    .member-photo img {
-        border-radius: 0;
-        object-fit: cover;
-    }
-    
     .carousel-btn {
         width: 50px;
         height: 50px;
@@ -254,22 +294,6 @@
     .partners__grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 1rem;
-    }
-    
-    .partner-card {
-        padding: 1rem;
-    }
-    
-    .partner-image {
-        height: 40px;
-        margin-bottom: 0.5rem;
-        transform: scale(1.5);
-        transform-origin: center;
-    }
-    
-    .partner-image img {
-        max-height: 100%;
-        width: auto;
     }
     
     .partner-name {
