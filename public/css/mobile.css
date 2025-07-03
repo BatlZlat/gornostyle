@@ -186,6 +186,25 @@
         height: 150px;
         font-size: 1rem;
     }
+    
+    /* Специальные стили для видео на мобильных */
+    .info-block__photo video {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        border-radius: 12px !important;
+        background: #000 !important;
+    }
+    
+    /* Показать элементы управления видео на мобильных */
+    .info-block__photo video::-webkit-media-controls {
+        display: flex !important;
+    }
+    
+    .info-block__photo video::-webkit-media-controls-play-button {
+        display: block !important;
+        opacity: 1 !important;
+    }
 }
 
 /* Mobile advantages */

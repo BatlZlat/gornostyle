@@ -126,6 +126,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initAnimations();
     loadTeamMembers();
     initYandexMap();
+    initMobileVideoHandling();
     // Иконки контактов уже настроены через EJS в HTML
 });
 
@@ -661,6 +662,90 @@ function initYandexMap() {
             placemark.events.add('click', function() {
                 placemark.balloon.open();
             });
+        });
+    }
+}
+
+// Функция для улучшенной обработки видео на мобильных устройствах
+function initMobileVideoHandling() {
+    // Определяем мобильные устройства
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    
+    // Получаем все видео на странице
+    const videos = document.querySelectorAll('.info-block__photo video');
+    
+    videos.forEach(video => {
+        // Для мобильных устройств добавляем дополнительные атрибуты
+        if (isMobile) {
+            video.setAttribute('webkit-playsinline', '');
+            video.setAttribute('x5-playsinline', '');
+            video.setAttribute('x5-video-player-type', 'h5');
+            video.setAttribute('x5-video-player-fullscreen', 'false');
+        }
+        
+        // Для iOS устройств убираем автовоспроизведение
+        if (isIOS) {
+            video.removeAttribute('autoplay');
+            video.autoplay = false;
+        }
+        
+        // Добавляем обработчик ошибок загрузки
+        video.addEventListener('error', function() {
+            console.log('Ошибка загрузки видео:', this.src);
+            // Показываем fallback изображение
+            const fallbackImg = this.querySelector('img');
+            if (fallbackImg) {
+                this.style.display = 'none';
+                fallbackImg.style.display = 'block';
+            }
+        });
+        
+        // Добавляем обработчик загрузки
+        video.addEventListener('loadeddata', function() {
+            console.log('Видео загружено:', this.src);
+        });
+        
+        // Пытаемся воспроизвести видео на мобильных (с обработкой ошибок)
+        if (isMobile && !isIOS) {
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log('Автовоспроизведение заблокировано:', error);
+                    // Показываем элементы управления если автовоспроизведение не работает
+                    video.controls = true;
+                });
+            }
+        }
+        
+        // Для всех мобильных устройств показываем элементы управления при паузе
+        video.addEventListener('pause', function() {
+            if (isMobile) {
+                this.controls = true;
+            }
+        });
+        
+        // Скрываем элементы управления при воспроизведении (если видео играет автоматически)
+        video.addEventListener('play', function() {
+            if (isMobile && this.hasAttribute('autoplay')) {
+                // Даем небольшую задержку перед скрытием контролов
+                setTimeout(() => {
+                    this.controls = false;
+                }, 1000);
+            }
+        });
+    });
+    
+    // Добавляем обработчик изменения ориентации для мобильных
+    if (isMobile) {
+        window.addEventListener('orientationchange', function() {
+            setTimeout(() => {
+                videos.forEach(video => {
+                    // Принудительно обновляем размеры видео
+                    video.style.width = '100%';
+                    video.style.height = 'auto';
+                });
+            }, 500);
         });
     }
 } 
