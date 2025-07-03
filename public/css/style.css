@@ -1455,4 +1455,21 @@ body {
     .mobile-hero-title {
         display: block;
     }
+    .nav-menu {
+        flex-direction: column;
+        padding: 0.5rem 0;
+    }
+    .nav-menu li {
+        margin: 0;
+        margin-bottom: 0;
+        padding: 0;
+    }
+    .nav-menu a {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 1.1rem;
+    }
+    .nav-menu a:last-child {
+        border-bottom: none;
+    }
 } 

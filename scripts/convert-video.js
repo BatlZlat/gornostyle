@@ -4,13 +4,13 @@
 // Команда для запуска скрипта: node convert-video.js
 
 // Путь к исходному видеофайлу (mp4, mov и др.)
-const inputPath = '/home/dan/Project/gornostyle/public/images/Ski_school.mov';
+const inputPath = '/home/dan/Project/gornostyle/public/images/Start_from_scratch.mp4';
 
 // Папка для сохранения результата
-const outputDir = 'public/images/videos';
+const outputDir = '../public/images/videos';
 
 // Желаемый размер итогового файла (в мегабайтах, от 1 до 10)
-const targetSizeMB = 7;
+const targetSizeMB = 5;
 
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;

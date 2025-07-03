@@ -32,14 +32,16 @@
     }
     
     .nav-menu li {
-        margin: 1rem 0;
+        margin: 0;
+        padding: 0;
     }
     
     .nav-menu a {
-        font-size: 1.2rem;
-        padding: 1rem 0;
+        font-size: 1.1rem;
+        padding: 0.5rem 0;
         display: block;
         border-bottom: 1px solid var(--light-gray);
+        margin: 0;
     }
     
     .nav-menu a:last-child {
@@ -66,6 +68,17 @@
 @media (max-width: 768px) {
     .hero {
         padding: 100px 0 60px;
+    }
+    
+    /* Центрирование заголовков и кнопки в мобильной версии */
+    .hero-split__title,
+    .hero-split__btn,
+    .info-block__content h2 {
+        text-align: center;
+    }
+    
+    .hero-split__content {
+        text-align: center;
     }
     
     .hero h1 {
@@ -110,11 +123,11 @@
     
     .info-block__content {
         padding: 2rem 1rem;
-        order: 1;
+        order: 1 !important;
     }
     
     .info-block__photo {
-        order: 2;
+        order: 2 !important;
     }
     
     .info-photo-placeholder {
@@ -242,8 +255,15 @@
     }
     
     .partner-image {
-        height: 80px;
+        height: 40px;
         margin-bottom: 0.5rem;
+        transform: scale(0.5);
+        transform-origin: center;
+    }
+    
+    .partner-image img {
+        max-height: 100%;
+        width: auto;
     }
     
     .partner-name {

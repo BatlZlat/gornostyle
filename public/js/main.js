@@ -139,6 +139,18 @@ function initMobileMenu() {
             navMenu.classList.toggle('active');
             navToggle.classList.toggle('active');
         });
+        
+        // Закрывать меню после клика по пункту (только на мобильных)
+        const menuLinks = navMenu.querySelectorAll('a');
+        menuLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                // Проверяем, что это мобильная версия
+                if (window.innerWidth <= 768) {
+                    navMenu.classList.remove('active');
+                    navToggle.classList.remove('active');
+                }
+            });
+        });
     }
 }
 

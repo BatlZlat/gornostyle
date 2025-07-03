@@ -210,7 +210,7 @@
         <div class="container">
             <nav class="nav">
                 <div class="nav-logo">
-                    <h2>Горностайл72</h2>
+                    <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
                 </div>
                 <ul class="nav-menu">
                     <li><a href="/#about">О нас</a></li>
@@ -326,20 +326,7 @@
         </div>
     </footer>
 
-    <script>
-        // Мобильное меню
-        document.addEventListener('DOMContentLoaded', function() {
-            const navToggle = document.querySelector('.nav-toggle');
-            const navMenu = document.querySelector('.nav-menu');
-            
-            if (navToggle && navMenu) {
-                navToggle.addEventListener('click', function() {
-                    navMenu.classList.toggle('active');
-                    navToggle.classList.toggle('active');
-                });
-            }
-        });
-    </script>
+    <script src="js/main.js"></script>
     
     <!-- Аналитика -->
     <%- include('partials/analytics') %>
