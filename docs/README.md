@@ -109,7 +109,7 @@ scripts/            # Скрипты для обслуживания и опти
     ```
   - Из корня:
     ```bash
-    node scripts/convert-video.js
+    node scripts/convert-video.js 
     ```
 - Результат: оптимизированное видео и превью появятся в папке `outputDir`.
 

@@ -4,7 +4,7 @@
 // Команда для запуска скрипта: node convert-video.js
 
 // Путь к исходному видеофайлу (mp4, mov и др.)
-const inputPath = '/home/dan/Project/gornostyle/public/images/Start_from_scratch.mp4';
+const inputPath = '/home/dan/Project/gornostyle/public/images/professional_training.mp4';
 
 // Папка для сохранения результата
 const outputDir = '../public/images/videos';
@@ -58,7 +58,7 @@ async function autoConvertToTargetSize(inputPath, outputDir, orientation, target
   const filename = path.basename(inputPath, path.extname(inputPath));
   const outputPath = path.join(outputDir, `${filename}.webm`);
 
-  let bitrate = 1200; // стартовый битрейт (kbps)
+  let bitrate = 900; // стартовый битрейт (kbps)
   const minBitrate = 400; // минимальный битрейт (kbps)
   const step = 150; // шаг уменьшения битрейта
   let lastSize = 0;

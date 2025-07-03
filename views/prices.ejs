@@ -424,5 +424,17 @@
     <!-- Аналитика -->
     <%- include('partials/analytics') %>
     <script src="js/main.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const dateEl = document.getElementById('current-date');
+        if (dateEl) {
+          const now = new Date();
+          const day = String(now.getDate()).padStart(2, '0');
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const year = now.getFullYear();
+          dateEl.textContent = `${day}.${month}.${year}`;
+        }
+      });
+    </script>
 </body>
 </html>
