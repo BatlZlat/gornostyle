@@ -69,7 +69,7 @@ router.get('/statistics', async (req, res) => {
                 ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
-             AND t.description LIKE '%Группа%'
+             AND t.description LIKE '%Групповая%'
              AND t.created_at BETWEEN $1 AND $2
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))
              AND EXISTS (
@@ -83,7 +83,7 @@ router.get('/statistics', async (req, res) => {
         let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
             // Извлекаем ФИО, дату и время из description оплаты
-            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const fioMatch = payment.description.match(/Групповая, (.*?), Дата:/);
             const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
             if (!fioMatch || !match) {
                 debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
@@ -278,7 +278,7 @@ router.get('/export', async (req, res) => {
                 ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
-             AND t.description LIKE '%Группа%'
+             AND t.description LIKE '%Групповая%'
              AND t.created_at BETWEEN $1 AND $2
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -288,7 +288,7 @@ router.get('/export', async (req, res) => {
         let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
             // Извлекаем ФИО, дату и время из description оплаты
-            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const fioMatch = payment.description.match(/Групповая, (.*?), Дата:/);
             const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
             if (!fioMatch || !match) {
                 debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
