@@ -17,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeDatePicker();
     loadPageContent(currentPage);
     initializeEventListeners();
+    
+    // Инициализируем функционал пополнения кошелька
+    initializeWalletRefill();
 });
 
 // Инициализация навигации
@@ -660,6 +663,11 @@ async function loadPageContent(page) {
         case 'finances':
             await loadFinances();
             break;
+    }
+    
+    if (page === 'finances') {
+        // Переинициализируем пополнение кошелька после загрузки страницы
+        setTimeout(initializeWalletRefill, 100);
     }
 }
 
@@ -3491,3 +3499,207 @@ function previewTrainerPhoto(input) {
         reader.readAsDataURL(file);
     }
 }
+
+// === ФУНКЦИОНАЛ ПОПОЛНЕНИЯ КОШЕЛЬКА ===
+
+// Инициализация функционала пополнения кошелька
+function initializeWalletRefill() {
+    const clientSearchInput = document.getElementById('client-search');
+    const clientSearchResults = document.getElementById('client-search-results');
+    const selectedClientIdInput = document.getElementById('selected-client-id');
+    const walletRefillForm = document.getElementById('wallet-refill-form');
+
+    if (!clientSearchInput || !clientSearchResults || !selectedClientIdInput || !walletRefillForm) {
+        return; // Элементы не найдены, возможно мы не на странице финансов
+    }
+
+    let searchTimeout;
+    let allClients = [];
+
+    // Загружаем список всех клиентов при инициализации
+    loadAllClientsForWallet();
+
+    // Обработчик ввода в поле поиска
+    clientSearchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        
+        // Очищаем скрытое поле выбранного клиента при изменении поиска
+        selectedClientIdInput.value = '';
+        
+        if (query.length < 2) {
+            hideSearchResults();
+            return;
+        }
+
+        // Дебаунс для поиска
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            searchClients(query);
+        }, 300);
+    });
+
+    // Скрываем результаты при клике вне области поиска
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.client-search-container')) {
+            hideSearchResults();
+        }
+    });
+
+    // Обработчик отправки формы
+    walletRefillForm.addEventListener('submit', handleWalletRefillSubmit);
+
+    // Функция загрузки всех клиентов
+    async function loadAllClientsForWallet() {
+        try {
+            const response = await fetch('/api/clients');
+            if (!response.ok) throw new Error('Ошибка загрузки клиентов');
+            
+            const clients = await response.json();
+            
+            // Фильтруем только уникальных клиентов без parent_id
+            allClients = [];
+            const seenIds = new Set();
+            for (const client of clients) {
+                if (!client.parent_id && !seenIds.has(client.id)) {
+                    allClients.push(client);
+                    seenIds.add(client.id);
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке клиентов:', error);
+            showError('Не удалось загрузить список клиентов');
+        }
+    }
+
+    // Функция поиска клиентов
+    function searchClients(query) {
+        const queryLower = query.toLowerCase();
+        
+        const filteredClients = allClients.filter(client => {
+            const fullNameMatch = client.full_name.toLowerCase().includes(queryLower);
+            const phoneMatch = client.phone.toLowerCase().includes(queryLower);
+            return fullNameMatch || phoneMatch;
+        });
+
+        displaySearchResults(filteredClients);
+    }
+
+    // Функция отображения результатов поиска
+    function displaySearchResults(clients) {
+        if (clients.length === 0) {
+            clientSearchResults.innerHTML = '<div class="search-result-item">Клиенты не найдены</div>';
+            clientSearchResults.style.display = 'block';
+            return;
+        }
+
+        const resultsHtml = clients.map(client => `
+            <div class="search-result-item" data-client-id="${client.id}" onclick="selectClient(${client.id}, '${client.full_name.replace(/'/g, "\\'")}')">
+                <div class="search-result-name">${client.full_name}</div>
+                <div class="search-result-details">Телефон: ${client.phone}</div>
+            </div>
+        `).join('');
+
+        clientSearchResults.innerHTML = resultsHtml;
+        clientSearchResults.style.display = 'block';
+    }
+
+    // Функция скрытия результатов поиска
+    function hideSearchResults() {
+        clientSearchResults.style.display = 'none';
+    }
+
+    // Глобальная функция выбора клиента
+    window.selectClient = function(clientId, clientName) {
+        clientSearchInput.value = clientName;
+        selectedClientIdInput.value = clientId;
+        hideSearchResults();
+    };
+
+    // Обработчик отправки формы пополнения
+    async function handleWalletRefillSubmit(e) {
+        e.preventDefault();
+        
+        // Защита от повторных отправок
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        if (submitButton.disabled) {
+            return; // Уже обрабатывается
+        }
+        
+        const clientId = selectedClientIdInput.value;
+        const amount = document.getElementById('refill-amount').value;
+
+        if (!clientId) {
+            showError('Выберите клиента из списка');
+            return;
+        }
+
+        if (!amount || parseFloat(amount) <= 0 || parseFloat(amount) > 100000) {
+            showError('Введите корректную сумму пополнения (от 1 до 100000 рублей)');
+            return;
+        }
+
+        try {
+            // Блокируем кнопку и показываем состояние загрузки
+            submitButton.disabled = true;
+            const originalText = submitButton.textContent;
+            submitButton.textContent = 'Обработка...';
+            showLoading('Пополнение кошелька...');
+            
+            const response = await fetch('/api/finances/refill-wallet', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    client_id: parseInt(clientId),
+                    amount: parseFloat(amount)
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Ошибка при пополнении кошелька');
+            }
+
+            const result = await response.json();
+            
+            showSuccess(`Кошелек успешно пополнен! Новый баланс: ${result.new_balance} ₽`);
+            
+            // Очищаем форму
+            walletRefillForm.reset();
+            selectedClientIdInput.value = '';
+            hideSearchResults();
+            
+            // Перезагружаем финансовые данные
+            await loadFinances();
+            
+        } catch (error) {
+            console.error('Ошибка при пополнении кошелька:', error);
+            showError(error.message || 'Не удалось пополнить кошелек');
+        } finally {
+            // Разблокируем кнопку и восстанавливаем текст
+            submitButton.disabled = false;
+            submitButton.textContent = 'Пополнить';
+            hideLoading();
+        }
+    }
+}
+
+// Добавляем инициализацию пополнения кошелька в основную функцию инициализации
+document.addEventListener('DOMContentLoaded', () => {
+    // ... existing initialization code ...
+    
+    // Инициализируем функционал пополнения кошелька
+    initializeWalletRefill();
+});
+
+// Также инициализируем при переключении на страницу финансов
+const originalLoadPageContent = loadPageContent;
+loadPageContent = async function(page) {
+    await originalLoadPageContent(page);
+    
+    if (page === 'finances') {
+        // Переинициализируем пополнение кошелька после загрузки страницы
+        setTimeout(initializeWalletRefill, 100);
+    }
+};

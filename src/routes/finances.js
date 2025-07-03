@@ -579,4 +579,169 @@ router.get('/export', async (req, res) => {
     }
 });
 
+// Пополнение кошелька клиента администратором
+router.post('/refill-wallet', async (req, res) => {
+    const client = pool;
+    
+    try {
+        const { client_id, amount } = req.body;
+        
+        if (!client_id || !amount) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Не указан клиент или сумма пополнения' 
+            });
+        }
+        
+        if (amount <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Сумма пополнения должна быть больше нуля' 
+            });
+        }
+
+        // Начинаем транзакцию
+        await client.query('BEGIN');
+
+        // Проверяем, нет ли недавних идентичных транзакций (защита от дублирования)
+        const recentTransactionQuery = `
+            SELECT t.id 
+            FROM transactions t
+            JOIN wallets w ON t.wallet_id = w.id
+            WHERE w.client_id = $1 
+            AND t.amount = $2 
+            AND t.type = 'refill' 
+            AND t.description = 'Пополнение администратором'
+            AND t.created_at > (CURRENT_TIMESTAMP - INTERVAL '10 seconds')
+        `;
+        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount]);
+        
+        if (recentTransaction.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Дублирующая транзакция. Пополнение уже было выполнено недавно.' 
+            });
+        }
+
+        // Получаем информацию о клиенте
+        const clientQuery = `
+            SELECT c.id, c.full_name, w.id as wallet_id, w.balance, w.wallet_number
+            FROM clients c
+            LEFT JOIN wallets w ON c.id = w.client_id
+            WHERE c.id = $1
+        `;
+        const clientResult = await client.query(clientQuery, [client_id]);
+        
+        if (clientResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Клиент не найден' 
+            });
+        }
+        
+        const clientData = clientResult.rows[0];
+        let walletId = clientData.wallet_id;
+        let currentBalance = parseFloat(clientData.balance) || 0;
+        
+        // Если у клиента нет кошелька, создаем его
+        if (!walletId) {
+            // Генерируем уникальный номер кошелька
+            let walletNumber;
+            let isUnique = false;
+            let attempts = 0;
+            
+            while (!isUnique && attempts < 10) {
+                walletNumber = Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join('');
+                const checkQuery = 'SELECT id FROM wallets WHERE wallet_number = $1';
+                const checkResult = await client.query(checkQuery, [walletNumber]);
+                isUnique = checkResult.rows.length === 0;
+                attempts++;
+            }
+            
+            if (!isUnique) {
+                await client.query('ROLLBACK');
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Не удалось сгенерировать уникальный номер кошелька' 
+                });
+            }
+            
+            // Создаем кошелек
+            const createWalletQuery = `
+                INSERT INTO wallets (client_id, balance, wallet_number, last_updated)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                RETURNING id
+            `;
+            const walletResult = await client.query(createWalletQuery, [client_id, amount, walletNumber]);
+            walletId = walletResult.rows[0].id;
+            currentBalance = 0;
+        } else {
+            // Обновляем баланс существующего кошелька
+            const updateWalletQuery = `
+                UPDATE wallets 
+                SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `;
+            await client.query(updateWalletQuery, [amount, walletId]);
+        }
+        
+        // Создаем запись о транзакции
+        const transactionQuery = `
+            INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+            VALUES ($1, $2, 'refill', 'Пополнение администратором', CURRENT_TIMESTAMP)
+            RETURNING id
+        `;
+        const transactionResult = await client.query(transactionQuery, [walletId, amount]);
+        
+        // Получаем обновленный баланс
+        const balanceQuery = 'SELECT balance, wallet_number FROM wallets WHERE id = $1';
+        const balanceResult = await client.query(balanceQuery, [walletId]);
+        const newBalance = parseFloat(balanceResult.rows[0].balance);
+        const walletNumber = balanceResult.rows[0].wallet_number;
+        
+        // Фиксируем транзакцию
+        await client.query('COMMIT');
+        
+        // Отправляем уведомление в админ-бот
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            const message = `✅ Пополнение кошелька АДМИНИСТРАТОРОМ!
+
+👤 Клиент: ${clientData.full_name}
+💳 Кошелек: ${walletNumber}
+💰 Сумма пополнения: ${amount} руб.
+💵 Итоговый баланс: ${newBalance} руб.`;
+
+            // Отправляем уведомление в группу администраторов
+            if (process.env.ADMIN_CHAT_ID) {
+                await adminBot.sendMessage(process.env.ADMIN_CHAT_ID, message);
+            }
+        } catch (botError) {
+            console.error('Ошибка при отправке уведомления в админ-бот:', botError);
+            // Не возвращаем ошибку, так как основная операция успешна
+        }
+        
+        res.json({
+            success: true,
+            message: 'Кошелек успешно пополнен',
+            transaction_id: transactionResult.rows[0].id,
+            new_balance: newBalance,
+            client_name: clientData.full_name,
+            wallet_number: walletNumber
+        });
+        
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при пополнении кошелька:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Внутренняя ошибка сервера при пополнении кошелька' 
+        });
+    }
+});
+
 module.exports = router; 
