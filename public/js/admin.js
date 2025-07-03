@@ -1535,13 +1535,14 @@ function renderFinancesControls() {
         `;
         const financesPage = document.querySelector('.finances-list')?.parentElement || document.querySelector('.finances-list');
         if (financesPage) financesPage.prepend(controls);
+        
+        // Установить значения по умолчанию ТОЛЬКО при первом создании контролов
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        document.getElementById('finances-start-date').value = firstDay.toISOString().split('T')[0];
+        document.getElementById('finances-end-date').value = lastDay.toISOString().split('T')[0];
     }
-    // Установить значения по умолчанию (текущий месяц)
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    document.getElementById('finances-start-date').value = firstDay.toISOString().split('T')[0];
-    document.getElementById('finances-end-date').value = lastDay.toISOString().split('T')[0];
 }
 
 // --- Индикатор загрузки ---
@@ -1610,8 +1611,22 @@ function renderRentalCostForm() {
 
 // Основная функция загрузки и отображения финансов
 async function loadFinances() {
+    // Сохраняем текущие значения дат перед переинициализацией контролов
+    const currentStartDate = document.getElementById('finances-start-date')?.value;
+    const currentEndDate = document.getElementById('finances-end-date')?.value;
+    
     renderFinancesControls();
     renderRentalCostForm();
+    setupFinancesEvents(); // Переустанавливаем обработчики событий каждый раз
+    
+    // Восстанавливаем сохранённые даты, если они были
+    if (currentStartDate) {
+        document.getElementById('finances-start-date').value = currentStartDate;
+    }
+    if (currentEndDate) {
+        document.getElementById('finances-end-date').value = currentEndDate;
+    }
+    
     const startDate = document.getElementById('finances-start-date').value;
     const endDate = document.getElementById('finances-end-date').value;
     try {

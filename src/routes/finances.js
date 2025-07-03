@@ -250,7 +250,7 @@ router.get('/export', async (req, res) => {
         const { cost_30, cost_60 } = getRentalCosts();
         const workbook = new ExcelJS.Workbook();
 
-        // 1. Сводная статистика
+        // 1. Сводная статистика (всегда включается)
         const statSheet = workbook.addWorksheet('Статистика');
         // --- Собираем статистику (аналогично /statistics) ---
         // Получаем все нужные показатели
@@ -422,8 +422,10 @@ router.get('/export', async (req, res) => {
         statSheet.addRow(['Прибыль от индивидуальных', individualProfit]);
         statSheet.addRow(['Общая прибыль', totalProfit]);
 
-        // 2. Участники групповых тренировок
-        const groupSheet = workbook.addWorksheet('Групповые тренировки');
+        // Детальные листы только для полного отчёта
+        if (type !== 'summary') {
+            // 2. Участники групповых тренировок
+            const groupSheet = workbook.addWorksheet('Групповые тренировки');
         groupSheet.addRow(['ФИО участника', 'Дата', 'Время начала', 'Стоимость', 'Телефон']);
         const groupParticipants = await pool.query(`
             SELECT c.full_name, ts.session_date, ts.start_time, ts.price, c.phone
@@ -553,6 +555,7 @@ router.get('/export', async (req, res) => {
                 row.balance
             ]);
         }
+        } // Закрываем условие if (type !== 'summary')
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="finance-report-${start_date}-${end_date}.xlsx"`);
