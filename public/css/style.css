@@ -1006,7 +1006,7 @@ body {
     font-size: 1.3rem;
     color: var(--text-color);
     margin-bottom: 2rem;
-    font-weight: 400;
+    font-weight: bold;
 }
 .hero-split__list {
     list-style: disc inside;
