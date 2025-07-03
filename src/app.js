@@ -26,6 +26,10 @@ require('./bot/client-bot');
 const app = express();
 const PORT = process.env.PORT;
 
+// Настройка EJS (только для главной страницы)
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, '../views'));
+
 // Настройка middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -33,6 +37,53 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Middleware для проверки аутентификации
 app.use(verifyAuth);
+
+// Главная страница с EJS (только для корня)
+app.get('/', (req, res) => {
+    res.render('index', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Горностайл72 - Горнолыжный тренажёр в Тюмени'
+    });
+});
+
+// Страница цен
+app.get('/prices', (req, res) => {
+    res.render('prices', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Цены на тренировки - Горностайл72'
+    });
+});
+
+// Страница графика работы
+app.get('/schedule', (req, res) => {
+    res.render('schedule', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'График работы - Горностайл72'
+    });
+});
+
+// Страница правил записи
+app.get('/rules', (req, res) => {
+    res.render('rules');
+});
 
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
@@ -51,6 +102,29 @@ app.use('/api/clients', verifyToken, clientsRouter);
 app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
+
+// Публичный API для получения активных тренеров (для главной страницы)
+app.get('/api/public/trainers', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                full_name, 
+                sport_type, 
+                description, 
+                photo_url,
+                birth_date,
+                EXTRACT(YEAR FROM AGE(birth_date)) as age
+            FROM trainers 
+            WHERE is_active = true 
+            ORDER BY full_name
+        `);
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка при получении тренеров для главной страницы:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
 
 // API для управления ссылкой оплаты
 app.get('/api/payment-link', (req, res) => {

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Правила записи - Горностайл72</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .rules-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .rules-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .rules-header h1 {
+            font-size: 2.2rem;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+        .rules-section {
+            background: var(--light-bg);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        .rules-section h2 {
+            color: var(--primary-color);
+            font-size: 1.3rem;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .rules-section ul {
+            margin: 0 0 18px 0;
+            padding-left: 22px;
+        }
+        .rules-section li {
+            margin-bottom: 10px;
+            font-size: 1.08rem;
+        }
+        .rules-section p {
+            font-size: 1.08rem;
+            margin-bottom: 12px;
+        }
+        .rules-section .important {
+            color: var(--accent-color);
+            font-weight: 600;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+        @media (max-width: 768px) {
+            .rules-container {
+                padding: 20px 10px;
+            }
+            .rules-header h1 {
+                font-size: 1.5rem;
+            }
+            .rules-section {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules" class="active">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+    <div class="rules-container">
+        <a href="/schedule" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            К графику работы
+        </a>
+        <div class="rules-header">
+            <h1>📋 Рекомендации по записи на тренировки</h1>
+        </div>
+        <div class="rules-section">
+            <h2><i class="fas fa-info-circle"></i> Почему важно не занимать время подряд?</h2>
+            <ul>
+                <li>Тренер сможет качественно завершить занятие с предыдущей группой.</li>
+                <li>Будет время на разминку и подготовку к вашему занятию.</li>
+                <li>Тренер сможет уделить вам максимум внимания с самого начала.</li>
+                <li>Вы сможете обсудить важные нюансы и задать вопросы до старта.</li>
+            </ul>
+            <p class="important">Старайтесь не занимать в расписании время подряд без особой необходимости.</p>
+        </div>
+        <div class="rules-section">
+            <h2><i class="fas fa-check-circle"></i> Как правильно записаться?</h2>
+            <p>Если, например, слот на 10:00 занят, а следующий свободный — 10:30, по возможности выберите 11:00. Это поможет избежать спешки и обеспечит комфортное проведение тренировки.</p>
+        </div>
+        <div class="rules-section">
+            <h2><i class="fas fa-exclamation-triangle"></i> Если другого варианта нет</h2>
+            <ul>
+                <li>Приезжайте заранее.</li>
+                <li>Переоденьтесь самостоятельно.</li>
+                <li>Проведите разминку до начала занятия.</li>
+                <li>Будьте готовы приступить к тренировке сразу после завершения предыдущей.</li>
+            </ul>
+        </div>
+        <div class="rules-section">
+            <h2><i class="fas fa-heart"></i> Спасибо за понимание!</h2>
+            <p>Мы ценим ваш комфорт и заботимся о качестве тренировочного процесса. Следуя этим простым рекомендациям, вы сделаете занятия ещё приятнее и эффективнее для себя и других участников!</p>
+        </div>
+    </div>
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-info">
+                    <h3>Горностайл72</h3>
+                    <p>Всесезонный горнолыжный тренажёрный комплекс для взрослых и детей с любым уровнем подготовки</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; Горностайл72 2025. Все права защищены.</p>
+            </div>
+        </div>
+    </footer>
+    <script src="js/main.js"></script>
+</body>
+</html> 

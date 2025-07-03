@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Цены на горнолыжные тренировки в Тюмени - Горностайл72 | Индивидуальные и групповые занятия</title>
+    <meta name="description" content="Актуальные цены на горнолыжные тренировки в Тюмени. Индивидуальные занятия с тренером от 3000₽, групповые тренировки от 1300₽. Обучение лыжам и сноуборду для детей и взрослых.">
+    <meta name="keywords" content="цены на горнолыжные тренировки Тюмень, стоимость обучения лыжам Тюмень, цена на сноуборд тренировки Тюмень, индивидуальные занятия лыжами Тюмень, групповые тренировки лыжи Тюмень, Горностайл72 цены">
+    <meta name="author" content="Горностайл72">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="Цены на горнолыжные тренировки в Тюмени - Горностайл72">
+    <meta property="og:description" content="Актуальные цены на горнолыжные тренировки. Индивидуальные занятия с тренером от 3000₽, групповые тренировки от 1300₽.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://gornostyle72.ru/prices">
+    <meta property="og:image" content="/images/photo_trenagor.webp">
+    <meta property="og:site_name" content="Горностайл72">
+    <meta property="og:locale" content="ru_RU">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Цены на горнолыжные тренировки в Тюмени - Горностайл72">
+    <meta name="twitter:description" content="Актуальные цены на горнолыжные тренировки. Индивидуальные занятия с тренером от 3000₽, групповые тренировки от 1300₽.">
+    <meta name="twitter:image" content="/images/photo_trenagor.webp">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://gornostyle72.ru/prices">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/mobile.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .prices-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .prices-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .prices-header h1 {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+        
+        .prices-date {
+            color: var(--gray);
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+        }
+        
+        .price-section {
+            background: var(--light-bg);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .price-section h2 {
+            color: var(--primary-color);
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .price-section h3 {
+            color: var(--secondary-color);
+            font-size: 1.3rem;
+            margin: 20px 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .price-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .price-item:last-child {
+            border-bottom: none;
+        }
+        
+        .price-duration {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        
+        .price-amount {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+        
+        .price-note {
+            font-size: 0.9rem;
+            color: var(--gray);
+            font-style: italic;
+            margin-top: 10px;
+        }
+        
+        .contact-info {
+            background: none;
+            color: var(--accent-color);
+            padding: 0;
+            border-radius: 0;
+            text-align: center;
+            margin-top: 24px;
+            margin-bottom: 0;
+            box-shadow: none;
+        }
+        
+        .contact-info h3 {
+            margin-bottom: 0.2em;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        .contact-info a {
+            color: var(--accent-color);
+            text-decoration: underline;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-left: 0.5em;
+        }
+        
+        .contact-info a:hover {
+            color: var(--secondary-color);
+        }
+        
+        .tg-info {
+            background: none !important;
+            color: #0088cc;
+            margin-top: 10px;
+            margin-bottom: 0;
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        
+        .tg-info h3 {
+            color: #0088cc;
+            font-size: 1.15rem;
+            margin-bottom: 0.2em;
+            font-weight: 700;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        .tg-info p {
+            margin: 0.2em 0 0.5em 0;
+            font-size: 1.05rem;
+            color: #222;
+        }
+        
+        .tg-info a {
+            color: #0088cc;
+            background: none;
+            padding: 0;
+            border-radius: 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: underline;
+            display: inline-block;
+        }
+        
+        .tg-info a:hover {
+            color: var(--secondary-color);
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+        
+        @media (max-width: 768px) {
+            .prices-container {
+                padding: 20px 15px;
+            }
+            
+            .prices-header h1 {
+                font-size: 2rem;
+            }
+            
+            .price-section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices" class="active">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="https://t.me/<%= botUsername %>" class="nav-contact-icon telegram-inverted" title="Telegram бот" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <div class="prices-container">
+        <a href="/" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            Вернуться на главную
+        </a>
+        
+        <div class="prices-header">
+            <h1>💸 Актуальный прайс на тренировки</h1>
+            <div class="prices-date">на дату: <span id="current-date"></span></div>
+        </div>
+
+        <!-- Индивидуальные тренировки -->
+        <div class="price-section">
+            <h2><i class="fas fa-user"></i> Индивидуальные тренировки</h2>
+            
+            <h3><i class="fas fa-user-tie"></i> С тренером</h3>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-clock"></i>
+                    30 минут
+                </div>
+                <div class="price-amount">3 000 руб.</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-clock"></i>
+                    60 минут
+                </div>
+                <div class="price-amount">6 000 руб.</div>
+            </div>
+            <div class="price-note">Быстрый прогресс и максимум внимания! 🚀</div>
+            
+            <h3><i class="fas fa-user"></i> Без тренера</h3>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-clock"></i>
+                    30 минут
+                </div>
+                <div class="price-amount">2 500 руб.</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-clock"></i>
+                    60 минут
+                </div>
+                <div class="price-amount">5 000 руб.</div>
+            </div>
+            <div class="price-note">Только для уверенных райдеров! 😎</div>
+        </div>
+
+        <!-- Групповые тренировки -->
+        <div class="price-section">
+            <h2><i class="fas fa-users"></i> Групповые тренировки (60 минут)</h2>
+            <div class="price-note">Чем больше народу — тем выгоднее! 🥳</div>
+            
+            <h3><i class="fas fa-user-tie"></i> С тренером</h3>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    2 человека
+                </div>
+                <div class="price-amount">3 500 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    3 человека
+                </div>
+                <div class="price-amount">3 000 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    4 человека
+                </div>
+                <div class="price-amount">2 500 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    5 человек
+                </div>
+                <div class="price-amount">2 200 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    6 человек
+                </div>
+                <div class="price-amount">1 700 руб/чел</div>
+            </div>
+            <div class="price-note">Максимальное внимание тренера в группе! 👨‍🏫</div>
+            
+            <h3><i class="fas fa-user"></i> Без тренера</h3>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    2 человека
+                </div>
+                <div class="price-amount">3 000 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    3 человека
+                </div>
+                <div class="price-amount">2 500 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    4 человека
+                </div>
+                <div class="price-amount">2 000 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    5 человек
+                </div>
+                <div class="price-amount">1 500 руб/чел</div>
+            </div>
+            <div class="price-item">
+                <div class="price-duration">
+                    <i class="fas fa-users"></i>
+                    6 человек
+                </div>
+                <div class="price-amount">1 300 руб/чел</div>
+            </div>
+            <div class="price-note">Самостоятельные тренировки в компании! 😎</div>
+        </div>
+
+        <!-- Контакты -->
+        <div class="contact-info">
+            <h3><i class="fas fa-question-circle"></i> Остались вопросы?</h3>
+            <a href="tel:<%= adminPhone %>"><%= adminPhone %></a>
+        </div>
+        
+        <!-- Telegram бот -->
+        <div class="tg-info">
+            <h3>📲 Для записи на тренировку</h3>
+            <p>Хотите быть в курсе всех новостей, быстро записаться на тренировку или найти компанию? <br>Присоединяйтесь к нашему Telegram-боту — всё просто, удобно и с заботой о вас! 🤗</p>
+            <a href="https://t.me/<%= botUsername %>" target="_blank">
+                <i class="fab fa-telegram-plane"></i> Перейти в бот
+            </a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-info">
+                    <h3>Горностайл72</h3>
+                    <p>Всесезонный горнолыжный тренажёрный комплекс для взрослых и детей с любым уровнем подготовки</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; Горностайл72 2025. Все права защищены.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Аналитика -->
+    <%- include('partials/analytics') %>
+    <script src="js/main.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const dateEl = document.getElementById('current-date');
+        if (dateEl) {
+          const now = new Date();
+          const day = String(now.getDate()).padStart(2, '0');
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const year = now.getFullYear();
+          dateEl.textContent = `${day}.${month}.${year}`;
+        }
+      });
+    </script>
+</body>
+</html>

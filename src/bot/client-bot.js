@@ -3671,6 +3671,29 @@ async function handleTextMessage(msg) {
                         [price, state.data.client_id]
                     );
 
+                    // Получаем id кошелька для создания транзакции
+                    const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    
+                    if (walletId) {
+                        // Формируем дату и время для описания
+                        const date = new Date(selectedSession.session_date);
+                        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                        const [hours, minutes] = selectedSession.start_time.split(':');
+                        const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                        
+                        // Получаем ФИО участника
+                        const participantName = state.data.selected_child 
+                            ? state.data.selected_child.full_name 
+                            : clientData.full_name;
+                        
+                        // Создаем запись в транзакциях
+                        await client.query(
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [walletId, price, 'payment', `Запись: Групповая, ${participantName}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: 60 мин.`]
+                        );
+                    }
+
                     // Записываем на тренировку
                     console.log('[DEBUG] Перед вставкой в session_participants:', {
                         session_id: selectedSession.id,
@@ -4529,29 +4552,69 @@ async function handleTextMessage(msg) {
                         [state.data.price, state.data.client_id]
                     );
 
-                    // Отправляем уведомление администратору
-                    await notifyNewIndividualTraining({
-                        id: result.rows[0].id,
-                        client_id: state.data.client_id,
-                        child_id: state.data.is_child ? state.data.child_id : null,
-                        equipment_type: state.data.equipment_type,
-                        with_trainer: state.data.with_trainer,
-                        duration: state.data.duration,
-                        preferred_date: state.data.preferred_date,
-                        preferred_time: startTime,
-                        simulator_id: state.data.simulator_id,
-                        price: state.data.price
-                    });
-
-                    // Очищаем состояние
-                    userStates.delete(chatId);
-
-                    // Формируем сообщение об успешной записи
+                    // Формируем дату и время для описания
                     const [year, month, day] = state.data.preferred_date.split('-');
                     const formattedDate = `${day}.${month}.${year}`;
                     const [hours, minutes] = startTime.split(':');
                     const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                    
+                    // Получаем ФИО участника
+                    let participantName = '';
+                    console.log('Начинаем получение имени участника. state.data.is_child:', state.data.is_child);
+                    
+                    if (state.data.is_child) {
+                        participantName = state.data.child_name;
+                        console.log('Участник - ребёнок. participantName:', participantName);
+                    } else {
+                        const clientRes = await pool.query('SELECT full_name FROM clients WHERE id = $1', [state.data.client_id]);
+                        participantName = clientRes.rows[0].full_name;
+                        console.log('Участник - взрослый. participantName:', participantName);
+                    }
 
+                    // Получаем id кошелька для создания транзакции
+                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    
+                    if (walletId) {
+                        // Создаем запись в транзакциях
+                        await pool.query(
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [walletId, state.data.price, 'payment', `Запись: Индивидуальная, ${participantName}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${state.data.duration} мин.`]
+                        );
+                    }
+
+                    // Получаем данные клиента для уведомления
+                    const clientRes2 = await pool.query('SELECT full_name, birth_date, phone FROM clients WHERE id = $1', [state.data.client_id]);
+                    const client = clientRes2.rows[0];
+                    
+                    // Вычисляем возраст
+                    const birthDate = new Date(client.birth_date);
+                    const today = new Date();
+                    let age = today.getFullYear() - birthDate.getFullYear();
+                    const m = today.getMonth() - birthDate.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+                    
+                    // Отправляем уведомление администратору (используем уже объявленные переменные)
+                    console.log('Перед отправкой уведомления. participantName:', participantName);
+                    try {
+                        await notifyNewIndividualTraining({
+                            client_name: participantName,
+                            client_age: age,
+                            client_phone: client.phone,
+                            date: formattedDate,
+                            time: formattedTime,
+                            trainer_name: state.data.with_trainer ? 'С тренером' : 'Без тренера',
+                            price: state.data.price
+                        });
+                        console.log('Уведомление администратору отправлено успешно');
+                    } catch (notifyError) {
+                        console.error('Ошибка при отправке уведомления администратору:', notifyError);
+                    }
+
+                    // Очищаем состояние
+                    userStates.delete(chatId);
+
+                    // Формируем сообщение об успешной записи (используем уже объявленные переменные)
                     let successMessage = '✅ *Вы успешно записались на индивидуальную тренировку!*\n\n';
                     successMessage += `📅 Дата: ${formattedDate}\n`;
                     successMessage += `⏰ Время: ${formattedTime}\n`;
@@ -4633,6 +4696,15 @@ bot.on('callback_query', async (callbackQuery) => {
             // Игнорируем нажатие на занятое время
             await bot.answerCallbackQuery(callbackQuery.id, {
                 text: 'Это время уже занято',
+                show_alert: true
+            });
+            return;
+        }
+
+        if (data.startsWith('copy_bot_name_')) {
+            const botUsername = data.replace('copy_bot_name_', '');
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: `Имя бота скопировано: @${botUsername}`,
                 show_alert: true
             });
             return;
@@ -5329,27 +5401,33 @@ bot.onText(/\/start/, async (msg) => {
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {
     const chatId = msg.chat.id;
-    const botShareLink = process.env.BOT_SHARE_LINK || 'https://t.me/Ski_Instruktor72_bot';
     const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+    const botShareLink = `https://t.me/${botUsername}`;
 
     const message = `🎿 <b>Поделитесь нашим ботом с друзьями!</b>\n\n` +
+        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
         `🏂 <b>Ski-instruktor</b> — ваш помощник для записи на горнолыжный тренажер\n\n` +
-        `✨ <b>Что умеет наш бот:</b>\n` +
+        `✨ <b>Основные возможности:</b>\n` +
         `• 📝 Запись на групповые и индивидуальные тренировки\n` +
         `• 👥 Управление детскими занятиями\n` +
         `• 💰 Пополнение баланса\n` +
         `• 📋 Просмотр своих записей\n` +
-        `• 🎁 Подарочные сертификаты\n` +
-        `• 📍 Подскажет адрес\n` +
+        `• 🎁 Подарочные сертификаты\n\n` +
+        `📋 <b>Дополнительное меню (синяя кнопка справа):</b>\n` +
+        `• 📍 Бот подскажет адрес\n` +
         `• 👥 Поделится информацией о тренере\n` +
-        `• 💰 Всегда актуальная информация цен\n\n` +
-        `🎯 <b>Поделитесь ссылкой:</b>\n` +
-        `<code>${botShareLink}</code>\n\n` +
+        `• 💰 Покажет актуальные цены\n\n` +
+        `🎯 <b>Перейти в бота можно щелкнув по имени ниже:</b>\n` +
+        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
         `💡 <b>Или просто перешлите это сообщение друзьям!</b>`;
 
     await bot.sendMessage(chatId, message, {
         parse_mode: 'HTML',
         reply_markup: {
+            inline_keyboard: [
+                [{ text: `🚀 Зайти в бота @${botUsername}`, url: botShareLink }],
+                [{ text: `📋 Скопировать имя бота`, callback_data: `copy_bot_name_${botUsername}` }]
+            ],
             keyboard: [['🔙 В главное меню']],
             resize_keyboard: true
         }

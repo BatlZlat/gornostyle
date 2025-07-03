@@ -1,0 +1,386 @@
+/* Mobile-specific optimizations */
+
+/* Touch-friendly buttons */
+.btn, .nav-contact-icon, .carousel-btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+}
+
+/* Improved mobile navigation */
+@media (max-width: 768px) {
+    .nav-menu {
+        position: fixed;
+        top: 100%;
+        left: 0;
+        width: 100%;
+        background: var(--white);
+        flex-direction: column;
+        padding: 2rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-100%);
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+        z-index: 999;
+    }
+    
+    .nav-menu.active {
+        transform: translateY(0);
+        opacity: 1;
+        visibility: visible;
+    }
+    
+    .nav-menu li {
+        margin: 0;
+        padding: 0;
+    }
+    
+    .nav-menu a {
+        font-size: 1.1rem;
+        padding: 0.12rem 0;
+        display: block;
+        border-bottom: 1px solid var(--light-gray);
+        margin: 0;
+    }
+    
+    .nav-menu a:last-child {
+        border-bottom: none;
+    }
+    
+    .nav-toggle {
+        display: flex;
+        z-index: 1001;
+    }
+    
+    .nav-contacts {
+        display: none;
+    }
+    
+    .nav-contact-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.3rem;
+    }
+
+    /* Партнёры: центрирование логотипа по высоте */
+    .partner-card {
+        min-height: 140px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 0.5rem 0.5rem 1.2rem 0.5rem;
+    }
+    .partner-image {
+        min-height: 100px;
+        height: auto;
+        padding: 16px 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0.5rem;
+        transform: none;
+        box-sizing: border-box;
+        width: 100%;
+    }
+    .partner-image img {
+        max-height: 80px;
+        width: auto;
+        max-width: 90%;
+        display: block;
+        margin: 0 auto;
+    }
+
+    /* Команда: фото тренеров без обрезки, показывать полностью */
+    .member-photo {
+        width: 100%;
+        height: auto;
+        border-radius: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+    .member-photo img {
+        width: 100%;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+        display: block;
+        max-width: 100%;
+        max-height: 180px;
+        background: none;
+    }
+}
+
+/* Mobile hero section */
+@media (max-width: 768px) {
+    .hero {
+        padding: 100px 0 60px;
+    }
+    
+    /* Центрирование заголовков и кнопки в мобильной версии */
+    .hero-split__title,
+    .hero-split__btn,
+    .info-block__content h2 {
+        text-align: center;
+    }
+    
+    .hero-split__content {
+        text-align: center;
+    }
+    
+    .hero h1 {
+        font-size: 2.5rem;
+        line-height: 1.1;
+    }
+    
+    .hero p {
+        font-size: 1.1rem;
+    }
+    
+    .hero-alert {
+        padding: 1.5rem;
+        margin: 1rem 0;
+    }
+    
+    .hero-split {
+        flex-direction: column;
+        gap: 2rem;
+    }
+    
+    .hero-split__left, .hero-split__right {
+        width: 100%;
+    }
+    
+    .hero-split__photo-placeholder {
+        height: 200px;
+        font-size: 1.1rem;
+    }
+}
+
+/* Mobile info blocks */
+@media (max-width: 768px) {
+    .info-block {
+        flex-direction: column;
+        gap: 2rem;
+    }
+    
+    .info-block__content, .info-block__photo {
+        width: 100%;
+    }
+    
+    .info-block__content {
+        padding: 2rem 1rem;
+        order: 1 !important;
+    }
+    
+    .info-block__photo {
+        order: 2 !important;
+    }
+    
+    .info-photo-placeholder {
+        height: 150px;
+        font-size: 1rem;
+    }
+}
+
+/* Mobile advantages */
+@media (max-width: 768px) {
+    .advantages-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .advantage-item {
+        padding: 1.5rem;
+    }
+    
+    .advantage-item i {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+    }
+}
+
+/* Mobile FAQ */
+@media (max-width: 768px) {
+    .faq-item {
+        margin-bottom: 1rem;
+    }
+    
+    .faq-question {
+        padding: 1.5rem;
+    }
+    
+    .faq-question h4 {
+        font-size: 1.1rem;
+    }
+    
+    .faq-answer {
+        padding: 0 1.5rem 1.5rem;
+    }
+}
+
+/* Mobile team section */
+@media (max-width: 768px) {
+    .team-carousel {
+        gap: 1rem;
+    }
+    
+    .team-member {
+        min-width: 280px;
+        padding: 1.5rem;
+    }
+    
+    .carousel-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 1.2rem;
+    }
+}
+
+/* Mobile contact section */
+@media (max-width: 768px) {
+    .contact-content {
+        flex-direction: column;
+        gap: 2rem;
+    }
+    
+    .contact-info {
+        width: 100%;
+        order: 2;
+    }
+    
+    .contact-description {
+        width: 100%;
+        order: 1;
+    }
+    
+    .description-section h3 {
+        font-size: 1.3rem;
+    }
+    
+    .map-links {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .map-link {
+        width: 100%;
+        padding: 1rem;
+        font-size: 1rem;
+    }
+    
+    .contact-map {
+        height: 300px;
+    }
+    
+    .contact-buttons {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .contact-item {
+        width: 100%;
+        padding: 1.5rem;
+    }
+}
+
+/* Mobile partners */
+@media (max-width: 768px) {
+    .partners__grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+    
+    .partner-name {
+        font-size: 0.9rem;
+    }
+}
+
+/* Mobile footer */
+@media (max-width: 768px) {
+    .footer-info p {
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+    .container {
+        padding: 0 15px;
+    }
+    
+    .hero {
+        padding: 80px 0 40px;
+    }
+    
+    .hero h1 {
+        font-size: 2rem;
+    }
+    
+    .btn {
+        padding: 1rem 1.5rem;
+        font-size: 1rem;
+    }
+    
+    .feature-card,
+    .advantage-item {
+        padding: 1.5rem;
+    }
+    
+    .carousel-prev {
+        left: 10px;
+    }
+    
+    .carousel-next {
+        right: 10px;
+    }
+    
+    .partners__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+    .btn:hover,
+    .nav-contact-icon:hover,
+    .carousel-btn:hover,
+    .contact-item:hover,
+    .partner-card:hover {
+        transform: none;
+        box-shadow: none;
+    }
+    
+    .btn:active,
+    .nav-contact-icon:active,
+    .carousel-btn:active,
+    .contact-item:active,
+    .partner-card:active {
+        transform: scale(0.98);
+    }
+}
+
+/* Landscape orientation */
+@media (max-width: 768px) and (orientation: landscape) {
+    .hero {
+        padding: 60px 0 40px;
+    }
+    
+    .hero h1 {
+        font-size: 2rem;
+    }
+    
+    .hero-split__photo-placeholder {
+        height: 150px;
+    }
+    
+    .info-photo-placeholder {
+        height: 100px;
+    }
+} 

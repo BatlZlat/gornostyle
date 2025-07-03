@@ -61,6 +61,7 @@ router.get('/statistics', async (req, res) => {
         const refillIncome = parseFloat(refillResult.rows[0].total);
 
         // 2. Доход от групповых тренировок (без возвратов по совпадению даты и времени, с учётом формата даты)
+        // ВАЖНО: учитываем только тренировки с участниками
         const groupPayments = await pool.query(
             `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
@@ -68,9 +69,13 @@ router.get('/statistics', async (req, res) => {
                 ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
-             AND t.description LIKE '%Группа%'
+             AND t.description LIKE '%Групповая%'
              AND t.created_at BETWEEN $1 AND $2
-             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))
+             AND EXISTS (
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
+             )`,
             [start_date, end_date]
         );
         let groupIncome = 0;
@@ -78,7 +83,7 @@ router.get('/statistics', async (req, res) => {
         let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
             // Извлекаем ФИО, дату и время из description оплаты
-            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const fioMatch = payment.description.match(/Групповая, (.*?), Дата:/);
             const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
             if (!fioMatch || !match) {
                 debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
@@ -165,7 +170,8 @@ router.get('/statistics', async (req, res) => {
              WHERE ts.session_date BETWEEN $1 AND $2
              AND ts.training_type = TRUE
              AND EXISTS (
-                 SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
              )
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -250,7 +256,7 @@ router.get('/export', async (req, res) => {
         const { cost_30, cost_60 } = getRentalCosts();
         const workbook = new ExcelJS.Workbook();
 
-        // 1. Сводная статистика
+        // 1. Сводная статистика (всегда включается)
         const statSheet = workbook.addWorksheet('Статистика');
         // --- Собираем статистику (аналогично /statistics) ---
         // Получаем все нужные показатели
@@ -272,7 +278,7 @@ router.get('/export', async (req, res) => {
                 ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
-             AND t.description LIKE '%Группа%'
+             AND t.description LIKE '%Групповая%'
              AND t.created_at BETWEEN $1 AND $2
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -282,7 +288,7 @@ router.get('/export', async (req, res) => {
         let debugGroupIncome = [];
         for (const payment of groupPayments.rows) {
             // Извлекаем ФИО, дату и время из description оплаты
-            const fioMatch = payment.description.match(/Группа: (.*?), Дата:/);
+            const fioMatch = payment.description.match(/Групповая, (.*?), Дата:/);
             const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
             if (!fioMatch || !match) {
                 debugGroupIncome.push({id: payment.id, reason: 'no_fio_or_date_in_description', description: payment.description});
@@ -369,7 +375,8 @@ router.get('/export', async (req, res) => {
              WHERE ts.session_date BETWEEN $1 AND $2
              AND ts.training_type = TRUE
              AND EXISTS (
-                 SELECT 1 FROM session_participants sp WHERE sp.session_id = ts.id
+                 SELECT 1 FROM session_participants sp 
+                 WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
              )
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
@@ -422,8 +429,10 @@ router.get('/export', async (req, res) => {
         statSheet.addRow(['Прибыль от индивидуальных', individualProfit]);
         statSheet.addRow(['Общая прибыль', totalProfit]);
 
-        // 2. Участники групповых тренировок
-        const groupSheet = workbook.addWorksheet('Групповые тренировки');
+        // Детальные листы только для полного отчёта
+        if (type !== 'summary') {
+            // 2. Участники групповых тренировок
+            const groupSheet = workbook.addWorksheet('Групповые тренировки');
         groupSheet.addRow(['ФИО участника', 'Дата', 'Время начала', 'Стоимость', 'Телефон']);
         const groupParticipants = await pool.query(`
             SELECT c.full_name, ts.session_date, ts.start_time, ts.price, c.phone
@@ -431,6 +440,7 @@ router.get('/export', async (req, res) => {
             JOIN training_sessions ts ON sp.session_id = ts.id
             JOIN clients c ON sp.client_id = c.id
             WHERE ts.training_type = TRUE
+              AND sp.status = 'confirmed'
               AND ts.session_date BETWEEN $1 AND $2
             ORDER BY ts.session_date, ts.start_time
         `, [start_date, end_date]);
@@ -496,6 +506,10 @@ router.get('/export', async (req, res) => {
                 FROM training_sessions ts
                 WHERE ts.training_type = TRUE
                   AND ts.session_date BETWEEN $1 AND $2
+                  AND EXISTS (
+                      SELECT 1 FROM session_participants sp 
+                      WHERE sp.session_id = ts.id AND sp.status = 'confirmed'
+                  )
                 GROUP BY trainer_id
             ) g ON t.id = g.trainer_id
             LEFT JOIN (
@@ -553,6 +567,7 @@ router.get('/export', async (req, res) => {
                 row.balance
             ]);
         }
+        } // Закрываем условие if (type !== 'summary')
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="finance-report-${start_date}-${end_date}.xlsx"`);
@@ -561,6 +576,171 @@ router.get('/export', async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Ошибка при экспорте' });
+    }
+});
+
+// Пополнение кошелька клиента администратором
+router.post('/refill-wallet', async (req, res) => {
+    const client = pool;
+    
+    try {
+        const { client_id, amount } = req.body;
+        
+        if (!client_id || !amount) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Не указан клиент или сумма пополнения' 
+            });
+        }
+        
+        if (amount <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Сумма пополнения должна быть больше нуля' 
+            });
+        }
+
+        // Начинаем транзакцию
+        await client.query('BEGIN');
+
+        // Проверяем, нет ли недавних идентичных транзакций (защита от дублирования)
+        const recentTransactionQuery = `
+            SELECT t.id 
+            FROM transactions t
+            JOIN wallets w ON t.wallet_id = w.id
+            WHERE w.client_id = $1 
+            AND t.amount = $2 
+            AND t.type = 'refill' 
+            AND t.description = 'Пополнение администратором'
+            AND t.created_at > (CURRENT_TIMESTAMP - INTERVAL '10 seconds')
+        `;
+        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount]);
+        
+        if (recentTransaction.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Дублирующая транзакция. Пополнение уже было выполнено недавно.' 
+            });
+        }
+
+        // Получаем информацию о клиенте
+        const clientQuery = `
+            SELECT c.id, c.full_name, w.id as wallet_id, w.balance, w.wallet_number
+            FROM clients c
+            LEFT JOIN wallets w ON c.id = w.client_id
+            WHERE c.id = $1
+        `;
+        const clientResult = await client.query(clientQuery, [client_id]);
+        
+        if (clientResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Клиент не найден' 
+            });
+        }
+        
+        const clientData = clientResult.rows[0];
+        let walletId = clientData.wallet_id;
+        let currentBalance = parseFloat(clientData.balance) || 0;
+        
+        // Если у клиента нет кошелька, создаем его
+        if (!walletId) {
+            // Генерируем уникальный номер кошелька
+            let walletNumber;
+            let isUnique = false;
+            let attempts = 0;
+            
+            while (!isUnique && attempts < 10) {
+                walletNumber = Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join('');
+                const checkQuery = 'SELECT id FROM wallets WHERE wallet_number = $1';
+                const checkResult = await client.query(checkQuery, [walletNumber]);
+                isUnique = checkResult.rows.length === 0;
+                attempts++;
+            }
+            
+            if (!isUnique) {
+                await client.query('ROLLBACK');
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Не удалось сгенерировать уникальный номер кошелька' 
+                });
+            }
+            
+            // Создаем кошелек
+            const createWalletQuery = `
+                INSERT INTO wallets (client_id, balance, wallet_number, last_updated)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                RETURNING id
+            `;
+            const walletResult = await client.query(createWalletQuery, [client_id, amount, walletNumber]);
+            walletId = walletResult.rows[0].id;
+            currentBalance = 0;
+        } else {
+            // Обновляем баланс существующего кошелька
+            const updateWalletQuery = `
+                UPDATE wallets 
+                SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `;
+            await client.query(updateWalletQuery, [amount, walletId]);
+        }
+        
+        // Создаем запись о транзакции
+        const transactionQuery = `
+            INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+            VALUES ($1, $2, 'refill', 'Пополнение администратором', CURRENT_TIMESTAMP)
+            RETURNING id
+        `;
+        const transactionResult = await client.query(transactionQuery, [walletId, amount]);
+        
+        // Получаем обновленный баланс
+        const balanceQuery = 'SELECT balance, wallet_number FROM wallets WHERE id = $1';
+        const balanceResult = await client.query(balanceQuery, [walletId]);
+        const newBalance = parseFloat(balanceResult.rows[0].balance);
+        const walletNumber = balanceResult.rows[0].wallet_number;
+        
+        // Фиксируем транзакцию
+        await client.query('COMMIT');
+        
+        // Отправляем уведомление в админ-бот
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            const message = `✅ Пополнение кошелька АДМИНИСТРАТОРОМ!
+
+👤 Клиент: ${clientData.full_name}
+💳 Кошелек: ${walletNumber}
+💰 Сумма пополнения: ${amount} руб.
+💵 Итоговый баланс: ${newBalance} руб.`;
+
+            // Отправляем уведомление в группу администраторов
+            if (process.env.ADMIN_CHAT_ID) {
+                await adminBot.sendMessage(process.env.ADMIN_CHAT_ID, message);
+            }
+        } catch (botError) {
+            console.error('Ошибка при отправке уведомления в админ-бот:', botError);
+            // Не возвращаем ошибку, так как основная операция успешна
+        }
+        
+        res.json({
+            success: true,
+            message: 'Кошелек успешно пополнен',
+            transaction_id: transactionResult.rows[0].id,
+            new_balance: newBalance,
+            client_name: clientData.full_name,
+            wallet_number: walletNumber
+        });
+        
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при пополнении кошелька:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Внутренняя ошибка сервера при пополнении кошелька' 
+        });
     }
 });
 

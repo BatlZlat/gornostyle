@@ -17,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeDatePicker();
     loadPageContent(currentPage);
     initializeEventListeners();
+    
+    // Инициализируем функционал пополнения кошелька
+    initializeWalletRefill();
 });
 
 // Инициализация навигации
@@ -661,6 +664,11 @@ async function loadPageContent(page) {
             await loadFinances();
             break;
     }
+    
+    if (page === 'finances') {
+        // Переинициализируем пополнение кошелька после загрузки страницы
+        setTimeout(initializeWalletRefill, 100);
+    }
 }
 
 // Загрузка тренировок
@@ -971,6 +979,12 @@ async function loadTrainers() {
             } else {
                 trainersList.innerHTML += activeTrainers.map(trainer => `
                     <div class="trainer-item">
+                        <div class="trainer-photo">
+                            ${trainer.photo_url ? 
+                                `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                                `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                            }
+                        </div>
                         <div class="trainer-info">
                             <h3>${trainer.full_name}</h3>
                             <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
@@ -1100,6 +1114,17 @@ async function editTrainer(trainerId) {
                         <input type="email" id="email" name="email" value="${trainer.email || ''}">
                     </div>
                     <div class="form-group">
+                        <label for="trainer_photo">Фото тренера:</label>
+                        <div class="current-photo" style="margin-bottom: 10px;">
+                            ${trainer.photo_url ? 
+                                `<img id="current-trainer-photo" src="${trainer.photo_url}" alt="${trainer.full_name}" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">` :
+                                `<div class="no-photo" style="width: 150px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin-bottom: 10px;">Нет фото</div>`
+                            }
+                        </div>
+                        <input type="file" id="trainer_photo" name="trainer_photo" accept="image/*" onchange="previewTrainerPhoto(this)">
+                        <small style="color: #666; display: block; margin-top: 5px;">Фото будет автоматически сжато до высоты 200px и конвертировано в WebP формат</small>
+                    </div>
+                    <div class="form-group">
                         <label for="description">Описание:</label>
                         <textarea id="description" name="description">${trainer.description || ''}</textarea>
                     </div>
@@ -1122,14 +1147,47 @@ async function editTrainer(trainerId) {
         // Обработка сохранения
         document.getElementById('editTrainerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            // Проверяем, есть ли загруженное фото
+            const photoFile = form.querySelector('#trainer_photo').files[0];
+            
+            try {
+                let currentTrainer = { ...trainer };
+                
+                // Если есть новое фото, сначала загружаем его
+                if (photoFile) {
+                    const photoFormData = new FormData();
+                    photoFormData.append('photo', photoFile);
+                    
+                    const photoResponse = await fetch(`/api/trainers/${trainerId}/upload-photo`, {
+                        method: 'POST',
+                        body: photoFormData
+                    });
+                    
+                    if (!photoResponse.ok) {
+                        const photoError = await photoResponse.json();
+                        throw new Error(photoError.error || 'Ошибка при загрузке фото');
+                    }
+                    
+                    const photoResult = await photoResponse.json();
+                    currentTrainer.photo_url = photoResult.photo_url;
+                }
+                
+                // Обновляем остальные данные тренера
             const data = {
-                ...trainer,  // Сохраняем все существующие данные тренера
-                ...Object.fromEntries(formData.entries()), // Обновляем только измененные поля
+                    ...currentTrainer,  // Сохраняем все существующие данные тренера
+                    full_name: formData.get('full_name'),
+                    phone: formData.get('phone'),
+                    birth_date: formData.get('birth_date'),
+                    sport_type: formData.get('sport_type'),
+                    description: formData.get('description'),
+                    hire_date: formData.get('hire_date'),
+                    is_active: formData.get('is_active'),
                 id: trainerId // Убеждаемся, что ID не изменился
             };
             
-            try {
                 const response = await fetch(`/api/trainers/${trainerId}`, {
                     method: 'PUT',
                     headers: {
@@ -1140,7 +1198,7 @@ async function editTrainer(trainerId) {
                 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.message || 'Ошибка при обновлении тренера');
+                    throw new Error(error.error || 'Ошибка при обновлении тренера');
                 }
                 
                 modal.remove();
@@ -1485,13 +1543,14 @@ function renderFinancesControls() {
         `;
         const financesPage = document.querySelector('.finances-list')?.parentElement || document.querySelector('.finances-list');
         if (financesPage) financesPage.prepend(controls);
+        
+        // Установить значения по умолчанию ТОЛЬКО при первом создании контролов
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        document.getElementById('finances-start-date').value = firstDay.toISOString().split('T')[0];
+        document.getElementById('finances-end-date').value = lastDay.toISOString().split('T')[0];
     }
-    // Установить значения по умолчанию (текущий месяц)
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    document.getElementById('finances-start-date').value = firstDay.toISOString().split('T')[0];
-    document.getElementById('finances-end-date').value = lastDay.toISOString().split('T')[0];
 }
 
 // --- Индикатор загрузки ---
@@ -1560,8 +1619,22 @@ function renderRentalCostForm() {
 
 // Основная функция загрузки и отображения финансов
 async function loadFinances() {
+    // Сохраняем текущие значения дат перед переинициализацией контролов
+    const currentStartDate = document.getElementById('finances-start-date')?.value;
+    const currentEndDate = document.getElementById('finances-end-date')?.value;
+    
     renderFinancesControls();
     renderRentalCostForm();
+    setupFinancesEvents(); // Переустанавливаем обработчики событий каждый раз
+    
+    // Восстанавливаем сохранённые даты, если они были
+    if (currentStartDate) {
+        document.getElementById('finances-start-date').value = currentStartDate;
+    }
+    if (currentEndDate) {
+        document.getElementById('finances-end-date').value = currentEndDate;
+    }
+    
     const startDate = document.getElementById('finances-start-date').value;
     const endDate = document.getElementById('finances-end-date').value;
     try {
@@ -2718,6 +2791,12 @@ async function viewTrainer(trainerId) {
         modal.innerHTML = `
             <div class="modal-content">
                 <h3>Информация о тренере</h3>
+                <div class="trainer-photo-view" style="text-align: center; margin-bottom: 20px;">
+                    ${trainer.photo_url ? 
+                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="max-width: 200px; height: auto; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">` :
+                        `<div class="no-photo" style="width: 200px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin: 0 auto;">Нет фото</div>`
+                    }
+                </div>
                 <div class="trainer-details">
                     <p><strong>ФИО:</strong> ${trainer.full_name}</p>
                     <p><strong>Дата рождения:</strong> ${trainer.birth_date ? new Date(trainer.birth_date).toLocaleDateString('ru-RU') : '-'}</p>
@@ -3400,3 +3479,227 @@ function getPriorityRu(priority) {
     };
     return priorities[priority] || priority;
 }
+
+// Функция предпросмотра фото тренера
+function previewTrainerPhoto(input) {
+    const file = input.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const currentPhoto = document.getElementById('current-trainer-photo');
+            const noPhotoDiv = document.querySelector('.current-photo .no-photo');
+            
+            if (currentPhoto) {
+                currentPhoto.src = e.target.result;
+            } else if (noPhotoDiv) {
+                // Заменяем div "Нет фото" на изображение
+                noPhotoDiv.outerHTML = `<img id="current-trainer-photo" src="${e.target.result}" alt="Предпросмотр" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">`;
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// === ФУНКЦИОНАЛ ПОПОЛНЕНИЯ КОШЕЛЬКА ===
+
+// Инициализация функционала пополнения кошелька
+function initializeWalletRefill() {
+    const clientSearchInput = document.getElementById('client-search');
+    const clientSearchResults = document.getElementById('client-search-results');
+    const selectedClientIdInput = document.getElementById('selected-client-id');
+    const walletRefillForm = document.getElementById('wallet-refill-form');
+
+    if (!clientSearchInput || !clientSearchResults || !selectedClientIdInput || !walletRefillForm) {
+        return; // Элементы не найдены, возможно мы не на странице финансов
+    }
+
+    let searchTimeout;
+    let allClients = [];
+
+    // Загружаем список всех клиентов при инициализации
+    loadAllClientsForWallet();
+
+    // Обработчик ввода в поле поиска
+    clientSearchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        
+        // Очищаем скрытое поле выбранного клиента при изменении поиска
+        selectedClientIdInput.value = '';
+        
+        if (query.length < 2) {
+            hideSearchResults();
+            return;
+        }
+
+        // Дебаунс для поиска
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            searchClients(query);
+        }, 300);
+    });
+
+    // Скрываем результаты при клике вне области поиска
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.client-search-container')) {
+            hideSearchResults();
+        }
+    });
+
+    // Обработчик отправки формы
+    walletRefillForm.addEventListener('submit', handleWalletRefillSubmit);
+
+    // Функция загрузки всех клиентов
+    async function loadAllClientsForWallet() {
+        try {
+            const response = await fetch('/api/clients');
+            if (!response.ok) throw new Error('Ошибка загрузки клиентов');
+            
+            const clients = await response.json();
+            
+            // Фильтруем только уникальных клиентов без parent_id
+            allClients = [];
+            const seenIds = new Set();
+            for (const client of clients) {
+                if (!client.parent_id && !seenIds.has(client.id)) {
+                    allClients.push(client);
+                    seenIds.add(client.id);
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке клиентов:', error);
+            showError('Не удалось загрузить список клиентов');
+        }
+    }
+
+    // Функция поиска клиентов
+    function searchClients(query) {
+        const queryLower = query.toLowerCase();
+        
+        const filteredClients = allClients.filter(client => {
+            const fullNameMatch = client.full_name.toLowerCase().includes(queryLower);
+            const phoneMatch = client.phone.toLowerCase().includes(queryLower);
+            return fullNameMatch || phoneMatch;
+        });
+
+        displaySearchResults(filteredClients);
+    }
+
+    // Функция отображения результатов поиска
+    function displaySearchResults(clients) {
+        if (clients.length === 0) {
+            clientSearchResults.innerHTML = '<div class="search-result-item">Клиенты не найдены</div>';
+            clientSearchResults.style.display = 'block';
+            return;
+        }
+
+        const resultsHtml = clients.map(client => `
+            <div class="search-result-item" data-client-id="${client.id}" onclick="selectClient(${client.id}, '${client.full_name.replace(/'/g, "\\'")}')">
+                <div class="search-result-name">${client.full_name}</div>
+                <div class="search-result-details">Телефон: ${client.phone}</div>
+            </div>
+        `).join('');
+
+        clientSearchResults.innerHTML = resultsHtml;
+        clientSearchResults.style.display = 'block';
+    }
+
+    // Функция скрытия результатов поиска
+    function hideSearchResults() {
+        clientSearchResults.style.display = 'none';
+    }
+
+    // Глобальная функция выбора клиента
+    window.selectClient = function(clientId, clientName) {
+        clientSearchInput.value = clientName;
+        selectedClientIdInput.value = clientId;
+        hideSearchResults();
+    };
+
+    // Обработчик отправки формы пополнения
+    async function handleWalletRefillSubmit(e) {
+        e.preventDefault();
+        
+        // Защита от повторных отправок
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        if (submitButton.disabled) {
+            return; // Уже обрабатывается
+        }
+        
+        const clientId = selectedClientIdInput.value;
+        const amount = document.getElementById('refill-amount').value;
+
+        if (!clientId) {
+            showError('Выберите клиента из списка');
+            return;
+        }
+
+        if (!amount || parseFloat(amount) <= 0 || parseFloat(amount) > 100000) {
+            showError('Введите корректную сумму пополнения (от 1 до 100000 рублей)');
+            return;
+        }
+
+        try {
+            // Блокируем кнопку и показываем состояние загрузки
+            submitButton.disabled = true;
+            const originalText = submitButton.textContent;
+            submitButton.textContent = 'Обработка...';
+            showLoading('Пополнение кошелька...');
+            
+            const response = await fetch('/api/finances/refill-wallet', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    client_id: parseInt(clientId),
+                    amount: parseFloat(amount)
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Ошибка при пополнении кошелька');
+            }
+
+            const result = await response.json();
+            
+            showSuccess(`Кошелек успешно пополнен! Новый баланс: ${result.new_balance} ₽`);
+            
+            // Очищаем форму
+            walletRefillForm.reset();
+            selectedClientIdInput.value = '';
+            hideSearchResults();
+            
+            // Перезагружаем финансовые данные
+            await loadFinances();
+            
+        } catch (error) {
+            console.error('Ошибка при пополнении кошелька:', error);
+            showError(error.message || 'Не удалось пополнить кошелек');
+        } finally {
+            // Разблокируем кнопку и восстанавливаем текст
+            submitButton.disabled = false;
+            submitButton.textContent = 'Пополнить';
+            hideLoading();
+        }
+    }
+}
+
+// Добавляем инициализацию пополнения кошелька в основную функцию инициализации
+document.addEventListener('DOMContentLoaded', () => {
+    // ... existing initialization code ...
+    
+    // Инициализируем функционал пополнения кошелька
+    initializeWalletRefill();
+});
+
+// Также инициализируем при переключении на страницу финансов
+const originalLoadPageContent = loadPageContent;
+loadPageContent = async function(page) {
+    await originalLoadPageContent(page);
+    
+    if (page === 'finances') {
+        // Переинициализируем пополнение кошелька после загрузки страницы
+        setTimeout(initializeWalletRefill, 100);
+    }
+};
