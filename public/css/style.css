@@ -1431,17 +1431,7 @@ body {
     }
 }
 
-/* По умолчанию скрыто */
-.mobile-hero-title {
-    display: none;
-    text-align: center;
-    font-weight: 700;
-    font-size: 1.1rem;
-    margin: 16px 0 0 0;
-    line-height: 1.2;
-    color: #223366;
-    letter-spacing: 0.5px;
-}
+
 
 @media (max-width: 600px) {
     .header-logo {
@@ -1452,9 +1442,7 @@ body {
     .nav-logo {
         justify-content: center;
     }
-    .mobile-hero-title {
-        display: block;
-    }
+
     .nav-menu {
         flex-direction: column;
         padding: 0.5rem 0;
