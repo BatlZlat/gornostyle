@@ -156,6 +156,14 @@
         width: 100%;
     }
     
+    .hero-split__left {
+        order: 2;
+    }
+    
+    .hero-split__right {
+        order: 1;
+    }
+    
     .hero-split__photo-placeholder {
         height: 200px;
         font-size: 1.1rem;
@@ -240,6 +248,12 @@
     
     .faq-answer {
         padding: 0 1.5rem 1.5rem;
+    }
+    
+    .faq-answer.active {
+        max-height: none;
+        height: auto;
+        padding: 1.5rem;
     }
 }
 
