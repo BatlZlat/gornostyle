@@ -8,12 +8,14 @@
    k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
 
+   /* eslint-disable */
    ym(<%- yandexMetrikaId %>, "init", {
         clickmap:true,
         trackLinks:true,
         accurateTrackBounce:true,
         webvisor:true
    });
+   /* eslint-enable */
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/<%- yandexMetrikaId %>" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- /Яндекс.Метрика -->
@@ -26,10 +28,12 @@
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
+  /* eslint-disable */
   gtag('config', '<%- googleAnalyticsId %>', {
     page_title: '<%- typeof pageTitle !== "undefined" ? pageTitle : "Горностайл72 - Горнолыжный тренажёр в Тюмени" %>',
     page_location: window.location.href
   });
+  /* eslint-enable */
 </script>
 <!-- /Google Analytics -->
 <% } %> 
