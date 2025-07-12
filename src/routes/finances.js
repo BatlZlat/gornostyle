@@ -711,7 +711,14 @@ router.post('/refill-wallet', async (req, res) => {
             const TelegramBot = require('node-telegram-bot-api');
             const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
             
-            const message = `✅ Пополнение кошелька АДМИНИСТРАТОРОМ!
+            let message = `✅ Пополнение кошелька АДМИНИСТРАТОРОМ!`;
+            
+            // Добавляем комментарий, если он есть
+            if (comment && comment.trim()) {
+                message += `\n💬 ${comment.trim()}`;
+            }
+            
+            message += `
 
 👤 Клиент: ${clientData.full_name}
 💳 Кошелек: ${walletNumber}
