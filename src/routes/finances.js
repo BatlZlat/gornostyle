@@ -584,7 +584,7 @@ router.post('/refill-wallet', async (req, res) => {
     const client = pool;
     
     try {
-        const { client_id, amount } = req.body;
+        const { client_id, amount, comment } = req.body;
         
         if (!client_id || !amount) {
             return res.status(400).json({ 
@@ -604,6 +604,7 @@ router.post('/refill-wallet', async (req, res) => {
         await client.query('BEGIN');
 
         // Проверяем, нет ли недавних идентичных транзакций (защита от дублирования)
+        const checkDescription = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
         const recentTransactionQuery = `
             SELECT t.id 
             FROM transactions t
@@ -611,10 +612,10 @@ router.post('/refill-wallet', async (req, res) => {
             WHERE w.client_id = $1 
             AND t.amount = $2 
             AND t.type = 'refill' 
-            AND t.description = 'Пополнение администратором'
+            AND t.description = $3
             AND t.created_at > (CURRENT_TIMESTAMP - INTERVAL '10 seconds')
         `;
-        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount]);
+        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount, checkDescription]);
         
         if (recentTransaction.rows.length > 0) {
             await client.query('ROLLBACK');
@@ -688,12 +689,13 @@ router.post('/refill-wallet', async (req, res) => {
         }
         
         // Создаем запись о транзакции
+        const description = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
         const transactionQuery = `
             INSERT INTO transactions (wallet_id, amount, type, description, created_at)
-            VALUES ($1, $2, 'refill', 'Пополнение администратором', CURRENT_TIMESTAMP)
+            VALUES ($1, $2, 'refill', $3, CURRENT_TIMESTAMP)
             RETURNING id
         `;
-        const transactionResult = await client.query(transactionQuery, [walletId, amount]);
+        const transactionResult = await client.query(transactionQuery, [walletId, amount, description]);
         
         // Получаем обновленный баланс
         const balanceQuery = 'SELECT balance, wallet_number FROM wallets WHERE id = $1';

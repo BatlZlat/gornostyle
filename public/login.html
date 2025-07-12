@@ -94,21 +94,6 @@
             background-color: #bdc3c7;
             cursor: not-allowed;
         }
-
-        #debug-log {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 12px;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 1000;
-        }
     </style>
 </head>
 <body>
@@ -131,18 +116,8 @@
         </form>
     </div>
 
-    <div id="debug-log"></div>
-
     <script>
-        // Функция для логирования
-        function log(message, type = 'info') {
-            const debugLog = document.getElementById('debug-log');
-            const timestamp = new Date().toLocaleTimeString();
-            const logMessage = `[${timestamp}] [${type}] ${message}`;
-            console.log(logMessage);
-            debugLog.innerHTML += `<div>${logMessage}</div>`;
-            debugLog.scrollTop = debugLog.scrollHeight;
-        }
+        // Функция для логирования убрана для чистоты интерфейса
 
         // Вспомогательная функция для работы с cookie
         function setCookie(name, value, days) {
@@ -165,14 +140,11 @@
 
         // Функция для проверки токена
         async function checkToken() {
-            log('Начало проверки токена');
             const token = getCookie('adminToken');
             if (!token) {
-                log('Токен не найден в cookie');
                 return false;
             }
 
-            log('Токен найден, проверяем валидность');
             try {
                 const response = await fetch('/api/admin/verify', {
                     headers: {
@@ -180,21 +152,16 @@
                     }
                 });
                 
-                log(`Ответ сервера: ${response.status} ${response.statusText}`);
                 const data = await response.json();
-                log(`Данные ответа: ${JSON.stringify(data)}`);
 
                 if (response.ok) {
-                    log('Токен валиден, перенаправляем на admin.html');
                     window.location.href = '/admin.html';
                     return true;
                 } else {
-                    log('Токен невалиден, удаляем из cookie');
                     deleteCookie('adminToken');
                     return false;
                 }
             } catch (error) {
-                log(`Ошибка при проверке токена: ${error.message}`, 'error');
                 deleteCookie('adminToken');
                 return false;
             }
@@ -202,22 +169,17 @@
 
         // Проверяем токен только один раз при загрузке страницы
         document.addEventListener('DOMContentLoaded', () => {
-            log('Страница загружена, начинаем проверку токена');
             checkToken();
         });
 
         // Обработчик формы входа
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            log('Начало процесса входа');
-            
             const login = document.getElementById('login').value;
             const password = document.getElementById('password').value;
             const loginError = document.getElementById('loginError');
             const passwordError = document.getElementById('passwordError');
             const loginButton = document.getElementById('loginButton');
-
-            log(`Попытка входа с логином: ${login}`);
 
             // Сброс ошибок
             loginError.style.display = 'none';
@@ -225,7 +187,6 @@
             loginButton.disabled = true;
 
             try {
-                log('Отправка запроса на сервер');
                 const response = await fetch('/api/admin/login', {
                     method: 'POST',
                     headers: {
@@ -234,40 +195,29 @@
                     body: JSON.stringify({ login, password })
                 });
 
-                log(`Получен ответ от сервера: ${response.status} ${response.statusText}`);
                 const data = await response.json();
-                log(`Данные ответа: ${JSON.stringify(data)}`);
 
                 if (response.ok) {
-                    log('Вход успешен, сохраняем токен в cookie');
                     setCookie('adminToken', data.token, 1); // 1 день
-                    log('Перенаправляем на admin.html');
                     window.location.href = '/admin.html';
                 } else {
                     if (data.error === 'invalid_credentials') {
-                        log('Неверные учетные данные');
                         loginError.textContent = 'Неверный логин или пароль';
                         loginError.style.display = 'block';
                     } else {
-                        log(`Ошибка входа: ${data.error}`);
                         loginError.textContent = 'Произошла ошибка при входе';
                         loginError.style.display = 'block';
                     }
                 }
             } catch (error) {
-                log(`Ошибка при входе: ${error.message}`, 'error');
                 loginError.textContent = 'Ошибка соединения с сервером';
                 loginError.style.display = 'block';
             } finally {
                 loginButton.disabled = false;
-                log('Завершение процесса входа');
             }
         });
 
-        // Добавляем обработчик для отслеживания перенаправлений
-        window.addEventListener('beforeunload', () => {
-            log('Страница будет перезагружена/перенаправлена');
-        });
+        // Обработчик для отслеживания перенаправлений убран для чистоты интерфейса
     </script>
 </body>
 </html> 
