@@ -3371,6 +3371,46 @@ async function handleTextMessage(msg) {
                     // Если клиент старше 16 лет, он может записаться сам
                 }
                 // Для общей тренировки нет возрастных ограничений
+                
+                // Для общих тренировок предлагаем выбор участника
+                if (isGeneralTraining) {
+                    // Проверяем наличие детей у клиента
+                    const childrenResult = await pool.query(
+                        `SELECT id, full_name, 
+                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age,
+                            skill_level
+                        FROM children 
+                        WHERE parent_id = $1`,
+                        [state.data.client_id]
+                    );
+
+                    if (childrenResult.rows.length > 0) {
+                        // Если есть дети, предлагаем выбрать участника
+                        state.data.selected_session = selectedSession;
+                        state.data.available_children = childrenResult.rows;
+                        state.step = 'select_child_for_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👤 *Выберите участника для записи на тренировку:*\n\n';
+                        message += `1. Для себя (${client.full_name})\n`;
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 2}. Для ребенка: ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level} уровень)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ...childrenResult.rows.map((child, i) => [`${i + 2}. Для ребенка: ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
+                    // Если детей нет, продолжаем с записью для клиента
+                }
 
                 // Форматируем дату и время
                 const date = new Date(selectedSession.session_date);
@@ -3458,16 +3498,86 @@ async function handleTextMessage(msg) {
         }
 
         case 'select_child_for_training': {
-            const selectedIndex = parseInt(msg.text) - 1;
             const state = userStates.get(chatId);
+            
+            // Обработка выбора "Для себя" в общих тренировках
+            if (msg.text === '1. Для себя') {
+                const selectedSession = state.data.selected_session;
+
+                // Получаем данные клиента
+                const clientResult = await pool.query(
+                    `SELECT c.*, w.balance 
+                    FROM clients c 
+                    LEFT JOIN wallets w ON c.id = w.client_id 
+                    WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const client = clientResult.rows[0];
+                const balance = parseFloat(client.balance || 0);
+
+                // Форматируем дату и время
+                const date = new Date(selectedSession.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = selectedSession.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                const price = parseFloat(selectedSession.price);
+
+                // Формируем сообщение с деталями тренировки для клиента
+                let message = '📋 *Проверьте данные перед записью на тренировку:*\n\n';
+                message += `👤 *ФИО участника:* ${client.full_name}\n`;
+                message += `📅 *Дата тренировки:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `👥 *Группа:* ${selectedSession.group_name}\n`;
+                message += `👥 *Участников:* ${selectedSession.current_participants}/${selectedSession.max_participants}\n`;
+                message += `📊 *Уровень:* ${selectedSession.skill_level}/10\n`;
+                message += `🎿 *Тренажер:* ${selectedSession.simulator_name}\n`;
+                message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n`;
+                message += `💰 *Цена:* ${price.toFixed(2)} руб.\n`;
+                message += `💳 *Баланс:* ${balance.toFixed(2)} руб.\n\n`;
+
+                // Добавляем блок про уровень клиента
+                const clientLevel = client.skill_level || 0;
+                if (clientLevel >= selectedSession.skill_level) {
+                    message += `✅ Ваш текущий уровень: ${clientLevel}/10 — вы можете записаться на эту тренировку! Отличный выбор! 😎🎿\n\n`;
+                } else {
+                    message += `⚠️ Ваш уровень: ${clientLevel}/10. Для этой тренировки требуется уровень ${selectedSession.skill_level}/10.\n`;
+                    message += `К сожалению, пока вы не можете записаться на эту тренировку. Не расстраивайтесь — попробуйте выбрать другую или прокачайте свой скилл! 💪😉\n`;
+                    message += `Если подходящих тренировок нет, вы всегда можете предложить свою через меню «💡 Предложить тренировку».\n\n`;
+                }
+
+                message += 'Выберите действие:';
+
+                // НЕ сохраняем selected_child - это означает запись для самого клиента
+                state.step = 'confirm_group_training';
+                userStates.set(chatId, state);
+
+                return bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['✅ Записаться'],
+                            ['💳 Пополнить баланс'],
+                            ['❌ Я передумал'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            }
+
+            // Обработка выбора ребенка (как было раньше)
+            const selectedIndex = parseInt(msg.text) - 2; // -2 потому что теперь "1. Для себя", а дети начинаются с "2."
             
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_children.length) {
                 return bot.sendMessage(chatId,
-                    '❌ Пожалуйста, выберите ребенка из списка.',
+                    '❌ Пожалуйста, выберите участника из списка.',
                     {
                         reply_markup: {
                             keyboard: [
-                                ...state.data.available_children.map((child, i) => [`${i + 1}. ${child.full_name} (${child.skill_level} ур.)`]),
+                                ['1. Для себя'],
+                                ...state.data.available_children.map((child, i) => [`${i + 2}. Для ребенка: ${child.full_name}`]),
                                 ['🔙 Назад в меню']
                             ],
                             resize_keyboard: true
