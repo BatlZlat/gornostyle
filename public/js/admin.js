@@ -3627,6 +3627,7 @@ function initializeWalletRefill() {
         
         const clientId = selectedClientIdInput.value;
         const amount = document.getElementById('refill-amount').value;
+        const comment = document.getElementById('refill-comment').value.trim();
 
         if (!clientId) {
             showError('Выберите клиента из списка');
@@ -3652,7 +3653,8 @@ function initializeWalletRefill() {
                 },
                 body: JSON.stringify({
                     client_id: parseInt(clientId),
-                    amount: parseFloat(amount)
+                    amount: parseFloat(amount),
+                    comment: comment || ''
                 })
             });
 
@@ -3668,6 +3670,7 @@ function initializeWalletRefill() {
             // Очищаем форму
             walletRefillForm.reset();
             selectedClientIdInput.value = '';
+            document.getElementById('refill-comment').value = '';
             hideSearchResults();
             
             // Перезагружаем финансовые данные

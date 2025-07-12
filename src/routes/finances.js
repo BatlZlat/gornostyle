@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
+const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
 
 function getRentalCosts() {
@@ -584,7 +585,7 @@ router.post('/refill-wallet', async (req, res) => {
     const client = pool;
     
     try {
-        const { client_id, amount } = req.body;
+        const { client_id, amount, comment } = req.body;
         
         if (!client_id || !amount) {
             return res.status(400).json({ 
@@ -604,6 +605,7 @@ router.post('/refill-wallet', async (req, res) => {
         await client.query('BEGIN');
 
         // Проверяем, нет ли недавних идентичных транзакций (защита от дублирования)
+        const checkDescription = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
         const recentTransactionQuery = `
             SELECT t.id 
             FROM transactions t
@@ -611,10 +613,10 @@ router.post('/refill-wallet', async (req, res) => {
             WHERE w.client_id = $1 
             AND t.amount = $2 
             AND t.type = 'refill' 
-            AND t.description = 'Пополнение администратором'
+            AND t.description = $3
             AND t.created_at > (CURRENT_TIMESTAMP - INTERVAL '10 seconds')
         `;
-        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount]);
+        const recentTransaction = await client.query(recentTransactionQuery, [client_id, amount, checkDescription]);
         
         if (recentTransaction.rows.length > 0) {
             await client.query('ROLLBACK');
@@ -688,12 +690,13 @@ router.post('/refill-wallet', async (req, res) => {
         }
         
         // Создаем запись о транзакции
+        const description = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
         const transactionQuery = `
             INSERT INTO transactions (wallet_id, amount, type, description, created_at)
-            VALUES ($1, $2, 'refill', 'Пополнение администратором', CURRENT_TIMESTAMP)
+            VALUES ($1, $2, 'refill', $3, CURRENT_TIMESTAMP)
             RETURNING id
         `;
-        const transactionResult = await client.query(transactionQuery, [walletId, amount]);
+        const transactionResult = await client.query(transactionQuery, [walletId, amount, description]);
         
         // Получаем обновленный баланс
         const balanceQuery = 'SELECT balance, wallet_number FROM wallets WHERE id = $1';
@@ -706,22 +709,87 @@ router.post('/refill-wallet', async (req, res) => {
         
         // Отправляем уведомление в админ-бот
         try {
-            const TelegramBot = require('node-telegram-bot-api');
             const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
             
-            const message = `✅ Пополнение кошелька АДМИНИСТРАТОРОМ!
+            let adminMessage = `✅ <b>Пополнение кошелька АДМИНИСТРАТОРОМ!</b>`;
+            
+            // Добавляем комментарий, если он есть
+            if (comment && comment.trim()) {
+                adminMessage += `\n💬 <b>Комментарий:</b> ${comment.trim()}`;
+            }
+            
+            adminMessage += `
 
-👤 Клиент: ${clientData.full_name}
-💳 Кошелек: ${walletNumber}
-💰 Сумма пополнения: ${amount} руб.
-💵 Итоговый баланс: ${newBalance} руб.`;
+👤 <b>Клиент:</b> ${clientData.full_name}
+💳 <b>Кошелек:</b> ${walletNumber}
+💰 <b>Сумма пополнения:</b> ${amount} руб.
+💵 <b>Итоговый баланс:</b> ${newBalance} руб.`;
 
             // Отправляем уведомление в группу администраторов
             if (process.env.ADMIN_CHAT_ID) {
-                await adminBot.sendMessage(process.env.ADMIN_CHAT_ID, message);
+                await adminBot.sendMessage(process.env.ADMIN_CHAT_ID, adminMessage, { parse_mode: 'HTML' });
             }
         } catch (botError) {
             console.error('Ошибка при отправке уведомления в админ-бот:', botError);
+            // Не возвращаем ошибку, так как основная операция успешна
+        }
+        
+        // Отправляем уведомление клиенту
+        try {
+            console.log(`[DEBUG] Попытка отправить уведомление клиенту с ID: ${client_id}`);
+            
+            // Получаем telegram_id клиента (используем pool, так как транзакция уже завершена)
+            const clientTelegramResult = await pool.query(
+                'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+                [client_id]
+            );
+            
+            console.log(`[DEBUG] Результат запроса telegram_id:`, clientTelegramResult.rows);
+            
+            if (clientTelegramResult.rows.length === 0) {
+                console.log(`[DEBUG] Клиент с ID ${client_id} не найден в базе данных`);
+                return;
+            }
+            
+            const clientTelegramId = clientTelegramResult.rows[0].telegram_id;
+            const clientFullName = clientTelegramResult.rows[0].full_name;
+            
+            if (!clientTelegramId) {
+                console.log(`[DEBUG] У клиента ${clientFullName} (ID: ${client_id}) нет telegram_id`);
+                return;
+            }
+            
+            console.log(`[DEBUG] Отправляем уведомление клиенту ${clientFullName} (telegram_id: ${clientTelegramId})`);
+            
+            const clientBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+            
+            let clientMessage = `🎉 <b>Поздравляем!</b>\nПополнение кошелька на ${amount} руб.`;
+            
+            // Добавляем комментарий администратора, если есть
+            if (comment && comment.trim()) {
+                clientMessage += `\n\n📝 <b>Комментарий от администратора:</b>\n${comment.trim()}`;
+            }
+            
+            clientMessage += `
+
+💳 <b>Кошелек:</b> ${walletNumber}
+💰 <b>Сумма пополнения:</b> ${amount} руб.
+💵 <b>Итоговый баланс:</b> ${newBalance} руб.`;
+
+            console.log(`[DEBUG] Текст сообщения для клиента: ${clientMessage}`);
+            console.log(`[DEBUG] Используемый токен бота: ${process.env.TELEGRAM_BOT_TOKEN ? 'Токен установлен' : 'Токен НЕ установлен'}`);
+
+            const result = await clientBot.sendMessage(clientTelegramId, clientMessage, { parse_mode: 'HTML' });
+            console.log(`[DEBUG] Уведомление клиенту отправлено успешно:`, result);
+            
+        } catch (clientBotError) {
+            console.error('[ERROR] Ошибка при отправке уведомления клиенту:', clientBotError);
+            console.error('[ERROR] Детали ошибки:', {
+                name: clientBotError.name,
+                message: clientBotError.message,
+                code: clientBotError.code,
+                response: clientBotError.response?.body
+            });
             // Не возвращаем ошибку, так как основная операция успешна
         }
         
