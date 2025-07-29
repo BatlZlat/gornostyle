@@ -2426,8 +2426,12 @@ async function deleteTraining(trainingId) {
     }
 
     try {
+        const token = getCookie('adminToken');
         const response = await fetch(`/api/trainings/${trainingId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
 
         if (!response.ok) {
