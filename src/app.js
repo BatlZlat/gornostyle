@@ -85,7 +85,17 @@ app.get('/schedule', (req, res) => {
 
 // Страница правил записи
 app.get('/rules', (req, res) => {
-    res.render('rules');
+    res.render('rules', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Правила записи - Горностайл72'
+    });
 });
 
 // Статические файлы
