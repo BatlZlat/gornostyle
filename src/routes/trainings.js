@@ -771,6 +771,9 @@ router.delete('/:id', async (req, res) => {
             totalRefund += price;
         }
 
+        // Удаляем тренировку из базы данных
+        await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
+
         // Формируем подробное описание тренировки с эмодзи
         const dateObj = new Date(training.session_date);
         const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
