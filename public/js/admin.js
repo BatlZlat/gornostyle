@@ -754,7 +754,7 @@ async function loadTrainings() {
                                         <button class="btn-secondary" onclick="viewTrainingDetails(${training.id})">
                                             Подробнее
                                         </button>
-                                        <button class="btn-secondary" onclick="editTraining(${training.id})">
+                                        <button class="btn-secondary" onclick="showEditTrainingModal(${JSON.stringify(training).replace(/"/g, '&quot;')})">
                                             Редактировать
                                         </button>
                                         <button class="btn-danger" onclick="deleteTraining(${training.id})">
@@ -2426,8 +2426,12 @@ async function deleteTraining(trainingId) {
     }
 
     try {
+        const token = getCookie('adminToken');
         const response = await fetch(`/api/trainings/${trainingId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
 
         if (!response.ok) {
@@ -2436,7 +2440,12 @@ async function deleteTraining(trainingId) {
         }
 
         showSuccess('Тренировка успешно удалена');
-        loadTrainings(); // Перезагружаем список тренировок
+        
+        // Добавляем небольшую задержку перед обновлением списка
+        setTimeout(() => {
+            loadTrainings(); // Перезагружаем список тренировок
+        }, 500);
+        
     } catch (error) {
         console.error('Ошибка при удалении тренировки:', error);
         showError(error.message || 'Не удалось удалить тренировку');
