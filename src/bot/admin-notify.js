@@ -62,12 +62,24 @@ async function notifyNewIndividualTraining(trainingData) {
             return;
         }
 
+        // Функция для перевода типа снаряжения в читаемый вид
+        const getEquipmentTypeName = (equipmentType) => {
+            if (!equipmentType) return 'Не указано';
+            switch (equipmentType.toLowerCase()) {
+                case 'ski': return 'Горнолыжная тренировка';
+                case 'snowboard': return 'Сноуборд';
+                default: return equipmentType;
+            }
+        };
+
         const message = 
             '🔔 *Новая индивидуальная тренировка!*\n\n' +
             `👤 *Участник:* ${trainingData.client_name} (${trainingData.client_age} лет)\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${trainingData.date}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
+            `⏱ *Длительность:* ${trainingData.duration || 'Не указано'} мин\n` +
+            `🎿 *Тип:* ${getEquipmentTypeName(trainingData.equipment_type)}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
             `💰 *Стоимость:* ${trainingData.price} руб.`;
 

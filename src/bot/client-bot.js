@@ -4714,7 +4714,9 @@ async function handleTextMessage(msg) {
                             date: formattedDate,
                             time: formattedTime,
                             trainer_name: state.data.with_trainer ? 'С тренером' : 'Без тренера',
-                            price: state.data.price
+                            price: state.data.price,
+                            duration: state.data.duration,
+                            equipment_type: state.data.equipment_type
                         });
                         console.log('Уведомление администратору отправлено успешно');
                     } catch (notifyError) {
