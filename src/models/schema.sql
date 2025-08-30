@@ -184,7 +184,7 @@ CREATE TABLE training_requests (
     group_status VARCHAR(50) DEFAULT 'ungrouped'
 );
 
--- Добавляем новую таблицу для индивидуальных тренировок
+-- Таблица индивидуальных тренировок
 CREATE TABLE individual_training_sessions (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,

@@ -744,7 +744,7 @@ async function loadTrainings() {
                                 <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
                                     <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
                                     <td>${training.training_type ? 'Групповая' : 'Индивидуальная'}</td>
-                                    <td>${training.group_name || '-'}</td>
+                                    <td>${training.training_type ? (training.group_name || '-') : getEquipmentTypeName(training.equipment_type)}</td>
                                     <td>${training.trainer_full_name || 'Не указан'}</td>
                                     <td>Тренажёр ${training.simulator_id}</td>
                                     <td>${training.current_participants || 0}/${training.max_participants}</td>
@@ -780,6 +780,16 @@ async function loadTrainings() {
                 </div>
             `;
         }
+    }
+}
+
+// Функция для перевода типа снаряжения в читаемый вид
+function getEquipmentTypeName(equipmentType) {
+    if (!equipmentType) return '-';
+    switch (equipmentType.toLowerCase()) {
+        case 'ski': return 'Лыжи';
+        case 'snowboard': return 'Сноуборд';
+        default: return equipmentType;
     }
 }
 
@@ -842,7 +852,7 @@ async function loadSchedule() {
                                 <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
                                     <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
                                     <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
-                                    <td>${training.group_name || '-'}</td>
+                                    <td>${training.is_individual ? getEquipmentTypeName(training.equipment_type) : (training.group_name || '-')}</td>
                                     <td>${training.trainer_name || 'Не указан'}</td>
                                     <td>${training.simulator_name}</td>
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
