@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
             FROM clients c
             LEFT JOIN children ch ON c.id = ch.parent_id
             LEFT JOIN wallets w ON c.id = w.client_id
-            ORDER BY c.created_at DESC
+            ORDER BY c.full_name ASC
         `);
         res.json(result.rows);
     } catch (error) {
