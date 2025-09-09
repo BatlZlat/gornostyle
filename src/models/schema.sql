@@ -181,7 +181,7 @@ CREATE TABLE training_requests (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     group_id INTEGER REFERENCES application_groups(id),
-    group_status VARCHAR(50) DEFAULT 'ungrouped'
+    group_status VARCHAR(50) DEFAULT 'ungrouped' -- ungrouped=не выполнена, completed=выполнена(архив), cancelled=отменена(скрыта)
 );
 
 -- Таблица индивидуальных тренировок

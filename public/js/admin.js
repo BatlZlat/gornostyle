@@ -568,10 +568,10 @@ function initializeEventListeners() {
     }
 
     // Обработчики для страницы заявок
-    const createApplicationBtn = document.getElementById('create-application');
-    if (createApplicationBtn) {
-        createApplicationBtn.addEventListener('click', () => {
-            showCreateApplicationModal();
+    const archiveApplicationsBtn = document.getElementById('archive-applications');
+    if (archiveApplicationsBtn) {
+        archiveApplicationsBtn.addEventListener('click', () => {
+            window.open('archive-applications.html', '_blank');
         });
     }
 
@@ -3031,7 +3031,11 @@ async function loadApplications() {
     try {
         showLoading('Загрузка заявок...');
         
-        const response = await fetch('/api/applications');
+        const response = await fetch('/api/applications', {
+            headers: {
+                'Authorization': `Bearer ${getCookie('adminToken')}`
+            }
+        });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -3056,7 +3060,7 @@ function displayApplications() {
     // Фильтруем заявки
     let filteredApplications = allApplications.filter(application => {
         // Фильтр по статусу
-        if (currentApplicationsFilter !== 'all' && application.status !== currentApplicationsFilter) {
+        if (currentApplicationsFilter !== 'all' && application.group_status !== currentApplicationsFilter) {
             return false;
         }
         
@@ -3099,36 +3103,29 @@ function displayApplications() {
                     <th>Дата</th>
                     <th>Клиент</th>
                     <th>Тип заявки</th>
-                    <th>Описание</th>
+                    <th>Оборудование</th>
                     <th>Статус</th>
-                    <th>Приоритет</th>
                     <th>Действия</th>
                 </tr>
             </thead>
             <tbody>
                 ${filteredApplications.map((application, index) => `
-                    <tr class="application-row application-status-${application.status}">
+                    <tr class="application-row application-status-${application.group_status}">
                         <td>${index + 1}</td>
-                        <td>${formatDate(application.created_at)}</td>
-                        <td>${application.client_name || 'Не указан'}</td>
-                        <td>${getApplicationTypeRu(application.type)}</td>
-                        <td>${application.description || '-'}</td>
+                        <td>${formatDate(application.preferred_date)} ${application.preferred_time}</td>
+                        <td>${application.client_name || application.child_name || 'Не указан'}</td>
+                        <td>${application.has_group ? 'Групповая' : 'Индивидуальная'}</td>
+                        <td>${application.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд'}</td>
                         <td>
-                            <span class="status-badge status-${application.status}">
-                                ${getStatusRu(application.status)}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="priority-badge priority-${application.priority}">
-                                ${getPriorityRu(application.priority)}
-                            </span>
+                            <select class="status-select" onchange="updateApplicationStatus(${application.id}, this.value)">
+                                <option value="ungrouped" ${application.group_status === 'ungrouped' ? 'selected' : ''}>Не выполнена</option>
+                                <option value="completed" ${application.group_status === 'completed' ? 'selected' : ''}>Выполнена</option>
+                                <option value="cancelled" ${application.group_status === 'cancelled' ? 'selected' : ''}>Отменена</option>
+                            </select>
                         </td>
                         <td class="application-actions">
                             <button class="btn-secondary" onclick="viewApplication(${application.id})">
                                 Просмотр
-                            </button>
-                            <button class="btn-secondary" onclick="editApplication(${application.id})">
-                                Редактировать
                             </button>
                             <button class="btn-danger" onclick="deleteApplication(${application.id})">
                                 Удалить
@@ -3143,67 +3140,31 @@ function displayApplications() {
     applicationsList.innerHTML = tableHtml;
 }
 
-// Модальное окно создания заявки
-function showCreateApplicationModal() {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <h3>Создать новую заявку</h3>
-            <form id="create-application-form">
-                <div class="form-group">
-                    <label for="client-select">Клиент:</label>
-                    <select id="client-select" name="client_id" required>
-                        <option value="">Выберите клиента</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="application-type">Тип заявки:</label>
-                    <select id="application-type" name="type" required>
-                        <option value="">Выберите тип</option>
-                        <option value="training">Запрос на тренировку</option>
-                        <option value="equipment">Запрос на оборудование</option>
-                        <option value="schedule">Запрос на изменение расписания</option>
-                        <option value="payment">Вопрос по оплате</option>
-                        <option value="other">Другое</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="application-priority">Приоритет:</label>
-                    <select id="application-priority" name="priority" required>
-                        <option value="low">Низкий</option>
-                        <option value="medium" selected>Средний</option>
-                        <option value="high">Высокий</option>
-                        <option value="urgent">Срочный</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="application-description">Описание:</label>
-                    <textarea id="application-description" name="description" rows="4" required 
-                              placeholder="Опишите детали заявки..."></textarea>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Создать заявку</button>
-                    <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
-                </div>
-            </form>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-
-    // Загружаем список клиентов
-    loadClientsForApplicationSelect();
-
-    // Обработка отправки формы
-    document.getElementById('create-application-form').addEventListener('submit', handleCreateApplication);
-
-    // Закрытие по клику вне окна
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.remove();
-    };
+// Обновление статуса заявки
+async function updateApplicationStatus(applicationId, newStatus) {
+    try {
+        const response = await fetch(`/api/applications/${applicationId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getCookie('adminToken')}`
+            },
+            body: JSON.stringify({ group_status: newStatus })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка при обновлении статуса заявки');
+        }
+        
+        showSuccess('Статус заявки обновлен');
+        loadApplications(); // Перезагружаем список
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса заявки:', error);
+        showError('Не удалось обновить статус заявки');
+    }
 }
+
+// Функция загрузки клиентов (оставляем для других целей)
 
 // Загрузка клиентов для выпадающего списка
 async function loadClientsForApplicationSelect() {
@@ -3235,43 +3196,16 @@ async function loadClientsForApplicationSelect() {
 }
 
 // Обработка создания заявки
-async function handleCreateApplication(event) {
-    event.preventDefault();
-    
-    const formData = new FormData(event.target);
-    const data = Object.fromEntries(formData.entries());
-    
-    try {
-        showLoading('Создание заявки...');
-        
-        const response = await fetch('/api/applications', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Ошибка при создании заявки');
-        }
-        
-        showSuccess('Заявка успешно создана');
-        event.target.closest('.modal').remove();
-        loadApplications();
-        hideLoading();
-    } catch (error) {
-        console.error('Ошибка при создании заявки:', error);
-        showError(error.message || 'Не удалось создать заявку');
-        hideLoading();
-    }
-}
+// Функция удалена - администратор не создает заявки
 
 // Просмотр заявки
 async function viewApplication(applicationId) {
     try {
-        const response = await fetch(`/api/applications/${applicationId}`);
+        const response = await fetch(`/api/applications/${applicationId}`, {
+            headers: {
+                'Authorization': `Bearer ${getCookie('adminToken')}`
+            }
+        });
         if (!response.ok) {
             throw new Error('Ошибка загрузки данных заявки');
         }
@@ -3287,19 +3221,19 @@ async function viewApplication(applicationId) {
                     <div class="detail-group">
                         <h4>Основная информация</h4>
                         <p><strong>Дата создания:</strong> ${formatDate(application.created_at)}</p>
-                        <p><strong>Клиент:</strong> ${application.client_name || 'Не указан'}</p>
-                        <p><strong>Тип заявки:</strong> ${getApplicationTypeRu(application.type)}</p>
-                        <p><strong>Приоритет:</strong> ${getPriorityRu(application.priority)}</p>
-                        <p><strong>Статус:</strong> ${getStatusRu(application.status)}</p>
+                        <p><strong>Клиент:</strong> ${application.client_name || application.child_name || 'Не указан'}</p>
+                        <p><strong>Тип заявки:</strong> ${application.has_group ? 'Групповая' : 'Индивидуальная'}</p>
+                        <p><strong>Оборудование:</strong> ${application.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд'}</p>
+                        <p><strong>Дата тренировки:</strong> ${application.preferred_date} ${application.preferred_time}</p>
+                        <p><strong>Длительность:</strong> ${application.duration} мин</p>
+                        <p><strong>Уровень:</strong> ${application.skill_level}/10</p>
+                        <p><strong>Статус:</strong> ${application.group_status === 'ungrouped' ? 'Не выполнена' : application.group_status === 'completed' ? 'Выполнена' : 'Отменена'}</p>
                     </div>
-                    <div class="detail-group">
-                        <h4>Описание</h4>
-                        <p>${application.description || 'Описание отсутствует'}</p>
-                    </div>
-                    ${application.comments ? `
+                    ${application.training_frequency ? `
                         <div class="detail-group">
-                            <h4>Комментарии</h4>
-                            <p>${application.comments}</p>
+                            <h4>Дополнительная информация</h4>
+                            <p><strong>Частота:</strong> ${application.training_frequency === 'regular' ? 'Регулярные' : 'Разовые'}</p>
+                            ${application.has_group ? `<p><strong>Размер группы:</strong> ${application.group_size} чел.</p>` : ''}
                         </div>
                     ` : ''}
                 </div>
@@ -3421,7 +3355,10 @@ async function deleteApplication(applicationId) {
     
     try {
         const response = await fetch(`/api/applications/${applicationId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${getCookie('adminToken')}`
+            }
         });
         
         if (!response.ok) {
