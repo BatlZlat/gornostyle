@@ -604,8 +604,27 @@ router.post('/refill-wallet', async (req, res) => {
         // Начинаем транзакцию
         await client.query('BEGIN');
 
+        // Получаем информацию о клиенте для проверки дублирования
+        const clientQuery = `
+            SELECT c.id, c.full_name, w.id as wallet_id, w.balance, w.wallet_number
+            FROM clients c
+            LEFT JOIN wallets w ON c.id = w.client_id
+            WHERE c.id = $1
+        `;
+        const clientResult = await client.query(clientQuery, [client_id]);
+        
+        if (clientResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Клиент не найден' 
+            });
+        }
+        
+        const clientData = clientResult.rows[0];
+        
         // Проверяем, нет ли недавних идентичных транзакций (защита от дублирования)
-        const checkDescription = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
+        const checkDescription = comment ? `Пополнение администратором - ${clientData.full_name}: ${comment}` : `Пополнение администратором - ${clientData.full_name}`;
         const recentTransactionQuery = `
             SELECT t.id 
             FROM transactions t
@@ -625,25 +644,6 @@ router.post('/refill-wallet', async (req, res) => {
                 message: 'Дублирующая транзакция. Пополнение уже было выполнено недавно.' 
             });
         }
-
-        // Получаем информацию о клиенте
-        const clientQuery = `
-            SELECT c.id, c.full_name, w.id as wallet_id, w.balance, w.wallet_number
-            FROM clients c
-            LEFT JOIN wallets w ON c.id = w.client_id
-            WHERE c.id = $1
-        `;
-        const clientResult = await client.query(clientQuery, [client_id]);
-        
-        if (clientResult.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Клиент не найден' 
-            });
-        }
-        
-        const clientData = clientResult.rows[0];
         let walletId = clientData.wallet_id;
         let currentBalance = parseFloat(clientData.balance) || 0;
         
@@ -690,7 +690,7 @@ router.post('/refill-wallet', async (req, res) => {
         }
         
         // Создаем запись о транзакции
-        const description = comment ? `Пополнение администратором: ${comment}` : 'Пополнение администратором';
+        const description = comment ? `Пополнение администратором - ${clientData.full_name}: ${comment}` : `Пополнение администратором - ${clientData.full_name}`;
         const transactionQuery = `
             INSERT INTO transactions (wallet_id, amount, type, description, created_at)
             VALUES ($1, $2, 'refill', $3, CURRENT_TIMESTAMP)
