@@ -831,6 +831,128 @@ ${trainingInfo}
     }
 });
 
+// Удаление участника из тренировки
+router.delete('/:id/participants/:participantId', async (req, res) => {
+    const { id: trainingId, participantId } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Проверяем существование тренировки
+        const trainingResult = await client.query(
+            'SELECT * FROM training_sessions WHERE id = $1',
+            [trainingId]
+        );
+
+        if (trainingResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+
+        const training = trainingResult.rows[0];
+
+        // Проверяем существование участника
+        const participantResult = await client.query(`
+            SELECT sp.*, c.full_name, c.telegram_id, c.id as client_id
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            WHERE sp.id = $1 AND sp.session_id = $2
+        `, [participantId, trainingId]);
+
+        if (participantResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Участник не найден в этой тренировке' });
+        }
+
+        const participant = participantResult.rows[0];
+        const price = Number(training.price);
+
+        // Возвращаем деньги на кошелек клиента
+        const walletResult = await client.query(
+            'SELECT id, balance FROM wallets WHERE client_id = $1',
+            [participant.client_id]
+        );
+
+        if (walletResult.rows.length > 0) {
+            const wallet = walletResult.rows[0];
+            const newBalance = Number(wallet.balance) + price;
+
+            // Обновляем баланс кошелька
+            await client.query(
+                'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
+                [newBalance, wallet.id]
+            );
+
+            // Создаем транзакцию возврата
+            const dateObj = new Date(training.session_date);
+            const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+            const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
+            const duration = training.duration || 60;
+            const trainingType = training.training_type ? 'Групповая' : 'Индивидуальная';
+
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [
+                    wallet.id, 
+                    price, 
+                    'amount', 
+                    `Возврат: ${trainingType}, ${participant.full_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`
+                ]
+            );
+        }
+
+        // Удаляем участника из тренировки
+        await client.query(
+            'DELETE FROM session_participants WHERE id = $1',
+            [participantId]
+        );
+
+        // Отправляем уведомление клиенту, если есть telegram_id
+        if (participant.telegram_id) {
+            const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+            const dateObj = new Date(training.session_date);
+            const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+            const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
+            const trainingType = training.training_type ? 'Групповая' : 'Индивидуальная';
+
+            const text = `❗️ Вы были исключены из тренировки:
+
+📅 Дата: ${formattedDate}
+⏰ Время: ${startTime}
+🎯 Тип: ${trainingType}
+💰 Сумма возврата: ${price} руб.
+
+Деньги возвращены на ваш счет. По вопросам обращайтесь к администратору.`;
+
+            try {
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        chat_id: participant.telegram_id, 
+                        text,
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch (error) {
+                console.error('Ошибка отправки уведомления клиенту:', error);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ 
+            message: 'Участник успешно удален из тренировки',
+            refunded_amount: price
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении участника:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
 // Отправка уведомлений участникам группы
 router.post('/notify-group/:id', async (req, res) => {
     const { id } = req.params;
