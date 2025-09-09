@@ -72,10 +72,10 @@ function displayApplications() {
     const applicationsList = document.querySelector('.applications-list');
     if (!applicationsList) return;
 
-    // Фильтруем заявки
+    // Фильтруем заявки (показываем только completed)
     let filteredApplications = allApplications.filter(application => {
-        // Фильтр по статусу
-        if (currentApplicationsFilter !== 'all' && application.group_status !== currentApplicationsFilter) {
+        // Показываем только выполненные заявки
+        if (application.group_status !== 'completed') {
             return false;
         }
         
@@ -172,6 +172,9 @@ async function updateApplicationStatus(applicationId, newStatus) {
         }
         
         showSuccess('Статус заявки обновлен');
+        
+        // Если заявка стала не выполненной или отмененной, она исчезнет из архива
+        // Если стала выполненной, останется в архиве
         loadApplications(); // Перезагружаем список
     } catch (error) {
         console.error('Ошибка при обновлении статуса заявки:', error);
@@ -205,7 +208,7 @@ async function viewApplication(applicationId) {
                         <p><strong>Клиент:</strong> ${application.client_name || application.child_name || 'Не указан'}</p>
                         <p><strong>Тип заявки:</strong> ${application.has_group ? 'Групповая' : 'Индивидуальная'}</p>
                         <p><strong>Оборудование:</strong> ${application.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд'}</p>
-                        <p><strong>Дата тренировки:</strong> ${application.preferred_date} ${application.preferred_time}</p>
+                        <p><strong>Дата тренировки:</strong> ${formatDate(application.preferred_date)} ${application.preferred_time}</p>
                         <p><strong>Длительность:</strong> ${application.duration} мин</p>
                         <p><strong>Уровень:</strong> ${application.skill_level}/10</p>
                         <p><strong>Статус:</strong> ${application.group_status === 'ungrouped' ? 'Не выполнена' : application.group_status === 'completed' ? 'Выполнена' : 'Отменена'}</p>
