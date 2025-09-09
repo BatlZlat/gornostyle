@@ -54,8 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Отображаем участников
         displayParticipants(training.participants || []);
         
-        // Настраиваем кнопки действий
-        setupActionButtons(training);
+        // Кнопки действий убраны для архивных тренировок
     }
 
     // Добавление информации о тренере
@@ -101,7 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td>${participant.skill_level || 'Не указан'}</td>
                         <td>${participant.phone || 'Не указан'}</td>
                         <td>
-                            <button class="btn-danger btn-small" onclick="removeParticipant('${participant.id}', '${participant.full_name}')">
+                            <button class="btn-danger btn-small" onclick="confirmRemoveParticipant('${participant.id}', '${participant.full_name}')">
                                 Удалить
                             </button>
                         </td>
@@ -114,74 +113,7 @@ document.addEventListener('DOMContentLoaded', function() {
         participantsList.appendChild(table);
     }
 
-    // Настройка кнопок действий
-    function setupActionButtons(training) {
-        const editBtn = document.getElementById('edit-training');
-        const cancelBtn = document.getElementById('cancel-training');
 
-        if (editBtn) {
-            editBtn.addEventListener('click', () => showEditParticipantsModal(training));
-        }
-
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => cancelTraining(training.id));
-        }
-    }
-
-    // Показать модальное окно редактирования участников
-    function showEditParticipantsModal(training) {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Редактирование участников тренировки</h3>
-                    <button class="close-modal">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <h4>Текущие участники:</h4>
-                    <div id="edit-participants-list">
-                        ${(training.participants || []).map(participant => `
-                            <div class="participant-item" data-participant-id="${participant.id}">
-                                <span class="participant-info">
-                                    <strong>${participant.full_name}</strong> 
-                                    (${calculateAge(participant.birth_date)} лет, уровень ${participant.skill_level || 'не указан'})
-                                </span>
-                                <button class="btn-danger btn-small" onclick="confirmRemoveParticipant('${participant.id}', '${participant.full_name}')">
-                                    Удалить
-                                </button>
-                            </div>
-                        `).join('')}
-                    </div>
-                    ${training.participants && training.participants.length === 0 ? '<p>Нет участников</p>' : ''}
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-secondary" onclick="closeModal()">Закрыть</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        // Обработчик закрытия модального окна
-        modal.querySelector('.close-modal').addEventListener('click', () => {
-            document.body.removeChild(modal);
-        });
-
-        // Закрытие по клику вне модального окна
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        });
-
-        // Глобальная функция для закрытия модального окна
-        window.closeModal = () => {
-            if (document.body.contains(modal)) {
-                document.body.removeChild(modal);
-            }
-        };
-    }
 
     // Подтверждение удаления участника
     window.confirmRemoveParticipant = function(participantId, participantName) {
@@ -194,7 +126,8 @@ document.addEventListener('DOMContentLoaded', function() {
     async function removeParticipantFromTraining(participantId, participantName) {
         try {
             const token = getCookie('adminToken');
-            const response = await fetch(`/api/trainings/${trainingId}/participants/${participantId}`, {
+            // Используем специальный endpoint для архивных тренировок (без возврата средств)
+            const response = await fetch(`/api/trainings/${trainingId}/participants/${participantId}/archive`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -207,16 +140,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(errorData.message || 'Ошибка при удалении участника');
             }
 
-            showSuccess(`Участник "${participantName}" удален из тренировки`);
+            showSuccess(`Участник "${participantName}" удален из архивной тренировки`);
             
             // Перезагружаем данные тренировки
             setTimeout(() => {
                 loadTrainingDetails();
-                // Закрываем модальное окно если оно открыто
-                const modal = document.querySelector('.modal');
-                if (modal) {
-                    document.body.removeChild(modal);
-                }
             }, 1000);
 
         } catch (error) {
@@ -225,39 +153,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Отмена тренировки
-    async function cancelTraining(trainingId) {
-        if (!confirm('Вы уверены, что хотите отменить эту тренировку?\n\nВсем участникам будут возвращены средства и отправлены уведомления.')) {
-            return;
-        }
-
-        try {
-            const token = getCookie('adminToken');
-            const response = await fetch(`/api/trainings/${trainingId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'Ошибка при отмене тренировки');
-            }
-
-            showSuccess('Тренировка успешно отменена');
-            
-            // Перенаправляем обратно в архив через 2 секунды
-            setTimeout(() => {
-                window.location.href = 'archive.html';
-            }, 2000);
-
-        } catch (error) {
-            console.error('Ошибка при отмене тренировки:', error);
-            showError(error.message || 'Не удалось отменить тренировку');
-        }
-    }
 
     // Вспомогательные функции
     function formatDate(dateString) {
@@ -325,10 +220,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Глобальная функция для удаления участника (для кнопок в таблице)
-    window.removeParticipant = function(participantId, participantName) {
-        confirmRemoveParticipant(participantId, participantName);
-    };
 
     // Инициализация
     loadTrainingDetails();

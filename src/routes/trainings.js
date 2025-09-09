@@ -505,6 +505,7 @@ router.get('/:id', async (req, res) => {
                 if (isChildrenGroup) {
                     // Для детских групп всегда отображаем ФИО ребенка
                     return {
+                        id: row.id,
                         full_name: row.child_full_name || row.client_full_name,
                         birth_date: row.child_birth_date || row.client_birth_date,
                         skill_level: row.child_skill_level || row.client_skill_level,
@@ -515,6 +516,7 @@ router.get('/:id', async (req, res) => {
                 } else {
                     // Для остальных — ФИО клиента
                     return {
+                        id: row.id,
                         full_name: row.client_full_name,
                         birth_date: row.client_birth_date,
                         skill_level: row.client_skill_level,
@@ -831,7 +833,60 @@ ${trainingInfo}
     }
 });
 
-// Удаление участника из тренировки
+// Удаление участника из архивной тренировки (без возврата средств)
+router.delete('/:id/participants/:participantId/archive', async (req, res) => {
+    const { id: trainingId, participantId } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Проверяем существование тренировки
+        const trainingResult = await client.query(
+            'SELECT * FROM training_sessions WHERE id = $1',
+            [trainingId]
+        );
+
+        if (trainingResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+
+        // Проверяем существование участника
+        const participantResult = await client.query(`
+            SELECT sp.*, c.full_name, c.telegram_id, c.id as client_id
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            WHERE sp.id = $1 AND sp.session_id = $2
+        `, [participantId, trainingId]);
+
+        if (participantResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Участник не найден в этой тренировке' });
+        }
+
+        const participant = participantResult.rows[0];
+
+        // Удаляем участника из тренировки (БЕЗ возврата средств для архивных тренировок)
+        await client.query(
+            'DELETE FROM session_participants WHERE id = $1',
+            [participantId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ 
+            message: 'Участник успешно удален из архивной тренировки',
+            note: 'Средства не возвращены (архивная тренировка)'
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении участника из архивной тренировки:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
+// Удаление участника из тренировки (с возвратом средств)
 router.delete('/:id/participants/:participantId', async (req, res) => {
     const { id: trainingId, participantId } = req.params;
     const client = await pool.connect();
