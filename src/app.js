@@ -5,6 +5,8 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const { pool } = require('./db/index');
 const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-next-month-schedule');
+const { getTomorrowTrainings } = require('./scripts/get-tomorrow-trainings');
+const { notifyTomorrowTrainings } = require('./bot/admin-notify');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
@@ -207,6 +209,22 @@ const task = cron.schedule(cronExpression, async () => {
         // console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
     } catch (error) {
         // console.error('Ошибка при создании расписания:', error);
+    }
+}, {
+    scheduled: true,
+    timezone: "Asia/Yekaterinburg" // Указываем часовой пояс
+});
+
+// Настройка cron-задачи для уведомлений о тренировках на завтра (каждый день в 22:00)
+const tomorrowTrainingsCron = cron.schedule('0 22 * * *', async () => {
+    console.log('\n=== Запуск проверки тренировок на завтра ===');
+    console.log('Время запуска:', new Date().toLocaleString('ru-RU'));
+    try {
+        const trainings = await getTomorrowTrainings();
+        await notifyTomorrowTrainings(trainings);
+        console.log('Проверка тренировок на завтра завершена');
+    } catch (error) {
+        console.error('Ошибка при проверке тренировок на завтра:', error);
     }
 }, {
     scheduled: true,

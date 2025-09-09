@@ -273,6 +273,74 @@ async function notifyNewClient({ full_name, birth_date, phone, skill_level, chil
     }
 }
 
+// Функция для отправки уведомления о тренировках на завтра
+async function notifyTomorrowTrainings(trainings) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Если тренировок нет, ничего не отправляем
+        if (!trainings || trainings.length === 0) {
+            console.log('Тренировок на завтра нет, уведомление не отправляется');
+            return;
+        }
+
+        // Получаем завтрашнюю дату для заголовка
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = formatDate(tomorrow.toISOString().split('T')[0]);
+
+        // Разделяем тренировки на групповые и индивидуальные
+        const groupTrainings = trainings.filter(t => !t.is_individual);
+        const individualTrainings = trainings.filter(t => t.is_individual);
+
+        let message = `🔔 *Тренировки на завтра (${tomorrowStr})*\n\n`;
+
+        // Групповые тренировки
+        if (groupTrainings.length > 0) {
+            message += `👥 *ГРУППОВЫЕ ТРЕНИРОВКИ:*\n`;
+            groupTrainings.forEach(training => {
+                const timeStr = training.start_time ? training.start_time.substring(0, 5) : 'Время не указано';
+                const trainerStr = training.trainer_name || 'Тренер не назначен';
+                const participantsStr = training.participants_list || 'Нет участников';
+                const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
+                
+                message += `• ${timeStr} - ${training.group_name || 'Группа'} (${equipmentStr})\n`;
+                message += `  👨‍🏫 Тренер: ${trainerStr}\n`;
+                message += `  👥 Участники: ${participantsStr}\n`;
+                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+            });
+        }
+
+        // Индивидуальные тренировки
+        if (individualTrainings.length > 0) {
+            message += `🏃 *ИНДИВИДУАЛЬНЫЕ ТРЕНИРОВКИ:*\n`;
+            individualTrainings.forEach(training => {
+                const timeStr = training.start_time ? training.start_time.substring(0, 5) : 'Время не указано';
+                const durationStr = training.duration ? `${training.duration} мин` : 'Длительность не указана';
+                const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
+                const participantStr = training.participants_list || 'Участник не указан';
+                
+                message += `• ${timeStr} - ${participantStr} (${equipmentStr})\n`;
+                message += `  ⏱ Длительность: ${durationStr}\n`;
+                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+            });
+        }
+
+        // Отправляем уведомление всем администраторам
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+
+        console.log(`Уведомление о ${trainings.length} тренировках на завтра отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о тренировках на завтра:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyNewTrainingRequest,
@@ -282,5 +350,6 @@ module.exports = {
     notifyAdminIndividualTrainingCancellation,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
-    notifyNewClient
+    notifyNewClient,
+    notifyTomorrowTrainings
 }; 
