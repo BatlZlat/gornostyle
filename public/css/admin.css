@@ -1773,4 +1773,179 @@ body {
     0%, 20% { opacity: 0; }
     50% { opacity: 1; }
     100% { opacity: 0; }
+}
+
+/* === СТИЛИ ДЛЯ СТРАНИЦЫ ДЕТАЛЕЙ ТРЕНИРОВКИ === */
+
+/* Стили для уведомлений */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    min-width: 300px;
+    max-width: 500px;
+    padding: 0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    animation: slideIn 0.3s ease-out;
+}
+
+.notification.success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.notification.error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.notification-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+}
+
+.notification-message {
+    flex: 1;
+    margin-right: 10px;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: inherit;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.notification-close:hover {
+    opacity: 0.7;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Стили для таблицы участников */
+.participants-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.participants-table th,
+.participants-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.participants-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+}
+
+.participants-table tr:hover {
+    background-color: #f5f5f5;
+}
+
+.no-participants {
+    color: #6c757d;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Стили для кнопок действий участников */
+.btn-small {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 3px;
+}
+
+/* Стили для модального окна редактирования участников */
+.participant-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    background-color: #f8f9fa;
+}
+
+.participant-info {
+    flex: 1;
+    margin-right: 10px;
+}
+
+/* Дополнительные стили для деталей тренировки */
+.training-details {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.detail-section {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.detail-section h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 8px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    font-weight: 600;
+    color: #34495e;
+    min-width: 120px;
+}
+
+.detail-value {
+    color: #2c3e50;
+    text-align: right;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
 } 

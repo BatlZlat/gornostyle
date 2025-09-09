@@ -47,19 +47,13 @@
                     <div class="page-header">
                         <h2>Заявки</h2>
                         <div class="page-actions">
-                            <button class="btn-primary" id="create-application">Создать заявку</button>
-                            <button class="btn-secondary" id="export-applications">Экспорт заявок</button>
+                            <button class="btn-secondary" id="archive-applications">Архив заявок</button>
                         </div>
                     </div>
                     <div class="applications-controls">
                         <div class="filter-controls">
                             <select id="status-filter" class="filter-select">
-                                <option value="all">Все статусы</option>
-                                <option value="new">Новые</option>
-                                <option value="processing">В обработке</option>
-                                <option value="approved">Одобренные</option>
-                                <option value="rejected">Отклоненные</option>
-                                <option value="completed">Завершенные</option>
+                                <option value="ungrouped" selected>Не выполнена</option>
                             </select>
                             <input type="date" id="date-filter" class="date-filter" placeholder="Фильтр по дате">
                         </div>

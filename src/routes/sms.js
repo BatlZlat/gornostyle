@@ -229,7 +229,7 @@ router.post('/process', async (req, res) => {
             await client.query(
                 `INSERT INTO transactions (wallet_id, amount, type, description)
                 VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, $3, $4)`,
-                [walletNumber, amount, 'refill', 'Пополнение через СБП']
+                [walletNumber, amount, 'refill', `Пополнение через СБП - ${clientName}`]
             );
 
             // Обновляем статус в sms_log

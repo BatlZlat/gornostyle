@@ -5,6 +5,8 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const { pool } = require('./db/index');
 const { createNextMonthSchedule, CRON_SETTINGS } = require('./scripts/create-next-month-schedule');
+const { getTomorrowTrainings } = require('./scripts/get-tomorrow-trainings');
+const { notifyTomorrowTrainings } = require('./bot/admin-notify');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
@@ -15,6 +17,7 @@ const clientsRouter = require('./routes/clients');
 const smsRouter = require('./routes/sms');
 const childrenRouter = require('./routes/children');
 const financesRouter = require('./routes/finances');
+const applicationsRouter = require('./routes/applications');
 const adminAuthRouter = require('./routes/adminAuth');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
@@ -115,6 +118,7 @@ app.use('/api/clients', verifyToken, clientsRouter);
 app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
+app.use('/api/applications', verifyToken, applicationsRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {
@@ -207,6 +211,22 @@ const task = cron.schedule(cronExpression, async () => {
         // console.log('Следующий запуск запланирован на:', getNextRunTime().toLocaleString('ru-RU'));
     } catch (error) {
         // console.error('Ошибка при создании расписания:', error);
+    }
+}, {
+    scheduled: true,
+    timezone: "Asia/Yekaterinburg" // Указываем часовой пояс
+});
+
+// Настройка cron-задачи для уведомлений о тренировках на завтра (каждый день в 22:00)
+const tomorrowTrainingsCron = cron.schedule('0 22 * * *', async () => {
+    console.log('\n=== Запуск проверки тренировок на завтра ===');
+    console.log('Время запуска:', new Date().toLocaleString('ru-RU'));
+    try {
+        const trainings = await getTomorrowTrainings();
+        await notifyTomorrowTrainings(trainings);
+        console.log('Проверка тренировок на завтра завершена');
+    } catch (error) {
+        console.error('Ошибка при проверке тренировок на завтра:', error);
     }
 }, {
     scheduled: true,

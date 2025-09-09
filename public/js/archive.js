@@ -206,10 +206,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!date || !time) return '';
         // Если время уже в формате HH:mm, добавим :00
         let t = time.length === 5 ? time + ':00' : time;
-        // Формируем строку для UTC
-        const utcDate = new Date(`${date}T${t}Z`);
-        return utcDate.toLocaleTimeString('ru-RU', {
-            timeZone: 'Asia/Yekaterinburg',
+        // Формируем строку в локальном времени (предполагая что время в БД уже в Екатеринбурге)
+        const localDate = new Date(`${date}T${t}`);
+        return localDate.toLocaleTimeString('ru-RU', {
             hour: '2-digit',
             minute: '2-digit',
             hour12: false
