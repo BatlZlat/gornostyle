@@ -70,7 +70,7 @@ class CertificateImageGenerator {
             const centerX = textBoxX + textBoxWidth / 2;
 
             // Заголовок
-            const titleText = '🎁 ПОДАРОЧНЫЙ\nСЕРТИФИКАТ';
+            const titleText = '🎁 СЕРТИФИКАТ\nНА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ';
             image.print(fontMedium, centerX - 120, currentY, {
                 text: titleText,
                 alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
@@ -118,7 +118,7 @@ class CertificateImageGenerator {
             // Дата истечения
             const formattedDate = new Date(expiry_date).toLocaleDateString('ru-RU');
             image.print(fontSmall, centerX - 120, currentY, {
-                text: `Действителен до:\n${formattedDate}`,
+                text: `Использовать до:\n${formattedDate}`,
                 alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
             }, 240);
 

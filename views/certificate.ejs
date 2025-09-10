@@ -310,8 +310,7 @@
         <div class="certificate-content">
             <div class="certificate-text-area">
                 <div class="certificate-header">
-                    <h1 class="certificate-title">🎁 ПОДАРОЧНЫЙ СЕРТИФИКАТ</h1>
-                    <p class="certificate-subtitle">Горностайл72</p>
+                    <h1 class="certificate-title">🎁 СЕРТИФИКАТ<br>НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ</h1>
                 </div>
 
                 <div class="certificate-number">№ <%= certificate.certificate_number %></div>
@@ -331,7 +330,7 @@
                 <% } %>
 
                 <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; opacity: 0.8;">
-                    ⏰ До: <%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %>
+                    ⏰ Использовать до: <%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %>
                 </div>
             </div>
         </div>
