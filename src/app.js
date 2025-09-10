@@ -102,6 +102,69 @@ app.get('/rules', (req, res) => {
     });
 });
 
+// Предварительный просмотр сертификата
+app.get('/certificate/preview', async (req, res) => {
+    try {
+        const { design, amount, name = 'Образец' } = req.query;
+        
+        if (!design || !amount) {
+            return res.status(400).render('error', {
+                pageTitle: 'Ошибка - Горностайл72',
+                errorTitle: 'Неверные параметры',
+                errorMessage: 'Не указаны обязательные параметры для предварительного просмотра.'
+            });
+        }
+
+        // Получаем информацию о дизайне
+        const designResult = await pool.query(
+            'SELECT * FROM certificate_designs WHERE id = $1 AND is_active = true',
+            [design]
+        );
+
+        if (designResult.rows.length === 0) {
+            return res.status(404).render('error', {
+                pageTitle: 'Дизайн не найден - Горностайл72',
+                errorTitle: 'Дизайн не найден',
+                errorMessage: 'Запрашиваемый дизайн сертификата не существует или неактивен.'
+            });
+        }
+
+        const designData = designResult.rows[0];
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
+        // Создаем объект сертификата для предварительного просмотра
+        const certificate = {
+            certificate_number: '123456',
+            nominal_value: parseFloat(amount),
+            recipient_name: name,
+            expiry_date: expiryDate.toLocaleDateString('ru-RU'),
+            design: designData
+        };
+
+        res.render('certificate', {
+            certificate,
+            pageTitle: `Предварительный просмотр - ${designData.name} - Горностайл72`,
+            adminPhone: process.env.ADMIN_PHONE,
+            contactEmail: process.env.CONTACT_EMAIL,
+            adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+            botUsername: process.env.BOT_USERNAME,
+            telegramGroup: process.env.TELEGRAM_GROUP,
+            vkGroup: process.env.VK_GROUP,
+            yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+            googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID
+        });
+
+    } catch (error) {
+        console.error('Ошибка при предварительном просмотре сертификата:', error);
+        res.status(500).render('error', {
+            pageTitle: 'Ошибка сервера - Горностайл72',
+            errorTitle: 'Ошибка сервера',
+            errorMessage: 'Произошла внутренняя ошибка сервера. Попробуйте позже.'
+        });
+    }
+});
+
 // Страница сертификата
 app.get('/certificate/:number', async (req, res) => {
     try {

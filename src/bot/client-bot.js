@@ -4886,9 +4886,38 @@ async function handleTextMessage(msg) {
 
             // Парсим данные получателя из сообщения
             const lines = msg.text.split('\n').filter(line => line.trim());
-            const recipientName = lines[0] ? lines[0].trim() : null;
-            const recipientPhone = lines[1] ? lines[1].trim() : null;
-            const message = lines[2] ? lines[2].trim() : null;
+            let recipientName = null;
+            let recipientPhone = null;
+            let message = null;
+
+            // Определяем какие данные предоставлены
+            if (lines.length >= 1) {
+                recipientName = lines[0].trim();
+            }
+            if (lines.length >= 2) {
+                // Проверяем, похожа ли вторая строка на телефон
+                const secondLine = lines[1].trim();
+                if (secondLine.match(/^\+?[\d\s\-\(\)]{7,}$/)) {
+                    recipientPhone = secondLine;
+                    if (lines.length >= 3) {
+                        message = lines[2].trim();
+                    }
+                } else {
+                    // Если не похоже на телефон, считаем это сообщением
+                    message = secondLine;
+                }
+            }
+            if (lines.length >= 3 && !recipientPhone) {
+                // Если есть 3 строки и телефон не определен, проверяем вторую строку еще раз
+                const secondLine = lines[1].trim();
+                if (secondLine.match(/^\+?[\d\s\-\(\)]{7,}$/)) {
+                    recipientPhone = secondLine;
+                    message = lines[2].trim();
+                } else {
+                    // Объединяем 2-ю и 3-ю строки как сообщение
+                    message = lines.slice(1).join(' ');
+                }
+            }
 
             const purchaseData = {
                 client_id,
@@ -4986,6 +5015,21 @@ bot.on('callback_query', async (callbackQuery) => {
     const state = userStates.get(chatId);
 
     try {
+        // Обработка выбора дизайна сертификата
+        if (data.startsWith('select_design_')) {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Дизайн выбран! ✅'
+            });
+            
+            const [, , designId, nominalValue] = data.split('_');
+            const state = userStates.get(chatId);
+            
+            if (state && state.step === 'certificate_design_selection') {
+                return showRecipientForm(chatId, state.data.client_id, parseInt(nominalValue), parseInt(designId));
+            }
+            return;
+        }
+
         if (!state) {
             await bot.answerCallbackQuery(callbackQuery.id, {
                 text: 'Сессия истекла. Пожалуйста, начните процесс записи заново.',
@@ -5798,10 +5842,27 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
 
 Доступные дизайны:\n\n`;
 
+        const inlineKeyboard = [];
         const keyboard = [];
         
         result.designs.forEach((design, index) => {
             message += `${index + 1}️⃣ **${design.name}** - ${design.description}\n\n`;
+            
+            // Inline кнопки для выбора и предварительного просмотра
+            inlineKeyboard.push([
+                {
+                    text: `${index + 1}️⃣ Выбрать ${design.name}`,
+                    callback_data: `select_design_${design.id}_${nominalValue}`
+                }
+            ]);
+            inlineKeyboard.push([
+                {
+                    text: `👁 Посмотреть дизайн "${design.name}"`,
+                    url: `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/preview?design=${design.id}&amount=${nominalValue}&name=Образец`
+                }
+            ]);
+            
+            // Обычные кнопки для тех, кто предпочитает текст
             keyboard.push([`${index + 1}️⃣ ${design.name}`]);
         });
 
@@ -5810,9 +5871,16 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
         return bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: {
-                keyboard: keyboard,
-                resize_keyboard: true
+                inline_keyboard: inlineKeyboard
             }
+        }).then(() => {
+            // Отправляем дополнительную клавиатуру для альтернативного выбора
+            return bot.sendMessage(chatId, '🔄 Или выберите дизайн кнопками ниже:', {
+                reply_markup: {
+                    keyboard: keyboard,
+                    resize_keyboard: true
+                }
+            });
         });
     } catch (error) {
         console.error('Ошибка при показе выбора дизайна:', error);

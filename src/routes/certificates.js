@@ -32,8 +32,8 @@ async function generateUniqueCertificateNumber() {
     return number;
 }
 
-// 1. Создание сертификата
-router.post('/create', async (req, res) => {
+// 1. Создание (покупка) сертификата
+router.post('/purchase', async (req, res) => {
     const client = await pool.connect();
     
     try {
