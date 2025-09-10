@@ -425,7 +425,42 @@ router.post('/activate', async (req, res) => {
     }
 });
 
-// 3. Получение информации о сертификате
+// 3. Получение дизайнов сертификатов
+router.get('/designs', async (req, res) => {
+    try {
+        const query = `
+            SELECT id, name, description, image_url, template_url, is_active, sort_order
+            FROM certificate_designs
+            WHERE is_active = true
+            ORDER BY sort_order ASC, name ASC
+        `;
+
+        const result = await pool.query(query);
+
+        res.json({
+            success: true,
+            designs: result.rows.map(design => ({
+                id: design.id,
+                name: design.name,
+                description: design.description,
+                image_url: design.image_url,
+                template_url: design.template_url,
+                is_active: design.is_active,
+                sort_order: design.sort_order
+            }))
+        });
+
+    } catch (error) {
+        console.error('Ошибка при получении дизайнов сертификатов:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
+// 4. Получение информации о сертификате
 router.get('/:number', async (req, res) => {
     try {
         const { number } = req.params;
@@ -503,42 +538,7 @@ router.get('/:number', async (req, res) => {
     }
 });
 
-// 4. Получение дизайнов сертификатов
-router.get('/designs', async (req, res) => {
-    try {
-        const query = `
-            SELECT id, name, description, image_url, template_url, is_active, sort_order
-            FROM certificate_designs
-            WHERE is_active = true
-            ORDER BY sort_order ASC, name ASC
-        `;
-
-        const result = await pool.query(query);
-
-        res.json({
-            success: true,
-            designs: result.rows.map(design => ({
-                id: design.id,
-                name: design.name,
-                description: design.description,
-                image_url: design.image_url,
-                template_url: design.template_url,
-                is_active: design.is_active,
-                sort_order: design.sort_order
-            }))
-        });
-
-    } catch (error) {
-        console.error('Ошибка при получении дизайнов сертификатов:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Внутренняя ошибка сервера',
-            code: 'INTERNAL_ERROR'
-        });
-    }
-});
-
-// 5. Получение сертификатов клиента
+// 4. Получение сертификатов клиента
 router.get('/client/:client_id', async (req, res) => {
     try {
         const { client_id } = req.params;

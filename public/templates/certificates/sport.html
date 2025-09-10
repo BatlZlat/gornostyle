@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Сертификат</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .certificate {
+            background: white;
+            border: 6px solid #ff6b6b;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        .certificate::before {
+            content: '⛷️ 🏂';
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            opacity: 0.1;
+        }
+        .header {
+            color: #ff6b6b;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 25px;
+            font-weight: 500;
+        }
+        .amount {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 42px;
+            font-weight: bold;
+            margin: 25px 0;
+        }
+        .number {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 26px;
+            font-weight: bold;
+            color: #333;
+            margin: 25px 0;
+            border: 2px dashed #ff6b6b;
+        }
+        .footer {
+            margin-top: 25px;
+            color: #666;
+            font-size: 14px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4ecdc4;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="logo">🏔️ ГОРНОСТАЙЛ72</div>
+        <div class="header">Спортивный сертификат</div>
+        <div class="subtitle">на тренировки на горнолыжном тренажёре</div>
+        <div class="amount">{{NOMINAL_VALUE}} ₽</div>
+        <div class="number">№ {{CERTIFICATE_NUMBER}}</div>
+        <div class="footer">
+            <p>Срок действия: до {{EXPIRY_DATE}}</p>
+            <p>Получатель: {{RECIPIENT_NAME}}</p>
+            <p>Активировать можно в нашем Telegram боте: @Ski_Instruktor72_bot</p>
+        </div>
+    </div>
+</body>
+</html>

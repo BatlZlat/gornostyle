@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Сертификат</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .certificate {
+            background: white;
+            border: 8px solid #2c3e50;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        .header {
+            color: #2c3e50;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        .amount {
+            color: #e74c3c;
+            font-size: 36px;
+            font-weight: bold;
+            margin: 30px 0;
+        }
+        .number {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="logo">🏔️ ГОРНОСТАЙЛ72</div>
+        <div class="header">Подарочный сертификат</div>
+        <div class="subtitle">на тренировки на горнолыжном тренажёре</div>
+        <div class="amount">{{NOMINAL_VALUE}} ₽</div>
+        <div class="number">№ {{CERTIFICATE_NUMBER}}</div>
+        <div class="footer">
+            <p>Срок действия: до {{EXPIRY_DATE}}</p>
+            <p>Получатель: {{RECIPIENT_NAME}}</p>
+            <p>Активировать можно в нашем Telegram боте: @Ski_Instruktor72_bot</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
 const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
+const jwt = require('jsonwebtoken');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -17,6 +18,18 @@ const pool = new Pool({
 // Создаем экземпляр бота
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const userStates = new Map();
+
+// Функция для получения JWT токена
+function getJWTToken() {
+    return jwt.sign(
+        { 
+            type: 'bot',
+            timestamp: Date.now() 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+}
 
 function showMainMenu(chatId) {
     return bot.sendMessage(chatId, 'Выберите действие:', {
@@ -5759,7 +5772,7 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
         const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`,
+                'Authorization': `Bearer ${getJWTToken()}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -5879,7 +5892,7 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
         const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`,
+                'Authorization': `Bearer ${getJWTToken()}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -5948,10 +5961,10 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
 // Создать сертификат
 async function createCertificate(chatId, purchaseData) {
     try {
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/create`, {
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`,
+                'Authorization': `Bearer ${getJWTToken()}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -6083,7 +6096,7 @@ async function activateCertificate(chatId, certificateNumber, clientId) {
         const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/activate`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`,
+                'Authorization': `Bearer ${getJWTToken()}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -6162,10 +6175,10 @@ async function activateCertificate(chatId, certificateNumber, clientId) {
 // Показать сертификаты пользователя
 async function showUserCertificates(chatId, clientId) {
     try {
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/client/${clientId}`, {
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/user/${clientId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`,
+                'Authorization': `Bearer ${getJWTToken()}`,
                 'Content-Type': 'application/json'
             }
         });
