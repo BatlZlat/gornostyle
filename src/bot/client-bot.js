@@ -696,6 +696,26 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
+    // Обработка кнопки "Мои сертификаты"
+    if (msg.text === '📋 Мои сертификаты') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showUserCertificates(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Активировать сертификат"
+    if (msg.text === '🔑 Активировать сертификат') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showCertificateActivation(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
     // Обработка кнопки "Адрес и контакты"
     if (msg.text === '📍 Адрес и контакты') {
         return handleAddressCommand(msg);
@@ -6085,6 +6105,10 @@ async function showCertificateResult(chatId, certificate) {
         if (certificate.recipient_name) {
             message += `\n👤 **Получатель:** ${certificate.recipient_name}`;
         }
+
+        // Добавляем информацию о сроке действия
+        const expiryDate = new Date(certificate.expiry_date).toLocaleDateString('ru-RU');
+        message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
 
         message += `\n\n🔗 **Электронный сертификат:**
 ${certificate.certificate_url}`;

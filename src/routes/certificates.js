@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminCertificatePurchase } = require('../bot/admin-notify');
+const { notifyAdminCertificatePurchase, notifyAdminCertificateActivation } = require('../bot/admin-notify');
 const TelegramBot = require('node-telegram-bot-api');
 const certificateImageGenerator = require('../services/certificateImageGenerator');
 
@@ -403,10 +403,11 @@ router.post('/activate', async (req, res) => {
             }
         });
 
-        // Отправляем уведомление клиенту (асинхронно)
-        if (clientData.telegram_id) {
-            setImmediate(async () => {
-                try {
+        // Отправляем уведомления (асинхронно)
+        setImmediate(async () => {
+            try {
+                // Уведомление клиенту
+                if (clientData.telegram_id) {
                     const message = `
 🎉 <b>Поздравляем!</b>
 Сертификат успешно активирован!
@@ -420,11 +421,19 @@ router.post('/activate', async (req, res) => {
                     await clientBot.sendMessage(clientData.telegram_id, message, { 
                         parse_mode: 'HTML' 
                     });
-                } catch (notifyError) {
-                    console.error('Ошибка отправки уведомления клиенту:', notifyError);
                 }
-            });
-        }
+
+                // Уведомление администратору
+                await notifyAdminCertificateActivation({
+                    clientName: clientData.full_name,
+                    certificateNumber: certificate_number,
+                    nominalValue: certificate.nominal_value,
+                    activationDate: activationDate
+                });
+            } catch (notifyError) {
+                console.error('Ошибка отправки уведомлений:', notifyError);
+            }
+        });
 
     } catch (error) {
         await client.query('ROLLBACK');
