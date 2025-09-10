@@ -105,19 +105,40 @@ CREATE TABLE session_participants (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица дизайнов сертификатов
+CREATE TABLE certificate_designs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    image_url VARCHAR(255) NOT NULL,
+    template_url VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Таблица сертификатов
 CREATE TABLE certificates (
     id SERIAL PRIMARY KEY,
-    certificate_number VARCHAR(20) UNIQUE NOT NULL,
+    certificate_number VARCHAR(12) UNIQUE NOT NULL,
     purchaser_id INTEGER REFERENCES clients(id),
-    purchase_date TIMESTAMP NOT NULL,
-    amount DECIMAL(10,2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active', -- active, used, expired
+    recipient_name VARCHAR(100),
+    recipient_phone VARCHAR(20),
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active', -- active, used, expired, cancelled
     expiry_date TIMESTAMP NOT NULL,
     activated_by_id INTEGER REFERENCES clients(id),
     activation_date TIMESTAMP,
+    message TEXT,
+    purchase_date TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_certificate_number CHECK (certificate_number ~ '^[0-9]{6}$'),
+    CONSTRAINT check_certificate_status CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
+    CONSTRAINT check_nominal_value CHECK (nominal_value >= 500 AND nominal_value <= 50000),
+    CONSTRAINT check_expiry_date CHECK (expiry_date <= purchase_date + INTERVAL '1 year')
 );
 
 -- Таблица кошельков
@@ -312,8 +333,21 @@ CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
+-- Индексы для таблицы дизайнов сертификатов
+CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);
+CREATE INDEX idx_certificate_designs_sort ON certificate_designs(sort_order);
+
+-- Индексы для таблицы сертификатов
 CREATE INDEX idx_certificates_number ON certificates(certificate_number);
 CREATE INDEX idx_certificates_status ON certificates(status);
+CREATE INDEX idx_certificates_purchaser ON certificates(purchaser_id);
+CREATE INDEX idx_certificates_design ON certificates(design_id);
+CREATE INDEX idx_certificates_expiry ON certificates(expiry_date);
+CREATE INDEX idx_certificates_purchase_date ON certificates(purchase_date);
+CREATE INDEX idx_certificates_activated_by ON certificates(activated_by_id);
+CREATE INDEX idx_certificates_purchaser_status ON certificates(purchaser_id, status);
+CREATE INDEX idx_certificates_activated_by_status ON certificates(activated_by_id, status);
+CREATE INDEX idx_certificates_status_expiry ON certificates(status, expiry_date);
 CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
@@ -384,6 +418,11 @@ CREATE TRIGGER update_training_sessions_updated_at
 
 CREATE TRIGGER update_session_participants_updated_at
     BEFORE UPDATE ON session_participants
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_certificate_designs_updated_at
+    BEFORE UPDATE ON certificate_designs
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

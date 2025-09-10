@@ -18,6 +18,7 @@ const smsRouter = require('./routes/sms');
 const childrenRouter = require('./routes/children');
 const financesRouter = require('./routes/finances');
 const applicationsRouter = require('./routes/applications');
+const certificatesRouter = require('./routes/certificates');
 const adminAuthRouter = require('./routes/adminAuth');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
@@ -101,6 +102,69 @@ app.get('/rules', (req, res) => {
     });
 });
 
+// Страница сертификата
+app.get('/certificate/:number', async (req, res) => {
+    try {
+        const { number } = req.params;
+        
+        // Проверяем формат номера
+        if (!/^[0-9]{6}$/.test(number)) {
+            return res.status(404).render('error', {
+                error: 'Неверный формат номера сертификата',
+                pageTitle: 'Ошибка - Горностайл72'
+            });
+        }
+
+        // Получаем информацию о сертификате через API
+        const apiUrl = `${req.protocol}://${req.get('host')}/api/certificates/${number}`;
+        const response = await fetch(apiUrl, {
+            headers: {
+                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                return res.status(404).render('error', {
+                    error: 'Сертификат не найден',
+                    pageTitle: 'Сертификат не найден - Горностайл72'
+                });
+            }
+            throw new Error('Ошибка при получении данных сертификата');
+        }
+
+        const result = await response.json();
+        
+        if (!result.success) {
+            return res.status(404).render('error', {
+                error: result.error || 'Сертификат не найден',
+                pageTitle: 'Ошибка - Горностайл72'
+            });
+        }
+
+        // Отображаем страницу сертификата
+        res.render('certificate', {
+            certificate: result.certificate,
+            botUsername: process.env.BOT_USERNAME,
+            adminPhone: process.env.ADMIN_PHONE,
+            contactEmail: process.env.CONTACT_EMAIL,
+            adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+            telegramGroup: process.env.TELEGRAM_GROUP,
+            vkGroup: process.env.VK_GROUP,
+            yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+            googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+            pageTitle: `Сертификат №${number} - Горностайл72`
+        });
+
+    } catch (error) {
+        console.error('Ошибка при отображении сертификата:', error);
+        res.status(500).render('error', {
+            error: 'Внутренняя ошибка сервера',
+            pageTitle: 'Ошибка - Горностайл72'
+        });
+    }
+});
+
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -119,6 +183,7 @@ app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
 app.use('/api/applications', verifyToken, applicationsRouter);
+app.use('/api/certificates', verifyToken, certificatesRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {
