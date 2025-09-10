@@ -246,6 +246,9 @@ app.get('/certificate/:number', async (req, res) => {
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Статические файлы для генерируемых изображений
+app.use('/generated', express.static(path.join(__dirname, '../public/generated')));
+
 // Маршруты аутентификации
 app.use('/api/admin', adminAuthRouter);
 

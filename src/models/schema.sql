@@ -124,7 +124,6 @@ CREATE TABLE certificates (
     certificate_number VARCHAR(12) UNIQUE NOT NULL,
     purchaser_id INTEGER REFERENCES clients(id),
     recipient_name VARCHAR(100),
-    recipient_phone VARCHAR(20),
     nominal_value DECIMAL(10,2) NOT NULL,
     design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
     status VARCHAR(20) DEFAULT 'active', -- active, used, expired, cancelled
@@ -138,7 +137,8 @@ CREATE TABLE certificates (
     CONSTRAINT check_certificate_number CHECK (certificate_number ~ '^[0-9]{6}$'),
     CONSTRAINT check_certificate_status CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
     CONSTRAINT check_nominal_value CHECK (nominal_value >= 500 AND nominal_value <= 50000),
-    CONSTRAINT check_expiry_date CHECK (expiry_date <= purchase_date + INTERVAL '1 year')
+    CONSTRAINT check_expiry_date CHECK (expiry_date <= purchase_date + INTERVAL '1 year'),
+    CONSTRAINT check_message_length CHECK (LENGTH(message) <= 100)
 );
 
 -- Таблица кошельков

@@ -21,16 +21,21 @@
     <link rel="stylesheet" href="/css/style.css">
     <style>
         .certificate-container {
-            max-width: 800px;
+            max-width: 1050px;
             margin: 2rem auto;
-            padding: 2rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 0;
+            background-image: url('<%= certificate.design.image_url %>');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             color: white;
-            text-align: center;
+            text-align: left;
             position: relative;
             overflow: hidden;
+            aspect-ratio: 1050/495;
+            min-height: 495px;
         }
 
         .certificate-container::before {
@@ -58,6 +63,22 @@
         .certificate-content {
             position: relative;
             z-index: 2;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .certificate-text-area {
+            position: absolute;
+            right: 2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 300px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 1.5rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
         }
 
         .certificate-header {
@@ -65,33 +86,37 @@
         }
 
         .certificate-title {
-            font-size: 2.5rem;
+            font-size: 1.2rem;
             font-weight: bold;
             margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            text-align: center;
         }
 
         .certificate-subtitle {
-            font-size: 1.2rem;
+            font-size: 0.9rem;
             opacity: 0.9;
             margin-bottom: 1rem;
+            text-align: center;
         }
 
         .certificate-number {
-            font-size: 3rem;
+            font-size: 1.5rem;
             font-weight: bold;
             color: #FFD700;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             margin: 1rem 0;
-            letter-spacing: 0.2em;
+            letter-spacing: 0.1em;
+            text-align: center;
         }
 
         .certificate-value {
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: bold;
-            margin: 1.5rem 0;
+            margin: 1rem 0;
             color: #FFD700;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            text-align: center;
         }
 
         .certificate-design {
@@ -235,19 +260,21 @@
         @media (max-width: 768px) {
             .certificate-container {
                 margin: 1rem;
-                padding: 1.5rem;
+                max-width: 100%;
+                aspect-ratio: 1050/495;
             }
 
-            .certificate-title {
-                font-size: 2rem;
+            .certificate-text-area {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin: 1rem;
+                background: rgba(0, 0, 0, 0.8);
             }
 
-            .certificate-number {
-                font-size: 2.5rem;
-            }
-
-            .certificate-value {
-                font-size: 1.5rem;
+            .certificate-content {
+                padding: 1rem;
+                justify-content: center;
             }
 
             .info-row {
@@ -281,31 +308,33 @@
 <body>
     <div class="certificate-container">
         <div class="certificate-content">
-            <div class="certificate-header">
-                <h1 class="certificate-title">🎁 ПОДАРОЧНЫЙ СЕРТИФИКАТ</h1>
-                <p class="certificate-subtitle">Горностайл72 - Горнолыжный тренажёр</p>
-            </div>
+            <div class="certificate-text-area">
+                <div class="certificate-header">
+                    <h1 class="certificate-title">🎁 ПОДАРОЧНЫЙ СЕРТИФИКАТ</h1>
+                    <p class="certificate-subtitle">Горностайл72</p>
+                </div>
 
-            <div class="certificate-number">№ <%= certificate.certificate_number %></div>
-            
-            <div class="certificate-value">💰 <%= certificate.nominal_value %> руб.</div>
+                <div class="certificate-number">№ <%= certificate.certificate_number %></div>
+                
+                <div class="certificate-value">💰 <%= certificate.nominal_value %> руб.</div>
 
-            <div class="certificate-design">
-                <h3>🎨 Дизайн: <%= certificate.design.name %></h3>
-            </div>
-
-            <% if (certificate.recipient_name || certificate.message) { %>
-            <div class="certificate-recipient">
                 <% if (certificate.recipient_name) { %>
-                    <h3>👤 Для: <%= certificate.recipient_name %></h3>
+                    <div style="text-align: center; margin: 1rem 0; font-size: 1rem;">
+                        <strong>👤 Кому:</strong><br><%= certificate.recipient_name %>
+                    </div>
                 <% } %>
+
                 <% if (certificate.message) { %>
-                    <div class="certificate-message">
+                    <div style="text-align: center; margin: 1rem 0; font-size: 0.9rem; font-style: italic;">
                         "<%= certificate.message %>"
                     </div>
                 <% } %>
+
+                <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; opacity: 0.8;">
+                    ⏰ До: <%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %>
+                </div>
             </div>
-            <% } %>
+        </div>
 
             <div class="certificate-status <%= 'status-' + certificate.status %>">
                 <% if (certificate.status === 'active') { %>

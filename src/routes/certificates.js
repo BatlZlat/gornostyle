@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminWalletRefilled } = require('../bot/admin-notify');
+const { notifyAdminCertificatePurchase } = require('../bot/admin-notify');
 const TelegramBot = require('node-telegram-bot-api');
+const certificateImageGenerator = require('../services/certificateImageGenerator');
 
 // Создаем экземпляр клиентского бота для уведомлений
 const clientBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -42,7 +43,6 @@ router.post('/purchase', async (req, res) => {
             nominal_value, 
             design_id, 
             recipient_name, 
-            recipient_phone, 
             message 
         } = req.body;
 
@@ -126,10 +126,10 @@ router.post('/purchase', async (req, res) => {
         // Создаем сертификат
         const certificateQuery = `
             INSERT INTO certificates (
-                certificate_number, purchaser_id, recipient_name, recipient_phone,
+                certificate_number, purchaser_id, recipient_name,
                 nominal_value, design_id, status, expiry_date, activation_date,
                 message, purchase_date, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
         `;
 
@@ -141,7 +141,6 @@ router.post('/purchase', async (req, res) => {
             certificateNumber,
             purchaser_id,
             recipient_name || null,
-            recipient_phone || null,
             nominal_value,
             design_id,
             'active',
@@ -164,13 +163,29 @@ router.post('/purchase', async (req, res) => {
         await client.query(
             `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
              VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [purchaser.wallet_id, -nominal_value, 'payment', transactionDescription]
+            [purchaser.wallet_id, nominal_value, 'payment', transactionDescription]
         );
 
         await client.query('COMMIT');
 
         // Формируем URL сертификата
         const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${certificateNumber}`;
+
+        // Генерируем изображение сертификата для печати (асинхронно)
+        let printImageUrl = null;
+        try {
+            printImageUrl = await certificateImageGenerator.generateCertificateImage({
+                certificate_number: certificateNumber,
+                nominal_value: certificate.nominal_value,
+                recipient_name: certificate.recipient_name,
+                message: certificate.message,
+                expiry_date: certificate.expiry_date,
+                design_id: certificate.design_id
+            });
+        } catch (imageError) {
+            console.error('Ошибка при генерации изображения сертификата:', imageError);
+            // Продолжаем без изображения
+        }
 
         // Ответ клиенту
         res.status(201).json({
@@ -187,20 +202,19 @@ router.post('/purchase', async (req, res) => {
                 status: certificate.status,
                 expiry_date: certificate.expiry_date,
                 purchase_date: certificate.purchase_date,
-                certificate_url: certificateUrl
+                certificate_url: certificateUrl,
+                print_image_url: printImageUrl
             }
         });
 
         // Отправляем уведомление администратору (асинхронно)
         setImmediate(async () => {
             try {
-                await notifyAdminWalletRefilled({
+                await notifyAdminCertificatePurchase({
                     clientName: purchaser.full_name,
-                    amount: -nominal_value,
-                    walletNumber: purchaser.wallet_number,
-                    balance: parseFloat(purchaser.balance) - nominal_value,
-                    isRefill: false,
-                    transactionType: `Покупка сертификата №${certificateNumber}`
+                    certificateNumber: certificateNumber,
+                    nominalValue: nominal_value,
+                    purchaseDate: now
                 });
             } catch (notifyError) {
                 console.error('Ошибка отправки уведомления администратору:', notifyError);
@@ -365,7 +379,7 @@ router.post('/activate', async (req, res) => {
         await client.query(
             `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
              VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [walletId, certificate.nominal_value, 'refill', transactionDescription]
+            [walletId, -certificate.nominal_value, 'payment', transactionDescription]
         );
 
         const newBalance = currentBalance + parseFloat(certificate.nominal_value);
@@ -539,7 +553,7 @@ router.get('/:number', async (req, res) => {
 });
 
 // 4. Получение сертификатов клиента
-router.get('/client/:client_id', async (req, res) => {
+const getUserCertificatesHandler = async (req, res) => {
     try {
         const { client_id } = req.params;
         const { status, limit = 50, offset = 0 } = req.query;
@@ -630,7 +644,11 @@ router.get('/client/:client_id', async (req, res) => {
             code: 'INTERNAL_ERROR'
         });
     }
-});
+};
+
+// Регистрируем маршруты для получения сертификатов клиента
+router.get('/client/:client_id', getUserCertificatesHandler);
+router.get('/user/:client_id', getUserCertificatesHandler);
 
 // 6. Получение статистики сертификатов (для админа)
 router.get('/admin/statistics', async (req, res) => {

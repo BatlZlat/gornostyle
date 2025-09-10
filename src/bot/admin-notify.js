@@ -238,6 +238,37 @@ async function notifyAdminWalletRefilled({ clientName, amount, walletNumber, bal
     }
 }
 
+// Функция для отправки уведомления о покупке сертификата
+async function notifyAdminCertificatePurchase({ clientName, certificateNumber, nominalValue, purchaseDate }) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const formattedDate = new Date(purchaseDate).toLocaleDateString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit', 
+            year: 'numeric'
+        });
+
+        const message = `
+✅ *Покупка сертификата!*
+
+👤 *Клиент:* ${clientName}
+🎫 *Номер сертификата:* ${certificateNumber}
+💰 *Номинал сертификата:* ${nominalValue} руб.
+📅 *Дата приобретения:* ${formattedDate}`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о покупке сертификата:', error);
+    }
+}
+
 // Функция для отправки уведомления о новом клиенте
 async function notifyNewClient({ full_name, birth_date, phone, skill_level, child }) {
     try {
@@ -350,6 +381,7 @@ module.exports = {
     notifyAdminIndividualTrainingCancellation,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
+    notifyAdminCertificatePurchase,
     notifyNewClient,
     notifyTomorrowTrainings
 }; 

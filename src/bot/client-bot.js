@@ -691,6 +691,11 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
+    // Обработка кнопки "Подарить еще сертификат"
+    if (msg.text === '💝 Подарить еще сертификат') {
+        return showCertificatesMenu(chatId);
+    }
+
     // Обработка кнопки "Адрес и контакты"
     if (msg.text === '📍 Адрес и контакты') {
         return handleAddressCommand(msg);
@@ -4878,7 +4883,6 @@ async function handleTextMessage(msg) {
                     nominal_value,
                     design_id,
                     recipient_name: null,
-                    recipient_phone: null,
                     message: null
                 };
                 return showPurchaseConfirmation(chatId, purchaseData);
@@ -4887,7 +4891,6 @@ async function handleTextMessage(msg) {
             // Парсим данные получателя из сообщения
             const lines = msg.text.split('\n').filter(line => line.trim());
             let recipientName = null;
-            let recipientPhone = null;
             let message = null;
 
             // Определяем какие данные предоставлены
@@ -4895,27 +4898,19 @@ async function handleTextMessage(msg) {
                 recipientName = lines[0].trim();
             }
             if (lines.length >= 2) {
-                // Проверяем, похожа ли вторая строка на телефон
-                const secondLine = lines[1].trim();
-                if (secondLine.match(/^\+?[\d\s\-\(\)]{7,}$/)) {
-                    recipientPhone = secondLine;
-                    if (lines.length >= 3) {
-                        message = lines[2].trim();
-                    }
-                } else {
-                    // Если не похоже на телефон, считаем это сообщением
-                    message = secondLine;
-                }
-            }
-            if (lines.length >= 3 && !recipientPhone) {
-                // Если есть 3 строки и телефон не определен, проверяем вторую строку еще раз
-                const secondLine = lines[1].trim();
-                if (secondLine.match(/^\+?[\d\s\-\(\)]{7,}$/)) {
-                    recipientPhone = secondLine;
-                    message = lines[2].trim();
-                } else {
-                    // Объединяем 2-ю и 3-ю строки как сообщение
-                    message = lines.slice(1).join(' ');
+                // Все остальные строки считаем пожеланием
+                message = lines.slice(1).join(' ').trim();
+                
+                // Ограничиваем длину пожелания
+                if (message && message.length > 100) {
+                    return bot.sendMessage(chatId, '❌ Пожелание слишком длинное. Максимум 100 символов.\n\nТекущая длина: ' + message.length + ' символов.', {
+                        reply_markup: {
+                            keyboard: [
+                                ['🔙 Попробовать еще раз']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
                 }
             }
 
@@ -4924,7 +4919,6 @@ async function handleTextMessage(msg) {
                 nominal_value,
                 design_id,
                 recipient_name: recipientName,
-                recipient_phone: recipientPhone,
                 message: message
             };
 
@@ -5905,18 +5899,14 @@ async function showRecipientForm(chatId, clientId, nominalValue, designId) {
 
 Введите данные получателя сертификата (все поля необязательны):
 
-**Имя получателя:**
+**Кому:**
 _Например: Иван Иванов_
 
-**Телефон получателя:**
-_Например: +7900123456_
-
-**Сообщение для получателя:**
-_Например: Поздравляю с днем рождения!_
+**Пожелание (до 100 символов):**
+_Например: Поздравляю с днем рождения! Счастья, здоровья, удачи._
 
 Отправьте данные в формате:
 \`Иван Иванов\`
-\`+7900123456\`
 \`Поздравляю с днем рождения!\`
 
 Или нажмите "Пропустить" для создания сертификата без данных получателя.`;
@@ -5974,19 +5964,16 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
             data: purchaseData
         });
 
-        let message = `✅ **ПОДТВЕРЖДЕНИЕ ПОКУПКИ**
+        let message = `❗ **ПОДТВЕРДИТЕ ПОКУПКУ**
 
 **Номинал:** ${purchaseData.nominal_value} руб.
 **Дизайн:** ${designName}`;
 
         if (purchaseData.recipient_name) {
-            message += `\n**Получатель:** ${purchaseData.recipient_name}`;
-        }
-        if (purchaseData.recipient_phone) {
-            message += `\n**Телефон:** ${purchaseData.recipient_phone}`;
+            message += `\n**Кому:** ${purchaseData.recipient_name}`;
         }
         if (purchaseData.message) {
-            message += `\n**Сообщение:** ${purchaseData.message}`;
+            message += `\n**Пожелание:** ${purchaseData.message}`;
         }
 
         message += `\n\n💰 **Стоимость:** ${purchaseData.nominal_value} руб.
@@ -6040,7 +6027,6 @@ async function createCertificate(chatId, purchaseData) {
                 nominal_value: purchaseData.nominal_value,
                 design_id: purchaseData.design_id,
                 recipient_name: purchaseData.recipient_name || null,
-                recipient_phone: purchaseData.recipient_phone || null,
                 message: purchaseData.message || null
             })
         });
@@ -6100,10 +6086,16 @@ async function showCertificateResult(chatId, certificate) {
             message += `\n👤 **Получатель:** ${certificate.recipient_name}`;
         }
 
-        message += `\n\n🔗 **Ссылка на сертификат:**
-${certificate.certificate_url}
+        message += `\n\n🔗 **Электронный сертификат:**
+${certificate.certificate_url}`;
 
-Вы можете:
+        if (certificate.print_image_url) {
+            const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
+            message += `\n\n🖨️ **Для печати:**
+${printUrl}`;
+        }
+
+        message += `\n\nВы можете:
 📱 Отправить ссылку другу
 🖨️ Распечатать сертификат
 📋 Посмотреть мои сертификаты`;
@@ -6136,6 +6128,8 @@ async function showCertificateActivation(chatId, clientId) {
         });
 
         const message = `🔑 **АКТИВИРОВАТЬ СЕРТИФИКАТ**
+
+⚠️ **ВАЖНО:** После активации сертификат необходимо использовать в течение 3 месяцев!
 
 Введите номер сертификата (6 цифр):
 
@@ -6206,12 +6200,20 @@ async function activateCertificate(chatId, certificateNumber, clientId) {
         }
 
         // Показываем результат успешной активации
+        // Вычисляем дату истечения (3 месяца от активации)
+        const activationDate = new Date(result.certificate.activation_date);
+        const expiryDate = new Date(activationDate);
+        expiryDate.setMonth(expiryDate.getMonth() + 3);
+        const formattedExpiryDate = expiryDate.toLocaleDateString('ru-RU');
+
         const message = `✅ **СЕРТИФИКАТ АКТИВИРОВАН!**
 
 🎫 **Номер:** ${result.certificate.certificate_number}
 💰 **Номинал:** ${result.certificate.nominal_value} руб.
 💵 **Зачислено на кошелек:** ${result.wallet.amount_added} руб.
 💳 **Новый баланс:** ${result.wallet.balance} руб.
+
+⏰ **Использовать до:** ${formattedExpiryDate} включительно
 
 Теперь вы можете записаться на тренировки! 🎿`;
 
@@ -6286,31 +6288,61 @@ async function showUserCertificates(chatId, clientId) {
         let message = '📋 **МОИ СЕРТИФИКАТЫ**\n\n';
 
         if (purchased.length > 0) {
-            message += '🛒 **КУПЛЕННЫЕ СЕРТИФИКАТЫ:**\n';
+            message += '🎁 **ПОДАРЕННЫЕ СЕРТИФИКАТЫ:**\n';
+            
+            // Сортируем по дате покупки (новые сверху)
+            purchased.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
+            
             purchased.forEach(cert => {
-                const statusEmoji = cert.status === 'active' ? '⏳' : cert.status === 'used' ? '✅' : '❌';
-                const statusText = cert.status === 'active' ? 'Активен' : cert.status === 'used' ? 'Активирован' : 'Просрочен';
+                // Логика статусов для дарителя (скрываем информацию об истечении)
+                let statusEmoji, statusText;
+                if (cert.status === 'used') {
+                    statusEmoji = '✅';
+                    statusText = 'Использован';
+                } else if (cert.activation_date) {
+                    statusEmoji = '✅';
+                    statusText = 'Активирован';
+                } else {
+                    // Для дарителя всегда показываем "Подарен", даже если сертификат истек
+                    statusEmoji = '🎁';
+                    statusText = 'Подарен';
+                }
                 
-                message += `• #${cert.certificate_number} - ${cert.nominal_value} руб. - ${cert.design.name}\n`;
+                message += `${statusEmoji} **${statusText}**\n`;
+                message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
+                
                 if (cert.recipient_name) {
-                    message += `  Получатель: ${cert.recipient_name}\n`;
+                    message += `👤 Кому: ${cert.recipient_name}\n`;
                 }
-                message += `  Статус: ${statusText} ${statusEmoji}\n`;
-                if (cert.status === 'used' && cert.activation_date) {
+                
+                const purchaseDate = new Date(cert.purchase_date).toLocaleDateString('ru-RU');
+                message += `📅 Дата покупки: ${purchaseDate}\n`;
+                
+                if (cert.activation_date) {
                     const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
-                    message += `  Дата активации: ${activationDate}\n`;
+                    message += `🔓 Активирован: ${activationDate}\n`;
                 }
+                
                 message += '\n';
             });
         }
 
         if (activated.length > 0) {
             message += '🔑 **АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:**\n';
+            
+            // Сортируем по дате активации (новые сверху)
+            activated.sort((a, b) => new Date(b.activation_date) - new Date(a.activation_date));
+            
             activated.forEach(cert => {
-                message += `• #${cert.certificate_number} - ${cert.nominal_value} руб. - ${cert.design.name}\n`;
+                const statusEmoji = cert.status === 'used' ? '✅' : '🔓';
+                const statusText = cert.status === 'used' ? 'Использован' : 'Активирован';
+                
+                message += `${statusEmoji} **${statusText}**\n`;
+                message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
+                
                 if (cert.activation_date) {
                     const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
-                    message += `  Дата активации: ${activationDate}\n`;
+                    message += `🔓 Дата активации: ${activationDate}\n`;
                 }
                 message += '\n';
             });
