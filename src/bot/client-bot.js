@@ -6333,6 +6333,7 @@ async function showUserCertificates(chatId, clientId) {
                 }
                 
                 message += `${statusEmoji} **${statusText}**\n`;
+                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.recipient_name) {
@@ -6346,6 +6347,10 @@ async function showUserCertificates(chatId, clientId) {
                     const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
                     message += `🔓 Активирован: ${activationDate}\n`;
                 }
+                
+                // Добавляем ссылку на сертификат
+                const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
+                message += `🔗 Ссылка: ${certificateUrl}\n`;
                 
                 message += '\n';
             });
@@ -6362,12 +6367,18 @@ async function showUserCertificates(chatId, clientId) {
                 const statusText = cert.status === 'used' ? 'Использован' : 'Активирован';
                 
                 message += `${statusEmoji} **${statusText}**\n`;
+                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.activation_date) {
                     const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
                     message += `🔓 Дата активации: ${activationDate}\n`;
                 }
+                
+                // Добавляем ссылку на сертификат
+                const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
+                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                
                 message += '\n';
             });
         }
