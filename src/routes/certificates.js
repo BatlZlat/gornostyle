@@ -124,10 +124,6 @@ router.post('/purchase', async (req, res) => {
         const certificateNumber = await generateUniqueCertificateNumber();
 
         // Создаем сертификат
-        const purchaseDate = new Date();
-        const expiryDate = new Date();
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1); // Срок действия 1 год
-
         const certificateQuery = `
             INSERT INTO certificates (
                 certificate_number, purchaser_id, recipient_name, recipient_phone,
@@ -136,6 +132,10 @@ router.post('/purchase', async (req, res) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
         `;
+
+        // Вычисляем дату истечения (1 год от текущего момента)
+        const now = new Date();
+        const expiryDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // +1 год в миллисекундах
 
         const certificateResult = await client.query(certificateQuery, [
             certificateNumber,
@@ -148,7 +148,7 @@ router.post('/purchase', async (req, res) => {
             expiryDate,
             null, // activation_date
             message || null,
-            purchaseDate
+            now // purchase_date
         ]);
 
         const certificate = certificateResult.rows[0];

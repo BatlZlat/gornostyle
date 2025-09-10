@@ -178,36 +178,51 @@ app.get('/certificate/:number', async (req, res) => {
             });
         }
 
-        // Получаем информацию о сертификате через API
-        const apiUrl = `${req.protocol}://${req.get('host')}/api/certificates/${number}`;
-        const response = await fetch(apiUrl, {
-            headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_BOT_TOKEN}`
-            }
-        });
+        // Получаем информацию о сертификате напрямую из базы данных
+        const query = `
+            SELECT 
+                c.*,
+                cd.name as design_name,
+                cd.description as design_description,
+                cd.image_url as design_image_url,
+                cd.template_url as design_template_url
+            FROM certificates c
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id
+            WHERE c.certificate_number = $1
+        `;
 
-        if (!response.ok) {
-            if (response.status === 404) {
-                return res.status(404).render('error', {
-                    error: 'Сертификат не найден',
-                    pageTitle: 'Сертификат не найден - Горностайл72'
-                });
-            }
-            throw new Error('Ошибка при получении данных сертификата');
-        }
+        const result = await pool.query(query, [number]);
 
-        const result = await response.json();
-        
-        if (!result.success) {
+        if (result.rows.length === 0) {
             return res.status(404).render('error', {
-                error: result.error || 'Сертификат не найден',
-                pageTitle: 'Ошибка - Горностайл72'
+                error: 'Сертификат не найден',
+                pageTitle: 'Сертификат не найден - Горностайл72'
             });
         }
 
+        const certificateData = result.rows[0];
+
+        // Формируем объект сертификата для шаблона
+        const certificate = {
+            certificate_number: certificateData.certificate_number,
+            nominal_value: certificateData.nominal_value,
+            recipient_name: certificateData.recipient_name,
+            recipient_phone: certificateData.recipient_phone,
+            message: certificateData.message,
+            status: certificateData.status,
+            expiry_date: new Date(certificateData.expiry_date).toLocaleDateString('ru-RU'),
+            purchase_date: new Date(certificateData.purchase_date).toLocaleDateString('ru-RU'),
+            design: {
+                name: certificateData.design_name,
+                description: certificateData.design_description,
+                image_url: certificateData.design_image_url,
+                template_url: certificateData.design_template_url
+            }
+        };
+
         // Отображаем страницу сертификата
         res.render('certificate', {
-            certificate: result.certificate,
+            certificate,
             botUsername: process.env.BOT_USERNAME,
             adminPhone: process.env.ADMIN_PHONE,
             contactEmail: process.env.CONTACT_EMAIL,
