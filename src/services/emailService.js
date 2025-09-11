@@ -6,10 +6,10 @@ class EmailService {
     constructor() {
         // Создаем transporter для отправки email
         this.transporter = nodemailer.createTransport({
-            service: 'yandex', // Используем Yandex Mail
+            service: 'gmail', // Используем Gmail (проще настроить)
             auth: {
-                user: process.env.EMAIL_USER || 'batl-zlat@yandex.ru',
-                pass: process.env.EMAIL_PASS || '' // Пароль приложения
+                user: process.env.EMAIL_USER || 'batl-zlat@gmail.com',
+                pass: process.env.EMAIL_PASS || '' // Пароль приложения Gmail
             }
         });
 
