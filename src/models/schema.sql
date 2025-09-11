@@ -8,6 +8,7 @@ CREATE TABLE clients (
     telegram_id VARCHAR(100) UNIQUE,
     telegram_username VARCHAR(100),
     nickname VARCHAR(100),
+    email VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -325,6 +326,7 @@ CREATE TABLE grouping_settings (
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
+CREATE INDEX idx_clients_email ON clients(email);
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_trainers_is_active ON trainers(is_active);
 CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);

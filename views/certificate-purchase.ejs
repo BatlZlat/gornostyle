@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Купить подарочный сертификат - Горностайл72</title>
+    <meta name="description" content="Оформите покупку подарочного сертификата на тренировки в Горностайл72. Выберите дизайн, сумму и получите сертификат на email.">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="/css/certificates.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <style>
+        .purchase-page {
+            padding-top: 80px;
+            min-height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        .purchase-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .purchase-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .purchase-header h1 {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .purchase-header p {
+            font-size: 1.2rem;
+            color: #7f8c8d;
+        }
+        
+        .purchase-form {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .form-section {
+            margin-bottom: 40px;
+        }
+        
+        .form-section h3 {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-section h3 i {
+            color: #3498db;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        
+        .form-group label .required {
+            color: #e74c3c;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        .form-help {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        .amount-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .amount-option {
+            position: relative;
+        }
+        
+        .amount-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .amount-option label {
+            display: block;
+            padding: 15px 10px;
+            text-align: center;
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .amount-option input[type="radio"]:checked + label {
+            background: #3498db;
+            border-color: #3498db;
+            color: white;
+        }
+        
+        .amount-option label:hover {
+            border-color: #3498db;
+        }
+        
+        .custom-amount {
+            margin-top: 20px;
+        }
+        
+        .design-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+        }
+        
+        .design-option {
+            position: relative;
+        }
+        
+        .design-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .design-option label {
+            display: block;
+            cursor: pointer;
+            border: 3px solid transparent;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: border-color 0.3s ease;
+        }
+        
+        .design-option input[type="radio"]:checked + label {
+            border-color: #3498db;
+        }
+        
+        .design-option img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+        
+        .design-option .design-name {
+            padding: 10px;
+            text-align: center;
+            background: white;
+            font-size: 0.9rem;
+            color: #2c3e50;
+        }
+        
+        .privacy-agreement {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        
+        .privacy-checkbox {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        
+        .privacy-checkbox input[type="checkbox"] {
+            margin-top: 2px;
+            transform: scale(1.2);
+        }
+        
+        .privacy-checkbox label {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #2c3e50;
+        }
+        
+        .privacy-checkbox a {
+            color: #3498db;
+            text-decoration: underline;
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            font-size: 0.9rem;
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .loading {
+            display: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .purchase-header h1 {
+                font-size: 2rem;
+            }
+            
+            .purchase-form {
+                padding: 30px 20px;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .amount-selector {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .design-selector {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <a href="/">
+                        <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                    </a>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="<%= telegramGroup %>" class="nav-contact-icon telegram-inverted" title="Telegram канал" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="purchase-page">
+        <div class="purchase-container">
+            <div class="purchase-header">
+                <h1><i class="fas fa-gift"></i> Покупка подарочного сертификата</h1>
+                <p>Заполните форму, чтобы создать персональный подарочный сертификат</p>
+            </div>
+
+            <form class="purchase-form" id="purchaseForm">
+                <!-- Личные данные покупателя -->
+                <div class="form-section">
+                    <h3><i class="fas fa-user"></i> Данные покупателя</h3>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="fullName">ФИО <span class="required">*</span></label>
+                            <input type="text" id="fullName" name="fullName" required placeholder="Иванов Иван Иванович">
+                            <div class="error-message" id="fullNameError"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="birthDate">Дата рождения <span class="required">*</span></label>
+                            <input type="date" id="birthDate" name="birthDate" required>
+                            <div class="error-message" id="birthDateError"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="phone">Номер телефона <span class="required">*</span></label>
+                            <input type="tel" id="phone" name="phone" required placeholder="+7 (999) 123-45-67">
+                            <div class="error-message" id="phoneError"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email <span class="required">*</span></label>
+                            <input type="email" id="email" name="email" required placeholder="example@mail.ru">
+                            <div class="form-help">На этот email будет отправлен сертификат</div>
+                            <div class="error-message" id="emailError"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Данные получателя -->
+                <div class="form-section">
+                    <h3><i class="fas fa-heart"></i> Данные получателя подарка</h3>
+                    
+                    <div class="form-group">
+                        <label for="recipientName">Имя получателя</label>
+                        <input type="text" id="recipientName" name="recipientName" placeholder="Кому предназначен подарок (необязательно)">
+                        <div class="form-help">Имя будет указано в сертификате</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="message">Сообщение для получателя</label>
+                        <textarea id="message" name="message" placeholder="Поздравление или пожелание (до 100 символов)" maxlength="100"></textarea>
+                        <div class="form-help">Сообщение будет добавлено в сертификат</div>
+                    </div>
+                </div>
+
+                <!-- Выбор номинала -->
+                <div class="form-section">
+                    <h3><i class="fas fa-ruble-sign"></i> Номинал сертификата</h3>
+                    
+                    <div class="amount-selector">
+                        <div class="amount-option">
+                            <input type="radio" id="amount2500" name="amount" value="2500">
+                            <label for="amount2500">2 500 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amount3000" name="amount" value="3000" checked>
+                            <label for="amount3000">3 000 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amount5000" name="amount" value="5000">
+                            <label for="amount5000">5 000 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amount6000" name="amount" value="6000">
+                            <label for="amount6000">6 000 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amount10000" name="amount" value="10000">
+                            <label for="amount10000">10 000 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amount15000" name="amount" value="15000">
+                            <label for="amount15000">15 000 ₽</label>
+                        </div>
+                        <div class="amount-option">
+                            <input type="radio" id="amountCustom" name="amount" value="custom">
+                            <label for="amountCustom">Другая сумма</label>
+                        </div>
+                    </div>
+                    
+                    <div class="custom-amount" id="customAmountBlock" style="display: none;">
+                        <div class="form-group">
+                            <label for="customAmountValue">Укажите сумму (от 500 до 50 000 ₽)</label>
+                            <input type="number" id="customAmountValue" name="customAmountValue" min="500" max="50000" step="100" placeholder="5000">
+                            <div class="error-message" id="customAmountError"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Выбор дизайна -->
+                <div class="form-section">
+                    <h3><i class="fas fa-palette"></i> Дизайн сертификата</h3>
+                    
+                    <div class="design-selector">
+                        <div class="design-option">
+                            <input type="radio" id="designClassic" name="design" value="1" checked>
+                            <label for="designClassic">
+                                <img src="/images/certificates/classic.jpg" alt="Классический дизайн">
+                                <div class="design-name">Классический</div>
+                            </label>
+                        </div>
+                        <div class="design-option">
+                            <input type="radio" id="designSport" name="design" value="2">
+                            <label for="designSport">
+                                <img src="/images/certificates/sport.jpg" alt="Спортивный дизайн">
+                                <div class="design-name">Спортивный</div>
+                            </label>
+                        </div>
+                        <div class="design-option">
+                            <input type="radio" id="designParty" name="design" value="3">
+                            <label for="designParty">
+                                <img src="/images/certificates/party.jpg" alt="Праздничный дизайн">
+                                <div class="design-name">Праздничный</div>
+                            </label>
+                        </div>
+                        <div class="design-option">
+                            <input type="radio" id="designMinimal" name="design" value="4">
+                            <label for="designMinimal">
+                                <img src="/images/certificates/minimal.jpg" alt="Минималистичный дизайн">
+                                <div class="design-name">Минималистичный</div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Согласие на обработку данных -->
+                <div class="privacy-agreement">
+                    <div class="privacy-checkbox">
+                        <input type="checkbox" id="privacyAgreement" name="privacyAgreement" required>
+                        <label for="privacyAgreement">
+                            Я согласен(а) на <a href="/privacy-policy" target="_blank">обработку персональных данных</a> 
+                            и подтверждаю, что ознакомился(ась) с условиями предоставления услуг <span class="required">*</span>
+                        </label>
+                    </div>
+                    <div class="error-message" id="privacyError"></div>
+                </div>
+
+                <!-- Кнопка отправки -->
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    <i class="fas fa-credit-card"></i>
+                    <span class="btn-text">Продолжить к оплате</span>
+                    <span class="loading"><i class="fas fa-spinner fa-spin"></i> Обработка...</span>
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="/js/main.js"></script>
+    <script>
+        // Обработка формы покупки сертификата
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('purchaseForm');
+            const customAmountRadio = document.getElementById('amountCustom');
+            const customAmountBlock = document.getElementById('customAmountBlock');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            // Показ/скрытие поля для произвольной суммы
+            document.querySelectorAll('input[name="amount"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'custom') {
+                        customAmountBlock.style.display = 'block';
+                    } else {
+                        customAmountBlock.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Валидация и отправка формы
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                if (validateForm()) {
+                    submitForm();
+                }
+            });
+            
+            function validateForm() {
+                let isValid = true;
+                
+                // Очистка предыдущих ошибок
+                document.querySelectorAll('.error-message').forEach(el => {
+                    el.style.display = 'none';
+                    el.textContent = '';
+                });
+                
+                // Валидация ФИО
+                const fullName = document.getElementById('fullName').value.trim();
+                if (!fullName || fullName.length < 3) {
+                    showError('fullNameError', 'Введите корректное ФИО');
+                    isValid = false;
+                }
+                
+                // Валидация даты рождения
+                const birthDate = document.getElementById('birthDate').value;
+                if (!birthDate) {
+                    showError('birthDateError', 'Укажите дату рождения');
+                    isValid = false;
+                } else {
+                    const date = new Date(birthDate);
+                    const now = new Date();
+                    const age = now.getFullYear() - date.getFullYear();
+                    if (age < 6 || age > 100) {
+                        showError('birthDateError', 'Проверьте корректность даты рождения');
+                        isValid = false;
+                    }
+                }
+                
+                // Валидация телефона
+                const phone = document.getElementById('phone').value.trim();
+                const phoneRegex = /^[\+]?[7|8][\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}$/;
+                if (!phone || !phoneRegex.test(phone)) {
+                    showError('phoneError', 'Введите корректный номер телефона');
+                    isValid = false;
+                }
+                
+                // Валидация email
+                const email = document.getElementById('email').value.trim();
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!email || !emailRegex.test(email)) {
+                    showError('emailError', 'Введите корректный email');
+                    isValid = false;
+                }
+                
+                // Валидация произвольной суммы
+                const selectedAmount = document.querySelector('input[name="amount"]:checked').value;
+                if (selectedAmount === 'custom') {
+                    const customAmount = parseInt(document.getElementById('customAmountValue').value);
+                    if (!customAmount || customAmount < 500 || customAmount > 50000) {
+                        showError('customAmountError', 'Сумма должна быть от 500 до 50 000 рублей');
+                        isValid = false;
+                    }
+                }
+                
+                // Валидация согласия
+                const privacyAgreement = document.getElementById('privacyAgreement').checked;
+                if (!privacyAgreement) {
+                    showError('privacyError', 'Необходимо согласие на обработку персональных данных');
+                    isValid = false;
+                }
+                
+                return isValid;
+            }
+            
+            function showError(elementId, message) {
+                const errorElement = document.getElementById(elementId);
+                errorElement.textContent = message;
+                errorElement.style.display = 'block';
+            }
+            
+            function submitForm() {
+                // Показываем состояние загрузки
+                submitBtn.disabled = true;
+                document.querySelector('.btn-text').style.display = 'none';
+                document.querySelector('.loading').style.display = 'inline-flex';
+                
+                // Собираем данные формы
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData);
+                
+                // Определяем итоговую сумму
+                if (data.amount === 'custom') {
+                    data.amount = data.customAmountValue;
+                }
+                delete data.customAmountValue;
+                
+                // Отправляем данные на сервер
+                fetch('/api/certificate/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Перенаправляем на страницу оплаты с данными
+                        const params = new URLSearchParams({
+                            walletNumber: data.data.walletNumber,
+                            amount: data.data.amount,
+                            clientId: data.data.clientId
+                        });
+                        window.location.href = `/certificate/payment?${params.toString()}`;
+                    } else {
+                        throw new Error(data.error || 'Произошла ошибка при обработке заявки');
+                    }
+                })
+                .catch(error => {
+                    alert('Ошибка: ' + error.message);
+                    console.error('Error:', error);
+                })
+                .finally(() => {
+                    // Возвращаем кнопку в исходное состояние
+                    submitBtn.disabled = false;
+                    document.querySelector('.btn-text').style.display = 'inline';
+                    document.querySelector('.loading').style.display = 'none';
+                });
+            }
+        });
+    </script>
+    
+    <!-- Analytics -->
+    <% if (yandexMetrikaId) { %>
+        <%- include('partials/analytics', { yandexMetrikaId, googleAnalyticsId }) %>
+    <% } %>
+</body>
+</html>

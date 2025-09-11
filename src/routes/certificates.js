@@ -8,6 +8,20 @@ const certificateImageGenerator = require('../services/certificateImageGenerator
 // Создаем экземпляр клиентского бота для уведомлений
 const clientBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
+// Функция генерации уникального номера кошелька (из client-bot.js)
+async function generateUniqueWalletNumber() {
+    const generateNumber = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join('');
+    let walletNumber, isUnique = false, attempts = 0;
+    while (!isUnique && attempts < 10) {
+        walletNumber = generateNumber();
+        const result = await pool.query('SELECT COUNT(*) FROM wallets WHERE wallet_number = $1', [walletNumber]);
+        if (result.rows[0].count === '0') isUnique = true;
+        attempts++;
+    }
+    if (!isUnique) throw new Error('Не удалось сгенерировать уникальный номер кошелька');
+    return walletNumber;
+}
+
 // Функция генерации уникального 6-значного номера сертификата
 async function generateUniqueCertificateNumber() {
     let number;
@@ -751,6 +765,207 @@ router.get('/admin/statistics', async (req, res) => {
             error: 'Внутренняя ошибка сервера',
             code: 'INTERNAL_ERROR'
         });
+    }
+});
+
+// 7. Регистрация клиента для покупки сертификата через сайт
+router.post('/register', async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        const {
+            fullName,
+            birthDate,
+            phone,
+            email,
+            recipientName,
+            message,
+            amount,
+            design
+        } = req.body;
+
+        // Валидация обязательных полей
+        if (!fullName || !birthDate || !phone || !email || !amount || !design) {
+            return res.status(400).json({
+                success: false,
+                error: 'Отсутствуют обязательные поля',
+                code: 'MISSING_REQUIRED_FIELDS'
+            });
+        }
+
+        // Валидация email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный формат email',
+                code: 'INVALID_EMAIL'
+            });
+        }
+
+        // Валидация телефона
+        const phoneRegex = /^[\+]?[7|8][\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}$/;
+        if (!phoneRegex.test(phone)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный формат телефона',
+                code: 'INVALID_PHONE'
+            });
+        }
+
+        // Валидация суммы
+        const nominalValue = parseInt(amount);
+        if (!nominalValue || nominalValue < 500 || nominalValue > 50000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Сумма должна быть от 500 до 50 000 рублей',
+                code: 'INVALID_AMOUNT'
+            });
+        }
+
+        // Валидация дизайна
+        const designId = parseInt(design);
+        if (!designId || designId < 1 || designId > 4) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный ID дизайна',
+                code: 'INVALID_DESIGN'
+            });
+        }
+
+        // Валидация даты рождения
+        const birthDateObj = new Date(birthDate);
+        const now = new Date();
+        const age = now.getFullYear() - birthDateObj.getFullYear();
+        if (age < 6 || age > 100) {
+            return res.status(400).json({
+                success: false,
+                error: 'Проверьте корректность даты рождения',
+                code: 'INVALID_BIRTH_DATE'
+            });
+        }
+
+        console.log('Начало регистрации клиента для покупки сертификата:', {
+            fullName, phone, email, amount: nominalValue
+        });
+
+        await client.query('BEGIN');
+
+        // Проверяем, не существует ли уже клиент с таким email или телефоном
+        const existingClientQuery = `
+            SELECT id, email, phone 
+            FROM clients 
+            WHERE email = $1 OR phone = $2
+        `;
+        const existingClient = await client.query(existingClientQuery, [email, phone]);
+
+        let clientId;
+        
+        if (existingClient.rows.length > 0) {
+            // Клиент уже существует, используем его ID
+            clientId = existingClient.rows[0].id;
+            console.log('Найден существующий клиент, ID:', clientId);
+            
+            // Обновляем данные клиента если нужно
+            const updateClientQuery = `
+                UPDATE clients 
+                SET full_name = $1, birth_date = $2, phone = $3, email = $4, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $5
+            `;
+            await client.query(updateClientQuery, [fullName, birthDate, phone, email, clientId]);
+        } else {
+            // Создаем нового клиента
+            const insertClientQuery = `
+                INSERT INTO clients (full_name, birth_date, phone, email, skill_level, created_at, updated_at) 
+                VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) 
+                RETURNING id
+            `;
+            const clientResult = await client.query(insertClientQuery, [fullName, birthDate, phone, email]);
+            clientId = clientResult.rows[0].id;
+            console.log('Создан новый клиент, ID:', clientId);
+        }
+
+        // Проверяем, есть ли уже кошелек у клиента
+        const walletQuery = 'SELECT id, wallet_number FROM wallets WHERE client_id = $1';
+        const walletResult = await client.query(walletQuery, [clientId]);
+
+        let walletNumber;
+        if (walletResult.rows.length > 0) {
+            // Кошелек уже существует
+            walletNumber = walletResult.rows[0].wallet_number;
+            console.log('Найден существующий кошелек:', walletNumber);
+        } else {
+            // Создаем новый кошелек
+            walletNumber = await generateUniqueWalletNumber();
+            const insertWalletQuery = `
+                INSERT INTO wallets (client_id, wallet_number, balance, last_updated) 
+                VALUES ($1, $2, 0, CURRENT_TIMESTAMP)
+            `;
+            await client.query(insertWalletQuery, [clientId, walletNumber]);
+            console.log('Создан новый кошелек:', walletNumber);
+        }
+
+        // Сохраняем данные о планируемом сертификате во временной таблице или сессии
+        // Для простоты создадим временную запись в таблице pending_certificates
+        const createPendingQuery = `
+            CREATE TABLE IF NOT EXISTS pending_certificates (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER,
+                wallet_number VARCHAR(16),
+                recipient_name VARCHAR(100),
+                message TEXT,
+                nominal_value DECIMAL(10,2),
+                design_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '1 hour')
+            )
+        `;
+        await client.query(createPendingQuery);
+
+        // Удаляем старые записи для этого клиента
+        await client.query('DELETE FROM pending_certificates WHERE client_id = $1', [clientId]);
+
+        // Создаем новую запись
+        const insertPendingQuery = `
+            INSERT INTO pending_certificates (client_id, wallet_number, recipient_name, message, nominal_value, design_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        `;
+        await client.query(insertPendingQuery, [
+            clientId, 
+            walletNumber, 
+            recipientName || null, 
+            message || null, 
+            nominalValue, 
+            designId
+        ]);
+
+        await client.query('COMMIT');
+        console.log('Регистрация успешно завершена');
+
+        // Форматируем номер кошелька для отображения
+        const formattedWalletNumber = walletNumber.replace(/(.{4})/g, '$1 ').trim();
+
+        res.json({
+            success: true,
+            message: 'Регистрация успешно завершена',
+            data: {
+                clientId: clientId,
+                walletNumber: formattedWalletNumber,
+                amount: nominalValue
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при регистрации клиента для покупки сертификата:', error);
+        await client.query('ROLLBACK');
+        
+        res.status(500).json({
+            success: false,
+            error: 'Произошла ошибка при обработке заявки',
+            code: 'INTERNAL_ERROR'
+        });
+    } finally {
+        client.release();
     }
 });
 

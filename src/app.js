@@ -72,6 +72,51 @@ app.get('/prices', (req, res) => {
     });
 });
 
+// Страница сертификатов
+app.get('/certificates', (req, res) => {
+    res.render('certificates', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Подарочные сертификаты - Горностайл72'
+    });
+});
+
+// Страница покупки сертификата
+app.get('/certificate/purchase', (req, res) => {
+    res.render('certificate-purchase', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Купить подарочный сертификат - Горностайл72'
+    });
+});
+
+// Страница оплаты сертификата
+app.get('/certificate/payment', (req, res) => {
+    res.render('certificate-payment', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Оплата сертификата - Горностайл72'
+    });
+});
+
 // Страница графика работы
 app.get('/schedule', (req, res) => {
     res.render('schedule', {
