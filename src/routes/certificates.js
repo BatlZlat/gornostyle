@@ -769,7 +769,7 @@ router.get('/admin/statistics', async (req, res) => {
 });
 
 // 7. Регистрация клиента для покупки сертификата через сайт
-router.post('/register', async (req, res) => {
+async function registerHandler(req, res) {
     const client = await pool.connect();
     
     try {
@@ -971,6 +971,10 @@ router.post('/register', async (req, res) => {
     } finally {
         client.release();
     }
-});
+}
+
+// Добавляем обработчик в роутер
+router.post('/register', registerHandler);
 
 module.exports = router;
+module.exports.registerHandler = registerHandler;

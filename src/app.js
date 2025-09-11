@@ -312,6 +312,10 @@ app.use('/generated', express.static(path.join(__dirname, '../public/generated')
 // Маршруты аутентификации
 app.use('/api/admin', adminAuthRouter);
 
+// Публичные маршруты для покупки сертификатов через сайт (без авторизации)
+const { registerHandler } = require('./routes/certificates');
+app.post('/api/certificate/register', registerHandler);
+
 // Защищенные маршруты
 app.use('/api/groups', verifyToken, groupsRouter);
 app.use('/api/trainers', verifyToken, trainersRouter);

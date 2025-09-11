@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminFailedPayment, notifyAdminWalletRefilled } = require('../bot/admin-notify');
+const { notifyAdminFailedPayment, notifyAdminWalletRefilled, notifyAdminWebCertificatePurchase, calculateAge } = require('../bot/admin-notify');
 
 // Функция для обработки ожидающих сертификатов
 async function processPendingCertificate(walletNumber, amount, dbClient) {
     try {
         // Проверяем, есть ли ожидающий сертификат для этого кошелька
         const pendingQuery = `
-            SELECT pc.*, c.full_name, c.email
+            SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name
             FROM pending_certificates pc
             JOIN clients c ON pc.client_id = c.id
+            LEFT JOIN certificate_designs cd ON pc.design_id = cd.id
             WHERE pc.wallet_number = $1 
             AND pc.nominal_value = $2
             AND pc.expires_at > CURRENT_TIMESTAMP
@@ -39,7 +40,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         // Создаем транзакцию списания
         await dbClient.query(
             `INSERT INTO transactions (wallet_id, amount, type, description)
-            VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, 'debit', $3)`,
+            VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, 'payment', $3)`,
             [walletNumber, -amount, `Покупка сертификата - ${pendingCert.full_name}`]
         );
 
@@ -86,6 +87,25 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
             } catch (emailError) {
                 console.error('Ошибка при отправке email с сертификатом:', emailError);
             }
+        }
+
+        // Отправляем уведомление администратору о покупке через сайт
+        try {
+            const clientAge = calculateAge(pendingCert.birth_date);
+            await notifyAdminWebCertificatePurchase({
+                clientName: pendingCert.full_name,
+                clientAge: clientAge,
+                clientPhone: pendingCert.phone,
+                clientEmail: pendingCert.email,
+                certificateNumber: certificateNumber,
+                nominalValue: pendingCert.nominal_value,
+                designName: pendingCert.design_name || 'Неизвестный дизайн',
+                recipientName: pendingCert.recipient_name,
+                message: pendingCert.message
+            });
+            console.log(`Уведомление администратору о покупке сертификата отправлено`);
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления администратору:', notifyError);
         }
 
     } catch (error) {

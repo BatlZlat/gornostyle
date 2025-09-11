@@ -12,11 +12,22 @@ class EmailService {
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения
             }
         });
+
+        // Проверяем настройки
+        if (!process.env.EMAIL_PASS) {
+            console.warn('⚠️  EMAIL_PASS не настроен в переменных окружения. Email уведомления работать не будут.');
+        }
     }
 
     // Отправка сертификата на email
     async sendCertificateEmail(recipientEmail, certificateData) {
         try {
+            // Проверяем настройки перед отправкой
+            if (!process.env.EMAIL_PASS) {
+                console.warn(`⚠️  Не удалось отправить email на ${recipientEmail}: EMAIL_PASS не настроен`);
+                return { success: false, error: 'EMAIL_PASS не настроен' };
+            }
+
             const { certificateId, certificateCode, recipientName, amount, message } = certificateData;
 
             // Генерируем HTML содержимое письма
@@ -35,12 +46,22 @@ class EmailService {
                 ]
             };
 
+            console.log(`📧 Отправка email на ${recipientEmail}...`);
             const result = await this.transporter.sendMail(mailOptions);
-            console.log('Email с сертификатом отправлен успешно:', result.messageId);
+            console.log('✅ Email с сертификатом отправлен успешно:', result.messageId);
             return { success: true, messageId: result.messageId };
 
         } catch (error) {
-            console.error('Ошибка при отправке email с сертификатом:', error);
+            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
+            
+            // Детальная информация об ошибке для отладки
+            if (error.code) {
+                console.error(`Код ошибки: ${error.code}`);
+            }
+            if (error.response) {
+                console.error(`Ответ сервера: ${error.response}`);
+            }
+            
             throw error;
         }
     }

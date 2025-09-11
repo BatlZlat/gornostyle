@@ -300,6 +300,66 @@ async function notifyAdminCertificateActivation({ clientName, certificateNumber,
     }
 }
 
+// Функция для вычисления возраста по дате рождения
+function calculateAge(birthDate) {
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--;
+    }
+    
+    return age;
+}
+
+// Функция для отправки уведомления о покупке сертификата через сайт
+async function notifyAdminWebCertificatePurchase({ 
+    clientName, 
+    clientAge, 
+    clientPhone, 
+    clientEmail, 
+    certificateNumber, 
+    nominalValue, 
+    designName, 
+    recipientName, 
+    message: certificateMessage 
+}) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        let message = `🎉 <b>Ура! У нас купили сертификат</b>
+
+👤 ${clientName} (${clientAge} лет)
+📱 Телефон: ${clientPhone}
+📧 Email: ${clientEmail}
+
+🎁 <b>СЕРТИФИКАТ СОЗДАН:</b>
+📋 Номер: ${certificateNumber}
+💰 Номинал: ${nominalValue} ₽
+🎨 Дизайн: ${designName}`;
+
+        if (recipientName) {
+            message += `\n👤 Получатель: ${recipientName}`;
+        }
+        
+        if (certificateMessage) {
+            message += `\n💌 Сообщение: ${certificateMessage}`;
+        }
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'HTML' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о покупке сертификата через сайт:', error);
+    }
+}
+
 // Функция для отправки уведомления о новом клиенте
 async function notifyNewClient({ full_name, birth_date, phone, skill_level, child }) {
     try {
@@ -414,6 +474,8 @@ module.exports = {
     notifyAdminWalletRefilled,
     notifyAdminCertificatePurchase,
     notifyAdminCertificateActivation,
+    notifyAdminWebCertificatePurchase,
+    calculateAge,
     notifyNewClient,
     notifyTomorrowTrainings
 }; 
