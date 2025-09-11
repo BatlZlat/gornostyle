@@ -307,61 +307,84 @@
         <div class="payment-container">
             <div class="payment-header">
                 <h1><i class="fas fa-credit-card"></i> Завершение покупки</h1>
-                <p>Для получения сертификата необходимо пополнить ваш персональный кошелек</p>
+                <p>Для завершения покупки сертификата используйте уникальный код, который был сгенерирован специально для вашего заказа</p>
             </div>
 
-            <!-- Информация о кошельке -->
+            <!-- Информация о коде сертификата -->
             <div class="wallet-info">
-                <div class="wallet-label">Код для покупки сертификата:</div>
+                <div class="wallet-label">Уникальный код вашего сертификата:</div>
                 <div class="wallet-number" id="walletNumber">---- ---- ---- ----</div>
                 <div class="wallet-amount">Сумма к оплате: <span id="amount">0</span> ₽</div>
-                <button class="copy-btn" onclick="copyWalletNumber()">
-                    <i class="fas fa-copy"></i> Скопировать номер
+                <button class="copy-btn" onclick="copyCertificateCode()">
+                    <i class="fas fa-copy"></i> Скопировать код
                 </button>
             </div>
 
-            <div class="payment-card">
-                <div class="payment-methods">
-                    <!-- SMS на 900 -->
-                    <div class="payment-method">
-                        <div class="method-header">
-                            <div class="method-icon">
-                                <i class="fas fa-sms"></i>
-                            </div>
-                            <h3 class="method-title">SMS на номер 900</h3>
-                        </div>
-                        <ol class="method-steps">
-                            <li>Отправьте SMS на номер <strong>900</strong></li>
-                            <li>В тексте сообщения укажите: <strong>ПЕРЕВОД [КОД] [СУММА]</strong></li>
-                            <li>Подтвердите операцию согласно инструкциям банка</li>
-                        </ol>
-                        <div class="sms-example">
-                            Пример: ПЕРЕВОД <span id="smsWalletNumber">1234567890123456</span> <span id="smsAmount">3000</span>
-                        </div>
-                    </div>
+            <!-- Объяснение процесса -->
+            <div class="payment-card" style="margin-bottom: 20px;">
+                <h3 style="color: #2c3e50; margin-bottom: 20px;"><i class="fas fa-info-circle"></i> Как происходит покупка</h3>
+                <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 15px;">
+                    Для завершения покупки сертификата вам необходимо перевести указанную сумму, обязательно указав в комментарии уникальный код сертификата. 
+                </p>
+                <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 15px;">
+                    <strong>Этот код уникален</strong> и сгенерирован специально для вашего заказа. После получения платежа с правильным кодом, сертификат будет автоматически создан и отправлен на ваш email.
+                </p>
+                <p style="color: #e74c3c; line-height: 1.6; font-weight: bold;">
+                    ⚠️ Без указания кода в комментарии платеж не будет обработан автоматически!
+                </p>
+            </div>
 
+            <div class="payment-card">
+                <h3 style="color: #2c3e50; margin-bottom: 30px; text-align: center;"><i class="fas fa-payment"></i> Выберите удобный способ оплаты</h3>
+                
+                <div class="payment-methods">
                     <!-- Приложение банка -->
                     <div class="payment-method">
                         <div class="method-header">
                             <div class="method-icon">
                                 <i class="fas fa-mobile-alt"></i>
                             </div>
-                            <h3 class="method-title">Приложение банка</h3>
+                            <h3 class="method-title">Вариант 1: Приложение банка</h3>
                         </div>
                         <ol class="method-steps">
                             <li>Откройте приложение вашего банка</li>
-                            <li>Выберите "Переводы" → "По номеру карты/счета"</li>
-                            <li>Введите код сертификата как номер получателя</li>
-                            <li>Укажите сумму и обязательно добавьте код в комментарий</li>
+                            <li>Выберите "Переводы" → "По номеру телефона"</li>
+                            <li>Номер телефона для перевода: <strong>+79123924956</strong></li>
+                            <li>Укажите сумму: <strong><span class="highlight-amount">0</span> ₽</strong></li>
+                            <li><strong style="color: #e74c3c;">Обязательно добавьте код сертификата в комментарий:</strong> <span class="highlight-code" onclick="copyCertificateCode()" style="cursor: pointer; background: #f39c12; color: white; padding: 2px 8px; border-radius: 4px; font-family: monospace;">---- ---- ---- ----</span></li>
                             <li>Подтвердите перевод</li>
                         </ol>
+                        <div style="background: #fff3cd; border-left: 4px solid #f39c12; padding: 15px; margin-top: 15px; border-radius: 0 8px 8px 0;">
+                            <strong>Если забыли указать код сертификата в комментарии:</strong><br>
+                            Свяжитесь с менеджером: <a href="tel:<%= adminPhone %>" style="color: #e74c3c; font-weight: bold;"><%= adminPhone %></a>
+                        </div>
+                    </div>
+
+                    <!-- SMS на 900 -->
+                    <div class="payment-method">
+                        <div class="method-header">
+                            <div class="method-icon">
+                                <i class="fas fa-sms"></i>
+                            </div>
+                            <h3 class="method-title">Вариант 2: SMS на номер 900</h3>
+                        </div>
+                        <p style="color: #7f8c8d; margin-bottom: 20px;">Отправьте на номер <strong>900</strong> готовое сообщение:</p>
+                        <div class="sms-example" style="background: #e8f5e8; border-left: 4px solid #27ae60; position: relative;">
+                            <div style="font-size: 0.9rem; color: #27ae60; margin-bottom: 10px; font-weight: bold;">📱 Готовое сообщение для отправки:</div>
+                            <div id="readySmsMessage" style="font-family: 'Courier New', monospace; font-size: 1.1rem; line-height: 1.4;">
+                                ПЕРЕВОД <span id="smsWalletNumber">1234567890123456</span> <span id="smsAmount">3000</span>
+                            </div>
+                            <button onclick="copySmsMessage()" style="position: absolute; top: 10px; right: 10px; background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                                <i class="fas fa-copy"></i> Копировать
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Важная информация -->
                 <div class="warning-box">
                     <h4><i class="fas fa-exclamation-triangle"></i> Важно!</h4>
-                    <p>Обязательно укажите номер кошелька в комментарии к платежу. Без этого платеж не будет обработан автоматически.</p>
+                    <p>Обязательно укажите код сертификата в комментарии к платежу. Без этого платеж не будет обработан автоматически.</p>
                 </div>
 
                 <!-- Что происходит после оплаты -->
@@ -398,13 +421,19 @@
         document.getElementById('walletNumber').textContent = walletNumber;
         document.getElementById('amount').textContent = amount;
         
+        // Заполняем данные в форме оплаты
+        const highlightAmount = document.querySelector('.highlight-amount');
+        const highlightCode = document.querySelector('.highlight-code');
+        if (highlightAmount) highlightAmount.textContent = amount;
+        if (highlightCode) highlightCode.textContent = walletNumber;
+        
         // Для SMS примера убираем пробелы
         const walletNumberForSMS = walletNumber.replace(/\s/g, '');
         document.getElementById('smsWalletNumber').textContent = walletNumberForSMS;
         document.getElementById('smsAmount').textContent = amount;
 
-        // Функция копирования номера кошелька
-        function copyWalletNumber() {
+        // Функция копирования кода сертификата
+        function copyCertificateCode() {
             const walletNumberText = walletNumber.replace(/\s/g, '');
             
             if (navigator.clipboard) {
@@ -446,6 +475,22 @@
             document.body.removeChild(textArea);
         }
 
+        // Функция копирования SMS сообщения
+        function copySmsMessage() {
+            const smsText = `ПЕРЕВОД ${walletNumberForSMS} ${amount}`;
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(smsText).then(() => {
+                    showSmsCopySuccess();
+                }).catch(err => {
+                    console.error('Ошибка копирования SMS:', err);
+                    fallbackCopyTextToClipboard(smsText);
+                });
+            } else {
+                fallbackCopyTextToClipboard(smsText);
+            }
+        }
+
         // Показ уведомления об успешном копировании
         function showCopySuccess() {
             const btn = document.querySelector('.copy-btn');
@@ -456,6 +501,19 @@
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = 'rgba(255,255,255,0.2)';
+            }, 2000);
+        }
+
+        // Показ уведомления об успешном копировании SMS
+        function showSmsCopySuccess() {
+            const btn = document.querySelector('button[onclick="copySmsMessage()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Готово!';
+            btn.style.background = '#27ae60';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = '#27ae60';
             }, 2000);
         }
 
