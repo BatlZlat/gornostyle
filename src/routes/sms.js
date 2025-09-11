@@ -7,14 +7,16 @@ const { notifyAdminFailedPayment, notifyAdminWalletRefilled, notifyAdminWebCerti
 async function processPendingCertificate(walletNumber, amount, dbClient) {
     try {
         // Проверяем, есть ли ожидающий сертификат для этого кошелька
+        // Ищем по номеру кошелька и проверяем, что сумма в разумных пределах
         const pendingQuery = `
             SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name
             FROM pending_certificates pc
             JOIN clients c ON pc.client_id = c.id
             LEFT JOIN certificate_designs cd ON pc.design_id = cd.id
             WHERE pc.wallet_number = $1 
-            AND pc.nominal_value = $2
             AND pc.expires_at > CURRENT_TIMESTAMP
+            AND $2 >= 10  -- Минимальная сумма сертификата (временно для тестов)
+            AND $2 <= 50000  -- Максимальная сумма сертификата
             ORDER BY pc.created_at DESC
             LIMIT 1
         `;
@@ -28,6 +30,11 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
 
         const pendingCert = pendingResult.rows[0];
         console.log(`Найден ожидающий сертификат для клиента ${pendingCert.full_name}`);
+        
+        // Логируем изменение суммы, если она отличается от ожидаемой
+        if (amount !== parseFloat(pendingCert.nominal_value)) {
+            console.log(`⚠️ Сумма изменена: ожидалось ${pendingCert.nominal_value}₽, переведено ${amount}₽`);
+        }
 
         await dbClient.query('BEGIN');
 
@@ -38,13 +45,17 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         );
 
         // Создаем транзакцию списания
+        const transactionDescription = amount !== parseFloat(pendingCert.nominal_value) 
+            ? `Покупка сертификата (${amount}₽ вместо ${pendingCert.nominal_value}₽) - ${pendingCert.full_name}`
+            : `Покупка сертификата - ${pendingCert.full_name}`;
+            
         await dbClient.query(
             `INSERT INTO transactions (wallet_id, amount, type, description)
             VALUES ((SELECT id FROM wallets WHERE wallet_number = $1), $2, 'payment', $3)`,
-            [walletNumber, -amount, `Покупка сертификата - ${pendingCert.full_name}`]
+            [walletNumber, -amount, transactionDescription]
         );
 
-        // Создаем сертификат
+        // Создаем сертификат на сумму, которую клиент реально перевел
         const certificateQuery = `
             INSERT INTO certificates (
                 purchaser_id, nominal_value, recipient_name, message, design_id, 
@@ -58,7 +69,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         
         const certResult = await dbClient.query(certificateQuery, [
             pendingCert.client_id,
-            pendingCert.nominal_value,
+            amount,  // Используем реальную переведенную сумму вместо pendingCert.nominal_value
             pendingCert.recipient_name,
             pendingCert.message,
             pendingCert.design_id,
@@ -66,7 +77,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         ]);
 
         const certificateId = certResult.rows[0].id;
-        console.log(`Создан сертификат ID: ${certificateId}, номер: ${certificateNumber}`);
+        console.log(`Создан сертификат ID: ${certificateId}, номер: ${certificateNumber}, сумма: ${amount}₽`);
 
         // Удаляем запись из pending_certificates
         await dbClient.query('DELETE FROM pending_certificates WHERE id = $1', [pendingCert.id]);

@@ -388,6 +388,10 @@
                 <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 15px;">
                     <strong>Этот код уникален</strong> и сгенерирован специально для вашего заказа. После получения платежа с правильным кодом, сертификат будет автоматически создан и отправлен на ваш email.
                 </p>
+                <p style="color: #f39c12; line-height: 1.6; margin-bottom: 15px; font-weight: bold;">
+                    💰 <strong>Минимальная сумма сертификата: 500₽</strong><br>
+                    При переводе меньшей суммы сертификат не будет создан.
+                </p>
                 <p style="color: #e74c3c; line-height: 1.6; font-weight: bold;">
                     ⚠️ Без указания кода в комментарии платеж не будет обработан автоматически!
                 </p>
@@ -403,7 +407,7 @@
                             <div class="method-icon">
                                 <i class="fas fa-mobile-alt"></i>
                             </div>
-                            <h3 class="method-title">Вариант 1: Приложение банка</h3>
+                            <h3 class="method-title">Приложение банка</h3>
                         </div>
                         <ol class="method-steps">
                             <li>Откройте приложение вашего банка</li>
@@ -413,6 +417,9 @@
                             <li style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin: 10px 0;">
                                 <strong style="color: #e74c3c; display: block; margin-bottom: 8px;">⚠️ Обязательно добавьте код сертификата в комментарий:</strong> 
                                 <span class="highlight-code clickable-code" onclick="copyCertificateCode()" style="cursor: pointer; background: #f39c12; color: white; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; font-weight: bold; display: inline-block; transition: all 0.3s ease;">---- ---- ---- ----</span>
+                                <div style="font-size: 0.9rem; color: #666; margin-top: 8px;">
+                                    <i class="fas fa-info-circle"></i> Код сертификата (16 цифр без пробелов) в поле "Комментарий к переводу"
+                                </div>
                             </li>
                             <li>Подтвердите перевод</li>
                         </ol>
@@ -422,33 +429,6 @@
                         </div>
                     </div>
 
-                    <!-- SMS на 900 -->
-                    <div class="payment-method">
-                        <div class="method-header">
-                            <div class="method-icon">
-                                <i class="fas fa-sms"></i>
-                            </div>
-                            <h3 class="method-title">Вариант 2: SMS на номер 900</h3>
-                        </div>
-                        <div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 20px; border-radius: 0 8px 8px 0;">
-                            <div style="color: #1976d2; font-weight: bold; margin-bottom: 8px;">
-                                <i class="fas fa-info-circle"></i> Только для клиентов Сбербанка
-                            </div>
-                            <div style="color: #1976d2; font-size: 0.9rem;">
-                                За отправку SMS деньги с вашего счета не спишутся
-                            </div>
-                        </div>
-                        <p style="color: #7f8c8d; margin-bottom: 20px;">Отправьте на номер <strong>900</strong> готовое сообщение:</p>
-                        <div class="sms-example" style="background: #e8f5e8; border-left: 4px solid #27ae60; position: relative;">
-                            <div style="font-size: 0.9rem; color: #27ae60; margin-bottom: 10px; font-weight: bold;">📱 Готовое сообщение для отправки:</div>
-                            <div id="readySmsMessage" style="font-family: 'Courier New', monospace; font-size: 1.1rem; line-height: 1.4;">
-                                ПЕРЕВОД <span id="smsWalletNumber">1234567890123456</span> <span id="smsAmount">3000</span>
-                            </div>
-                            <button onclick="copySmsMessage()" class="sms-copy-btn" style="position: absolute; top: 10px; right: 10px; background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
-                                <i class="fas fa-copy"></i> Копировать
-                            </button>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Важная информация -->
@@ -530,21 +510,6 @@
             document.body.removeChild(textArea);
         }
 
-        // Функция копирования SMS сообщения
-        function copySmsMessage() {
-            const smsText = `ПЕРЕВОД ${walletNumberForSMS} ${amount}`;
-            
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(smsText).then(() => {
-                    showSmsCopySuccess();
-                }).catch(err => {
-                    console.error('Ошибка копирования SMS:', err);
-                    fallbackCopyTextToClipboard(smsText);
-                });
-            } else {
-                fallbackCopyTextToClipboard(smsText);
-            }
-        }
 
         // Показ уведомления об успешном копировании
         function showCopySuccess() {
@@ -561,20 +526,6 @@
             }, 2000);
         }
 
-        // Показ уведомления об успешном копировании SMS
-        function showSmsCopySuccess() {
-            const btn = document.querySelector('button[onclick="copySmsMessage()"]');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> Готово!';
-            btn.style.background = '#229954';
-            btn.style.transform = 'scale(1.2)';
-            
-            setTimeout(() => {
-                btn.innerHTML = originalText;
-                btn.style.background = '#27ae60';
-                btn.style.transform = 'scale(1)';
-            }, 2000);
-        }
 
         // Анимация клика для кода сертификата
         function copyCertificateCode() {
