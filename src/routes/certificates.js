@@ -851,28 +851,32 @@ router.post('/register', async (req, res) => {
 
         await client.query('BEGIN');
 
-        // Проверяем, не существует ли уже клиент с таким email или телефоном
+        // Проверяем, не существует ли уже клиент с таким телефоном (основной идентификатор)
         const existingClientQuery = `
-            SELECT id, email, phone 
+            SELECT id, email, phone, full_name, birth_date 
             FROM clients 
-            WHERE email = $1 OR phone = $2
+            WHERE phone = $1
         `;
-        const existingClient = await client.query(existingClientQuery, [email, phone]);
+        const existingClient = await client.query(existingClientQuery, [phone]);
 
         let clientId;
         
         if (existingClient.rows.length > 0) {
-            // Клиент уже существует, используем его ID
+            // Клиент уже существует - обновляем данные и добавляем email если его не было
             clientId = existingClient.rows[0].id;
-            console.log('Найден существующий клиент, ID:', clientId);
+            const currentEmail = existingClient.rows[0].email;
             
-            // Обновляем данные клиента если нужно
+            console.log('Найден существующий клиент, ID:', clientId, 'email был:', !!currentEmail);
+            
+            // Обновляем данные клиента, добавляем email если его не было
             const updateClientQuery = `
                 UPDATE clients 
-                SET full_name = $1, birth_date = $2, phone = $3, email = $4, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $5
+                SET full_name = $1, birth_date = $2, email = COALESCE(email, $3), updated_at = CURRENT_TIMESTAMP
+                WHERE id = $4
             `;
-            await client.query(updateClientQuery, [fullName, birthDate, phone, email, clientId]);
+            await client.query(updateClientQuery, [fullName, birthDate, email, clientId]);
+            
+            console.log('Клиент обновлен, email добавлен:', !currentEmail ? 'да' : 'уже был');
         } else {
             // Создаем нового клиента
             const insertClientQuery = `

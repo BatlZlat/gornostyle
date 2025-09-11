@@ -189,7 +189,9 @@
 .design-card img {
     width: 100%;
     height: 200px;
-    object-fit: cover;
+    object-fit: contain;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
 }
 
 .design-card h3 {
@@ -232,6 +234,10 @@
     text-align: center;
     transition: all 0.3s ease;
     position: relative;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    cursor: pointer;
 }
 
 .amount-card:hover {
@@ -308,6 +314,13 @@
     font-size: 1.3rem;
     margin-bottom: 40px;
     opacity: 0.9;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
 }
 
 .btn-large {

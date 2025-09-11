@@ -47,6 +47,21 @@
             color: #7f8c8d;
         }
         
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: #2980b9;
+        }
+        
         .purchase-form {
             background: white;
             border-radius: 15px;
@@ -199,7 +214,9 @@
         .design-option img {
             width: 100%;
             height: 120px;
-            object-fit: cover;
+            object-fit: contain;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
         }
         
         .design-option .design-name {
@@ -346,6 +363,9 @@
     <main class="purchase-page">
         <div class="purchase-container">
             <div class="purchase-header">
+                <a href="/certificates" class="back-link">
+                    <i class="fas fa-arrow-left"></i> Вернуться к сертификатам
+                </a>
                 <h1><i class="fas fa-gift"></i> Покупка подарочного сертификата</h1>
                 <p>Заполните форму, чтобы создать персональный подарочный сертификат</p>
             </div>
@@ -511,6 +531,22 @@
             const customAmountRadio = document.getElementById('amountCustom');
             const customAmountBlock = document.getElementById('customAmountBlock');
             const submitBtn = document.getElementById('submitBtn');
+            
+            // Предзаполнение суммы из URL параметров
+            const urlParams = new URLSearchParams(window.location.search);
+            const presetAmount = urlParams.get('amount');
+            
+            if (presetAmount) {
+                const amountRadio = document.getElementById(`amount${presetAmount}`);
+                if (amountRadio) {
+                    amountRadio.checked = true;
+                } else {
+                    // Если сумма не из предустановленных, используем произвольную
+                    customAmountRadio.checked = true;
+                    customAmountBlock.style.display = 'block';
+                    document.getElementById('customAmountValue').value = presetAmount;
+                }
+            }
             
             // Показ/скрытие поля для произвольной суммы
             document.querySelectorAll('input[name="amount"]').forEach(radio => {
