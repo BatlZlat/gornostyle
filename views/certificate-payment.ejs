@@ -99,6 +99,65 @@
             background: rgba(255,255,255,0.3);
         }
         
+        /* Анимации для кликабельных элементов */
+        .clickable-code {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .clickable-code:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(243, 156, 18, 0.4);
+        }
+        
+        .clickable-code:active {
+            transform: scale(0.95);
+            background: #e67e22 !important;
+        }
+        
+        .clickable-phone {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .clickable-phone:hover {
+            color: #2980b9 !important;
+            transform: scale(1.05);
+            text-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+        }
+        
+        .clickable-phone:active {
+            transform: scale(0.95);
+            color: #1f618d !important;
+        }
+        
+        /* Анимация для кнопки копирования SMS */
+        .sms-copy-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .sms-copy-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+        }
+        
+        .sms-copy-btn:active {
+            transform: scale(0.9);
+            background: #229954 !important;
+        }
+        
+        /* Анимация пульсации для важных элементов */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0); }
+        }
+        
+        .highlight-code {
+            animation: pulse 2s infinite;
+        }
+        
         .payment-methods {
             display: grid;
             gap: 30px;
@@ -349,9 +408,12 @@
                         <ol class="method-steps">
                             <li>Откройте приложение вашего банка</li>
                             <li>Выберите "Переводы" → "По номеру телефона"</li>
-                            <li>Номер телефона для перевода: <strong>+79123924956</strong></li>
+                            <li>Номер телефона для перевода: <a href="tel:+79123924956" class="clickable-phone" style="color: #3498db; font-weight: bold; text-decoration: none; border-bottom: 1px dashed #3498db;">+79123924956</a></li>
                             <li>Укажите сумму: <strong><span class="highlight-amount">0</span> ₽</strong></li>
-                            <li><strong style="color: #e74c3c;">Обязательно добавьте код сертификата в комментарий:</strong> <span class="highlight-code" onclick="copyCertificateCode()" style="cursor: pointer; background: #f39c12; color: white; padding: 2px 8px; border-radius: 4px; font-family: monospace;">---- ---- ---- ----</span></li>
+                            <li style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin: 10px 0;">
+                                <strong style="color: #e74c3c; display: block; margin-bottom: 8px;">⚠️ Обязательно добавьте код сертификата в комментарий:</strong> 
+                                <span class="highlight-code clickable-code" onclick="copyCertificateCode()" style="cursor: pointer; background: #f39c12; color: white; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; font-weight: bold; display: inline-block; transition: all 0.3s ease;">---- ---- ---- ----</span>
+                            </li>
                             <li>Подтвердите перевод</li>
                         </ol>
                         <div style="background: #fff3cd; border-left: 4px solid #f39c12; padding: 15px; margin-top: 15px; border-radius: 0 8px 8px 0;">
@@ -368,13 +430,21 @@
                             </div>
                             <h3 class="method-title">Вариант 2: SMS на номер 900</h3>
                         </div>
+                        <div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 20px; border-radius: 0 8px 8px 0;">
+                            <div style="color: #1976d2; font-weight: bold; margin-bottom: 8px;">
+                                <i class="fas fa-info-circle"></i> Только для клиентов Сбербанка
+                            </div>
+                            <div style="color: #1976d2; font-size: 0.9rem;">
+                                За отправку SMS деньги с вашего счета не спишутся
+                            </div>
+                        </div>
                         <p style="color: #7f8c8d; margin-bottom: 20px;">Отправьте на номер <strong>900</strong> готовое сообщение:</p>
                         <div class="sms-example" style="background: #e8f5e8; border-left: 4px solid #27ae60; position: relative;">
                             <div style="font-size: 0.9rem; color: #27ae60; margin-bottom: 10px; font-weight: bold;">📱 Готовое сообщение для отправки:</div>
                             <div id="readySmsMessage" style="font-family: 'Courier New', monospace; font-size: 1.1rem; line-height: 1.4;">
                                 ПЕРЕВОД <span id="smsWalletNumber">1234567890123456</span> <span id="smsAmount">3000</span>
                             </div>
-                            <button onclick="copySmsMessage()" style="position: absolute; top: 10px; right: 10px; background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                            <button onclick="copySmsMessage()" class="sms-copy-btn" style="position: absolute; top: 10px; right: 10px; background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
                                 <i class="fas fa-copy"></i> Копировать
                             </button>
                         </div>
@@ -432,21 +502,6 @@
         document.getElementById('smsWalletNumber').textContent = walletNumberForSMS;
         document.getElementById('smsAmount').textContent = amount;
 
-        // Функция копирования кода сертификата
-        function copyCertificateCode() {
-            const walletNumberText = walletNumber.replace(/\s/g, '');
-            
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(walletNumberText).then(() => {
-                    showCopySuccess();
-                }).catch(err => {
-                    console.error('Ошибка копирования:', err);
-                    fallbackCopyTextToClipboard(walletNumberText);
-                });
-            } else {
-                fallbackCopyTextToClipboard(walletNumberText);
-            }
-        }
 
         // Fallback функция копирования для старых браузеров
         function fallbackCopyTextToClipboard(text) {
@@ -497,10 +552,12 @@
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check"></i> Скопировано!';
             btn.style.background = 'rgba(46, 204, 113, 0.3)';
+            btn.style.transform = 'scale(1.1)';
             
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = 'rgba(255,255,255,0.2)';
+                btn.style.transform = 'scale(1)';
             }, 2000);
         }
 
@@ -509,12 +566,46 @@
             const btn = document.querySelector('button[onclick="copySmsMessage()"]');
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check"></i> Готово!';
-            btn.style.background = '#27ae60';
+            btn.style.background = '#229954';
+            btn.style.transform = 'scale(1.2)';
             
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = '#27ae60';
+                btn.style.transform = 'scale(1)';
             }, 2000);
+        }
+
+        // Анимация клика для кода сертификата
+        function copyCertificateCode() {
+            const codeElement = document.querySelector('.highlight-code');
+            
+            // Анимация клика
+            codeElement.style.transform = 'scale(0.9)';
+            codeElement.style.background = '#e67e22';
+            
+            setTimeout(() => {
+                codeElement.style.transform = 'scale(1.05)';
+                codeElement.style.background = '#f39c12';
+                
+                setTimeout(() => {
+                    codeElement.style.transform = 'scale(1)';
+                }, 150);
+            }, 100);
+            
+            // Копирование
+            const walletNumberText = walletNumber.replace(/\s/g, '');
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(walletNumberText).then(() => {
+                    showCopySuccess();
+                }).catch(err => {
+                    console.error('Ошибка копирования:', err);
+                    fallbackCopyTextToClipboard(walletNumberText);
+                });
+            } else {
+                fallbackCopyTextToClipboard(walletNumberText);
+            }
         }
 
         // Проверяем статус платежа каждые 30 секунд
