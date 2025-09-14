@@ -298,6 +298,9 @@ router.post('/process', async (req, res) => {
         const { amount, walletNumber } = parsed;
         // console.log('Извлеченные данные:', { amount, walletNumber });
 
+        // Логируем успешный парсинг SMS
+        await logSms(sms_text, parsed, null, null);
+
         // Проверяем существование таблиц
         const tablesExist = await pool.query(`
             SELECT EXISTS (

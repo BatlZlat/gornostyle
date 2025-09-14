@@ -236,6 +236,19 @@ CREATE TABLE failed_payments (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица ожидающих сертификатов
+CREATE TABLE pending_certificates (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id),
+    wallet_number VARCHAR(20) NOT NULL,
+    recipient_name VARCHAR(100),
+    message TEXT,
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+);
+
 -- Таблица логов СМС
 CREATE TABLE sms_log (
     id SERIAL PRIMARY KEY,
@@ -363,6 +376,10 @@ CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(s
 CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
 CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
+CREATE INDEX idx_pending_certificates_wallet ON pending_certificates(wallet_number);
+CREATE INDEX idx_pending_certificates_client ON pending_certificates(client_id);
+CREATE INDEX idx_pending_certificates_expires ON pending_certificates(expires_at);
+CREATE INDEX idx_pending_certificates_created ON pending_certificates(created_at);
 CREATE INDEX idx_sms_log_created_at ON sms_log(created_at);
 CREATE INDEX idx_sms_log_processing_status ON sms_log(processing_status);
 CREATE INDEX idx_training_requests_equipment ON training_requests(equipment_type);
