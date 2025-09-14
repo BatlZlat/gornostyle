@@ -390,7 +390,13 @@ router.post('/process', async (req, res) => {
             await client.query('COMMIT');
 
             // Проверяем, есть ли ожидающий сертификат для этого кошелька
-            await processPendingCertificate(walletNumber, amount, client);
+            // Используем новое соединение для изоляции транзакций
+            const certClient = await pool.connect();
+            try {
+                await processPendingCertificate(walletNumber, amount, certClient);
+            } finally {
+                certClient.release();
+            }
 
             // Уведомляем администратора о пополнении
             await notifyAdminWalletRefilled({
