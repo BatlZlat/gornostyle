@@ -388,12 +388,17 @@ router.post('/process', async (req, res) => {
             );
 
             await client.query('COMMIT');
+            console.log(`💰 Транзакция пополнения завершена для кошелька ${walletNumber} на сумму ${amount}₽`);
 
             // Проверяем, есть ли ожидающий сертификат для этого кошелька
             // Используем новое соединение для изоляции транзакций
+            console.log(`🔍 ПОПЫТКА ВЫЗОВА processPendingCertificate для кошелька ${walletNumber} на сумму ${amount}₽`);
             const certClient = await pool.connect();
             try {
                 await processPendingCertificate(walletNumber, amount, certClient);
+                console.log(`✅ processPendingCertificate завершена для кошелька ${walletNumber}`);
+            } catch (error) {
+                console.error(`❌ Ошибка в processPendingCertificate для кошелька ${walletNumber}:`, error);
             } finally {
                 certClient.release();
             }
@@ -425,6 +430,19 @@ router.post('/process', async (req, res) => {
             throw error;
         } finally {
             client.release();
+        }
+
+        // Проверяем, есть ли ожидающий сертификат для этого кошелька
+        // Используем новое соединение для изоляции транзакций
+        console.log(`🔍 ПОПЫТКА ВЫЗОВА processPendingCertificate для кошелька ${walletNumber} на сумму ${amount}₽`);
+        const certClient = await pool.connect();
+        try {
+            await processPendingCertificate(walletNumber, amount, certClient);
+            console.log(`✅ processPendingCertificate завершена для кошелька ${walletNumber}`);
+        } catch (error) {
+            console.error(`❌ Ошибка в processPendingCertificate для кошелька ${walletNumber}:`, error);
+        } finally {
+            certClient.release();
         }
 
     } catch (error) {
