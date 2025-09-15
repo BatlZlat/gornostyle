@@ -5,9 +5,11 @@ const { notifyAdminFailedPayment, notifyAdminWalletRefilled, notifyAdminWebCerti
 
 // Функция для обработки ожидающих сертификатов
 async function processPendingCertificate(walletNumber, amount, dbClient) {
+    console.log(`🔍 [processPendingCertificate] НАЧАЛО: кошелек ${walletNumber}, сумма ${amount}₽`);
     try {
         // Проверяем, есть ли ожидающий сертификат для этого кошелька
         // Ищем по номеру кошелька и проверяем, что сумма в разумных пределах
+        console.log(`🔍 [processPendingCertificate] Поиск pending_certificate для кошелька ${walletNumber}`);
         const pendingQuery = `
             SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name
             FROM pending_certificates pc
@@ -22,29 +24,34 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         `;
         
         const pendingResult = await dbClient.query(pendingQuery, [walletNumber, amount]);
+        console.log(`🔍 [processPendingCertificate] Результат поиска: найдено ${pendingResult.rows.length} записей`);
         
         if (pendingResult.rows.length === 0) {
-            console.log(`Нет ожидающих сертификатов для кошелька ${walletNumber} на сумму ${amount}`);
+            console.log(`❌ [processPendingCertificate] Нет ожидающих сертификатов для кошелька ${walletNumber} на сумму ${amount}`);
             return;
         }
 
         const pendingCert = pendingResult.rows[0];
-        console.log(`Найден ожидающий сертификат для клиента ${pendingCert.full_name}`);
+        console.log(`✅ [processPendingCertificate] Найден ожидающий сертификат для клиента ${pendingCert.full_name}`);
+        console.log(`🔍 [processPendingCertificate] Данные pending_certificate: ID=${pendingCert.id}, получатель=${pendingCert.recipient_name}, сумма=${pendingCert.nominal_value}₽`);
         
         // Логируем изменение суммы, если она отличается от ожидаемой
         if (amount !== parseFloat(pendingCert.nominal_value)) {
-            console.log(`⚠️ Сумма изменена: ожидалось ${pendingCert.nominal_value}₽, переведено ${amount}₽`);
+            console.log(`⚠️ [processPendingCertificate] Сумма изменена: ожидалось ${pendingCert.nominal_value}₽, переведено ${amount}₽`);
         }
 
+        console.log(`🔍 [processPendingCertificate] Начинаем транзакцию создания сертификата`);
         await dbClient.query('BEGIN');
 
         // Списываем деньги с кошелька
+        console.log(`🔍 [processPendingCertificate] Списываем ${amount}₽ с кошелька ${walletNumber}`);
         await dbClient.query(
             `UPDATE wallets SET balance = balance - $1 WHERE wallet_number = $2`,
             [amount, walletNumber]
         );
 
         // Создаем транзакцию списания
+        console.log(`🔍 [processPendingCertificate] Создаем транзакцию списания`);
         const transactionDescription = amount !== parseFloat(pendingCert.nominal_value) 
             ? `Покупка сертификата (${amount}₽ вместо ${pendingCert.nominal_value}₽) - ${pendingCert.full_name}`
             : `Покупка сертификата - ${pendingCert.full_name}`;
@@ -56,6 +63,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         );
 
         // Создаем сертификат на сумму, которую клиент реально перевел
+        console.log(`🔍 [processPendingCertificate] Создаем сертификат для клиента ${pendingCert.client_id}`);
         const certificateQuery = `
             INSERT INTO certificates (
                 purchaser_id, nominal_value, recipient_name, message, design_id, 
@@ -77,11 +85,13 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         ]);
 
         const certificateId = certResult.rows[0].id;
-        console.log(`Создан сертификат ID: ${certificateId}, номер: ${certificateNumber}, сумма: ${amount}₽`);
+        console.log(`✅ [processPendingCertificate] Создан сертификат ID: ${certificateId}, номер: ${certificateNumber}, сумма: ${amount}₽`);
 
         // Удаляем запись из pending_certificates
+        console.log(`🔍 [processPendingCertificate] Удаляем pending_certificate ID: ${pendingCert.id}`);
         await dbClient.query('DELETE FROM pending_certificates WHERE id = $1', [pendingCert.id]);
 
+        console.log(`🔍 [processPendingCertificate] Завершаем транзакцию COMMIT`);
         await dbClient.query('COMMIT');
 
         // Отправляем email с сертификатом (если настроена отправка email)
@@ -120,7 +130,9 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         }
 
     } catch (error) {
-        console.error('Ошибка при обработке ожидающего сертификата:', error);
+        console.error(`❌ [processPendingCertificate] ОШИБКА при обработке ожидающего сертификата:`, error);
+        console.error(`❌ [processPendingCertificate] Детали ошибки:`, error.message);
+        console.error(`❌ [processPendingCertificate] Стек ошибки:`, error.stack);
         await dbClient.query('ROLLBACK');
         throw error;
     }
@@ -258,7 +270,10 @@ async function logSms(smsText, parsedData, errorType = null, errorDetails = null
 // Обработка СМС
 router.post('/process', async (req, res) => {
     // Логируем заголовок Authorization для отладки
-    // console.log('Authorization header:', req.headers.authorization);
+    console.log('📱 ПОЛУЧЕНО SMS НА СЕРВЕР:', new Date().toISOString());
+    console.log('📱 Authorization header:', req.headers.authorization);
+    console.log('📱 Request body:', JSON.stringify(req.body));
+    console.log('📱 Request headers:', JSON.stringify(req.headers));
     let { sms_text } = req.body;
 
     if (!sms_text) {
@@ -281,13 +296,14 @@ router.post('/process', async (req, res) => {
     }
 
     // Логируем реальный текст СМС
-    // console.log('Получено СМС от MacroDroid:', JSON.stringify(sms_text));
+    console.log('📱 Получено СМС от MacroDroid:', JSON.stringify(sms_text));
 
     try {
         // Удаляем переводы строк для универсального парсинга
         const normalizedText = sms_text.replace(/[\r\n]+/g, ' ');
         // Универсальный парсинг
         const parsed = parseSmsUniversal(normalizedText);
+        console.log('🔍 Результат парсинга SMS:', parsed);
         
         if (!parsed) {
             // console.log('Не удалось извлечь сумму или номер кошелька:', sms_text);
@@ -296,6 +312,7 @@ router.post('/process', async (req, res) => {
         }
 
         const { amount, walletNumber } = parsed;
+        console.log(`💰 Начинаем обработку платежа: кошелек ${walletNumber}, сумма ${amount}₽`);
         // console.log('Извлеченные данные:', { amount, walletNumber });
 
         // Логируем успешный парсинг SMS
