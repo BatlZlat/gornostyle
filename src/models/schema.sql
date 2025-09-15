@@ -538,4 +538,46 @@ DROP TRIGGER IF EXISTS individual_training_sessions_schedule_trigger ON individu
 CREATE TRIGGER individual_training_sessions_schedule_trigger
 AFTER INSERT OR DELETE ON individual_training_sessions
 FOR EACH ROW
-EXECUTE FUNCTION update_individual_training_slots(); 
+EXECUTE FUNCTION update_individual_training_slots();
+
+-- Создаем функцию для обновления слотов при создании/отмене групповых тренировок
+CREATE OR REPLACE FUNCTION update_training_sessions_slots()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Добавляем логирование
+    RAISE NOTICE 'Триггер update_training_sessions_slots: операция %', TG_OP;
+    RAISE NOTICE 'Триггер update_training_sessions_slots: simulator_id = %, date = %, start_time = %, end_time = %',
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.simulator_id ELSE OLD.simulator_id END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.session_date ELSE OLD.session_date END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.start_time ELSE OLD.start_time END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.end_time ELSE OLD.end_time END;
+
+    IF TG_OP = 'INSERT' THEN
+        -- При создании групповой тренировки помечаем 2 временных слота как занятые
+        UPDATE schedule 
+        SET is_booked = true
+        WHERE simulator_id = NEW.simulator_id
+        AND date = NEW.session_date
+        AND start_time >= NEW.start_time
+        AND start_time < NEW.end_time;  -- Это покроет 2 слота по 30 мин
+        RAISE NOTICE 'Триггер update_training_sessions_slots: слоты помечены как занятые';
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        -- При удалении групповой тренировки освобождаем 2 временных слота
+        UPDATE schedule 
+        SET is_booked = false
+        WHERE simulator_id = OLD.simulator_id
+        AND date = OLD.session_date
+        AND start_time >= OLD.start_time
+        AND start_time < OLD.end_time;  -- Это покроет 2 слота по 30 мин
+        RAISE NOTICE 'Триггер update_training_sessions_slots: слоты освобождены';
+        RETURN OLD;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Создаем триггер для групповых тренировок
+CREATE TRIGGER training_sessions_schedule_trigger
+AFTER INSERT OR DELETE ON training_sessions
+FOR EACH ROW
+EXECUTE FUNCTION update_training_sessions_slots(); 
