@@ -6,16 +6,19 @@ class EmailService {
     constructor() {
         // Создаем transporter для отправки email
         this.transporter = nodemailer.createTransport({
-            service: 'gmail', // Используем Gmail (проще настроить)
+            host: 'smtp.yandex.ru',
+            port: 465,
+            secure: true, // Используем SSL
             auth: {
-                user: process.env.EMAIL_USER || 'batl-zlat@gmail.com',
-                pass: process.env.EMAIL_PASS || '' // Пароль приложения Gmail
+                user: process.env.EMAIL_USER || 'batl-zlat@yandex.ru',
+                pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
             }
         });
 
         // Проверяем настройки
         if (!process.env.EMAIL_PASS) {
             console.warn('⚠️  EMAIL_PASS не настроен в переменных окружения. Email уведомления работать не будут.');
+            console.warn('💡 Для Yandex почты нужен пароль приложения, а не обычный пароль!');
         }
     }
 
