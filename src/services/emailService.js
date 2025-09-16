@@ -69,9 +69,27 @@ class EmailService {
         }
     }
 
-    // Генерация HTML содержимого письма
+    // Генерация HTML содержимого письма с полноценным сертификатом
     generateCertificateEmailHTML(certificateData) {
         const { certificateId, certificateCode, recipientName, amount, message, designImageUrl } = certificateData;
+        
+        // Вычисляем дату истечения (1 год от текущего момента)
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        
+        return this.generateFullCertificateHTML({
+            certificate_number: certificateCode,
+            nominal_value: amount,
+            recipient_name: recipientName,
+            message: message,
+            expiry_date: expiryDate.toLocaleDateString('ru-RU'),
+            design_image_url: designImageUrl
+        });
+    }
+
+    // Генерация полноценного HTML сертификата для email
+    generateFullCertificateHTML(certificateData) {
+        const { certificate_number, nominal_value, recipient_name, message, expiry_date, design_image_url } = certificateData;
         
         return `
         <!DOCTYPE html>
@@ -80,188 +98,138 @@ class EmailService {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Подарочный сертификат Горностайл72</title>
-            <style>
-                body {
-                    font-family: 'Arial', sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background-color: #f8f9fa;
-                }
-                .container {
-                    background: white;
-                    border-radius: 15px;
-                    padding: 40px;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-                }
-                .header {
-                    text-align: center;
-                    border-bottom: 3px solid #3498db;
-                    padding-bottom: 20px;
-                    margin-bottom: 30px;
-                }
-                .logo {
-                    font-size: 2rem;
-                    font-weight: bold;
-                    color: #2c3e50;
-                    margin-bottom: 10px;
-                }
-                .subtitle {
-                    color: #7f8c8d;
-                    font-size: 1.1rem;
-                }
-                .certificate {
-                    background: ${designImageUrl ? `url('${designImageUrl}')` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
-                    background-size: cover;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    color: white;
-                    padding: 30px;
-                    border-radius: 15px;
-                    text-align: center;
-                    margin: 30px 0;
-                    min-height: 300px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: center;
-                    position: relative;
-                }
-                .certificate::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: rgba(0, 0, 0, 0.4);
-                    border-radius: 15px;
-                    z-index: 1;
-                }
-                .certificate > * {
-                    position: relative;
-                    z-index: 2;
-                }
-                .certificate-title {
-                    font-size: 1.8rem;
-                    font-weight: bold;
-                    margin-bottom: 15px;
-                }
-                .certificate-code {
-                    font-size: 2rem;
-                    font-weight: bold;
-                    background: rgba(255,255,255,0.2);
-                    padding: 15px;
-                    border-radius: 10px;
-                    margin: 20px 0;
-                    letter-spacing: 2px;
-                }
-                .certificate-amount {
-                    font-size: 2.5rem;
-                    font-weight: bold;
-                    margin: 20px 0;
-                }
-                .info-section {
-                    background: #e8f4f8;
-                    padding: 20px;
-                    border-radius: 10px;
-                    margin: 20px 0;
-                }
-                .info-title {
-                    font-weight: bold;
-                    color: #2c3e50;
-                    margin-bottom: 10px;
-                }
-                .contact-info {
-                    background: #f8f9fa;
-                    padding: 20px;
-                    border-radius: 10px;
-                    margin-top: 30px;
-                }
-                .btn {
-                    display: inline-block;
-                    background: #3498db;
-                    color: white;
-                    padding: 15px 30px;
-                    border-radius: 25px;
-                    text-decoration: none;
-                    font-weight: bold;
-                    margin: 20px 0;
-                }
-                .footer {
-                    text-align: center;
-                    margin-top: 40px;
-                    padding-top: 20px;
-                    border-top: 1px solid #e9ecef;
-                    color: #7f8c8d;
-                }
-            </style>
         </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div class="logo">🎿 Горностайл72</div>
-                    <div class="subtitle">Горнолыжный тренажерный комплекс</div>
-                </div>
+        <body style="margin: 0; padding: 20px; background-color: #f8f9fa; font-family: Arial, sans-serif;">
+            <!-- Основной контейнер -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 800px; margin: 0 auto;">
+                <tr>
+                    <td>
+                        <!-- Заголовок -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: white; border-radius: 15px; margin-bottom: 20px;">
+                            <tr>
+                                <td style="padding: 30px; text-align: center; border-bottom: 3px solid #3498db;">
+                                    <h1 style="margin: 0; font-size: 2rem; color: #2c3e50;">🎿 Горностайл72</h1>
+                                    <p style="margin: 10px 0 0 0; color: #7f8c8d; font-size: 1.1rem;">Горнолыжный тренажерный комплекс</p>
+                                </td>
+                            </tr>
+                        </table>
 
-                <h1 style="text-align: center; color: #2c3e50;">🎁 Ваш подарочный сертификат готов!</h1>
-                
-                <div class="certificate">
-                    <div class="certificate-title">ПОДАРОЧНЫЙ СЕРТИФИКАТ</div>
-                    <div class="certificate-amount">${amount} ₽</div>
-                    <div style="margin: 20px 0;">
-                        <strong>Получатель:</strong> ${recipientName}
-                    </div>
-                    ${message ? `<div style="margin: 20px 0; font-style: italic;">"${message}"</div>` : ''}
-                    <div class="certificate-code">${certificateCode}</div>
-                    <div style="font-size: 0.9rem; opacity: 0.9;">
-                        Код сертификата для активации
-                    </div>
-                </div>
+                        <!-- Сертификат -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${design_image_url ? `url('${design_image_url}')` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'}; background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 20px; margin-bottom: 30px; position: relative;">
+                            <tr>
+                                <td style="padding: 40px; text-align: center; color: white; position: relative;">
+                                    <!-- Затемнение фона -->
+                                    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.4); border-radius: 20px;"></div>
+                                    
+                                    <!-- Содержимое сертификата -->
+                                    <div style="position: relative; z-index: 2;">
+                                        <!-- Заголовок сертификата -->
+                                        <h2 style="margin: 0 0 20px 0; font-size: 1.4rem; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                                            🎁 СЕРТИФИКАТ<br>НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ
+                                        </h2>
+                                        
+                                        <!-- Номер сертификата -->
+                                        <div style="font-size: 1.8rem; font-weight: bold; color: #FFD700; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin: 20px 0; letter-spacing: 0.1em;">
+                                            № ${certificate_number}
+                                        </div>
+                                        
+                                        <!-- Номинал -->
+                                        <div style="font-size: 2.2rem; font-weight: bold; color: #FFD700; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); margin: 20px 0;">
+                                            💰 ${nominal_value} руб.
+                                        </div>
+                                        
+                                        <!-- Получатель -->
+                                        ${recipient_name ? `
+                                        <div style="margin: 20px 0; font-size: 1.1rem;">
+                                            <strong>👤 Кому:</strong><br>${recipient_name}
+                                        </div>
+                                        ` : ''}
+                                        
+                                        <!-- Сообщение -->
+                                        ${message ? `
+                                        <div style="margin: 20px 0; font-size: 1rem; font-style: italic;">
+                                            "${message}"
+                                        </div>
+                                        ` : ''}
+                                        
+                                        <!-- Срок действия -->
+                                        <div style="margin-top: 30px; font-size: 0.9rem; opacity: 0.9;">
+                                            ⏰ Использовать до: ${expiry_date}
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
 
-                <div class="info-section">
-                    <div class="info-title">📋 Как использовать сертификат:</div>
-                    <ol>
-                        <li>Получите сертификат - после покупки вы получили красивый сертификат с уникальным номером</li>
-                        <li>Подарите или распечатайте - можете распечатать сертификат или отправить получателю цифровую версию</li>
-                        <li>Активируйте в боте - получатель активирует сертификат через наш Telegram бот @gornostyle72_bot</li>
-                        <li>Записывайтесь на тренировки - выбирайте удобное время и записывайтесь на индивидуальные или групповые тренировки</li>
-                    </ol>
-                </div>
+                        <!-- Информационные блоки -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: white; border-radius: 15px; margin-bottom: 20px;">
+                            <tr>
+                                <td style="padding: 30px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 1.2rem;">📋 Как использовать сертификат:</h3>
+                                    <ol style="margin: 0; padding-left: 20px; color: #333;">
+                                        <li style="margin-bottom: 8px;">Получите сертификат - после покупки вы получили красивый сертификат с уникальным номером</li>
+                                        <li style="margin-bottom: 8px;">Подарите или распечатайте - можете распечатать сертификат или отправить получателю цифровую версию</li>
+                                        <li style="margin-bottom: 8px;">Активируйте в боте - получатель активирует сертификат через наш Telegram бот @gornostyle72_bot</li>
+                                        <li style="margin-bottom: 8px;">Записывайтесь на тренировки - выбирайте удобное время и записывайтесь на индивидуальные или групповые тренировки</li>
+                                    </ol>
+                                </td>
+                            </tr>
+                        </table>
 
-                <div class="info-section">
-                    <div class="info-title">⏰ Важная информация:</div>
-                    <ul>
-                        <li><strong>Срок действия:</strong> 1 год с момента покупки</li>
-                        <li><strong>Номинал:</strong> ${amount} рублей</li>
-                        <li><strong>Действует на все виды тренировок</strong></li>
-                        <li><strong>Подходит для любого уровня подготовки</strong></li>
-                    </ul>
-                </div>
+                        <!-- Важная информация -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: white; border-radius: 15px; margin-bottom: 20px;">
+                            <tr>
+                                <td style="padding: 30px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 1.2rem;">⏰ Важная информация:</h3>
+                                    <ul style="margin: 0; padding-left: 20px; color: #333;">
+                                        <li style="margin-bottom: 8px;"><strong>Срок действия:</strong> 1 год с момента покупки</li>
+                                        <li style="margin-bottom: 8px;"><strong>Номинал:</strong> ${nominal_value} рублей</li>
+                                        <li style="margin-bottom: 8px;"><strong>Действует на все виды тренировок</strong></li>
+                                        <li style="margin-bottom: 8px;"><strong>Подходит для любого уровня подготовки</strong></li>
+                                    </ul>
+                                </td>
+                            </tr>
+                        </table>
 
-                <div style="text-align: center;">
-                    <a href="https://t.me/gornostyle72_bot" class="btn">
-                        📱 Записаться на тренировку
-                    </a>
-                </div>
+                        <!-- Кнопка действия -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                            <tr>
+                                <td style="text-align: center;">
+                                    <a href="https://t.me/gornostyle72_bot" style="display: inline-block; background: #3498db; color: white; padding: 15px 30px; border-radius: 25px; text-decoration: none; font-weight: bold; font-size: 1.1rem;">
+                                        📱 Записаться на тренировку
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
 
-                <div class="contact-info">
-                    <div class="info-title">📞 Контакты для записи:</div>
-                    <p><strong>Телефон:</strong> +7 (912) 392-49-56</p>
-                    <p><strong>Telegram:</strong> @gornostyle72_bot</p>
-                    <p><strong>Группа:</strong> @gornostyle72</p>
-                    <p><strong>Адрес:</strong> г. Тюмень, с. Яр, ул. Источник, 2А</p>
-                </div>
+                        <!-- Контактная информация -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: #f8f9fa; border-radius: 15px; margin-bottom: 20px;">
+                            <tr>
+                                <td style="padding: 30px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 1.2rem;">📞 Контакты для записи:</h3>
+                                    <p style="margin: 5px 0; color: #333;"><strong>Телефон:</strong> +7 (912) 392-49-56</p>
+                                    <p style="margin: 5px 0; color: #333;"><strong>Telegram:</strong> @gornostyle72_bot</p>
+                                    <p style="margin: 5px 0; color: #333;"><strong>Группа:</strong> @gornostyle72</p>
+                                    <p style="margin: 5px 0; color: #333;"><strong>Адрес:</strong> г. Тюмень, с. Яр, ул. Источник, 2А</p>
+                                </td>
+                            </tr>
+                        </table>
 
-                <div class="footer">
-                    <p>Спасибо за выбор Горностайл72! 🎿</p>
-                    <p style="font-size: 0.9rem;">
-                        Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него.<br>
-                        По всем вопросам обращайтесь по указанным выше контактам.
-                    </p>
-                </div>
-            </div>
+                        <!-- Подвал -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background: white; border-radius: 15px;">
+                            <tr>
+                                <td style="padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+                                    <p style="margin: 0 0 10px 0; color: #7f8c8d; font-size: 1.1rem;">Спасибо за выбор Горностайл72! 🎿</p>
+                                    <p style="margin: 0; color: #7f8c8d; font-size: 0.9rem;">
+                                        Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него.<br>
+                                        По всем вопросам обращайтесь по указанным выше контактам.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         `;
