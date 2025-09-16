@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= pageTitle %></title>
+    <meta name="description" content="Подарочный сертификат Горностайл72 - горнолыжный тренажёр в Тюмени">
+    <meta name="keywords" content="сертификат, подарок, горные лыжи, тренажёр, Тюмень">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="<%= pageTitle %>">
+    <meta property="og:description" content="Подарочный сертификат на тренировки на горнолыжном тренажёре">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://gornostyle72.ru/certificate/<%= certificate.certificate_number %>">
+    <meta property="og:image" content="https://gornostyle72.ru<%= certificate.design.image_url %>">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    
+    <!-- Стили -->
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .certificate-container {
+            max-width: 1050px;
+            margin: 2rem auto;
+            padding: 0;
+            background-image: url('<%= certificate.design.image_url %>');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            color: white;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+            aspect-ratio: 1050/495;
+            min-height: 495px;
+        }
+
+        .certificate-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(255,255,255,0.05) 10px,
+                rgba(255,255,255,0.05) 20px
+            );
+            animation: shimmer 20s linear infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+
+        .certificate-content {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .certificate-text-area {
+            position: absolute;
+            right: 2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 300px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 1.5rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .certificate-header {
+            margin-bottom: 2rem;
+        }
+
+        .certificate-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        .certificate-subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .certificate-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin: 1rem 0;
+            letter-spacing: 0.1em;
+            text-align: center;
+        }
+
+        .certificate-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin: 1rem 0;
+            color: #FFD700;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+
+        .certificate-design {
+            background: rgba(255,255,255,0.1);
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1.5rem 0;
+        }
+
+        .certificate-recipient {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1.5rem 0;
+        }
+
+        .certificate-message {
+            font-style: italic;
+            font-size: 1.1rem;
+            margin: 1rem 0;
+            padding: 1rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            border-left: 4px solid #FFD700;
+        }
+
+        .certificate-status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+
+        .status-active {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-used {
+            background: #6c757d;
+            color: white;
+        }
+
+        .status-expired {
+            background: #dc3545;
+            color: white;
+        }
+
+        .certificate-actions {
+            margin-top: 2rem;
+        }
+
+        .btn-activate {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin: 0.5rem;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-activate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+            text-decoration: none;
+            color: white;
+        }
+
+        .btn-telegram {
+            background: linear-gradient(45deg, #0088cc, #00a0e6);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin: 0.5rem;
+            box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
+        }
+
+        .btn-telegram:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 136, 204, 0.4);
+            text-decoration: none;
+            color: white;
+        }
+
+        .certificate-info {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 2rem 0;
+            text-align: left;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 0.5rem 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: bold;
+            opacity: 0.8;
+        }
+
+        .info-value {
+            text-align: right;
+        }
+
+        .qr-code {
+            margin: 2rem 0;
+        }
+
+        .footer-info {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 768px) {
+            .certificate-container {
+                margin: 1rem;
+                max-width: 100%;
+                aspect-ratio: 1050/495;
+            }
+
+            .certificate-text-area {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin: 1rem;
+                background: rgba(0, 0, 0, 0.8);
+            }
+
+            .certificate-content {
+                padding: 1rem;
+                justify-content: center;
+            }
+
+            .info-row {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .info-value {
+                text-align: center;
+                margin-top: 0.25rem;
+            }
+        }
+
+        /* Анимация появления */
+        .certificate-container {
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="certificate-container">
+        <div class="certificate-content">
+            <div class="certificate-text-area">
+                <div class="certificate-header">
+                    <h1 class="certificate-title">🎁 СЕРТИФИКАТ<br>НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ</h1>
+                </div>
+
+                <div class="certificate-number">№ <%= certificate.certificate_number %></div>
+                
+                <div class="certificate-value">💰 <%= certificate.nominal_value %> руб.</div>
+
+                <% if (certificate.recipient_name) { %>
+                    <div style="text-align: center; margin: 1rem 0; font-size: 1rem;">
+                        <strong>👤 Кому:</strong><br><%= certificate.recipient_name %>
+                    </div>
+                <% } %>
+
+                <% if (certificate.message) { %>
+                    <div style="text-align: center; margin: 1rem 0; font-size: 0.9rem; font-style: italic;">
+                        "<%= certificate.message %>"
+                    </div>
+                <% } %>
+
+                <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; opacity: 0.8;">
+                    ⏰ Использовать до: <%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %>
+                </div>
+            </div>
+        </div>
+
+            <div class="certificate-status <%= 'status-' + certificate.status %>">
+                <% if (certificate.status === 'active') { %>
+                    ✅ АКТИВЕН
+                <% } else if (certificate.status === 'used') { %>
+                    ✅ ИСПОЛЬЗОВАН
+                <% } else if (certificate.status === 'expired') { %>
+                    ❌ ПРОСРОЧЕН
+                <% } %>
+            </div>
+
+            <div class="certificate-info">
+                <div class="info-row">
+                    <span class="info-label">📅 Дата покупки:</span>
+                    <span class="info-value"><%= new Date(certificate.purchase_date).toLocaleDateString('ru-RU') %></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">⏰ Действителен до:</span>
+                    <span class="info-value"><%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %></span>
+                </div>
+                <% if (certificate.purchaser && certificate.purchaser.name) { %>
+                <div class="info-row">
+                    <span class="info-label">🛒 Покупатель:</span>
+                    <span class="info-value"><%= certificate.purchaser.name %></span>
+                </div>
+                <% } %>
+                <% if (certificate.activated_by && certificate.activated_by.name) { %>
+                <div class="info-row">
+                    <span class="info-label">🔑 Активирован:</span>
+                    <span class="info-value"><%= certificate.activated_by.name %></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">📅 Дата активации:</span>
+                    <span class="info-value"><%= new Date(certificate.activation_date).toLocaleDateString('ru-RU') %></span>
+                </div>
+                <% } %>
+            </div>
+
+            <% if (certificate.status === 'active') { %>
+            <div class="certificate-actions">
+                <h3>🔑 Активировать сертификат</h3>
+                <p>Для активации сертификата перейдите в наш Telegram бот:</p>
+                <a href="https://t.me/<%= botUsername %>?start=certificate_<%= certificate.certificate_number %>" 
+                   class="btn-activate">
+                    🔑 Активировать в боте
+                </a>
+                <br>
+                <a href="https://t.me/<%= botUsername %>" class="btn-telegram">
+                    📱 Открыть Telegram бот
+                </a>
+            </div>
+            <% } %>
+
+            <div class="footer-info">
+                <p><strong>📍 Адрес:</strong> г. Тюмень, ул. Малыгина, 86/1</p>
+                <p><strong>📞 Телефон:</strong> <%= adminPhone %></p>
+                <p><strong>📧 Email:</strong> <%= contactEmail %></p>
+                <% if (telegramGroup) { %>
+                <p><strong>📱 Telegram:</strong> <a href="<%= telegramGroup %>" style="color: #FFD700;">Наша группа</a></p>
+                <% } %>
+                <br>
+                <p><em>Сертификат действителен в течение 1 года с момента покупки.</em></p>
+                <p><em>Подробности использования уточняйте у администратора.</em></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Аналитика -->
+    <% if (yandexMetrikaId) { %>
+    <!-- Yandex.Metrika counter -->
+    <script type="text/javascript">
+       (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+       m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+       (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+       ym(<%= yandexMetrikaId %>, "init", {
+            clickmap:true,
+            trackLinks:true,
+            accurateTrackBounce:true
+       });
+    </script>
+    <noscript><div><img src="https://mc.yandex.ru/watch/<%= yandexMetrikaId %>" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+    <!-- /Yandex.Metrika counter -->
+    <% } %>
+
+    <% if (googleAnalyticsId) { %>
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= googleAnalyticsId %>"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '<%= googleAnalyticsId %>');
+    </script>
+    <% } %>
+</body>
+</html>

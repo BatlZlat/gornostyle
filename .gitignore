@@ -83,4 +83,7 @@ backups/
 *.pem
 *.key
 
+# Generated files
+public/generated/
+
 *.docx

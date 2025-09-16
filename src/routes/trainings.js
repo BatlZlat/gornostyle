@@ -773,6 +773,18 @@ router.delete('/:id', async (req, res) => {
             totalRefund += price;
         }
 
+        // Освобождаем слоты в расписании перед удалением тренировки
+        // Это обеспечивает освобождение 2 временных слотов (60 мин = 2 × 30 мин)
+        await client.query(
+            `UPDATE schedule 
+             SET is_booked = false 
+             WHERE simulator_id = $1 
+             AND date = $2 
+             AND start_time >= $3 
+             AND start_time < $4`,
+            [training.simulator_id, training.session_date, training.start_time, training.end_time]
+        );
+
         // Удаляем тренировку из базы данных
         await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
 

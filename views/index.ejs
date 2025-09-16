@@ -151,9 +151,15 @@
                     <li>Полный комплект оборудования включён</li>
                     <li>Комфортно, результативно, доступно</li>
                 </ul>
-                <a class="btn btn-yellow hero-split__btn" href="https://t.me/<%= botUsername %>" target="_blank">
-                    Записаться через Telegram
-                </a>
+                <div class="hero-split__buttons">
+                    <a class="btn btn-yellow hero-split__btn" href="https://t.me/<%= botUsername %>" target="_blank">
+                        Записаться через Telegram
+                    </a>
+                    <a class="btn btn-gift hero-split__btn-gift" href="/certificates">
+                        <i class="fas fa-gift"></i>
+                        Подарить сертификат
+                    </a>
+                </div>
                 <div class="hero-split__contacts">
                     <div>Тел: <a href="tel:<%= adminPhone %>"><span class="phone"><%= adminPhone %></span></a></div>
                     <div>Email: <a href="mailto:<%= contactEmail %>"><span class="email"><%= contactEmail %></span></a></div>

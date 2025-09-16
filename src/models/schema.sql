@@ -8,6 +8,7 @@ CREATE TABLE clients (
     telegram_id VARCHAR(100) UNIQUE,
     telegram_username VARCHAR(100),
     nickname VARCHAR(100),
+    email VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -105,19 +106,40 @@ CREATE TABLE session_participants (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица дизайнов сертификатов
+CREATE TABLE certificate_designs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    image_url VARCHAR(255) NOT NULL,
+    template_url VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Таблица сертификатов
 CREATE TABLE certificates (
     id SERIAL PRIMARY KEY,
-    certificate_number VARCHAR(20) UNIQUE NOT NULL,
+    certificate_number VARCHAR(12) UNIQUE NOT NULL,
     purchaser_id INTEGER REFERENCES clients(id),
-    purchase_date TIMESTAMP NOT NULL,
-    amount DECIMAL(10,2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active', -- active, used, expired
+    recipient_name VARCHAR(100),
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active', -- active, used, expired, cancelled
     expiry_date TIMESTAMP NOT NULL,
     activated_by_id INTEGER REFERENCES clients(id),
     activation_date TIMESTAMP,
+    message TEXT,
+    purchase_date TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_certificate_number CHECK (certificate_number ~ '^[0-9]{6}$'),
+    CONSTRAINT check_certificate_status CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
+    CONSTRAINT check_nominal_value CHECK (nominal_value >= 500 AND nominal_value <= 50000),
+    CONSTRAINT check_expiry_date CHECK (expiry_date <= purchase_date + INTERVAL '1 year'),
+    CONSTRAINT check_message_length CHECK (LENGTH(message) <= 100)
 );
 
 -- Таблица кошельков
@@ -214,6 +236,19 @@ CREATE TABLE failed_payments (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица ожидающих сертификатов
+CREATE TABLE pending_certificates (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id),
+    wallet_number VARCHAR(20) NOT NULL,
+    recipient_name VARCHAR(100),
+    message TEXT,
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+);
+
 -- Таблица логов СМС
 CREATE TABLE sms_log (
     id SERIAL PRIMARY KEY,
@@ -304,6 +339,7 @@ CREATE TABLE grouping_settings (
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
+CREATE INDEX idx_clients_email ON clients(email);
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_trainers_is_active ON trainers(is_active);
 CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
@@ -312,8 +348,21 @@ CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
+-- Индексы для таблицы дизайнов сертификатов
+CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);
+CREATE INDEX idx_certificate_designs_sort ON certificate_designs(sort_order);
+
+-- Индексы для таблицы сертификатов
 CREATE INDEX idx_certificates_number ON certificates(certificate_number);
 CREATE INDEX idx_certificates_status ON certificates(status);
+CREATE INDEX idx_certificates_purchaser ON certificates(purchaser_id);
+CREATE INDEX idx_certificates_design ON certificates(design_id);
+CREATE INDEX idx_certificates_expiry ON certificates(expiry_date);
+CREATE INDEX idx_certificates_purchase_date ON certificates(purchase_date);
+CREATE INDEX idx_certificates_activated_by ON certificates(activated_by_id);
+CREATE INDEX idx_certificates_purchaser_status ON certificates(purchaser_id, status);
+CREATE INDEX idx_certificates_activated_by_status ON certificates(activated_by_id, status);
+CREATE INDEX idx_certificates_status_expiry ON certificates(status, expiry_date);
 CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
@@ -327,6 +376,10 @@ CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(s
 CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
 CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
+CREATE INDEX idx_pending_certificates_wallet ON pending_certificates(wallet_number);
+CREATE INDEX idx_pending_certificates_client ON pending_certificates(client_id);
+CREATE INDEX idx_pending_certificates_expires ON pending_certificates(expires_at);
+CREATE INDEX idx_pending_certificates_created ON pending_certificates(created_at);
 CREATE INDEX idx_sms_log_created_at ON sms_log(created_at);
 CREATE INDEX idx_sms_log_processing_status ON sms_log(processing_status);
 CREATE INDEX idx_training_requests_equipment ON training_requests(equipment_type);
@@ -384,6 +437,11 @@ CREATE TRIGGER update_training_sessions_updated_at
 
 CREATE TRIGGER update_session_participants_updated_at
     BEFORE UPDATE ON session_participants
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_certificate_designs_updated_at
+    BEFORE UPDATE ON certificate_designs
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -480,4 +538,46 @@ DROP TRIGGER IF EXISTS individual_training_sessions_schedule_trigger ON individu
 CREATE TRIGGER individual_training_sessions_schedule_trigger
 AFTER INSERT OR DELETE ON individual_training_sessions
 FOR EACH ROW
-EXECUTE FUNCTION update_individual_training_slots(); 
+EXECUTE FUNCTION update_individual_training_slots();
+
+-- Создаем функцию для обновления слотов при создании/отмене групповых тренировок
+CREATE OR REPLACE FUNCTION update_training_sessions_slots()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Добавляем логирование
+    RAISE NOTICE 'Триггер update_training_sessions_slots: операция %', TG_OP;
+    RAISE NOTICE 'Триггер update_training_sessions_slots: simulator_id = %, date = %, start_time = %, end_time = %',
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.simulator_id ELSE OLD.simulator_id END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.session_date ELSE OLD.session_date END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.start_time ELSE OLD.start_time END,
+        CASE WHEN TG_OP = 'INSERT' THEN NEW.end_time ELSE OLD.end_time END;
+
+    IF TG_OP = 'INSERT' THEN
+        -- При создании групповой тренировки помечаем 2 временных слота как занятые
+        UPDATE schedule 
+        SET is_booked = true
+        WHERE simulator_id = NEW.simulator_id
+        AND date = NEW.session_date
+        AND start_time >= NEW.start_time
+        AND start_time < NEW.end_time;  -- Это покроет 2 слота по 30 мин
+        RAISE NOTICE 'Триггер update_training_sessions_slots: слоты помечены как занятые';
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        -- При удалении групповой тренировки освобождаем 2 временных слота
+        UPDATE schedule 
+        SET is_booked = false
+        WHERE simulator_id = OLD.simulator_id
+        AND date = OLD.session_date
+        AND start_time >= OLD.start_time
+        AND start_time < OLD.end_time;  -- Это покроет 2 слота по 30 мин
+        RAISE NOTICE 'Триггер update_training_sessions_slots: слоты освобождены';
+        RETURN OLD;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Создаем триггер для групповых тренировок
+CREATE TRIGGER training_sessions_schedule_trigger
+AFTER INSERT OR DELETE ON training_sessions
+FOR EACH ROW
+EXECUTE FUNCTION update_training_sessions_slots(); 

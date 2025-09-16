@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Оплата сертификата - Горностайл72</title>
+    <meta name="description" content="Инструкции по оплате подарочного сертификата Горностайл72">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="/css/certificates.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <style>
+        .payment-page {
+            padding-top: 80px;
+            min-height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        .payment-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .payment-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .payment-header h1 {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .payment-header p {
+            font-size: 1.2rem;
+            color: #7f8c8d;
+        }
+        
+        .payment-card {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .wallet-info {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .wallet-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            letter-spacing: 3px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .wallet-amount {
+            font-size: 2rem;
+            margin-bottom: 15px;
+        }
+        
+        .wallet-label {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+        
+        .copy-btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Анимации для кликабельных элементов */
+        .clickable-code {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .clickable-code:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(243, 156, 18, 0.4);
+        }
+        
+        .clickable-code:active {
+            transform: scale(0.95);
+            background: #e67e22 !important;
+        }
+        
+        .clickable-phone {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .clickable-phone:hover {
+            color: #2980b9 !important;
+            transform: scale(1.05);
+            text-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+        }
+        
+        .clickable-phone:active {
+            transform: scale(0.95);
+            color: #1f618d !important;
+        }
+        
+        /* Анимация для кнопки копирования SMS */
+        .sms-copy-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .sms-copy-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+        }
+        
+        .sms-copy-btn:active {
+            transform: scale(0.9);
+            background: #229954 !important;
+        }
+        
+        /* Анимация пульсации для важных элементов */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0); }
+        }
+        
+        .highlight-code {
+            animation: pulse 2s infinite;
+        }
+        
+        .payment-methods {
+            display: grid;
+            gap: 30px;
+        }
+        
+        .payment-method {
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 30px;
+            transition: all 0.3s ease;
+        }
+        
+        .payment-method:hover {
+            border-color: #3498db;
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.1);
+        }
+        
+        .method-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .method-icon {
+            width: 50px;
+            height: 50px;
+            background: #3498db;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+        }
+        
+        .method-title {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin: 0;
+        }
+        
+        .method-steps {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .method-steps li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f8f9fa;
+            position: relative;
+            padding-left: 30px;
+        }
+        
+        .method-steps li:before {
+            content: counter(step-counter);
+            counter-increment: step-counter;
+            position: absolute;
+            left: 0;
+            top: 10px;
+            background: #3498db;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .method-steps {
+            counter-reset: step-counter;
+        }
+        
+        .sms-example {
+            background: #f8f9fa;
+            border-left: 4px solid #3498db;
+            padding: 15px 20px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 30px 0;
+        }
+        
+        .warning-box h4 {
+            color: #856404;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .warning-box p {
+            color: #856404;
+            margin: 0;
+        }
+        
+        .success-info {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 30px 0;
+        }
+        
+        .success-info h4 {
+            color: #155724;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .success-info p {
+            color: #155724;
+            margin: 0;
+        }
+        
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-top: 30px;
+            padding: 10px 0;
+            transition: color 0.3s ease;
+        }
+        
+        .back-btn:hover {
+            color: #2980b9;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .payment-header h1 {
+                font-size: 2rem;
+            }
+            
+            .payment-card {
+                padding: 30px 20px;
+            }
+            
+            .wallet-number {
+                font-size: 1.8rem;
+                letter-spacing: 2px;
+            }
+            
+            .wallet-amount {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <a href="/">
+                        <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                    </a>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="<%= telegramGroup %>" class="nav-contact-icon telegram-inverted" title="Telegram канал" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="payment-page">
+        <div class="payment-container">
+            <div class="payment-header">
+                <h1><i class="fas fa-credit-card"></i> Завершение покупки</h1>
+                <p>Для завершения покупки сертификата используйте уникальный код, который был сгенерирован специально для вашего заказа</p>
+            </div>
+
+            <!-- Информация о коде сертификата -->
+            <div class="wallet-info">
+                <div class="wallet-label">Уникальный код вашего сертификата:</div>
+                <div class="wallet-number" id="walletNumber">---- ---- ---- ----</div>
+                <div class="wallet-amount">Сумма к оплате: <span id="amount">0</span> ₽</div>
+                <button class="copy-btn" onclick="copyCertificateCode()">
+                    <i class="fas fa-copy"></i> Скопировать код
+                </button>
+            </div>
+
+            <!-- Объяснение процесса -->
+            <div class="payment-card" style="margin-bottom: 20px;">
+                <h3 style="color: #2c3e50; margin-bottom: 20px;"><i class="fas fa-info-circle"></i> Как происходит покупка</h3>
+                <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 15px;">
+                    Для завершения покупки сертификата вам необходимо перевести указанную сумму, обязательно указав в комментарии уникальный код сертификата. 
+                </p>
+                <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 15px;">
+                    <strong>Этот код уникален</strong> и сгенерирован специально для вашего заказа. После получения платежа с правильным кодом, сертификат будет автоматически создан и отправлен на ваш email.
+                </p>
+                <p style="color: #f39c12; line-height: 1.6; margin-bottom: 15px; font-weight: bold;">
+                    💰 <strong>Минимальная сумма сертификата: 500₽</strong><br>
+                    При переводе меньшей суммы сертификат не будет создан.
+                </p>
+                <p style="color: #e74c3c; line-height: 1.6; font-weight: bold;">
+                    ⚠️ Без указания кода в комментарии платеж не будет обработан автоматически!
+                </p>
+            </div>
+
+            <div class="payment-card">
+                <h3 style="color: #2c3e50; margin-bottom: 30px; text-align: center;"><i class="fas fa-payment"></i> Выберите удобный способ оплаты</h3>
+                
+                <div class="payment-methods">
+                    <!-- Приложение банка -->
+                    <div class="payment-method">
+                        <div class="method-header">
+                            <div class="method-icon">
+                                <i class="fas fa-mobile-alt"></i>
+                            </div>
+                            <h3 class="method-title">Приложение банка</h3>
+                        </div>
+                        <ol class="method-steps">
+                            <li>Откройте приложение вашего банка</li>
+                            <li>Выберите "Переводы" → "По номеру телефона"</li>
+                            <li>Номер телефона для перевода: <a href="tel:+79123924956" class="clickable-phone" style="color: #3498db; font-weight: bold; text-decoration: none; border-bottom: 1px dashed #3498db;">+79123924956</a></li>
+                            <li>Укажите сумму: <strong><span class="highlight-amount">0</span> ₽</strong></li>
+                            <li style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin: 10px 0;">
+                                <strong style="color: #e74c3c; display: block; margin-bottom: 8px;">⚠️ Обязательно добавьте код сертификата в комментарий:</strong> 
+                                <span class="highlight-code clickable-code" onclick="copyCertificateCode()" style="cursor: pointer; background: #f39c12; color: white; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; font-weight: bold; display: inline-block; transition: all 0.3s ease;">---- ---- ---- ----</span>
+                                <div style="font-size: 0.9rem; color: #666; margin-top: 8px;">
+                                    <i class="fas fa-info-circle"></i> Код сертификата (16 цифр без пробелов) в поле "Комментарий к переводу"
+                                </div>
+                            </li>
+                            <li>Подтвердите перевод</li>
+                        </ol>
+                        <div style="background: #fff3cd; border-left: 4px solid #f39c12; padding: 15px; margin-top: 15px; border-radius: 0 8px 8px 0;">
+                            <strong>Если забыли указать код сертификата в комментарии:</strong><br>
+                            Свяжитесь с менеджером: <a href="tel:<%= adminPhone %>" style="color: #e74c3c; font-weight: bold;"><%= adminPhone %></a>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Важная информация -->
+                <div class="warning-box">
+                    <h4><i class="fas fa-exclamation-triangle"></i> Важно!</h4>
+                    <p>Обязательно укажите код сертификата в комментарии к платежу. Без этого платеж не будет обработан автоматически.</p>
+                </div>
+
+                <!-- Что происходит после оплаты -->
+                <div class="success-info">
+                    <h4><i class="fas fa-check-circle"></i> После оплаты</h4>
+                    <p>Сертификат будет автоматически создан и отправлен на указанный вами email в течение нескольких минут после поступления платежа.</p>
+                </div>
+            </div>
+
+            <!-- Кнопка назад -->
+            <a href="/certificate/purchase" class="back-btn">
+                <i class="fas fa-arrow-left"></i>
+                Вернуться к форме
+            </a>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="/js/main.js"></script>
+    <script>
+        // Получаем параметры из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const walletNumber = urlParams.get('walletNumber');
+        const amount = urlParams.get('amount');
+        const clientId = urlParams.get('clientId');
+
+        // Проверяем наличие обязательных параметров
+        if (!walletNumber || !amount) {
+            alert('Ошибка: отсутствуют данные для оплаты');
+            window.location.href = '/certificate/purchase';
+        }
+
+        // Заполняем данные на странице
+        document.getElementById('walletNumber').textContent = walletNumber;
+        document.getElementById('amount').textContent = amount;
+        
+        // Заполняем данные в форме оплаты
+        const highlightAmount = document.querySelector('.highlight-amount');
+        const highlightCode = document.querySelector('.highlight-code');
+        if (highlightAmount) highlightAmount.textContent = amount;
+        if (highlightCode) highlightCode.textContent = walletNumber;
+        
+        // Для SMS примера убираем пробелы
+        const walletNumberForSMS = walletNumber.replace(/\s/g, '');
+        document.getElementById('smsWalletNumber').textContent = walletNumberForSMS;
+        document.getElementById('smsAmount').textContent = amount;
+
+
+        // Fallback функция копирования для старых браузеров
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showCopySuccess();
+                } else {
+                    alert('Не удалось скопировать номер');
+                }
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+                alert('Не удалось скопировать номер');
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+
+        // Показ уведомления об успешном копировании
+        function showCopySuccess() {
+            const btn = document.querySelector('.copy-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Скопировано!';
+            btn.style.background = 'rgba(46, 204, 113, 0.3)';
+            btn.style.transform = 'scale(1.1)';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = 'rgba(255,255,255,0.2)';
+                btn.style.transform = 'scale(1)';
+            }, 2000);
+        }
+
+
+        // Анимация клика для кода сертификата
+        function copyCertificateCode() {
+            const codeElement = document.querySelector('.highlight-code');
+            
+            // Анимация клика
+            codeElement.style.transform = 'scale(0.9)';
+            codeElement.style.background = '#e67e22';
+            
+            setTimeout(() => {
+                codeElement.style.transform = 'scale(1.05)';
+                codeElement.style.background = '#f39c12';
+                
+                setTimeout(() => {
+                    codeElement.style.transform = 'scale(1)';
+                }, 150);
+            }, 100);
+            
+            // Копирование
+            const walletNumberText = walletNumber.replace(/\s/g, '');
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(walletNumberText).then(() => {
+                    showCopySuccess();
+                }).catch(err => {
+                    console.error('Ошибка копирования:', err);
+                    fallbackCopyTextToClipboard(walletNumberText);
+                });
+            } else {
+                fallbackCopyTextToClipboard(walletNumberText);
+            }
+        }
+
+        // Проверяем статус платежа каждые 30 секунд
+        if (clientId) {
+            const checkPaymentStatus = () => {
+                fetch(`/api/certificate/check-payment-status?clientId=${clientId}&amount=${amount}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.certificateCreated) {
+                            // Показываем уведомление об успешной оплате
+                            alert('Оплата получена! Сертификат отправлен на ваш email.');
+                            window.location.href = '/certificates';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Ошибка проверки статуса:', error);
+                    });
+            };
+
+            // Проверяем статус каждые 30 секунд в течение 10 минут
+            let checkCount = 0;
+            const maxChecks = 20; // 20 * 30 секунд = 10 минут
+            const interval = setInterval(() => {
+                checkCount++;
+                if (checkCount >= maxChecks) {
+                    clearInterval(interval);
+                } else {
+                    checkPaymentStatus();
+                }
+            }, 30000);
+        }
+    </script>
+    
+    <!-- Analytics -->
+    <% if (yandexMetrikaId) { %>
+        <%- include('partials/analytics', { yandexMetrikaId, googleAnalyticsId }) %>
+    <% } %>
+</body>
+</html>

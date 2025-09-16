@@ -18,6 +18,7 @@ const smsRouter = require('./routes/sms');
 const childrenRouter = require('./routes/children');
 const financesRouter = require('./routes/finances');
 const applicationsRouter = require('./routes/applications');
+const certificatesRouter = require('./routes/certificates');
 const adminAuthRouter = require('./routes/adminAuth');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
@@ -71,6 +72,66 @@ app.get('/prices', (req, res) => {
     });
 });
 
+// Страница сертификатов
+app.get('/certificates', (req, res) => {
+    res.render('certificates', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Подарочные сертификаты - Горностайл72'
+    });
+});
+
+// Страница покупки сертификата
+app.get('/certificate/purchase', (req, res) => {
+    res.render('certificate-purchase', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Купить подарочный сертификат - Горностайл72'
+    });
+});
+
+// Страница оплаты сертификата
+app.get('/certificate/payment', (req, res) => {
+    res.render('certificate-payment', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Оплата сертификата - Горностайл72'
+    });
+});
+
+// Страница согласия на обработку персональных данных
+app.get('/privacy-policy', (req, res) => {
+    res.render('privacy-policy', {
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        botUsername: process.env.BOT_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        pageTitle: 'Согласие на обработку персональных данных - Горностайл72'
+    });
+});
+
 // Страница графика работы
 app.get('/schedule', (req, res) => {
     res.render('schedule', {
@@ -101,11 +162,159 @@ app.get('/rules', (req, res) => {
     });
 });
 
+// Предварительный просмотр сертификата
+app.get('/certificate/preview', async (req, res) => {
+    try {
+        const { design, amount, name = 'Образец' } = req.query;
+        
+        if (!design || !amount) {
+            return res.status(400).render('error', {
+                pageTitle: 'Ошибка - Горностайл72',
+                errorTitle: 'Неверные параметры',
+                errorMessage: 'Не указаны обязательные параметры для предварительного просмотра.'
+            });
+        }
+
+        // Получаем информацию о дизайне
+        const designResult = await pool.query(
+            'SELECT * FROM certificate_designs WHERE id = $1 AND is_active = true',
+            [design]
+        );
+
+        if (designResult.rows.length === 0) {
+            return res.status(404).render('error', {
+                pageTitle: 'Дизайн не найден - Горностайл72',
+                errorTitle: 'Дизайн не найден',
+                errorMessage: 'Запрашиваемый дизайн сертификата не существует или неактивен.'
+            });
+        }
+
+        const designData = designResult.rows[0];
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
+        // Создаем объект сертификата для предварительного просмотра
+        const certificate = {
+            certificate_number: '123456',
+            nominal_value: parseFloat(amount),
+            recipient_name: name,
+            expiry_date: expiryDate.toLocaleDateString('ru-RU'),
+            design: designData
+        };
+
+        res.render('certificate', {
+            certificate,
+            pageTitle: `Предварительный просмотр - ${designData.name} - Горностайл72`,
+            adminPhone: process.env.ADMIN_PHONE,
+            contactEmail: process.env.CONTACT_EMAIL,
+            adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+            botUsername: process.env.BOT_USERNAME,
+            telegramGroup: process.env.TELEGRAM_GROUP,
+            vkGroup: process.env.VK_GROUP,
+            yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+            googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID
+        });
+
+    } catch (error) {
+        console.error('Ошибка при предварительном просмотре сертификата:', error);
+        res.status(500).render('error', {
+            pageTitle: 'Ошибка сервера - Горностайл72',
+            errorTitle: 'Ошибка сервера',
+            errorMessage: 'Произошла внутренняя ошибка сервера. Попробуйте позже.'
+        });
+    }
+});
+
+// Страница сертификата
+app.get('/certificate/:number', async (req, res) => {
+    try {
+        const { number } = req.params;
+        
+        // Проверяем формат номера
+        if (!/^[0-9]{6}$/.test(number)) {
+            return res.status(404).render('error', {
+                error: 'Неверный формат номера сертификата',
+                pageTitle: 'Ошибка - Горностайл72'
+            });
+        }
+
+        // Получаем информацию о сертификате напрямую из базы данных
+        const query = `
+            SELECT 
+                c.*,
+                cd.name as design_name,
+                cd.description as design_description,
+                cd.image_url as design_image_url,
+                cd.template_url as design_template_url
+            FROM certificates c
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id
+            WHERE c.certificate_number = $1
+        `;
+
+        const result = await pool.query(query, [number]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).render('error', {
+                error: 'Сертификат не найден',
+                pageTitle: 'Сертификат не найден - Горностайл72'
+            });
+        }
+
+        const certificateData = result.rows[0];
+
+        // Формируем объект сертификата для шаблона
+        const certificate = {
+            certificate_number: certificateData.certificate_number,
+            nominal_value: certificateData.nominal_value,
+            recipient_name: certificateData.recipient_name,
+            recipient_phone: certificateData.recipient_phone,
+            message: certificateData.message,
+            status: certificateData.status,
+            expiry_date: new Date(certificateData.expiry_date).toLocaleDateString('ru-RU'),
+            purchase_date: new Date(certificateData.purchase_date).toLocaleDateString('ru-RU'),
+            design: {
+                name: certificateData.design_name,
+                description: certificateData.design_description,
+                image_url: certificateData.design_image_url,
+                template_url: certificateData.design_template_url
+            }
+        };
+
+        // Отображаем страницу сертификата
+        res.render('certificate', {
+            certificate,
+            botUsername: process.env.BOT_USERNAME,
+            adminPhone: process.env.ADMIN_PHONE,
+            contactEmail: process.env.CONTACT_EMAIL,
+            adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+            telegramGroup: process.env.TELEGRAM_GROUP,
+            vkGroup: process.env.VK_GROUP,
+            yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+            googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+            pageTitle: `Сертификат №${number} - Горностайл72`
+        });
+
+    } catch (error) {
+        console.error('Ошибка при отображении сертификата:', error);
+        res.status(500).render('error', {
+            error: 'Внутренняя ошибка сервера',
+            pageTitle: 'Ошибка - Горностайл72'
+        });
+    }
+});
+
 // Статические файлы
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Статические файлы для генерируемых изображений
+app.use('/generated', express.static(path.join(__dirname, '../public/generated')));
+
 // Маршруты аутентификации
 app.use('/api/admin', adminAuthRouter);
+
+// Публичные маршруты для покупки сертификатов через сайт (без авторизации)
+const { registerHandler } = require('./routes/certificates');
+app.post('/api/certificate/register', registerHandler);
 
 // Защищенные маршруты
 app.use('/api/groups', verifyToken, groupsRouter);
@@ -119,6 +328,7 @@ app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
 app.use('/api/applications', verifyToken, applicationsRouter);
+app.use('/api/certificates', verifyToken, certificatesRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {

@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
 const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
+const jwt = require('jsonwebtoken');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -17,6 +18,18 @@ const pool = new Pool({
 // Создаем экземпляр бота
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const userStates = new Map();
+
+// Функция для получения JWT токена
+function getJWTToken() {
+    return jwt.sign(
+        { 
+            type: 'bot',
+            timestamp: Date.now() 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+}
 
 function showMainMenu(chatId) {
     return bot.sendMessage(chatId, 'Выберите действие:', {
@@ -675,17 +688,32 @@ async function handleTextMessage(msg) {
 
     // Глобальная обработка сообщений
     if (msg.text === '🎁 Сертификаты') {
-        return bot.sendMessage(chatId,
-            'Функционал для Сертификаты находится в разработке\n\nСкоро здесь появится возможность приобретать и дарить сертификаты.',
-            {
-                reply_markup: {
-                    keyboard: [
-                        ['🔙 В главное меню']
-                    ],
-                    resize_keyboard: true
-                }
-            }
-        );
+        return showCertificatesMenu(chatId);
+    }
+
+    // Обработка кнопки "Подарить еще сертификат"
+    if (msg.text === '💝 Подарить еще сертификат') {
+        return showCertificatesMenu(chatId);
+    }
+
+    // Обработка кнопки "Мои сертификаты"
+    if (msg.text === '📋 Мои сертификаты') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showUserCertificates(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Активировать сертификат"
+    if (msg.text === '🔑 Активировать сертификат') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showCertificateActivation(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
     }
 
     // Обработка кнопки "Адрес и контакты"
@@ -4764,6 +4792,240 @@ async function handleTextMessage(msg) {
             break;
         }
 
+        // ==================== ОБРАБОТКА СОСТОЯНИЙ СЕРТИФИКАТОВ ====================
+        
+        case 'certificates_menu': {
+            const clientId = state.data.client_id;
+            
+            if (msg.text === '💝 Подарить сертификат') {
+                return showCertificateIntro(chatId, clientId);
+            } else if (msg.text === '🔑 Активировать сертификат') {
+                return showCertificateActivation(chatId, clientId);
+            } else if (msg.text === '📋 Мои сертификаты') {
+                return showUserCertificates(chatId, clientId);
+            }
+            break;
+        }
+
+        case 'certificate_intro': {
+            const clientId = state.data.client_id;
+            
+            if (msg.text === 'Да, покупаю!') {
+                return showNominalSelection(chatId, clientId);
+            } else if (msg.text === 'Вернуться в меню') {
+                return showCertificatesMenu(chatId);
+            }
+            break;
+        }
+
+        case 'certificate_nominal_selection': {
+            const clientId = state.data.client_id;
+            let nominalValue = 0;
+
+            // Обрабатываем выбор номинала
+            if (msg.text.includes('2 500')) {
+                nominalValue = 2500;
+            } else if (msg.text.includes('3 000')) {
+                nominalValue = 3000;
+            } else if (msg.text.includes('5 000')) {
+                nominalValue = 5000;
+            } else if (msg.text.includes('6 000')) {
+                nominalValue = 6000;
+            } else if (msg.text.includes('10 000')) {
+                nominalValue = 10000;
+            } else if (msg.text.includes('15 000')) {
+                nominalValue = 15000;
+            } else if (msg.text === '💳 Произвольная сумма') {
+                userStates.set(chatId, {
+                    step: 'certificate_custom_amount',
+                    data: { client_id: clientId }
+                });
+                return bot.sendMessage(chatId,
+                    '💳 **ПРОИЗВОЛЬНАЯ СУММА**\n\nВведите сумму сертификата (от 500 до 50 000 руб.):\n\n**Пример:** 7500',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            } else if (msg.text === '🔙 Назад') {
+                return showCertificatesMenu(chatId);
+            }
+
+            if (nominalValue > 0) {
+                return showDesignSelection(chatId, clientId, nominalValue);
+            }
+            break;
+        }
+
+        case 'certificate_custom_amount': {
+            const clientId = state.data.client_id;
+            
+            if (msg.text === '🔙 Назад') {
+                return showNominalSelection(chatId, clientId);
+            }
+
+            const amount = parseFloat(msg.text);
+            if (isNaN(amount) || amount < 500 || amount > 50000) {
+                return bot.sendMessage(chatId,
+                    '❌ **Неверная сумма!**\n\nВведите сумму от 500 до 50 000 руб.\n\n**Пример:** 7500',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            return showDesignSelection(chatId, clientId, amount);
+        }
+
+        case 'certificate_design_selection': {
+            const { client_id, nominal_value } = state.data;
+            
+            if (msg.text === '🔙 Назад') {
+                return showNominalSelection(chatId, client_id);
+            }
+
+            // Извлекаем номер дизайна из сообщения
+            const designMatch = msg.text.match(/^(\d+)️⃣/);
+            if (designMatch) {
+                const designId = parseInt(designMatch[1]);
+                return showRecipientForm(chatId, client_id, nominal_value, designId);
+            }
+            break;
+        }
+
+        case 'certificate_recipient_data': {
+            const { client_id, nominal_value, design_id } = state.data;
+            
+            if (msg.text === '🔙 Назад') {
+                return showDesignSelection(chatId, client_id, nominal_value);
+            }
+
+            if (msg.text === '⏭ Пропустить') {
+                // Пропускаем данные получателя
+                const purchaseData = {
+                    client_id,
+                    nominal_value,
+                    design_id,
+                    recipient_name: null,
+                    message: null
+                };
+                return showPurchaseConfirmation(chatId, purchaseData);
+            }
+
+            // Парсим данные получателя из сообщения
+            const lines = msg.text.split('\n').filter(line => line.trim());
+            let recipientName = null;
+            let message = null;
+
+            // Определяем какие данные предоставлены
+            if (lines.length >= 1) {
+                recipientName = lines[0].trim();
+            }
+            if (lines.length >= 2) {
+                // Все остальные строки считаем пожеланием
+                message = lines.slice(1).join(' ').trim();
+                
+                // Ограничиваем длину пожелания
+                if (message && message.length > 100) {
+                    return bot.sendMessage(chatId, '❌ Пожелание слишком длинное. Максимум 100 символов.\n\nТекущая длина: ' + message.length + ' символов.', {
+                        reply_markup: {
+                            keyboard: [
+                                ['🔙 Попробовать еще раз']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                }
+            }
+
+            const purchaseData = {
+                client_id,
+                nominal_value,
+                design_id,
+                recipient_name: recipientName,
+                message: message
+            };
+
+            return showPurchaseConfirmation(chatId, purchaseData);
+        }
+
+        case 'certificate_purchase_confirmation': {
+            const purchaseData = state.data;
+            
+            if (msg.text === '🔙 Назад') {
+                return showRecipientForm(chatId, purchaseData.client_id, purchaseData.nominal_value, purchaseData.design_id);
+            }
+
+            if (msg.text === '❌ Отменить') {
+                return showCertificatesMenu(chatId);
+            }
+
+            if (msg.text === '✅ Купить сертификат') {
+                return createCertificate(chatId, purchaseData);
+            }
+
+            if (msg.text === '💰 Пополнить кошелек') {
+                // Переходим к пополнению кошелька
+                userStates.set(chatId, { 
+                    step: 'main_menu', 
+                    data: { client_id: purchaseData.client_id } 
+                });
+                return bot.sendMessage(chatId,
+                    '💰 **ПОПОЛНЕНИЕ КОШЕЛЬКА**\n\nДля пополнения кошелька воспользуйтесь кнопкой "Кошелек" в главном меню.',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['💰 Кошелек'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            break;
+        }
+
+        case 'certificate_activation': {
+            const clientId = state.data.client_id;
+            
+            if (msg.text === '🔙 Назад') {
+                return showCertificatesMenu(chatId);
+            }
+
+            if (msg.text === '🔑 Попробовать еще раз') {
+                return showCertificateActivation(chatId, clientId);
+            }
+
+            // Проверяем формат номера сертификата
+            const certificateNumber = msg.text.trim();
+            if (!/^[0-9]{6}$/.test(certificateNumber)) {
+                return bot.sendMessage(chatId,
+                    '❌ **Неверный формат номера!**\n\nНомер сертификата должен состоять из 6 цифр.\n\n**Пример:** `123456`',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🔑 Попробовать еще раз'],
+                                ['🔙 Назад']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            return activateCertificate(chatId, certificateNumber, clientId);
+        }
+
         // ... rest of the states ...
     }
 }
@@ -4778,6 +5040,21 @@ bot.on('callback_query', async (callbackQuery) => {
     const state = userStates.get(chatId);
 
     try {
+        // Обработка выбора дизайна сертификата
+        if (data.startsWith('select_design_')) {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Дизайн выбран! ✅'
+            });
+            
+            const [, , designId, nominalValue] = data.split('_');
+            const state = userStates.get(chatId);
+            
+            if (state && state.step === 'certificate_design_selection') {
+                return showRecipientForm(chatId, state.data.client_id, parseInt(nominalValue), parseInt(designId));
+            }
+            return;
+        }
+
         if (!state) {
             await bot.answerCallbackQuery(callbackQuery.id, {
                 text: 'Сессия истекла. Пожалуйста, начните процесс записи заново.',
@@ -5469,6 +5746,721 @@ async function cancelIndividualTraining(sessionId, userId) {
     } catch (error) {
         console.error(`[cancelIndividualTraining] Ошибка при отмене тренировки ${sessionId}:`, error);
         throw error;
+    }
+}
+
+// ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С СЕРТИФИКАТАМИ ====================
+
+// Показать меню сертификатов
+async function showCertificatesMenu(chatId) {
+    try {
+        const client = await getClientByTelegramId(chatId.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, 
+                '❌ Для работы с сертификатами необходимо зарегистрироваться в системе.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 В главное меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        userStates.set(chatId, {
+            step: 'certificates_menu',
+            data: { client_id: client.id }
+        });
+
+        return bot.sendMessage(chatId,
+            '🎁 **СЕРТИФИКАТЫ**\n\n' +
+            'Выберите действие:',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [
+                        ['💝 Подарить сертификат'],
+                        ['🔑 Активировать сертификат'],
+                        ['📋 Мои сертификаты'],
+                        ['🔙 В главное меню']
+                    ],
+                    resize_keyboard: true
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Ошибка при показе меню сертификатов:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать ознакомительное сообщение о сертификатах
+async function showCertificateIntro(chatId, clientId) {
+    try {
+        userStates.set(chatId, {
+            step: 'certificate_intro',
+            data: { client_id: clientId }
+        });
+
+        const message = `🎁 **ПОДАРОЧНЫЙ СЕРТИФИКАТ**
+
+Что это такое?
+Подарочный сертификат — это возможность подарить близкому человеку незабываемые эмоции от катания на горных лыжах или сноуборде!
+
+Как это работает?
+1️⃣ Вы покупаете сертификат на любую сумму
+2️⃣ Получаете красивый сертификат и ссылку на него
+3️⃣ Дарите сертификат близкому человеку
+4️⃣ Получатель активирует сертификат в нашем боте
+5️⃣ Средства зачисляются на его кошелек для записи на тренировки
+
+✨ Особенности:
+• Сертификат действителен 1 год с момента покупки
+• Можно распечатать и подарить лично
+• Или просто отправить ссылку в мессенджере
+• Активация через наш Telegram бот
+• Выбор из 4 красивых дизайнов
+
+Готовы создать идеальный подарок? 🎿`;
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['Да, покупаю!'],
+                    ['Вернуться в меню']
+                ],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе ознакомительного сообщения:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать выбор номинала сертификата
+async function showNominalSelection(chatId, clientId) {
+    try {
+        userStates.set(chatId, {
+            step: 'certificate_nominal_selection',
+            data: { client_id: clientId }
+        });
+
+        const message = `💝 **ПОДАРИТЬ СЕРТИФИКАТ**
+
+Выберите номинал сертификата:
+
+💰 **2 500 руб.** - Индивидуальная 30 мин без тренера
+💰 **3 000 руб.** - Индивидуальная 30 мин с тренером
+💰 **5 000 руб.** - Индивидуальная 60 мин без тренера
+💰 **6 000 руб.** - Индивидуальная 60 мин с тренером
+💰 **10 000 руб.** - Групповые тренировки 3-4 чел
+💰 **15 000 руб.** - Групповые тренировки 5-6 чел
+
+💳 **Произвольная сумма** (500-50 000 руб.)`;
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['💰 2 500 руб.', '💰 3 000 руб.'],
+                    ['💰 5 000 руб.', '💰 6 000 руб.'],
+                    ['💰 10 000 руб.', '💰 15 000 руб.'],
+                    ['💳 Произвольная сумма'],
+                    ['🔙 Назад']
+                ],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе выбора номинала:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать выбор дизайна сертификата
+async function showDesignSelection(chatId, clientId, nominalValue) {
+    try {
+        // Получаем доступные дизайны
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${getJWTToken()}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success || !result.designs) {
+            throw new Error('Не удалось получить дизайны сертификатов');
+        }
+
+        userStates.set(chatId, {
+            step: 'certificate_design_selection',
+            data: { client_id: clientId, nominal_value: nominalValue }
+        });
+
+        let message = `🎨 **ВЫБЕРИТЕ ДИЗАЙН СЕРТИФИКАТА**
+
+Номинал: **${nominalValue} руб.**
+
+Доступные дизайны:\n\n`;
+
+        const inlineKeyboard = [];
+        const keyboard = [];
+        
+        result.designs.forEach((design, index) => {
+            message += `${index + 1}️⃣ **${design.name}** - ${design.description}\n\n`;
+            
+            // Inline кнопки для выбора и предварительного просмотра
+            inlineKeyboard.push([
+                {
+                    text: `${index + 1}️⃣ Выбрать ${design.name}`,
+                    callback_data: `select_design_${design.id}_${nominalValue}`
+                }
+            ]);
+            inlineKeyboard.push([
+                {
+                    text: `👁 Посмотреть дизайн "${design.name}"`,
+                    url: `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/preview?design=${design.id}&amount=${nominalValue}&name=Образец`
+                }
+            ]);
+            
+            // Обычные кнопки для тех, кто предпочитает текст
+            keyboard.push([`${index + 1}️⃣ ${design.name}`]);
+        });
+
+        keyboard.push(['🔙 Назад']);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: inlineKeyboard
+            }
+        }).then(() => {
+            // Отправляем дополнительную клавиатуру для альтернативного выбора
+            return bot.sendMessage(chatId, '🔄 Или выберите дизайн кнопками ниже:', {
+                reply_markup: {
+                    keyboard: keyboard,
+                    resize_keyboard: true
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Ошибка при показе выбора дизайна:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке дизайнов. Попробуйте позже.');
+    }
+}
+
+// Показать форму данных получателя
+async function showRecipientForm(chatId, clientId, nominalValue, designId) {
+    try {
+        userStates.set(chatId, {
+            step: 'certificate_recipient_data',
+            data: { 
+                client_id: clientId, 
+                nominal_value: nominalValue, 
+                design_id: designId,
+                recipient_data: {}
+            }
+        });
+
+        const message = `👤 **ДАННЫЕ ПОЛУЧАТЕЛЯ**
+
+Введите данные получателя сертификата (все поля необязательны):
+
+**Кому:**
+_Например: Иван Иванов_
+
+**Пожелание (до 100 символов):**
+_Например: Поздравляю с днем рождения! Счастья, здоровья, удачи._
+
+Отправьте данные в формате:
+\`Иван Иванов\`
+\`Поздравляю с днем рождения!\`
+
+Или нажмите "Пропустить" для создания сертификата без данных получателя.`;
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['⏭ Пропустить'],
+                    ['🔙 Назад']
+                ],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе формы получателя:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать подтверждение покупки
+async function showPurchaseConfirmation(chatId, purchaseData) {
+    try {
+        // Получаем информацию о клиенте и его кошельке
+        const client = await pool.query(
+            `SELECT c.full_name, w.balance, w.wallet_number
+             FROM clients c
+             LEFT JOIN wallets w ON c.id = w.client_id
+             WHERE c.id = $1`,
+            [purchaseData.client_id]
+        );
+
+        if (client.rows.length === 0) {
+            return bot.sendMessage(chatId, '❌ Клиент не найден.');
+        }
+
+        const clientData = client.rows[0];
+        const balance = parseFloat(clientData.balance) || 0;
+
+        // Получаем информацию о дизайне
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${getJWTToken()}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const designsResult = await response.json();
+        const design = designsResult.designs?.find(d => d.id === purchaseData.design_id);
+        const designName = design ? design.name : 'Неизвестный дизайн';
+
+        userStates.set(chatId, {
+            step: 'certificate_purchase_confirmation',
+            data: purchaseData
+        });
+
+        let message = `❗ **ПОДТВЕРДИТЕ ПОКУПКУ**
+
+**Номинал:** ${purchaseData.nominal_value} руб.
+**Дизайн:** ${designName}`;
+
+        if (purchaseData.recipient_name) {
+            message += `\n**Кому:** ${purchaseData.recipient_name}`;
+        }
+        if (purchaseData.message) {
+            message += `\n**Пожелание:** ${purchaseData.message}`;
+        }
+
+        message += `\n\n💰 **Стоимость:** ${purchaseData.nominal_value} руб.
+💳 **Баланс кошелька:** ${balance} руб.`;
+
+        if (balance >= purchaseData.nominal_value) {
+            message += `\n💵 **Остаток после покупки:** ${(balance - purchaseData.nominal_value).toFixed(2)} руб.`;
+            
+            return bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [
+                        ['✅ Купить сертификат'],
+                        ['❌ Отменить', '🔙 Назад']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        } else {
+            message += `\n\n❌ **Недостаточно средств!**
+Необходимо пополнить кошелек на ${(purchaseData.nominal_value - balance).toFixed(2)} руб.`;
+            
+            return bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [
+                        ['💰 Пополнить кошелек'],
+                        ['❌ Отменить', '🔙 Назад']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Ошибка при показе подтверждения покупки:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Создать сертификат
+async function createCertificate(chatId, purchaseData) {
+    try {
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getJWTToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                purchaser_id: purchaseData.client_id,
+                nominal_value: purchaseData.nominal_value,
+                design_id: purchaseData.design_id,
+                recipient_name: purchaseData.recipient_name || null,
+                message: purchaseData.message || null
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            let errorMessage = '❌ Ошибка при создании сертификата: ';
+            switch (result.code) {
+                case 'INSUFFICIENT_FUNDS':
+                    errorMessage += 'Недостаточно средств на кошельке';
+                    break;
+                case 'INVALID_NOMINAL':
+                    errorMessage += 'Неверный номинал сертификата';
+                    break;
+                case 'INVALID_DESIGN':
+                    errorMessage += 'Неверный дизайн сертификата';
+                    break;
+                case 'WALLET_NOT_FOUND':
+                    errorMessage += 'Кошелек не найден';
+                    break;
+                default:
+                    errorMessage += result.error || 'Неизвестная ошибка';
+            }
+            
+            return bot.sendMessage(chatId, errorMessage, {
+                reply_markup: {
+                    keyboard: [['🔙 В главное меню']],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        // Показываем результат успешной покупки
+        await showCertificateResult(chatId, result.certificate);
+
+    } catch (error) {
+        console.error('Ошибка при создании сертификата:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка при создании сертификата. Попробуйте позже.', {
+            reply_markup: {
+                keyboard: [['🔙 В главное меню']],
+                resize_keyboard: true
+            }
+        });
+    }
+}
+
+// Показать результат создания сертификата
+async function showCertificateResult(chatId, certificate) {
+    try {
+        let message = `🎉 **СЕРТИФИКАТ УСПЕШНО СОЗДАН!**
+
+🎫 **Номер сертификата:** \`${certificate.certificate_number}\`
+💰 **Номинал:** ${certificate.nominal_value} руб.`;
+
+        if (certificate.recipient_name) {
+            message += `\n👤 **Получатель:** ${certificate.recipient_name}`;
+        }
+
+        // Добавляем информацию о сроке действия
+        const expiryDate = new Date(certificate.expiry_date).toLocaleDateString('ru-RU');
+        message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
+
+        message += `\n\n🔗 **Электронный сертификат:**
+${certificate.certificate_url}`;
+
+        if (certificate.print_image_url) {
+            const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
+            message += `\n\n🖨️ **Для печати:**
+${printUrl}`;
+        }
+
+        message += `\n\nВы можете:
+📱 Отправить ссылку другу
+🖨️ Распечатать сертификат
+📋 Посмотреть мои сертификаты`;
+
+        userStates.delete(chatId);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['📋 Мои сертификаты'],
+                    ['💝 Подарить еще сертификат'],
+                    ['🔙 В главное меню']
+                ],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе результата создания сертификата:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать форму активации сертификата
+async function showCertificateActivation(chatId, clientId) {
+    try {
+        userStates.set(chatId, {
+            step: 'certificate_activation',
+            data: { client_id: clientId }
+        });
+
+        const message = `🔑 **АКТИВИРОВАТЬ СЕРТИФИКАТ**
+
+⚠️ **ВАЖНО:** После активации сертификат необходимо использовать в течение 3 месяцев!
+
+Введите номер сертификата (6 цифр):
+
+**Пример:** \`123456\`
+
+Номер сертификата указан на самом сертификате или в ссылке.`;
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['🔙 Назад']
+                ],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе формы активации:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Активировать сертификат
+async function activateCertificate(chatId, certificateNumber, clientId) {
+    try {
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/activate`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getJWTToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                certificate_number: certificateNumber,
+                client_id: clientId
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            let errorMessage = '❌ Ошибка при активации сертификата: ';
+            switch (result.code) {
+                case 'CERTIFICATE_NOT_FOUND':
+                    errorMessage += 'Сертификат не найден';
+                    break;
+                case 'ALREADY_ACTIVATED':
+                    errorMessage += 'Сертификат уже активирован';
+                    break;
+                case 'EXPIRED':
+                    errorMessage += 'Срок действия сертификата истек';
+                    break;
+                case 'CLIENT_NOT_FOUND':
+                    errorMessage += 'Клиент не найден';
+                    break;
+                default:
+                    errorMessage += result.error || 'Неизвестная ошибка';
+            }
+            
+            return bot.sendMessage(chatId, errorMessage, {
+                reply_markup: {
+                    keyboard: [
+                        ['🔑 Попробовать еще раз'],
+                        ['🔙 В главное меню']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        // Показываем результат успешной активации
+        // Вычисляем дату истечения (3 месяца от активации)
+        const activationDate = new Date(result.certificate.activation_date);
+        const expiryDate = new Date(activationDate);
+        expiryDate.setMonth(expiryDate.getMonth() + 3);
+        const formattedExpiryDate = expiryDate.toLocaleDateString('ru-RU');
+
+        const message = `✅ **СЕРТИФИКАТ АКТИВИРОВАН!**
+
+🎫 **Номер:** ${result.certificate.certificate_number}
+💰 **Номинал:** ${result.certificate.nominal_value} руб.
+💵 **Зачислено на кошелек:** ${result.wallet.amount_added} руб.
+💳 **Новый баланс:** ${result.wallet.balance} руб.
+
+⏰ **Использовать до:** ${formattedExpiryDate} включительно
+
+Теперь вы можете записаться на тренировки! 🎿`;
+
+        userStates.delete(chatId);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['📝 Записаться на тренировку'],
+                    ['💰 Кошелек'],
+                    ['🔙 В главное меню']
+                ],
+                resize_keyboard: true
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при активации сертификата:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка при активации сертификата. Попробуйте позже.', {
+            reply_markup: {
+                keyboard: [['🔙 В главное меню']],
+                resize_keyboard: true
+            }
+        });
+    }
+}
+
+// Показать сертификаты пользователя
+async function showUserCertificates(chatId, clientId) {
+    try {
+        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/user/${clientId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${getJWTToken()}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            return bot.sendMessage(chatId, '❌ Ошибка при получении сертификатов.', {
+                reply_markup: {
+                    keyboard: [['🔙 В главное меню']],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        if (result.certificates.length === 0) {
+            return bot.sendMessage(chatId, 
+                '📋 **МОИ СЕРТИФИКАТЫ**\n\nУ вас пока нет сертификатов.\n\nВы можете:\n• Подарить сертификат кому-то\n• Активировать полученный сертификат',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['💝 Подарить сертификат'],
+                            ['🔑 Активировать сертификат'],
+                            ['🔙 В главное меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        // Группируем сертификаты по типу отношения
+        const purchased = result.certificates.filter(cert => cert.relationship_type === 'purchased');
+        const activated = result.certificates.filter(cert => cert.relationship_type === 'activated');
+
+        let message = '📋 **МОИ СЕРТИФИКАТЫ**\n\n';
+
+        if (purchased.length > 0) {
+            message += '🎁 **ПОДАРЕННЫЕ СЕРТИФИКАТЫ:**\n';
+            
+            // Сортируем по дате покупки (новые сверху)
+            purchased.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
+            
+            purchased.forEach(cert => {
+                // Логика статусов для дарителя (скрываем информацию об истечении)
+                let statusEmoji, statusText;
+                if (cert.status === 'used') {
+                    statusEmoji = '✅';
+                    statusText = 'Использован';
+                } else if (cert.activation_date) {
+                    statusEmoji = '✅';
+                    statusText = 'Активирован';
+                } else {
+                    // Для дарителя всегда показываем "Подарен", даже если сертификат истек
+                    statusEmoji = '🎁';
+                    statusText = 'Подарен';
+                }
+                
+                message += `${statusEmoji} **${statusText}**\n`;
+                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
+                
+                if (cert.recipient_name) {
+                    message += `👤 Кому: ${cert.recipient_name}\n`;
+                }
+                
+                const purchaseDate = new Date(cert.purchase_date).toLocaleDateString('ru-RU');
+                message += `📅 Дата покупки: ${purchaseDate}\n`;
+                
+                if (cert.activation_date) {
+                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    message += `🔓 Активирован: ${activationDate}\n`;
+                }
+                
+                // Добавляем ссылку на сертификат
+                const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
+                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                
+                message += '\n';
+            });
+        }
+
+        if (activated.length > 0) {
+            message += '🔑 **АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:**\n';
+            
+            // Сортируем по дате активации (новые сверху)
+            activated.sort((a, b) => new Date(b.activation_date) - new Date(a.activation_date));
+            
+            activated.forEach(cert => {
+                const statusEmoji = cert.status === 'used' ? '✅' : '🔓';
+                const statusText = cert.status === 'used' ? 'Использован' : 'Активирован';
+                
+                message += `${statusEmoji} **${statusText}**\n`;
+                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
+                
+                if (cert.activation_date) {
+                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    message += `🔓 Дата активации: ${activationDate}\n`;
+                }
+                
+                // Добавляем ссылку на сертификат
+                const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
+                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                
+                message += '\n';
+            });
+        }
+
+        userStates.delete(chatId);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [
+                    ['💝 Подарить сертификат'],
+                    ['🔑 Активировать сертификат'],
+                    ['🔙 В главное меню']
+                ],
+                resize_keyboard: true
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при получении сертификатов пользователя:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка при получении сертификатов. Попробуйте позже.', {
+            reply_markup: {
+                keyboard: [['🔙 В главное меню']],
+                resize_keyboard: true
+            }
+        });
     }
 }
 
