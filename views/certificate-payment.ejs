@@ -67,9 +67,10 @@
         .wallet-number {
             font-size: 2.5rem;
             font-weight: bold;
-            letter-spacing: 3px;
+            letter-spacing: 1px;
             margin: 20px 0;
             font-family: 'Courier New', monospace;
+            white-space: nowrap;
         }
         
         .wallet-amount {
@@ -313,7 +314,8 @@
             
             .wallet-number {
                 font-size: 1.8rem;
-                letter-spacing: 2px;
+                letter-spacing: 0.5px;
+                white-space: nowrap;
             }
             
             .wallet-amount {
@@ -468,19 +470,21 @@
         }
 
         // Заполняем данные на странице
-        document.getElementById('walletNumber').textContent = walletNumber;
+        document.getElementById('walletNumber').textContent = walletNumber.replace(/\s/g, '');
         document.getElementById('amount').textContent = amount;
         
         // Заполняем данные в форме оплаты
         const highlightAmount = document.querySelector('.highlight-amount');
         const highlightCode = document.querySelector('.highlight-code');
         if (highlightAmount) highlightAmount.textContent = amount;
-        if (highlightCode) highlightCode.textContent = walletNumber;
+        if (highlightCode) highlightCode.textContent = walletNumber.replace(/\s/g, '');
         
-        // Для SMS примера убираем пробелы
+        // Для SMS примера убираем пробелы (если элемент существует)
         const walletNumberForSMS = walletNumber.replace(/\s/g, '');
-        document.getElementById('smsWalletNumber').textContent = walletNumberForSMS;
-        document.getElementById('smsAmount').textContent = amount;
+        const smsWalletElement = document.getElementById('smsWalletNumber');
+        const smsAmountElement = document.getElementById('smsAmount');
+        if (smsWalletElement) smsWalletElement.textContent = walletNumberForSMS;
+        if (smsAmountElement) smsAmountElement.textContent = amount;
 
 
         // Fallback функция копирования для старых браузеров

@@ -101,7 +101,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
                     certificateId,
                     certificateCode: certificateNumber,
                     recipientName: pendingCert.recipient_name || pendingCert.full_name,
-                    amount: pendingCert.nominal_value,
+                    amount: amount,
                     message: pendingCert.message
                 });
                 console.log(`Email с сертификатом отправлен на ${pendingCert.email}`);
