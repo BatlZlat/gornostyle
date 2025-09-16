@@ -142,14 +142,53 @@ router.post('/purchase', async (req, res) => {
             INSERT INTO certificates (
                 certificate_number, purchaser_id, recipient_name,
                 nominal_value, design_id, status, expiry_date, activation_date,
-                message, purchase_date, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                message, purchase_date, pdf_url, image_url, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
         `;
 
         // Вычисляем дату истечения (1 год от текущего момента)
         const now = new Date();
         const expiryDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // +1 год в миллисекундах
+
+        // Генерируем PDF и изображение сертификата
+        let pdfUrl = null;
+        let imageUrl = null;
+        
+        try {
+            const certificatePdfGenerator = require('../services/certificatePdfGenerator');
+            const certificateImageGenerator = require('../services/certificateImageGenerator');
+            
+            // Данные для генерации файлов
+            const certificateData = {
+                certificate_number: certificateNumber,
+                nominal_value: nominal_value,
+                recipient_name: recipient_name,
+                message: message,
+                expiry_date: expiryDate,
+                design_id: design_id
+            };
+            
+            // Генерируем PDF
+            try {
+                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
+                console.log(`✅ PDF сертификат создан: ${pdfUrl}`);
+            } catch (pdfError) {
+                console.error('Ошибка при генерации PDF сертификата:', pdfError);
+            }
+            
+            // Генерируем изображение
+            try {
+                imageUrl = await certificateImageGenerator.generateCertificateImage(certificateData);
+                console.log(`✅ Изображение сертификата создано: ${imageUrl}`);
+            } catch (imageError) {
+                console.error('Ошибка при генерации изображения сертификата:', imageError);
+            }
+            
+        } catch (fileError) {
+            console.error('Ошибка при генерации файлов сертификата:', fileError);
+            // Продолжаем без файлов
+        }
 
         const certificateResult = await client.query(certificateQuery, [
             certificateNumber,
@@ -161,7 +200,9 @@ router.post('/purchase', async (req, res) => {
             expiryDate,
             null, // activation_date
             message || null,
-            now // purchase_date
+            now, // purchase_date
+            pdfUrl, // pdf_url
+            imageUrl // image_url
         ]);
 
         const certificate = certificateResult.rows[0];
@@ -185,22 +226,6 @@ router.post('/purchase', async (req, res) => {
         // Формируем URL сертификата
         const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${certificateNumber}`;
 
-        // Генерируем изображение сертификата для печати (асинхронно)
-        let printImageUrl = null;
-        try {
-            printImageUrl = await certificateImageGenerator.generateCertificateImage({
-                certificate_number: certificateNumber,
-                nominal_value: certificate.nominal_value,
-                recipient_name: certificate.recipient_name,
-                message: certificate.message,
-                expiry_date: certificate.expiry_date,
-                design_id: certificate.design_id
-            });
-        } catch (imageError) {
-            console.error('Ошибка при генерации изображения сертификата:', imageError);
-            // Продолжаем без изображения
-        }
-
         // Ответ клиенту
         res.status(201).json({
             success: true,
@@ -217,7 +242,9 @@ router.post('/purchase', async (req, res) => {
                 expiry_date: certificate.expiry_date,
                 purchase_date: certificate.purchase_date,
                 certificate_url: certificateUrl,
-                print_image_url: printImageUrl
+                pdf_url: certificate.pdf_url,
+                image_url: certificate.image_url,
+                print_image_url: certificate.image_url // Для обратной совместимости
             }
         });
 

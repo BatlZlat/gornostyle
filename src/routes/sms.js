@@ -11,7 +11,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         // Ищем по номеру кошелька и проверяем, что сумма в разумных пределах
         console.log(`🔍 [processPendingCertificate] Поиск pending_certificate для кошелька ${walletNumber}`);
         const pendingQuery = `
-            SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name
+            SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name, cd.image_url as design_image_url
             FROM pending_certificates pc
             JOIN clients c ON pc.client_id = c.id
             LEFT JOIN certificate_designs cd ON pc.design_id = cd.id
@@ -64,16 +64,56 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
 
         // Создаем сертификат на сумму, которую клиент реально перевел
         console.log(`🔍 [processPendingCertificate] Создаем сертификат для клиента ${pendingCert.client_id}`);
-        const certificateQuery = `
-            INSERT INTO certificates (
-                purchaser_id, nominal_value, recipient_name, message, design_id, 
-                certificate_number, status, purchase_date, expiry_date
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 year')
-            RETURNING id, certificate_number
-        `;
         
         // Генерируем уникальный 6-значный номер сертификата
         const certificateNumber = Math.floor(Math.random() * 900000 + 100000).toString();
+        
+        // Генерируем PDF и изображение сертификата
+        let pdfUrl = null;
+        let imageUrl = null;
+        
+        try {
+            const certificatePdfGenerator = require('../services/certificatePdfGenerator');
+            const certificateImageGenerator = require('../services/certificateImageGenerator');
+            
+            // Данные для генерации файлов
+            const certificateData = {
+                certificate_number: certificateNumber,
+                nominal_value: amount,
+                recipient_name: pendingCert.recipient_name,
+                message: pendingCert.message,
+                expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // +1 год
+                design_id: pendingCert.design_id
+            };
+            
+            // Генерируем PDF
+            try {
+                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
+                console.log(`✅ [processPendingCertificate] PDF сертификат создан: ${pdfUrl}`);
+            } catch (pdfError) {
+                console.error('❌ [processPendingCertificate] Ошибка при генерации PDF сертификата:', pdfError);
+            }
+            
+            // Генерируем изображение
+            try {
+                imageUrl = await certificateImageGenerator.generateCertificateImage(certificateData);
+                console.log(`✅ [processPendingCertificate] Изображение сертификата создано: ${imageUrl}`);
+            } catch (imageError) {
+                console.error('❌ [processPendingCertificate] Ошибка при генерации изображения сертификата:', imageError);
+            }
+            
+        } catch (fileError) {
+            console.error('❌ [processPendingCertificate] Ошибка при генерации файлов сертификата:', fileError);
+            // Продолжаем без файлов
+        }
+        
+        const certificateQuery = `
+            INSERT INTO certificates (
+                purchaser_id, nominal_value, recipient_name, message, design_id, 
+                certificate_number, status, purchase_date, expiry_date, pdf_url, image_url
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 year', $7, $8)
+            RETURNING id, certificate_number
+        `;
         
         const certResult = await dbClient.query(certificateQuery, [
             pendingCert.client_id,
@@ -81,7 +121,9 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
             pendingCert.recipient_name,
             pendingCert.message,
             pendingCert.design_id,
-            certificateNumber
+            certificateNumber,
+            pdfUrl,
+            imageUrl
         ]);
 
         const certificateId = certResult.rows[0].id;
@@ -101,8 +143,12 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
                     certificateId,
                     certificateCode: certificateNumber,
                     recipientName: pendingCert.recipient_name || pendingCert.full_name,
-                    amount: pendingCert.nominal_value,
-                    message: pendingCert.message
+                    amount: amount,
+                    message: pendingCert.message,
+                    designId: pendingCert.design_id,
+                    designName: pendingCert.design_name,
+                    designImageUrl: pendingCert.design_image_url,
+                    pdfUrl: pdfUrl // Добавляем PDF URL для вложения
                 });
                 console.log(`Email с сертификатом отправлен на ${pendingCert.email}`);
             } catch (emailError) {

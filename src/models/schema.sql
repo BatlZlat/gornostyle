@@ -125,6 +125,7 @@ CREATE TABLE certificates (
     certificate_number VARCHAR(12) UNIQUE NOT NULL,
     purchaser_id INTEGER REFERENCES clients(id),
     recipient_name VARCHAR(100),
+    recipient_phone VARCHAR(20),
     nominal_value DECIMAL(10,2) NOT NULL,
     design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
     status VARCHAR(20) DEFAULT 'active', -- active, used, expired, cancelled
@@ -133,6 +134,8 @@ CREATE TABLE certificates (
     activation_date TIMESTAMP,
     message TEXT,
     purchase_date TIMESTAMP NOT NULL,
+    pdf_url VARCHAR(255), -- URL к PDF файлу сертификата
+    image_url VARCHAR(255), -- URL к изображению сертификата (JPG)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT check_certificate_number CHECK (certificate_number ~ '^[0-9]{6}$'),
@@ -336,6 +339,71 @@ CREATE TABLE grouping_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Дополнительные таблицы (представления или служебные таблицы)
+-- Таблица активных сертификатов (представление)
+CREATE TABLE active_certificates (
+    id SERIAL PRIMARY KEY,
+    certificate_number VARCHAR(12) UNIQUE NOT NULL,
+    purchaser_id INTEGER REFERENCES clients(id),
+    recipient_name VARCHAR(100),
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
+    expiry_date TIMESTAMP NOT NULL,
+    message TEXT,
+    purchase_date TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица использованных сертификатов (представление)
+CREATE TABLE used_certificates (
+    id SERIAL PRIMARY KEY,
+    certificate_number VARCHAR(12) UNIQUE NOT NULL,
+    purchaser_id INTEGER REFERENCES clients(id),
+    recipient_name VARCHAR(100),
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_id INTEGER REFERENCES certificate_designs(id) NOT NULL,
+    activated_by_id INTEGER REFERENCES clients(id),
+    activation_date TIMESTAMP,
+    message TEXT,
+    purchase_date TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица полной информации о сертификатах (представление)
+CREATE TABLE certificate_full_info (
+    id SERIAL PRIMARY KEY,
+    certificate_number VARCHAR(12) UNIQUE NOT NULL,
+    purchaser_name VARCHAR(100),
+    purchaser_phone VARCHAR(20),
+    recipient_name VARCHAR(100),
+    recipient_phone VARCHAR(20),
+    nominal_value DECIMAL(10,2) NOT NULL,
+    design_name VARCHAR(100),
+    design_image_url VARCHAR(255),
+    status VARCHAR(20),
+    expiry_date TIMESTAMP,
+    activated_by_name VARCHAR(100),
+    activation_date TIMESTAMP,
+    message TEXT,
+    purchase_date TIMESTAMP,
+    pdf_url VARCHAR(255),
+    image_url VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица статистики сертификатов (представление)
+CREATE TABLE certificate_stats (
+    id SERIAL PRIMARY KEY,
+    total_certificates INTEGER DEFAULT 0,
+    active_certificates INTEGER DEFAULT 0,
+    used_certificates INTEGER DEFAULT 0,
+    expired_certificates INTEGER DEFAULT 0,
+    total_value DECIMAL(15,2) DEFAULT 0,
+    active_value DECIMAL(15,2) DEFAULT 0,
+    used_value DECIMAL(15,2) DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создание индексов
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
@@ -363,6 +431,8 @@ CREATE INDEX idx_certificates_activated_by ON certificates(activated_by_id);
 CREATE INDEX idx_certificates_purchaser_status ON certificates(purchaser_id, status);
 CREATE INDEX idx_certificates_activated_by_status ON certificates(activated_by_id, status);
 CREATE INDEX idx_certificates_status_expiry ON certificates(status, expiry_date);
+CREATE INDEX idx_certificates_pdf_url ON certificates(pdf_url);
+CREATE INDEX idx_certificates_image_url ON certificates(image_url);
 CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
