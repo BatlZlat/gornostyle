@@ -11,7 +11,7 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         // Ищем по номеру кошелька и проверяем, что сумма в разумных пределах
         console.log(`🔍 [processPendingCertificate] Поиск pending_certificate для кошелька ${walletNumber}`);
         const pendingQuery = `
-            SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name
+            SELECT pc.*, c.full_name, c.email, c.phone, c.birth_date, cd.name as design_name, cd.image_url as design_image_url
             FROM pending_certificates pc
             JOIN clients c ON pc.client_id = c.id
             LEFT JOIN certificate_designs cd ON pc.design_id = cd.id
@@ -102,7 +102,10 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
                     certificateCode: certificateNumber,
                     recipientName: pendingCert.recipient_name || pendingCert.full_name,
                     amount: amount,
-                    message: pendingCert.message
+                    message: pendingCert.message,
+                    designId: pendingCert.design_id,
+                    designName: pendingCert.design_name,
+                    designImageUrl: pendingCert.design_image_url
                 });
                 console.log(`Email с сертификатом отправлен на ${pendingCert.email}`);
             } catch (emailError) {

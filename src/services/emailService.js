@@ -71,7 +71,7 @@ class EmailService {
 
     // Генерация HTML содержимого письма
     generateCertificateEmailHTML(certificateData) {
-        const { certificateId, certificateCode, recipientName, amount, message } = certificateData;
+        const { certificateId, certificateCode, recipientName, amount, message, designImageUrl } = certificateData;
         
         return `
         <!DOCTYPE html>
@@ -113,12 +113,35 @@ class EmailService {
                     font-size: 1.1rem;
                 }
                 .certificate {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: ${designImageUrl ? `url('${designImageUrl}')` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
                     color: white;
                     padding: 30px;
                     border-radius: 15px;
                     text-align: center;
                     margin: 30px 0;
+                    min-height: 300px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    position: relative;
+                }
+                .certificate::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.4);
+                    border-radius: 15px;
+                    z-index: 1;
+                }
+                .certificate > * {
+                    position: relative;
+                    z-index: 2;
                 }
                 .certificate-title {
                     font-size: 1.8rem;
@@ -200,9 +223,10 @@ class EmailService {
                 <div class="info-section">
                     <div class="info-title">📋 Как использовать сертификат:</div>
                     <ol>
-                        <li>Свяжитесь с нами для записи на тренировку</li>
-                        <li>Сообщите код сертификата: <strong>${certificateCode}</strong></li>
-                        <li>Наслаждайтесь тренировками на тренажере или естественном склоне!</li>
+                        <li>Получите сертификат - после покупки вы получили красивый сертификат с уникальным номером</li>
+                        <li>Подарите или распечатайте - можете распечатать сертификат или отправить получателю цифровую версию</li>
+                        <li>Активируйте в боте - получатель активирует сертификат через наш Telegram бот @gornostyle72_bot</li>
+                        <li>Записывайтесь на тренировки - выбирайте удобное время и записывайтесь на индивидуальные или групповые тренировки</li>
                     </ol>
                 </div>
 
@@ -211,8 +235,8 @@ class EmailService {
                     <ul>
                         <li><strong>Срок действия:</strong> 1 год с момента покупки</li>
                         <li><strong>Номинал:</strong> ${amount} рублей</li>
-                        <li><strong>Можно использовать частями</strong></li>
                         <li><strong>Действует на все виды тренировок</strong></li>
+                        <li><strong>Подходит для любого уровня подготовки</strong></li>
                     </ul>
                 </div>
 
