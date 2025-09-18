@@ -86,8 +86,74 @@ class EmailQueueProcessor {
         console.log(`📧 Обрабатываем email #${id} для сертификата ${certificate_data.certificateCode} → ${recipient_email} (попытка ${attempts + 1})`);
 
         try {
+            // Генерируем PDF и изображение, если они еще не созданы
+            let updatedCertificateData = { ...certificate_data };
+            
+            if (!certificate_data.pdfUrl || !certificate_data.imageUrl) {
+                console.log(`📄 Генерируем файлы для сертификата ${certificate_data.certificateCode}...`);
+                
+                try {
+                    const certificatePdfGenerator = require('../services/certificatePdfGenerator');
+                    const certificateImageGenerator = require('../services/certificateImageGenerator');
+                    
+                    // Получаем данные сертификата из базы
+                    const certResult = await pool.query(
+                        'SELECT * FROM certificates WHERE id = $1',
+                        [certificate_id]
+                    );
+                    
+                    if (certResult.rows.length > 0) {
+                        const cert = certResult.rows[0];
+                        const certificateFileData = {
+                            certificate_number: cert.certificate_number,
+                            nominal_value: cert.nominal_value,
+                            recipient_name: cert.recipient_name,
+                            message: cert.message,
+                            expiry_date: cert.expiry_date,
+                            design_id: cert.design_id
+                        };
+                        
+                        // Генерируем PDF
+                        let pdfUrl = certificate_data.pdfUrl;
+                        if (!pdfUrl) {
+                            try {
+                                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateFileData);
+                                console.log(`✅ PDF создан: ${pdfUrl}`);
+                            } catch (pdfError) {
+                                console.error('❌ Ошибка при генерации PDF:', pdfError);
+                            }
+                        }
+                        
+                        // Генерируем изображение
+                        let imageUrl = certificate_data.imageUrl;
+                        if (!imageUrl) {
+                            try {
+                                imageUrl = await certificateImageGenerator.generateCertificateImage(certificateFileData);
+                                console.log(`✅ Изображение создано: ${imageUrl}`);
+                            } catch (imageError) {
+                                console.error('❌ Ошибка при генерации изображения:', imageError);
+                            }
+                        }
+                        
+                        // Обновляем данные в базе
+                        if (pdfUrl || imageUrl) {
+                            await pool.query(
+                                'UPDATE certificates SET pdf_url = COALESCE($1, pdf_url), image_url = COALESCE($2, image_url) WHERE id = $3',
+                                [pdfUrl, imageUrl, certificate_id]
+                            );
+                            
+                            // Обновляем данные для email
+                            updatedCertificateData.pdfUrl = pdfUrl;
+                            updatedCertificateData.imageUrl = imageUrl;
+                        }
+                    }
+                } catch (fileGenError) {
+                    console.error(`❌ Ошибка при генерации файлов для сертификата ${certificate_data.certificateCode}:`, fileGenError);
+                }
+            }
+
             // Отправляем email
-            const result = await this.emailService.sendCertificateEmail(recipient_email, certificate_data);
+            const result = await this.emailService.sendCertificateEmail(recipient_email, updatedCertificateData);
             
             if (result.success) {
                 // Помечаем как отправленный
