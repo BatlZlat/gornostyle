@@ -123,7 +123,7 @@ class CertificatePdfGenerator {
             background: rgba(0, 0, 0, 0.67);
             color: white;
             padding: 30px;
-            border-radius: 0;
+            border-radius: 12px;
             width: 300px;
             height: 440px;
             margin-right: 30px;
