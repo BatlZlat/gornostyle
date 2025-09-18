@@ -23,9 +23,14 @@ const adminAuthRouter = require('./routes/adminAuth');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
 const fs = require('fs');
+const EmailQueueProcessor = require('./services/emailQueueProcessor');
 
 // Импортируем бота
 require('./bot/client-bot');
+
+// Запускаем обработчик очереди email
+const emailQueueProcessor = new EmailQueueProcessor();
+emailQueueProcessor.start();
 
 const app = express();
 const PORT = process.env.PORT;

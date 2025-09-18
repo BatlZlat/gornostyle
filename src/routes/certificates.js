@@ -4,6 +4,8 @@ const { pool } = require('../db');
 const { notifyAdminCertificatePurchase, notifyAdminCertificateActivation } = require('../bot/admin-notify');
 const TelegramBot = require('node-telegram-bot-api');
 const certificateImageGenerator = require('../services/certificateImageGenerator');
+const EmailService = require('../services/emailService');
+const emailService = new EmailService();
 
 // Создаем экземпляр клиентского бота для уведомлений
 const clientBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -81,7 +83,7 @@ router.post('/purchase', async (req, res) => {
 
         // Проверяем существование покупателя и его кошелька
         const purchaserQuery = `
-            SELECT c.id, c.full_name, c.telegram_id, w.id as wallet_id, w.balance, w.wallet_number
+            SELECT c.id, c.full_name, c.email, c.telegram_id, w.id as wallet_id, w.balance, w.wallet_number
             FROM clients c
             LEFT JOIN wallets w ON c.id = w.client_id
             WHERE c.id = $1
@@ -247,6 +249,14 @@ router.post('/purchase', async (req, res) => {
                 print_image_url: certificate.image_url // Для обратной совместимости
             }
         });
+
+        // Email будет отправлен автоматически через database trigger
+        console.log(`✅ Сертификат создан, email будет отправлен автоматически через триггер`);
+        if (purchaser.email) {
+            console.log(`📧 Email будет отправлен на: ${purchaser.email}`);
+        } else {
+            console.log(`⚠️  Email не указан для покупателя ${purchaser.full_name}`);
+        }
 
         // Отправляем уведомление администратору (асинхронно)
         setImmediate(async () => {

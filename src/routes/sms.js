@@ -136,24 +136,12 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         console.log(`🔍 [processPendingCertificate] Завершаем транзакцию COMMIT`);
         await dbClient.query('COMMIT');
 
-        // Отправляем email с сертификатом (если настроена отправка email)
+        // Email будет отправлен автоматически через database trigger
+        console.log(`✅ [processPendingCertificate] Сертификат создан, email будет отправлен автоматически через триггер`);
         if (pendingCert.email) {
-            try {
-                await sendCertificateEmail(pendingCert.email, {
-                    certificateId,
-                    certificateCode: certificateNumber,
-                    recipientName: pendingCert.recipient_name || pendingCert.full_name,
-                    amount: amount,
-                    message: pendingCert.message,
-                    designId: pendingCert.design_id,
-                    designName: pendingCert.design_name,
-                    designImageUrl: pendingCert.design_image_url,
-                    pdfUrl: pdfUrl // Добавляем PDF URL для вложения
-                });
-                console.log(`Email с сертификатом отправлен на ${pendingCert.email}`);
-            } catch (emailError) {
-                console.error('Ошибка при отправке email с сертификатом:', emailError);
-            }
+            console.log(`📧 [processPendingCertificate] Email будет отправлен на: ${pendingCert.email}`);
+        } else {
+            console.log(`⚠️  [processPendingCertificate] Email не указан для клиента ${pendingCert.full_name}`);
         }
 
         // Отправляем уведомление администратору о покупке через сайт
@@ -493,19 +481,6 @@ router.post('/process', async (req, res) => {
             throw error;
         } finally {
             client.release();
-        }
-
-        // Проверяем, есть ли ожидающий сертификат для этого кошелька
-        // Используем новое соединение для изоляции транзакций
-        console.log(`🔍 ПОПЫТКА ВЫЗОВА processPendingCertificate для кошелька ${walletNumber} на сумму ${amount}₽`);
-        const certClient = await pool.connect();
-        try {
-            await processPendingCertificate(walletNumber, amount, certClient);
-            console.log(`✅ processPendingCertificate завершена для кошелька ${walletNumber}`);
-        } catch (error) {
-            console.error(`❌ Ошибка в processPendingCertificate для кошелька ${walletNumber}:`, error);
-        } finally {
-            certClient.release();
         }
 
     } catch (error) {
