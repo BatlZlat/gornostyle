@@ -125,7 +125,7 @@ class CertificatePdfGenerator {
             padding: 30px;
             border-radius: 0;
             width: 300px;
-            height: 420px;
+            height: 440px;
             margin-right: 30px;
             text-align: center;
             backdrop-filter: blur(8px);
@@ -137,7 +137,7 @@ class CertificatePdfGenerator {
         }
         
         .certificate-title {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             margin-bottom: 0;
             color: #FFFFFF;
@@ -148,7 +148,8 @@ class CertificatePdfGenerator {
         }
         
         .certificate-subtitle {
-            font-size: 16px;
+            font-size: 20px;
+            font-weight: bold;
             margin-bottom: 50px;
             color: #FFFFFF;
             line-height: 1.3;
