@@ -742,7 +742,7 @@ BEGIN
     UPDATE email_queue 
     SET status = 'processing', 
         processed_at = CURRENT_TIMESTAMP
-    WHERE id IN (
+    WHERE email_queue.id IN (
         SELECT eq.id 
         FROM email_queue eq
         WHERE eq.status = 'pending' 
