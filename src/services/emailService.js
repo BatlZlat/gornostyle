@@ -12,7 +12,11 @@ class EmailService {
             auth: {
                 user: process.env.EMAIL_USER || 'batl-zlat@yandex.ru',
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
-            }
+            },
+            // Увеличиваем timeout для стабильности соединения
+            connectionTimeout: 60000, // 60 секунд
+            greetingTimeout: 30000,   // 30 секунд
+            socketTimeout: 60000      // 60 секунд
         });
 
         // Проверяем настройки

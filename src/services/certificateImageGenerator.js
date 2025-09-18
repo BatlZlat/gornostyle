@@ -1,4 +1,4 @@
-const Jimp = require('jimp');
+const { Jimp } = require('jimp');
 const path = require('path');
 const fs = require('fs').promises;
 
