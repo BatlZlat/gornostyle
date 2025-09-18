@@ -125,7 +125,7 @@ class CertificatePdfGenerator {
             padding: 30px;
             border-radius: 0;
             width: 300px;
-            height: 400px;
+            height: 420px;
             margin-right: 30px;
             text-align: center;
             backdrop-filter: blur(8px);
