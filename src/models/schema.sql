@@ -650,4 +650,145 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER training_sessions_schedule_trigger
 AFTER INSERT OR DELETE ON training_sessions
 FOR EACH ROW
-EXECUTE FUNCTION update_training_sessions_slots(); 
+EXECUTE FUNCTION update_training_sessions_slots();
+
+-- Таблица очереди email
+CREATE TABLE IF NOT EXISTS email_queue (
+    id SERIAL PRIMARY KEY,
+    certificate_id INTEGER REFERENCES certificates(id),
+    recipient_email VARCHAR(255) NOT NULL,
+    certificate_data JSONB NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending', -- pending, processing, sent, failed
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    last_error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP,
+    sent_at TIMESTAMP
+);
+
+-- Индексы для производительности email_queue
+CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status);
+CREATE INDEX IF NOT EXISTS idx_email_queue_created_at ON email_queue(created_at);
+
+-- Комментарии для email_queue
+COMMENT ON TABLE email_queue IS 'Очередь email для отправки сертификатов';
+
+-- Функция триггера для добавления email в очередь при создании сертификата
+CREATE OR REPLACE FUNCTION queue_certificate_email()
+RETURNS TRIGGER AS $$
+DECLARE
+    email_data jsonb;
+    client_email VARCHAR(255);
+BEGIN
+    -- Получаем email клиента
+    SELECT c.email INTO client_email
+    FROM clients c 
+    WHERE c.id = NEW.purchaser_id AND c.email IS NOT NULL;
+    
+    -- Если email найден, добавляем в очередь
+    IF client_email IS NOT NULL THEN
+        -- Формируем данные для email
+        SELECT jsonb_build_object(
+            'certificateId', NEW.id,
+            'certificateCode', NEW.certificate_number,
+            'recipientEmail', client_email,
+            'recipientName', COALESCE(NEW.recipient_name, c.full_name),
+            'amount', NEW.nominal_value,
+            'message', NEW.message,
+            'pdfUrl', NEW.pdf_url,
+            'imageUrl', NEW.image_url,
+            'designId', NEW.design_id,
+            'designName', cd.name,
+            'designImageUrl', cd.image_url
+        ) INTO email_data
+        FROM clients c 
+        LEFT JOIN certificate_designs cd ON NEW.design_id = cd.id
+        WHERE c.id = NEW.purchaser_id;
+        
+        -- Добавляем в очередь email
+        INSERT INTO email_queue (certificate_id, recipient_email, certificate_data)
+        VALUES (NEW.id, client_email, email_data);
+        
+        -- Логируем
+        RAISE NOTICE 'Email queued for certificate % to %', NEW.certificate_number, client_email;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Удаляем старый триггер если существует
+DROP TRIGGER IF EXISTS certificate_email_queue_trigger ON certificates;
+
+-- Создаем новый триггер для автоматической отправки email при создании сертификата
+CREATE TRIGGER certificate_email_queue_trigger
+    AFTER INSERT ON certificates
+    FOR EACH ROW
+    EXECUTE FUNCTION queue_certificate_email();
+
+-- Функция для получения следующих email из очереди
+CREATE OR REPLACE FUNCTION get_pending_emails(limit_count INTEGER DEFAULT 5)
+RETURNS TABLE (
+    id INTEGER,
+    certificate_id INTEGER,
+    recipient_email VARCHAR(255),
+    certificate_data JSONB,
+    attempts INTEGER
+) AS $$
+BEGIN
+    -- Обновляем статус на 'processing' и возвращаем записи
+    RETURN QUERY
+    UPDATE email_queue 
+    SET status = 'processing', 
+        processed_at = CURRENT_TIMESTAMP
+    WHERE email_queue.id IN (
+        SELECT eq.id 
+        FROM email_queue eq
+        WHERE eq.status = 'pending' 
+        AND eq.attempts < eq.max_attempts
+        ORDER BY eq.created_at ASC
+        LIMIT limit_count
+        FOR UPDATE SKIP LOCKED
+    )
+    RETURNING email_queue.id, email_queue.certificate_id, email_queue.recipient_email, 
+              email_queue.certificate_data, email_queue.attempts;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Функция для обновления статуса email
+CREATE OR REPLACE FUNCTION update_email_status(
+    email_id INTEGER,
+    new_status VARCHAR(20),
+    error_message TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    UPDATE email_queue 
+    SET status = new_status,
+        attempts = attempts + 1,
+        last_error = error_message,
+        sent_at = CASE WHEN new_status = 'sent' THEN CURRENT_TIMESTAMP ELSE sent_at END
+    WHERE id = email_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Функция для очистки старых записей (опционально)
+CREATE OR REPLACE FUNCTION cleanup_old_emails(days_old INTEGER DEFAULT 30)
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM email_queue 
+    WHERE (status = 'sent' OR status = 'failed') 
+    AND created_at < CURRENT_TIMESTAMP - (days_old || ' days')::INTERVAL;
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Комментарии для функций email queue
+COMMENT ON FUNCTION queue_certificate_email() IS 'Триггер для добавления email в очередь при создании сертификата';
+COMMENT ON FUNCTION get_pending_emails(INTEGER) IS 'Получение следующих email из очереди для обработки';
+COMMENT ON FUNCTION update_email_status(INTEGER, VARCHAR, TEXT) IS 'Обновление статуса отправки email';
+COMMENT ON FUNCTION cleanup_old_emails(INTEGER) IS 'Очистка старых записей из очереди email'; 

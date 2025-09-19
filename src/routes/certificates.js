@@ -4,6 +4,8 @@ const { pool } = require('../db');
 const { notifyAdminCertificatePurchase, notifyAdminCertificateActivation } = require('../bot/admin-notify');
 const TelegramBot = require('node-telegram-bot-api');
 const certificateImageGenerator = require('../services/certificateImageGenerator');
+const EmailService = require('../services/emailService');
+const emailService = new EmailService();
 
 // Создаем экземпляр клиентского бота для уведомлений
 const clientBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -81,7 +83,7 @@ router.post('/purchase', async (req, res) => {
 
         // Проверяем существование покупателя и его кошелька
         const purchaserQuery = `
-            SELECT c.id, c.full_name, c.telegram_id, w.id as wallet_id, w.balance, w.wallet_number
+            SELECT c.id, c.full_name, c.email, c.telegram_id, w.id as wallet_id, w.balance, w.wallet_number
             FROM clients c
             LEFT JOIN wallets w ON c.id = w.client_id
             WHERE c.id = $1
@@ -247,6 +249,14 @@ router.post('/purchase', async (req, res) => {
                 print_image_url: certificate.image_url // Для обратной совместимости
             }
         });
+
+        // Email будет отправлен автоматически через database trigger
+        console.log(`✅ Сертификат создан, email будет отправлен автоматически через триггер`);
+        if (purchaser.email) {
+            console.log(`📧 Email будет отправлен на: ${purchaser.email}`);
+        } else {
+            console.log(`⚠️  Email не указан для покупателя ${purchaser.full_name}`);
+        }
 
         // Отправляем уведомление администратору (асинхронно)
         setImmediate(async () => {
@@ -700,6 +710,62 @@ const getUserCertificatesHandler = async (req, res) => {
 router.get('/client/:client_id', getUserCertificatesHandler);
 router.get('/user/:client_id', getUserCertificatesHandler);
 
+// 5. Проверка статуса оплаты сертификата
+router.get('/check-payment-status', async (req, res) => {
+    try {
+        const { clientId, amount } = req.query;
+        
+        if (!clientId || !amount) {
+            return res.status(400).json({
+                success: false,
+                error: 'Отсутствуют обязательные параметры',
+                code: 'MISSING_PARAMETERS'
+            });
+        }
+
+        // Проверяем, создан ли сертификат для данного клиента за последние 30 минут
+        const query = `
+            SELECT c.id, c.certificate_number, c.nominal_value, c.status, c.created_at
+            FROM certificates c
+            WHERE c.purchaser_id = $1 
+            AND c.nominal_value = $2
+            AND c.created_at >= NOW() - INTERVAL '30 minutes'
+            ORDER BY c.created_at DESC
+            LIMIT 1
+        `;
+
+        const result = await pool.query(query, [clientId, amount]);
+
+        if (result.rows.length > 0) {
+            const certificate = result.rows[0];
+            return res.json({
+                success: true,
+                certificateCreated: true,
+                certificate: {
+                    id: certificate.id,
+                    certificate_number: certificate.certificate_number,
+                    nominal_value: parseFloat(certificate.nominal_value),
+                    status: certificate.status,
+                    created_at: certificate.created_at
+                }
+            });
+        } else {
+            return res.json({
+                success: true,
+                certificateCreated: false
+            });
+        }
+
+    } catch (error) {
+        console.error('Ошибка при проверке статуса оплаты:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
 // 6. Получение статистики сертификатов (для админа)
 router.get('/admin/statistics', async (req, res) => {
     try {
@@ -895,15 +961,16 @@ async function registerHandler(req, res) {
             
             console.log('Найден существующий клиент, ID:', clientId, 'email был:', !!currentEmail);
             
-            // Обновляем данные клиента, добавляем email если его не было
+            // Обновляем только email, сохраняем существующие данные
             const updateClientQuery = `
                 UPDATE clients 
-                SET full_name = $1, birth_date = $2, email = COALESCE(email, $3), updated_at = CURRENT_TIMESTAMP
-                WHERE id = $4
+                SET email = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
             `;
-            await client.query(updateClientQuery, [fullName, birthDate, email, clientId]);
+            await client.query(updateClientQuery, [email, clientId]);
             
-            console.log('Клиент обновлен, email добавлен:', !currentEmail ? 'да' : 'уже был');
+            console.log('Клиент обновлен, email обновлен:', currentEmail === email ? 'тот же' : `с "${currentEmail}" на "${email}"`);
+            console.log('Существующие данные сохранены: имя и дата рождения не изменены');
         } else {
             // Создаем нового клиента
             const insertClientQuery = `
