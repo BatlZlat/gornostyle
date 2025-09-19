@@ -25,6 +25,89 @@
             background: #f8f9fa;
         }
         
+        /* Success Notification Styles */
+        .success-notification {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            z-index: 2000;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .success-notification.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .success-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.4s ease;
+        }
+        
+        .success-icon {
+            font-size: 4rem;
+            color: #27ae60;
+            margin-bottom: 20px;
+        }
+        
+        .success-text h3 {
+            color: #2c3e50;
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        
+        .success-text p {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        .success-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #95a5a6;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+        
+        .success-close:hover {
+            color: #7f8c8d;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from { 
+                opacity: 0; 
+                transform: translateY(30px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+            }
+        }
+        
         .payment-container {
             max-width: 800px;
             margin: 0 auto;
@@ -363,6 +446,23 @@
         </div>
     </header>
 
+    <!-- Success Notification -->
+    <div id="successNotification" class="success-notification">
+        <div class="success-content">
+            <div class="success-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="success-text">
+                <h3>🎉 Сертификат успешно куплен!</h3>
+                <p>Проверьте вашу почту - PDF сертификат уже отправлен.</p>
+                <p>В течение нескольких минут вы получите письмо с красивым сертификатом.</p>
+            </div>
+            <button class="success-close" onclick="closeSuccessNotification()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="payment-page">
         <div class="payment-container">
@@ -570,9 +670,9 @@
                     .then(response => response.json())
                     .then(data => {
                         if (data.success && data.certificateCreated) {
-                            // Показываем уведомление об успешной оплате
-                            alert('Оплата получена! Сертификат отправлен на ваш email.');
-                            window.location.href = '/certificates';
+                            // Показываем красивое уведомление об успешной оплате
+                            showSuccessNotification();
+                            clearInterval(interval); // Останавливаем проверку статуса
                         }
                     })
                     .catch(error => {
@@ -592,6 +692,32 @@
                 }
             }, 30000);
         }
+
+        // Функции для управления уведомлением о успехе
+        function showSuccessNotification() {
+            const notification = document.getElementById('successNotification');
+            notification.classList.add('show');
+            
+            // Автоматически закрыть через 10 секунд и перейти на главную
+            setTimeout(() => {
+                closeSuccessNotification();
+                setTimeout(() => {
+                    window.location.href = '/certificates';
+                }, 500);
+            }, 10000);
+        }
+        
+        function closeSuccessNotification() {
+            const notification = document.getElementById('successNotification');
+            notification.classList.remove('show');
+        }
+        
+        // Закрытие уведомления при клике вне его
+        document.getElementById('successNotification').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeSuccessNotification();
+            }
+        });
     </script>
     
     <!-- Analytics -->

@@ -710,6 +710,62 @@ const getUserCertificatesHandler = async (req, res) => {
 router.get('/client/:client_id', getUserCertificatesHandler);
 router.get('/user/:client_id', getUserCertificatesHandler);
 
+// 5. Проверка статуса оплаты сертификата
+router.get('/check-payment-status', async (req, res) => {
+    try {
+        const { clientId, amount } = req.query;
+        
+        if (!clientId || !amount) {
+            return res.status(400).json({
+                success: false,
+                error: 'Отсутствуют обязательные параметры',
+                code: 'MISSING_PARAMETERS'
+            });
+        }
+
+        // Проверяем, создан ли сертификат для данного клиента за последние 30 минут
+        const query = `
+            SELECT c.id, c.certificate_number, c.nominal_value, c.status, c.created_at
+            FROM certificates c
+            WHERE c.purchaser_id = $1 
+            AND c.nominal_value = $2
+            AND c.created_at >= NOW() - INTERVAL '30 minutes'
+            ORDER BY c.created_at DESC
+            LIMIT 1
+        `;
+
+        const result = await pool.query(query, [clientId, amount]);
+
+        if (result.rows.length > 0) {
+            const certificate = result.rows[0];
+            return res.json({
+                success: true,
+                certificateCreated: true,
+                certificate: {
+                    id: certificate.id,
+                    certificate_number: certificate.certificate_number,
+                    nominal_value: parseFloat(certificate.nominal_value),
+                    status: certificate.status,
+                    created_at: certificate.created_at
+                }
+            });
+        } else {
+            return res.json({
+                success: true,
+                certificateCreated: false
+            });
+        }
+
+    } catch (error) {
+        console.error('Ошибка при проверке статуса оплаты:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
 // 6. Получение статистики сертификатов (для админа)
 router.get('/admin/statistics', async (req, res) => {
     try {
