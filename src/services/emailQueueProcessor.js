@@ -113,9 +113,25 @@ class EmailQueueProcessor {
                             design_id: cert.design_id
                         };
                         
-                        // Генерируем PDF
+                        // Генерируем PDF (всегда проверяем физическое существование файла)
                         let pdfUrl = certificate_data.pdfUrl;
-                        if (!pdfUrl) {
+                        let needGeneratePdf = !pdfUrl;
+                        
+                        // Даже если URL есть в базе, проверяем существование файла
+                        if (pdfUrl) {
+                            const fs = require('fs').promises;
+                            const path = require('path');
+                            const pdfPath = path.join(__dirname, '../../public', pdfUrl);
+                            try {
+                                await fs.access(pdfPath);
+                                console.log(`📄 PDF файл найден: ${pdfPath}`);
+                            } catch {
+                                console.log(`⚠️  PDF файл не найден, нужна генерация: ${pdfPath}`);
+                                needGeneratePdf = true;
+                            }
+                        }
+                        
+                        if (needGeneratePdf) {
                             try {
                                 pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateFileData);
                                 console.log(`✅ PDF создан: ${pdfUrl}`);
