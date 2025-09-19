@@ -46,16 +46,28 @@ class EmailService {
             // Добавляем PDF сертификат как вложение
             if (pdfUrl) {
                 const pdfPath = path.join(__dirname, '../../public', pdfUrl);
-                try {
-                    await fs.access(pdfPath);
-                    attachments.push({
-                        filename: `Сертификат_${certificateCode}.pdf`,
-                        path: pdfPath,
-                        contentType: 'application/pdf'
-                    });
-                    console.log(`📎 PDF вложение добавлено: ${pdfPath}`);
-                } catch (error) {
-                    console.warn(`⚠️  PDF файл не найден: ${pdfPath}`);
+                
+                // Пытаемся найти файл с повторными попытками (для устранения race condition)
+                let fileFound = false;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        await fs.access(pdfPath);
+                        attachments.push({
+                            filename: `Сертификат_${certificateCode}.pdf`,
+                            path: pdfPath,
+                            contentType: 'application/pdf'
+                        });
+                        console.log(`📎 PDF вложение добавлено: ${pdfPath}`);
+                        fileFound = true;
+                        break;
+                    } catch (error) {
+                        if (attempt < 3) {
+                            console.log(`⏳ PDF файл не найден (попытка ${attempt}/3), ожидание...`);
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // Ждем 1 секунду
+                        } else {
+                            console.warn(`⚠️  PDF файл не найден после 3 попыток: ${pdfPath}`);
+                        }
+                    }
                 }
             }
 

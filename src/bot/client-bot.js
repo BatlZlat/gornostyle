@@ -3329,6 +3329,7 @@ async function handleTextMessage(msg) {
                         // Если есть дети, предлагаем выбрать ребенка
                         state.data.selected_session = selectedSession;
                         state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'children';
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
@@ -3377,6 +3378,7 @@ async function handleTextMessage(msg) {
                         // Если есть дети старше 16 лет, предлагаем выбрать ребенка
                         state.data.selected_session = selectedSession;
                         state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'children';
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
@@ -3416,6 +3418,7 @@ async function handleTextMessage(msg) {
                         // Если есть дети, предлагаем выбрать участника
                         state.data.selected_session = selectedSession;
                         state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'general';
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
@@ -3595,8 +3598,10 @@ async function handleTextMessage(msg) {
                 });
             }
 
-            // Обработка выбора ребенка (как было раньше)
-            const selectedIndex = parseInt(msg.text) - 2; // -2 потому что теперь "1. Для себя", а дети начинаются с "2."
+            // Обработка выбора ребенка с учетом типа тренировки
+            const selectedIndex = state.data.training_type === 'children' 
+                ? parseInt(msg.text) - 1  // Детские тренировки: 1,2,3 → 0,1,2
+                : parseInt(msg.text) - 2; // Общие тренировки: 1="Для себя", 2,3 → 0,1
             
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_children.length) {
                 return bot.sendMessage(chatId,
