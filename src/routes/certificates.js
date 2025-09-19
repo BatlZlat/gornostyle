@@ -905,15 +905,16 @@ async function registerHandler(req, res) {
             
             console.log('Найден существующий клиент, ID:', clientId, 'email был:', !!currentEmail);
             
-            // Обновляем данные клиента, включая email
+            // Обновляем только email, сохраняем существующие данные
             const updateClientQuery = `
                 UPDATE clients 
-                SET full_name = $1, birth_date = $2, email = $3, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $4
+                SET email = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
             `;
-            await client.query(updateClientQuery, [fullName, birthDate, email, clientId]);
+            await client.query(updateClientQuery, [email, clientId]);
             
             console.log('Клиент обновлен, email обновлен:', currentEmail === email ? 'тот же' : `с "${currentEmail}" на "${email}"`);
+            console.log('Существующие данные сохранены: имя и дата рождения не изменены');
         } else {
             // Создаем нового клиента
             const insertClientQuery = `
