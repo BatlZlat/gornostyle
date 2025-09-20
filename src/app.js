@@ -275,8 +275,9 @@ app.get('/certificate/:number', async (req, res) => {
             recipient_phone: certificateData.recipient_phone,
             message: certificateData.message,
             status: certificateData.status,
-            expiry_date: new Date(certificateData.expiry_date).toLocaleDateString('ru-RU'),
-            purchase_date: new Date(certificateData.purchase_date).toLocaleDateString('ru-RU'),
+            // Передаем «сырые» даты, форматирование выполняется в шаблоне
+            expiry_date: certificateData.expiry_date,
+            purchase_date: certificateData.purchase_date,
             design: {
                 name: certificateData.design_name,
                 description: certificateData.design_description,
