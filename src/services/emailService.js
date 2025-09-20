@@ -318,7 +318,15 @@ class EmailService {
                                         
                                         <!-- Срок действия -->
                                         <div style="margin-top: 30px; font-size: 0.9rem; opacity: 0.9;">
-                                            ⏰ Использовать до: ${expiry_date}
+                                            ${(() => {
+                                                try {
+                                                    const d = new Date(expiry_date);
+                                                    const txt = isNaN(d.getTime()) ? 'Дата не указана' : d.toLocaleDateString('ru-RU');
+                                                    return `⏰ Использовать до: ${txt}`;
+                                                } catch (e) {
+                                                    return '⏰ Использовать до: Дата не указана';
+                                                }
+                                            })()}
                                         </div>
                                     </div>
                                 </td>

@@ -116,8 +116,14 @@ class CertificateImageGenerator {
                 currentY += 50;
             }
 
-            // Дата истечения
-            const formattedDate = new Date(expiry_date).toLocaleDateString('ru-RU');
+            // Дата истечения (безопасное форматирование)
+            let formattedDate = 'Дата не указана';
+            try {
+                const d = new Date(expiry_date);
+                if (!isNaN(d.getTime())) {
+                    formattedDate = d.toLocaleDateString('ru-RU');
+                }
+            } catch (e) {}
             image.print(fontSmall, centerX - 120, currentY, {
                 text: `Использовать до:\n${formattedDate}`,
                 alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER

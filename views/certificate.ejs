@@ -330,7 +330,13 @@
                 <% } %>
 
                 <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; opacity: 0.8;">
-                    ⏰ Использовать до: <%= new Date(certificate.expiry_date).toLocaleDateString('ru-RU') %>
+                    <% 
+                        let _expiry = certificate.expiry_date;
+                        if (!(_expiry instanceof Date)) { _expiry = new Date(_expiry); }
+                        const _expiryValid = !isNaN(_expiry.getTime());
+                        const _expiryText = _expiryValid ? _expiry.toLocaleDateString('ru-RU') : 'Дата не указана';
+                    %>
+                    ⏰ Использовать до: <%= _expiryText %>
                 </div>
             </div>
         </div>
