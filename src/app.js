@@ -203,7 +203,7 @@ app.get('/certificate/preview', async (req, res) => {
             certificate_number: '123456',
             nominal_value: parseFloat(amount),
             recipient_name: name,
-            expiry_date: expiryDate.toLocaleDateString('ru-RU'),
+            expiry_date: expiryDate,
             design: designData
         };
 

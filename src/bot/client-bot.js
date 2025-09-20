@@ -696,6 +696,16 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
+    // Обработка кнопки "Подарить сертификат" (из меню "Мои сертификаты")
+    if (msg.text === '💝 Подарить сертификат') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showCertificateIntro(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
     // Обработка кнопки "Мои сертификаты"
     if (msg.text === '📋 Мои сертификаты') {
         const client = await getClientByTelegramId(msg.from.id.toString());
@@ -5413,21 +5423,35 @@ function formatDate(dateStr) {
     if (!dateStr) return '';
     
     // Если дата уже в формате DD.MM.YYYY, возвращаем как есть
-    if (typeof dateStr === 'string' && dateStr.includes('.')) {
+    if (typeof dateStr === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
         return dateStr;
     }
     
-    // Если дата в формате YYYY-MM-DD, преобразуем в DD.MM.YYYY
-    if (typeof dateStr === 'string' && dateStr.includes('-')) {
-        const [year, month, day] = dateStr.split('-');
-        return `${day}.${month}.${year}`;
-    }
+    // Создаем объект Date из любого входного формата
+    let date;
     
-    // Если это объект Date, преобразуем в DD.MM.YYYY
-    const date = dateStr instanceof Date ? dateStr : new Date(dateStr);
+    if (dateStr instanceof Date) {
+        date = dateStr;
+    } else if (typeof dateStr === 'string') {
+        // Обрабатываем разные форматы строк
+        if (dateStr.includes('T') || dateStr.includes('Z')) {
+            // ISO формат: 2026-09-20T15:08:58.000Z
+            date = new Date(dateStr);
+        } else if (dateStr.includes('-')) {
+            // Формат YYYY-MM-DD
+            date = new Date(dateStr + 'T00:00:00.000Z');
+        } else {
+            // Пытаемся парсить как есть
+            date = new Date(dateStr);
+        }
+    } else {
+        // Пытаемся создать Date из любого другого типа
+        date = new Date(dateStr);
+    }
     
     // Проверяем, что дата валидна
     if (isNaN(date.getTime())) {
+        console.error('Неверная дата для форматирования:', dateStr);
         return '';
     }
     
@@ -6168,7 +6192,7 @@ async function showCertificateResult(chatId, certificate) {
         }
 
         // Добавляем информацию о сроке действия
-        const expiryDate = new Date(certificate.expiry_date).toLocaleDateString('ru-RU');
+        const expiryDate = formatDate(certificate.expiry_date);
         message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
 
         message += `\n\n🔗 **Электронный сертификат:**
@@ -6401,11 +6425,11 @@ async function showUserCertificates(chatId, clientId) {
                     message += `👤 Кому: ${cert.recipient_name}\n`;
                 }
                 
-                const purchaseDate = new Date(cert.purchase_date).toLocaleDateString('ru-RU');
+                const purchaseDate = formatDate(cert.purchase_date);
                 message += `📅 Дата покупки: ${purchaseDate}\n`;
                 
                 if (cert.activation_date) {
-                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    const activationDate = formatDate(cert.activation_date);
                     message += `🔓 Активирован: ${activationDate}\n`;
                 }
                 
@@ -6432,7 +6456,7 @@ async function showUserCertificates(chatId, clientId) {
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.activation_date) {
-                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    const activationDate = formatDate(cert.activation_date);
                     message += `🔓 Дата активации: ${activationDate}\n`;
                 }
                 

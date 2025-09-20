@@ -51,10 +51,10 @@ class CertificateImageGenerator {
             // Загружаем базовое изображение
             const image = await Jimp.read(templatePath);
             
-            // Загружаем шрифты
-            const fontLarge = await jimp.loadFont(jimp.FONT_SANS_32_WHITE);
-            const fontMedium = await jimp.loadFont(jimp.FONT_SANS_24_WHITE);
-            const fontSmall = await jimp.loadFont(jimp.FONT_SANS_16_WHITE);
+            // Загружаем шрифты (используем встроенные шрифты Jimp)
+            const fontLarge = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+            const fontMedium = await Jimp.loadFont(Jimp.FONT_SANS_24_WHITE);
+            const fontSmall = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
 
             // Создаем полупрозрачный фон для текста справа
             const textBoxWidth = 300;
