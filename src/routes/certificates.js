@@ -171,6 +171,7 @@ router.post('/purchase', async (req, res) => {
                 design_id: design_id
             };
             
+            
             // Генерируем PDF
             try {
                 pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);

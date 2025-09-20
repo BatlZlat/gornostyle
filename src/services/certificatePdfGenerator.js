@@ -74,8 +74,20 @@ class CertificatePdfGenerator {
             backgroundImageData = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
         }
         
-        // Форматируем дату
-        const formattedDate = new Date(expiry_date).toLocaleDateString('ru-RU');
+        // Форматируем дату с проверкой валидности
+        let formattedDate = '';
+        try {
+            const dateObj = new Date(expiry_date);
+            if (isNaN(dateObj.getTime())) {
+                console.error('❌ [PDF Generator] Неверная дата expiry_date:', expiry_date);
+                formattedDate = 'Дата не указана';
+            } else {
+                formattedDate = dateObj.toLocaleDateString('ru-RU');
+            }
+        } catch (error) {
+            console.error('❌ [PDF Generator] Ошибка форматирования даты:', error);
+            formattedDate = 'Дата не указана';
+        }
 
         return `
 <!DOCTYPE html>

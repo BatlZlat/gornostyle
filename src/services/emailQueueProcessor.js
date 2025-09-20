@@ -113,6 +113,7 @@ class EmailQueueProcessor {
                             design_id: cert.design_id
                         };
                         
+                        
                         // Генерируем PDF (всегда проверяем физическое существование файла)
                         let pdfUrl = certificate_data.pdfUrl;
                         let needGeneratePdf = !pdfUrl;
