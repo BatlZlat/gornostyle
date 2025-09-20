@@ -696,6 +696,16 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
+    // Обработка кнопки "Подарить сертификат" (из меню "Мои сертификаты")
+    if (msg.text === '💝 Подарить сертификат') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showCertificateIntro(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
     // Обработка кнопки "Мои сертификаты"
     if (msg.text === '📋 Мои сертификаты') {
         const client = await getClientByTelegramId(msg.from.id.toString());
@@ -6168,7 +6178,7 @@ async function showCertificateResult(chatId, certificate) {
         }
 
         // Добавляем информацию о сроке действия
-        const expiryDate = new Date(certificate.expiry_date).toLocaleDateString('ru-RU');
+        const expiryDate = formatDate(certificate.expiry_date);
         message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
 
         message += `\n\n🔗 **Электронный сертификат:**
@@ -6401,11 +6411,11 @@ async function showUserCertificates(chatId, clientId) {
                     message += `👤 Кому: ${cert.recipient_name}\n`;
                 }
                 
-                const purchaseDate = new Date(cert.purchase_date).toLocaleDateString('ru-RU');
+                const purchaseDate = formatDate(cert.purchase_date);
                 message += `📅 Дата покупки: ${purchaseDate}\n`;
                 
                 if (cert.activation_date) {
-                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    const activationDate = formatDate(cert.activation_date);
                     message += `🔓 Активирован: ${activationDate}\n`;
                 }
                 
@@ -6432,7 +6442,7 @@ async function showUserCertificates(chatId, clientId) {
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.activation_date) {
-                    const activationDate = new Date(cert.activation_date).toLocaleDateString('ru-RU');
+                    const activationDate = formatDate(cert.activation_date);
                     message += `🔓 Дата активации: ${activationDate}\n`;
                 }
                 
