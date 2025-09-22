@@ -32,20 +32,22 @@ class EmailService {
 
     // Отправка сертификата на email с PDF вложением
     async sendCertificateEmail(recipientEmail, certificateData) {
-        // Сначала пытаемся отправить через SendGrid
-        if (process.env.SENDGRID_API_KEY) {
-            console.log(`📧 Попытка отправки через SendGrid на ${recipientEmail}...`);
-            const sendGridResult = await this.sendGridService.sendCertificateEmail(recipientEmail, certificateData);
-            
-            if (sendGridResult.success) {
-                return sendGridResult;
-            } else {
-                console.warn(`⚠️  SendGrid не смог отправить письмо: ${sendGridResult.error}`);
-                console.log(`🔄 Переключаемся на SMTP...`);
-            }
-        } else {
-            console.log(`⚠️  SENDGRID_API_KEY не настроен, используем SMTP`);
-        }
+        // Временно отключаем SendGrid из-за блокировки аккаунта (under review)
+        // if (process.env.SENDGRID_API_KEY) {
+        //     console.log(`📧 Попытка отправки через SendGrid на ${recipientEmail}...`);
+        //     const sendGridResult = await this.sendGridService.sendCertificateEmail(recipientEmail, certificateData);
+        //     
+        //     if (sendGridResult.success) {
+        //         return sendGridResult;
+        //     } else {
+        //         console.warn(`⚠️  SendGrid не смог отправить письмо: ${sendGridResult.error}`);
+        //         console.log(`🔄 Переключаемся на SMTP...`);
+        //     }
+        // } else {
+        //     console.log(`⚠️  SENDGRID_API_KEY не настроен, используем SMTP`);
+        // }
+        
+        console.log(`📧 Используем SMTP (SendGrid временно отключен из-за блокировки аккаунта)`);
         
         // Fallback на SMTP
         try {
