@@ -5003,6 +5003,80 @@ bot.on('callback_query', async (callbackQuery) => {
                 );
             }
         }
+
+        // Обработка согласия на обработку персональных данных
+        if (data === 'consent_agree') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Согласие принято! ✅'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await finishRegistration(chatId, state.data);
+            }
+            return;
+        }
+
+        if (data === 'consent_disagree') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Показываем предупреждение...'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await bot.sendMessage(chatId, 
+                    '⚠️ *ВНИМАНИЕ!*\n\n' +
+                    'Отказ от согласия на обработку персональных данных приведет к прерыванию регистрации.\n\n' +
+                    'Все введенные данные будут утрачены:\n' +
+                    `• ФИО: ${state.data.full_name}\n` +
+                    `• Дата рождения: ${state.data.birth_date}\n` +
+                    `• Телефон: ${state.data.phone}\n` +
+                    `${state.data.child ? `• Ребенок: ${state.data.child.full_name}\n` : ''}\n` +
+                    'Вы точно хотите прервать регистрацию?',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: '❌ Да, прервать регистрацию', callback_data: 'consent_cancel_confirm' },
+                                { text: '✅ Нет, вернуться к согласию', callback_data: 'consent_back' }
+                            ]]
+                        }
+                    }
+                );
+            }
+            return;
+        }
+
+        if (data === 'consent_cancel_confirm') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Регистрация прервана'
+            });
+            
+            // Удаляем состояние и возвращаемся в начало
+            userStates.delete(chatId);
+            await bot.sendMessage(chatId, 
+                '❌ Регистрация прервана. Все данные удалены.\n\n' +
+                'Для начала новой регистрации используйте команду /start',
+                {
+                    reply_markup: {
+                        keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
+                        resize_keyboard: true,
+                        one_time_keyboard: true
+                    }
+                }
+            );
+            return;
+        }
+
+        if (data === 'consent_back') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Возвращаемся к согласию'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await showPrivacyConsent(chatId, state.data);
+            }
+            return;
+        }
+
     } catch (error) {
         console.error('Ошибка при обработке callback-запроса:', error);
         try {
@@ -6269,79 +6343,6 @@ async function showUserCertificates(chatId, clientId) {
                 resize_keyboard: true
             }
         });
-
-        // Обработка согласия на обработку персональных данных
-        if (data === 'consent_agree') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Согласие принято! ✅'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await finishRegistration(chatId, state.data);
-            }
-            return;
-        }
-
-        if (data === 'consent_disagree') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Показываем предупреждение...'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await bot.sendMessage(chatId, 
-                    '⚠️ *ВНИМАНИЕ!*\n\n' +
-                    'Отказ от согласия на обработку персональных данных приведет к прерыванию регистрации.\n\n' +
-                    'Все введенные данные будут утрачены:\n' +
-                    `• ФИО: ${state.data.full_name}\n` +
-                    `• Дата рождения: ${state.data.birth_date}\n` +
-                    `• Телефон: ${state.data.phone}\n` +
-                    `${state.data.child ? `• Ребенок: ${state.data.child.full_name}\n` : ''}\n` +
-                    'Вы точно хотите прервать регистрацию?',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '❌ Да, прервать регистрацию', callback_data: 'consent_cancel_confirm' },
-                                { text: '✅ Нет, вернуться к согласию', callback_data: 'consent_back' }
-                            ]]
-                        }
-                    }
-                );
-            }
-            return;
-        }
-
-        if (data === 'consent_cancel_confirm') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Регистрация прервана'
-            });
-            
-            // Удаляем состояние и возвращаемся в начало
-            userStates.delete(chatId);
-            await bot.sendMessage(chatId, 
-                '❌ Регистрация прервана. Все данные удалены.\n\n' +
-                'Для начала новой регистрации используйте команду /start',
-                {
-                    reply_markup: {
-                        keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
-                    }
-                }
-            );
-            return;
-        }
-
-        if (data === 'consent_back') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Возвращаемся к согласию'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await showPrivacyConsent(chatId, state.data);
-            }
-            return;
-        }
 
     } catch (error) {
         console.error('Ошибка при получении сертификатов пользователя:', error);
