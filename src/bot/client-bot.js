@@ -5027,7 +5027,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     'Отказ от согласия на обработку персональных данных приведет к прерыванию регистрации.\n\n' +
                     'Все введенные данные будут утрачены:\n' +
                     `• ФИО: ${state.data.full_name}\n` +
-                    `• Дата рождения: ${state.data.birth_date}\n` +
+                    `• Дата рождения: ${formatDate(state.data.birth_date)}\n` +
                     `• Телефон: ${state.data.phone}\n` +
                     `${state.data.child ? `• Ребенок: ${state.data.child.full_name}\n` : ''}\n` +
                     'Вы точно хотите прервать регистрацию?',
