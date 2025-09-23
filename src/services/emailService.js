@@ -1,12 +1,14 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs').promises;
 const path = require('path');
-const SendGridEmailService = require('./sendGridEmailService');
+// const SendGridEmailService = require('./sendGridEmailService'); // Временно отключен
+const ResendEmailService = require('./resendEmailService');
 
 class EmailService {
     constructor() {
-        // Инициализируем SendGrid сервис
-        this.sendGridService = new SendGridEmailService();
+        // Инициализируем Resend сервис как основной
+        this.resendService = new ResendEmailService();
+        // this.sendGridService = new SendGridEmailService(); // Временно отключен
         
         // Создаем transporter для отправки email
         this.transporter = nodemailer.createTransport({
@@ -32,22 +34,20 @@ class EmailService {
 
     // Отправка сертификата на email с PDF вложением
     async sendCertificateEmail(recipientEmail, certificateData) {
-        // Временно отключаем SendGrid из-за блокировки аккаунта (under review)
-        // if (process.env.SENDGRID_API_KEY) {
-        //     console.log(`📧 Попытка отправки через SendGrid на ${recipientEmail}...`);
-        //     const sendGridResult = await this.sendGridService.sendCertificateEmail(recipientEmail, certificateData);
-        //     
-        //     if (sendGridResult.success) {
-        //         return sendGridResult;
-        //     } else {
-        //         console.warn(`⚠️  SendGrid не смог отправить письмо: ${sendGridResult.error}`);
-        //         console.log(`🔄 Переключаемся на SMTP...`);
-        //     }
-        // } else {
-        //     console.log(`⚠️  SENDGRID_API_KEY не настроен, используем SMTP`);
-        // }
-        
-        console.log(`📧 Используем SMTP (SendGrid временно отключен из-за блокировки аккаунта)`);
+        // Сначала пытаемся отправить через Resend
+        if (process.env.RESEND_API_KEY) {
+            console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
+            const resendResult = await this.resendService.sendCertificateEmail(recipientEmail, certificateData);
+            
+            if (resendResult.success) {
+                return resendResult;
+            } else {
+                console.warn(`⚠️  Resend не смог отправить письмо: ${resendResult.error}`);
+                console.log(`🔄 Переключаемся на SMTP...`);
+            }
+        } else {
+            console.log(`⚠️  RESEND_API_KEY не настроен, используем SMTP`);
+        }
         
         // Fallback на SMTP
         try {
