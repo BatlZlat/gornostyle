@@ -821,7 +821,6 @@ async function handleTextMessage(msg) {
 
         return bot.sendMessage(chatId,
             '🎿 *Выберите тип тренировки:*\n\n' +
-            '⚠️ *Напоминание:* Перед записью на тренировку убедитесь, что ваш баланс пополнен! 💰\n\n' +
             '• Групповая - тренировка в группе с другими участниками\n' +
             '• Индивидуальная - персональная тренировка\n' +
             '• Предложить тренировку - если нет подходящих групп',
@@ -1514,14 +1513,6 @@ async function handleTextMessage(msg) {
                     step: 'privacy_consent',
                     data: state.data
                 });
-                
-                // Удаляем клавиатуру с кнопками "Да/Нет"
-                await bot.sendMessage(chatId, 'Убираем клавиатуру...', {
-                    reply_markup: {
-                        remove_keyboard: true
-                    }
-                });
-                
                 await showPrivacyConsent(chatId, state.data);
                 return;
             }
@@ -1642,7 +1633,8 @@ async function handleTextMessage(msg) {
                         userStates.set(chatId, state);
 
                         // Формируем сообщение со списком тренировок
-                        let message = '🎿 *Доступные групповые тренировки:*\n\n';                        
+                        let message = '🎿 *Доступные групповые тренировки:*\n\n';
+                        
                         // Добавляем информацию о каждой тренировке
                         result.rows.forEach((session, index) => {
                             const date = new Date(session.session_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'numeric', year: 'numeric', weekday: 'short' });
@@ -2151,7 +2143,274 @@ async function handleTextMessage(msg) {
             break;
         }
 
-        
+        case 'wait_start': {
+            if (msg.text === '🚀 Запуск сервиса Ski-instruktor') {
+                state.step = 'full_name';
+                return bot.sendMessage(chatId, 'Введите ваше полное имя (ФИО):');
+            }
+            break;
+        }
+        case 'full_name': {
+            if (msg.text.length < 5) return bot.sendMessage(chatId, 'Имя должно содержать минимум 5 символов. Попробуйте еще раз:');
+            state.data.full_name = msg.text;
+            state.step = 'birth_date';
+            return bot.sendMessage(chatId, 'Введите вашу дату рождения в формате ДД.ММ.ГГГГ:');
+        }
+        case 'birth_date': {
+            const birthDate = validateDate(msg.text);
+            if (!birthDate) return bot.sendMessage(chatId, 'Неверный формат даты. Используйте формат ДД.ММ.ГГГГ:');
+            state.data.birth_date = birthDate;
+            state.step = 'phone';
+            return bot.sendMessage(chatId, 'Введите ваш номер телефона в формате +79999999999:');
+        }
+        case 'phone': {
+            const phone = validatePhone(msg.text);
+            if (!phone) return bot.sendMessage(chatId, 'Неверный формат номера телефона. Используйте формат +79999999999:');
+            state.data.phone = phone;
+            state.step = 'has_child';
+            return bot.sendMessage(chatId, 'У вас есть ребенок, которого вы будете записывать на тренировки?', {
+                reply_markup: {
+                    keyboard: [['Да', 'Нет']],
+                    resize_keyboard: true,
+                    one_time_keyboard: false,
+                    persistent: true
+                }
+            });
+        }
+        case 'has_child': {
+            if (msg.text === 'Да') {
+                // Если это регистрация нового клиента (нет client_id), инициализируем объект child
+                if (!state.data.client_id) {
+                    state.data.child = {};
+                }
+                
+                // Если детей нет или массив не определён — сразу просим ввести ФИО
+                if (!state.data.children || state.data.children.length === 0) {
+                    state.step = 'add_child_name';
+                    userStates.set(chatId, state);
+                    return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+                        reply_markup: {
+                            keyboard: [['🔙 Отмена']],
+                            resize_keyboard: true
+                        }
+                    });
+                }
+                // Если детей несколько — показываем выбор (этот кейс для личного кабинета)
+                if (state.data.children.length > 1) {
+                    const childrenList = state.data.children.map((child, index) =>
+                        `${index + 1}. ${child.full_name} (${new Date(child.birth_date).toLocaleDateString()})`
+                    ).join('\n');
+                    state.step = 'select_child';
+                    userStates.set(chatId, state);
+                    return bot.sendMessage(chatId,
+                        '👶 *Выберите ребенка из списка:*\n\n' + childrenList,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ...state.data.children.map((_, i) => [`${i + 1}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                // Если один ребенок — сразу переходим к выбору типа тренировки
+                if (state.data.children.length === 1) {
+                    const selectedChild = state.data.children[0];
+                    userStates.set(chatId, {
+                        step: 'training_type',
+                        data: {
+                            client_id: state.data.client_id,
+                            is_child: true,
+                            child_id: selectedChild.id,
+                            child_name: selectedChild.full_name
+                        }
+                    });
+                    return bot.sendMessage(chatId,
+                        '🎿 *Выберите тип тренировки:*\n\n' +
+                        '• Групповая - тренировка в группе с другими участниками\n' +
+                        '• Индивидуальная - персональная тренировка',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['👥 Групповая'],
+                                    ['👤 Индивидуальная'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+            } else if (msg.text === 'Нет') {
+                // Переходим к шагу согласия на обработку персональных данных
+                userStates.set(chatId, {
+                    step: 'privacy_consent',
+                    data: state.data
+                });
+                await showPrivacyConsent(chatId, state.data);
+                return;
+            }
+            break;
+        }
+        case 'select_child': {
+            const state = userStates.get(chatId);
+            const childIndex = parseInt(msg.text) - 1;
+            
+            if (isNaN(childIndex) || childIndex < 0 || childIndex >= state.data.children.length) {
+                return bot.sendMessage(chatId,
+                    '❌ Пожалуйста, выберите номер ребенка из списка.',
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ...state.data.children.map((_, i) => [`${i + 1}`]),
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            const selectedChild = state.data.children[childIndex];
+            userStates.set(chatId, {
+                step: 'training_type',
+                data: {
+                    client_id: state.data.client_id,
+                    is_child: true,
+                    child_id: selectedChild.id,
+                    child_name: selectedChild.full_name
+                }
+            });
+
+            return bot.sendMessage(chatId,
+                '🎿 *Выберите тип тренировки:*\n\n' +
+                '• Групповая - тренировка в группе с другими участниками\n' +
+                '• Индивидуальная - персональная тренировка',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['👥 Групповая'],
+                            ['👤 Индивидуальная'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        case 'training_type': {
+            if (msg.text === '👥 Групповая' || msg.text === '👤 Индивидуальная') {
+                const state = userStates.get(chatId);
+                state.data.training_type = msg.text === '👥 Групповая' ? 'group' : 'individual';
+                if (msg.text === '👥 Групповая') {
+                    try {
+                        // Получаем доступные групповые тренировки на ближайшие 2 недели
+                        const result = await pool.query(
+                            `SELECT 
+                                ts.id,
+                                ts.session_date,
+                                ts.start_time,
+                                ts.end_time,
+                                ts.duration,
+                                g.name as group_name,
+                                s.name as simulator_name,
+                                t.full_name as trainer_name,
+                                ts.max_participants,
+                                ts.price,
+                                ts.skill_level,
+                                ts.equipment_type,
+                                COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) as current_participants
+                            FROM training_sessions ts
+                            LEFT JOIN groups g ON ts.group_id = g.id
+                            LEFT JOIN simulators s ON ts.simulator_id = s.id
+                            LEFT JOIN trainers t ON ts.trainer_id = t.id
+                            LEFT JOIN session_participants sp ON ts.id = sp.session_id
+                            WHERE ts.training_type = true
+                            AND ts.session_date <= ((NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date + INTERVAL '14 days')
+                            AND ts.status = 'scheduled'
+                            AND (
+                                ts.session_date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                                OR (
+                                    ts.session_date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                                    AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                                )
+                            )
+                            GROUP BY ts.id, g.name, s.name, t.full_name
+                            HAVING COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) < ts.max_participants
+                            ORDER BY ts.session_date, ts.start_time`
+                        );
+
+                        if (result.rows.length === 0) {
+                            return bot.sendMessage(chatId,
+                                '❌ К сожалению, на ближайшие 2 недели нет доступных групповых тренировок.\n\n' +
+                                'Вы можете:\n' +
+                                '• Предложить новую групповую тренировку\n' +
+                                '• Записаться на индивидуальную тренировку',
+                                {
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        keyboard: [
+                                            ['💡 Предложить тренировку'],
+                                            ['👤 Индивидуальная'],
+                                            ['🔙 Назад в меню']
+                                        ],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+
+                        // Сохраняем список тренировок в состоянии
+                        state.data.available_sessions = result.rows;
+                        state.step = 'group_training_selection';
+                        userStates.set(chatId, state);
+
+                        // Формируем сообщение со списком тренировок
+                        let message = '🎿 *Доступные групповые тренировки:*\n\n';
+                        
+                        // Добавляем информацию о каждой тренировке
+                        result.rows.forEach((session, index) => {
+                            const date = new Date(session.session_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'numeric', year: 'numeric', weekday: 'short' });
+                            const weekday = date.split(',')[1].trim();
+                            const dateStr = date.split(',')[0].trim();
+                            const groupName = session.group_name || (session.equipment_type === 'ski' ? 'Горнолыжники' : (session.equipment_type === 'snowboard' ? 'Сноубордисты' : 'Группа')) + (session.group_name?.toLowerCase().includes('дети') ? ' дети' : ' взрослые');
+                            const currentParticipants = session.current_participants || 0;
+                            const maxParticipants = session.max_participants;
+                            const price = parseFloat(session.price).toFixed(2);
+                            const skillLevel = session.skill_level;
+                            message += `${index + 1}. ${dateStr} (${weekday}) ${session.start_time}\n`;
+                            message += `   👥 ${groupName} (${currentParticipants}/${maxParticipants})\n`;
+                            message += `   📊 Уровень: ${skillLevel}/10\n`;
+                            message += `   💰 ${price} руб.\n\n`;
+                        });
+                        message += "Чтобы выбрать тренировку, введите её номер в чат.\nНапример: 1 - для выбора первой тренировки\n\n";
+                        message += "⚠️ Важно: При записи на тренировку убедитесь, что ваш уровень подготовки соответствует или выше указанного уровня тренировки. Это обеспечит комфортное и эффективное обучение для всех участников группы.";
+                        return bot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } });
+                    } catch (error) {
+                        console.error('Ошибка при получении списка тренировок:', error);
+                        return bot.sendMessage(chatId,
+                            '❌ Произошла ошибка при получении списка тренировок. Пожалуйста, попробуйте позже.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+                } else if (msg.text === '👤 Индивидуальная') {
+                    // Новый вызов функции выбора участника
+                    await askIndividualForWhom(chatId, state.data.client_id);
+                    return;
+                }
+            }
+            break;
+        }
 
         case 'individual_for_whom': {
             const state = userStates.get(chatId);
@@ -5003,80 +5262,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 );
             }
         }
-
-        // Обработка согласия на обработку персональных данных
-        if (data === 'consent_agree') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Согласие принято! ✅'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await finishRegistration(chatId, state.data);
-            }
-            return;
-        }
-
-        if (data === 'consent_disagree') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Показываем предупреждение...'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await bot.sendMessage(chatId, 
-                    '⚠️ *ВНИМАНИЕ!*\n\n' +
-                    'Отказ от согласия на обработку персональных данных приведет к прерыванию регистрации.\n\n' +
-                    'Все введенные данные будут утрачены:\n' +
-                    `• ФИО: ${state.data.full_name}\n` +
-                    `• Дата рождения: ${formatDate(state.data.birth_date)}\n` +
-                    `• Телефон: ${state.data.phone}\n` +
-                    `${state.data.child ? `• Ребенок: ${state.data.child.full_name}\n` : ''}\n` +
-                    'Вы точно хотите прервать регистрацию?',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '❌ Да, прервать регистрацию', callback_data: 'consent_cancel_confirm' },
-                                { text: '✅ Нет, вернуться к согласию', callback_data: 'consent_back' }
-                            ]]
-                        }
-                    }
-                );
-            }
-            return;
-        }
-
-        if (data === 'consent_cancel_confirm') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Регистрация прервана'
-            });
-            
-            // Удаляем состояние и возвращаемся в начало
-            userStates.delete(chatId);
-            await bot.sendMessage(chatId, 
-                '❌ Регистрация прервана. Все данные удалены.\n\n' +
-                'Для начала новой регистрации используйте команду /start',
-                {
-                    reply_markup: {
-                        keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
-                        resize_keyboard: true,
-                        one_time_keyboard: true
-                    }
-                }
-            );
-            return;
-        }
-
-        if (data === 'consent_back') {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: 'Возвращаемся к согласию'
-            });
-            
-            if (state && state.step === 'privacy_consent') {
-                await showPrivacyConsent(chatId, state.data);
-            }
-            return;
-        }
-
     } catch (error) {
         console.error('Ошибка при обработке callback-запроса:', error);
         try {
@@ -6343,6 +6528,79 @@ async function showUserCertificates(chatId, clientId) {
                 resize_keyboard: true
             }
         });
+
+        // Обработка согласия на обработку персональных данных
+        if (data === 'consent_agree') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Согласие принято! ✅'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await finishRegistration(chatId, state.data);
+            }
+            return;
+        }
+
+        if (data === 'consent_disagree') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Показываем предупреждение...'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await bot.sendMessage(chatId, 
+                    '⚠️ *ВНИМАНИЕ!*\n\n' +
+                    'Отказ от согласия на обработку персональных данных приведет к прерыванию регистрации.\n\n' +
+                    'Все введенные данные будут утрачены:\n' +
+                    `• ФИО: ${state.data.full_name}\n` +
+                    `• Дата рождения: ${state.data.birth_date}\n` +
+                    `• Телефон: ${state.data.phone}\n` +
+                    `${state.data.child ? `• Ребенок: ${state.data.child.full_name}\n` : ''}\n` +
+                    'Вы точно хотите прервать регистрацию?',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: '❌ Да, прервать регистрацию', callback_data: 'consent_cancel_confirm' },
+                                { text: '✅ Нет, вернуться к согласию', callback_data: 'consent_back' }
+                            ]]
+                        }
+                    }
+                );
+            }
+            return;
+        }
+
+        if (data === 'consent_cancel_confirm') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Регистрация прервана'
+            });
+            
+            // Удаляем состояние и возвращаемся в начало
+            userStates.delete(chatId);
+            await bot.sendMessage(chatId, 
+                '❌ Регистрация прервана. Все данные удалены.\n\n' +
+                'Для начала новой регистрации используйте команду /start',
+                {
+                    reply_markup: {
+                        keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
+                        resize_keyboard: true,
+                        one_time_keyboard: true
+                    }
+                }
+            );
+            return;
+        }
+
+        if (data === 'consent_back') {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Возвращаемся к согласию'
+            });
+            
+            if (state && state.step === 'privacy_consent') {
+                await showPrivacyConsent(chatId, state.data);
+            }
+            return;
+        }
 
     } catch (error) {
         console.error('Ошибка при получении сертификатов пользователя:', error);

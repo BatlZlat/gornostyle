@@ -1,9 +1,15 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs').promises;
 const path = require('path');
+// const SendGridEmailService = require('./sendGridEmailService'); // Временно отключен
+const ResendEmailService = require('./resendEmailService');
 
 class EmailService {
     constructor() {
+        // Инициализируем Resend сервис как основной
+        this.resendService = new ResendEmailService();
+        // this.sendGridService = new SendGridEmailService(); // Временно отключен
+        
         // Создаем transporter для отправки email
         this.transporter = nodemailer.createTransport({
             host: 'smtp.yandex.ru',
@@ -28,6 +34,22 @@ class EmailService {
 
     // Отправка сертификата на email с PDF вложением
     async sendCertificateEmail(recipientEmail, certificateData) {
+        // Сначала пытаемся отправить через Resend
+        if (process.env.RESEND_API_KEY) {
+            console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
+            const resendResult = await this.resendService.sendCertificateEmail(recipientEmail, certificateData);
+            
+            if (resendResult.success) {
+                return resendResult;
+            } else {
+                console.warn(`⚠️  Resend не смог отправить письмо: ${resendResult.error}`);
+                console.log(`🔄 Переключаемся на SMTP...`);
+            }
+        } else {
+            console.log(`⚠️  RESEND_API_KEY не настроен, используем SMTP`);
+        }
+        
+        // Fallback на SMTP
         try {
             // Проверяем настройки перед отправкой
             if (!process.env.EMAIL_PASS) {
