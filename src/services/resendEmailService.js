@@ -77,6 +77,16 @@ class ResendEmailService {
             console.log(`📧 Отправка email через Resend на ${recipientEmail}...`);
             const response = await this.resend.emails.send(emailData);
             
+            // Проверяем статус ответа
+            if (response.error) {
+                console.error(`❌ Resend вернул ошибку: ${response.error.message}`);
+                return { 
+                    success: false, 
+                    error: response.error.message || 'Ошибка Resend',
+                    service: 'resend'
+                };
+            }
+            
             console.log(`✅ Email с сертификатом отправлен успешно через Resend: ${response.data?.id}`);
             return { 
                 success: true, 
