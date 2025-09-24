@@ -1642,7 +1642,7 @@ async function handleTextMessage(msg) {
                         userStates.set(chatId, state);
 
                         // Формируем сообщение со списком тренировок
-                        let message = '🎿 *Доступные групповые тренировки:*\n\n';                        
+                        let message = '🎿 *Доступные групповые тренировки:*\n\n';
                         // Добавляем информацию о каждой тренировке
                         result.rows.forEach((session, index) => {
                             const date = new Date(session.session_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'numeric', year: 'numeric', weekday: 'short' });
