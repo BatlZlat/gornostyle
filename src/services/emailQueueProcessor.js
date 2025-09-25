@@ -141,27 +141,18 @@ class EmailQueueProcessor {
                             }
                         }
                         
-                        // Генерируем изображение
-                        let imageUrl = certificate_data.imageUrl;
-                        if (!imageUrl) {
-                            try {
-                                imageUrl = await certificateImageGenerator.generateCertificateImage(certificateFileData);
-                                console.log(`✅ Изображение создано: ${imageUrl}`);
-                            } catch (imageError) {
-                                console.error('❌ Ошибка при генерации изображения:', imageError);
-                            }
-                        }
+                        // Изображения больше не генерируем - используем только PDF
                         
                         // Обновляем данные в базе
-                        if (pdfUrl || imageUrl) {
+                        if (pdfUrl) {
                             await pool.query(
-                                'UPDATE certificates SET pdf_url = COALESCE($1, pdf_url), image_url = COALESCE($2, image_url) WHERE id = $3',
-                                [pdfUrl, imageUrl, certificate_id]
+                                'UPDATE certificates SET pdf_url = COALESCE($1, pdf_url) WHERE id = $2',
+                                [pdfUrl, certificate_id]
                             );
                             
                             // Обновляем данные для email
                             updatedCertificateData.pdfUrl = pdfUrl;
-                            updatedCertificateData.imageUrl = imageUrl;
+                            updatedCertificateData.imageUrl = null; // Изображения больше не используем
                         }
                     }
                 } catch (fileGenError) {

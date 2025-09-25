@@ -63,15 +63,20 @@ class CertificatePdfGenerator {
         const fs = require('fs').promises;
         let backgroundImageData = '';
         
-        try {
-            const imageBuffer = await fs.readFile(designImagePath);
-            const base64Image = imageBuffer.toString('base64');
-            const imageExtension = designImagePath.split('.').pop().toLowerCase();
-            backgroundImageData = `data:image/${imageExtension};base64,${base64Image}`;
-        } catch (error) {
-            console.error('Ошибка при чтении изображения дизайна:', error);
-            // Fallback к градиенту
+        // Для тестирования используем простой градиент
+        if (certificate_number.includes('TEST') || certificate_number.includes('test')) {
             backgroundImageData = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        } else {
+            try {
+                const imageBuffer = await fs.readFile(designImagePath);
+                const base64Image = imageBuffer.toString('base64');
+                const imageExtension = designImagePath.split('.').pop().toLowerCase();
+                backgroundImageData = `data:image/${imageExtension};base64,${base64Image}`;
+            } catch (error) {
+                console.error('Ошибка при чтении изображения дизайна:', error);
+                // Fallback к градиенту
+                backgroundImageData = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
         }
         
         // Форматируем дату с проверкой валидности
@@ -106,14 +111,14 @@ class CertificatePdfGenerator {
         body {
             font-family: 'Arial', sans-serif;
             width: 1050px;
-            height: 495px;
+            height: 494px;
             overflow: hidden;
         }
         
         .certificate-container {
             position: relative;
             width: 1050px;
-            height: 495px;
+            height: 494px;
             background-image: url('${backgroundImageData}');
             background-size: cover;
             background-position: center;
@@ -134,10 +139,10 @@ class CertificatePdfGenerator {
         .certificate-info {
             background: rgba(0, 0, 0, 0.67);
             color: white;
-            padding: 30px;
+            padding: 25px;
             border-radius: 12px;
             width: 300px;
-            height: 440px;
+            height: 480px;
             margin-right: 30px;
             text-align: center;
             backdrop-filter: blur(8px);
@@ -145,74 +150,84 @@ class CertificatePdfGenerator {
             box-shadow: none;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
         }
         
         .certificate-title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 0;
+            margin-bottom: 5px;
             color: #FFFFFF;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            line-height: 1.2;
+            line-height: 1.1;
             text-shadow: none;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-subtitle {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 50px;
+            margin-bottom: 20px;
             color: #FFFFFF;
-            line-height: 1.3;
+            line-height: 1.2;
             text-transform: uppercase;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-number {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             letter-spacing: 1px;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-amount {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-family: Arial, sans-serif;
         }
         
         .certificate-recipient {
-            font-size: 16px;
-            margin-bottom: 15px;
+            font-size: 14px;
+            margin-bottom: 10px;
             color: #FFFFFF;
             font-weight: normal;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-message {
-            font-size: 16px;
+            font-size: 14px;
             font-style: italic;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #FFFFFF;
-            line-height: 1.3;
-            padding: 10px;
+            line-height: 1.2;
+            padding: 8px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 6px;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-expiry {
-            font-size: 16px;
+            font-size: 14px;
             color: #FFFFFF;
-            margin-top: 20px;
+            margin-top: 10px;
             font-weight: normal;
+            font-family: Arial, sans-serif;
         }
         
         .certificate-icon {
-            font-size: 18px;
-            margin-right: 6px;
+            font-size: 20px;
+            margin-right: 8px;
+            color: #FFD700;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
     </style>
 </head>
@@ -233,12 +248,12 @@ class CertificatePdfGenerator {
                 </div>
                 
                 <div class="certificate-amount">
-                    💰 ${nominal_value} руб.
+                    <span class="certificate-icon">💰</span> ${nominal_value} руб.
                 </div>
                 
                 ${recipient_name ? `
                 <div class="certificate-recipient">
-                    👤 Кому: ${recipient_name}
+                    <span class="certificate-icon">👤</span> Кому: ${recipient_name}
                 </div>
                 ` : ''}
                 
@@ -249,7 +264,7 @@ class CertificatePdfGenerator {
                 ` : ''}
                 
                 <div class="certificate-expiry">
-                    ⏰ Использовать до: ${formattedDate}
+                    <span class="certificate-icon">⏰</span> Использовать до: ${formattedDate}
                 </div>
             </div>
         </div>
@@ -268,10 +283,10 @@ class CertificatePdfGenerator {
             const browser = await this.initBrowser();
             const page = await browser.newPage();
             
-            // Устанавливаем размер страницы точно 1050x495
+            // Устанавливаем размер страницы точно 1050x494
             await page.setViewport({
                 width: 1050,
-                height: 495,
+                height: 494,
                 deviceScaleFactor: 2 // Для лучшего качества
             });
             
@@ -286,7 +301,7 @@ class CertificatePdfGenerator {
             // Генерируем PDF
             const pdfBuffer = await page.pdf({
                 width: '1050px',
-                height: '495px',
+                height: '494px',
                 printBackground: true,
                 margin: {
                     top: '0px',
@@ -333,18 +348,245 @@ class CertificatePdfGenerator {
         }
     }
 
-    // Метод для генерации как PDF, так и изображения
+    // Метод для генерации только PDF
     async generateCertificateFiles(certificateData) {
         const pdfUrl = await this.generateCertificatePdf(certificateData);
         
-        // Также генерируем изображение для совместимости
-        const imageGenerator = require('./certificateImageGenerator');
-        const imageUrl = await imageGenerator.generateCertificateImage(certificateData);
-        
         return {
             pdf_url: pdfUrl,
-            image_url: imageUrl
+            image_url: null // Изображения больше не генерируем
         };
+    }
+
+    // Генерация предзаполненного изображения для дизайнов
+    async generateDesignPreview(designId) {
+        const certificateData = {
+            certificate_number: '123456',
+            nominal_value: 2500,
+            recipient_name: 'Образец',
+            message: 'Покупка через бота',
+            expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            design_id: designId
+        };
+
+        // Генерируем HTML с предзаполненными данными для превью (424x200)
+        const html = await this.generateCertificatePreviewHTML(certificateData);
+        
+        return html;
+    }
+
+    // Генерация HTML для превью сертификата (424x200)
+    async generateCertificatePreviewHTML(certificateData) {
+        const { certificate_number, nominal_value, recipient_name, message, expiry_date, design_id } = certificateData;
+        
+        // Форматируем дату
+        let formattedDate = 'Дата не указана';
+        if (expiry_date) {
+            try {
+                const date = new Date(expiry_date);
+                if (!isNaN(date.getTime())) {
+                    formattedDate = date.toLocaleDateString('ru-RU', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка при форматировании даты:', error);
+            }
+        }
+
+        // Получаем путь к изображению дизайна
+        const designNames = {
+            1: 'classic',
+            2: 'sport', 
+            3: 'party',
+            4: 'minimal'
+        };
+        const designName = designNames[design_id] || 'classic';
+        const designImagePath = path.join(__dirname, '..', '..', 'public', 'images', 'certificates', `${designName}.jpg`);
+        
+        let backgroundImageData;
+        
+        // Для тестирования используем простой градиент
+        if (certificate_number.includes('TEST') || certificate_number.includes('test')) {
+            backgroundImageData = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        } else {
+            try {
+                const imageBuffer = await fs.readFile(designImagePath);
+                const base64Image = imageBuffer.toString('base64');
+                const imageExtension = designImagePath.split('.').pop().toLowerCase();
+                backgroundImageData = `data:image/${imageExtension};base64,${base64Image}`;
+            } catch (error) {
+                console.error('Ошибка при чтении изображения дизайна:', error);
+                // Fallback к градиенту
+                backgroundImageData = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+        }
+
+        return `
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Превью сертификата</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            width: 280px;
+            height: 132px;
+            overflow: hidden;
+        }
+        
+        .certificate-container {
+            position: relative;
+            width: 280px;
+            height: 132px;
+            background-image: url('${backgroundImageData}');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 7px;
+        }
+        
+        .certificate-info {
+            background: rgba(0, 0, 0, 0.67);
+            color: white;
+            padding: 4px;
+            border-radius: 3px;
+            width: 80px;
+            height: 124px;
+            margin-right: 4px;
+            text-align: center;
+            backdrop-filter: blur(8px);
+            border: none;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
+        .certificate-title {
+            font-size: 5px;
+            font-weight: bold;
+            margin-bottom: 1px;
+            color: #FFFFFF;
+            text-transform: uppercase;
+            letter-spacing: 0.1px;
+            line-height: 1.0;
+            text-shadow: none;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-subtitle {
+            font-size: 4px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #FFFFFF;
+            line-height: 1.0;
+            text-transform: uppercase;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-number {
+            font-size: 7px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 3px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            letter-spacing: 0.2px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-amount {
+            font-size: 7px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 3px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-recipient {
+            font-size: 4px;
+            margin-bottom: 2px;
+            color: #FFFFFF;
+            font-weight: normal;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-message {
+            font-size: 4px;
+            font-style: italic;
+            margin-bottom: 3px;
+            color: #FFFFFF;
+            line-height: 1.0;
+            padding: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 1px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-expiry {
+            font-size: 4px;
+            color: #FFFFFF;
+            margin-top: 2px;
+            font-weight: normal;
+            font-family: Arial, sans-serif;
+        }
+        
+        .certificate-icon {
+            font-size: 5px;
+            margin-right: 1px;
+            color: #FFD700;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="certificate-container">
+        <div class="certificate-info">
+            <div class="certificate-title">
+                <span class="certificate-icon">🎁</span>
+                СЕРТИФИКАТ
+            </div>
+            <div class="certificate-subtitle">
+                НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ
+            </div>
+            <div class="certificate-number">
+                <span class="certificate-icon">#</span> ${certificate_number}
+            </div>
+            <div class="certificate-amount">
+                <span class="certificate-icon">💰</span> ${nominal_value} руб.
+            </div>
+            ${recipient_name ? `
+            <div class="certificate-recipient">
+                <span class="certificate-icon">👤</span> Кому: ${recipient_name}
+            </div>
+            ` : ''}
+            ${message ? `
+            <div class="certificate-message">
+                ${message}
+            </div>
+            ` : ''}
+            <div class="certificate-expiry">
+                <span class="certificate-icon">⏰</span> Использовать до: ${formattedDate}
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
     }
 }
 

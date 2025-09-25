@@ -176,32 +176,32 @@
                 <h2>Дизайны сертификатов</h2>
                 <p class="designs-subtitle">Ознакомьтесь с дизайнами сертификатов, на следующей странице вам необходимо будет выбрать понравившийся дизайн</p>
                 <div class="designs-grid">
-                    <div class="design-card" onclick="openPreviewModal(1, 'Классический')">
-                        <img src="/images/certificates/classic.jpg" alt="Классический дизайн" loading="lazy">
+                    <div class="design-card" onclick="handleDesignClick(1, 'Классический')">
+                        <iframe src="/certificate/design-preview/1" frameborder="0" width="280" height="132"></iframe>
                         <h3>Классический</h3>
                         <p>Элегантный дизайн для любого случая</p>
                         <div class="preview-overlay">
                             <span class="preview-text">👁️ Предварительный просмотр</span>
                         </div>
                     </div>
-                    <div class="design-card" onclick="openPreviewModal(2, 'Спортивный')">
-                        <img src="/images/certificates/sport.jpg" alt="Спортивный дизайн" loading="lazy">
+                    <div class="design-card" onclick="handleDesignClick(2, 'Спортивный')">
+                        <iframe src="/certificate/design-preview/2" frameborder="0" width="280" height="132"></iframe>
                         <h3>Спортивный</h3>
                         <p>Динамичный дизайн для активных людей</p>
                         <div class="preview-overlay">
                             <span class="preview-text">👁️ Предварительный просмотр</span>
                         </div>
                     </div>
-                    <div class="design-card" onclick="openPreviewModal(3, 'Праздничный')">
-                        <img src="/images/certificates/party.jpg" alt="Праздничный дизайн" loading="lazy">
+                    <div class="design-card" onclick="handleDesignClick(3, 'Праздничный')">
+                        <iframe src="/certificate/design-preview/3" frameborder="0" width="280" height="132"></iframe>
                         <h3>Праздничный</h3>
                         <p>Яркий дизайн для особых событий</p>
                         <div class="preview-overlay">
                             <span class="preview-text">👁️ Предварительный просмотр</span>
                         </div>
                     </div>
-                    <div class="design-card" onclick="openPreviewModal(4, 'Минималистичный')">
-                        <img src="/images/certificates/minimal.jpg" alt="Минималистичный дизайн" loading="lazy">
+                    <div class="design-card" onclick="handleDesignClick(4, 'Минималистичный')">
+                        <iframe src="/certificate/design-preview/4" frameborder="0" width="280" height="132"></iframe>
                         <h3>Минималистичный</h3>
                         <p>Стильный и лаконичный дизайн</p>
                         <div class="preview-overlay">
@@ -308,9 +308,9 @@
                 <h2 id="modalTitle">Предварительный просмотр сертификата</h2>
                 <span class="close" onclick="closePreviewModal()">&times;</span>
             </div>
-            <div class="modal-body">
-                <iframe id="previewFrame" src="" frameborder="0" width="100%" height="600"></iframe>
-            </div>
+        <div class="modal-body">
+            <iframe id="previewFrame" src="" frameborder="0" width="100%" height="700"></iframe>
+        </div>
             <div class="modal-footer">
                 <button class="btn btn-primary" onclick="closePreviewModal()">Закрыть</button>
             </div>
@@ -321,6 +321,20 @@
     <script src="/js/main.js"></script>
     
     <script>
+        // Функция для обработки клика по дизайну
+        function handleDesignClick(designId, designName) {
+            // Проверяем, мобильное ли устройство
+            const isMobile = window.innerWidth <= 768;
+            
+            if (isMobile) {
+                // На мобильном - прямой переход к покупке
+                window.location.href = `/certificate/purchase?design=${designId}`;
+            } else {
+                // На десктопе - показываем модальное окно
+                openPreviewModal(designId, designName);
+            }
+        }
+
         // Функция для открытия модального окна с превью сертификата
         function openPreviewModal(designId, designName) {
             const modal = document.getElementById('previewModal');

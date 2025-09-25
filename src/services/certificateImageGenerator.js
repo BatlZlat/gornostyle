@@ -1,5 +1,4 @@
-const jimp = require('jimp');
-const { Jimp } = jimp;
+const Jimp = require('jimp');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -58,7 +57,7 @@ class CertificateImageGenerator {
 
             // Создаем полупрозрачный фон для текста справа
             const textBoxWidth = 300;
-            const textBoxHeight = 400;
+            const textBoxHeight = 420;
             const textBoxX = image.bitmap.width - textBoxWidth - 30;
             const textBoxY = (image.bitmap.height - textBoxHeight) / 2;
 
@@ -71,12 +70,12 @@ class CertificateImageGenerator {
             const centerX = textBoxX + textBoxWidth / 2;
 
             // Заголовок
-            const titleText = '🎁 СЕРТИФИКАТ\nНА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ';
+            const titleText = 'СЕРТИФИКАТ\nНА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ';
             image.print(fontMedium, centerX - 120, currentY, {
                 text: titleText,
                 alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
             }, 240);
-            currentY += 80;
+            currentY += 70;
 
             // Номер сертификата
             image.print(fontLarge, centerX - 120, currentY, {

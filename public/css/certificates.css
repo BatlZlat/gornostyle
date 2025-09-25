@@ -186,12 +186,14 @@
     transform: translateY(-5px);
 }
 
-.design-card img {
-    width: 100%;
-    height: 200px;
+.design-card img,
+.design-card iframe {
+    width: 280px;
+    height: 132px;
     object-fit: contain;
     background: #f8f9fa;
     border: 1px solid #e9ecef;
+    border-radius: 10px 10px 0 0;
 }
 
 .design-card h3 {
@@ -442,13 +444,40 @@
     background-color: rgba(0, 0, 0, 0.7);
 }
 
+/* Скрываем модальное окно на мобильных устройствах */
+@media (max-width: 768px) {
+    .modal {
+        display: none !important;
+    }
+    
+    /* Центрируем дизайн и название в мобильной версии */
+    .design-card {
+        text-align: center;
+    }
+    
+    .design-card iframe {
+        margin: 0 auto;
+        display: block;
+    }
+    
+    .design-card h3 {
+        text-align: center;
+        padding: 20px 20px 10px;
+    }
+    
+    .design-card p {
+        text-align: left; /* Текст оставляем по левому краю */
+        padding: 0 20px 20px;
+    }
+}
+
 .modal-content {
     background-color: #fefefe;
     margin: 2% auto;
     border-radius: 10px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     width: 90%;
-    max-width: 1200px;
+    max-width: 1400px; /* Увеличиваем с 1200px до 1400px (+200px) */
     max-height: 90vh;
     overflow: hidden;
 }
@@ -487,8 +516,24 @@
 
 .modal-body iframe {
     width: 100%;
-    height: 600px;
+    height: 700px; /* Увеличиваем до 700px */
     border: none;
+}
+
+/* Масштабирование только для десктопа */
+@media (min-width: 769px) {
+    .modal-body iframe {
+        width: 83%; /* Уменьшаем ширину в 1.2 раза (100/1.2 = 83%) */
+        height: 583px; /* Уменьшаем высоту пропорционально (700/1.2 = 583px) */
+        margin: 0 auto; /* Центрируем */
+        display: block;
+    }
+    
+    /* Уменьшаем карточки дизайнов для десктопа */
+    .design-card iframe {
+        width: 280px; /* Уменьшаем с 318px до 280px */
+        height: 132px; /* Пропорционально уменьшаем высоту (150 * 280/318 = 132px) */
+    }
 }
 
 .modal-footer {
