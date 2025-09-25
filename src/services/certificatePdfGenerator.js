@@ -440,15 +440,15 @@ class CertificatePdfGenerator {
         
         body {
             font-family: 'Arial', sans-serif;
-            width: 318px;
-            height: 150px;
+            width: 280px;
+            height: 132px;
             overflow: hidden;
         }
         
         .certificate-container {
             position: relative;
-            width: 318px;
-            height: 150px;
+            width: 280px;
+            height: 132px;
             background-image: url('${backgroundImageData}');
             background-size: cover;
             background-position: center;
@@ -456,17 +456,17 @@ class CertificatePdfGenerator {
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding-right: 8px;
+            padding-right: 7px;
         }
         
         .certificate-info {
             background: rgba(0, 0, 0, 0.67);
             color: white;
-            padding: 5px;
-            border-radius: 4px;
-            width: 91px;
-            height: 140px;
-            margin-right: 5px;
+            padding: 4px;
+            border-radius: 3px;
+            width: 80px;
+            height: 124px;
+            margin-right: 4px;
             text-align: center;
             backdrop-filter: blur(8px);
             border: none;
@@ -477,7 +477,7 @@ class CertificatePdfGenerator {
         }
         
         .certificate-title {
-            font-size: 6px;
+            font-size: 5px;
             font-weight: bold;
             margin-bottom: 1px;
             color: #FFFFFF;
@@ -489,7 +489,7 @@ class CertificatePdfGenerator {
         }
         
         .certificate-subtitle {
-            font-size: 5px;
+            font-size: 4px;
             font-weight: bold;
             margin-bottom: 4px;
             color: #FFFFFF;
@@ -499,7 +499,7 @@ class CertificatePdfGenerator {
         }
         
         .certificate-number {
-            font-size: 8px;
+            font-size: 7px;
             font-weight: bold;
             color: #FFD700;
             margin-bottom: 3px;
@@ -509,7 +509,7 @@ class CertificatePdfGenerator {
         }
         
         .certificate-amount {
-            font-size: 8px;
+            font-size: 7px;
             font-weight: bold;
             color: #FFD700;
             margin-bottom: 3px;
