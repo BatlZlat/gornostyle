@@ -440,15 +440,15 @@ class CertificatePdfGenerator {
         
         body {
             font-family: 'Arial', sans-serif;
-            width: 424px;
-            height: 200px;
+            width: 318px;
+            height: 150px;
             overflow: hidden;
         }
         
         .certificate-container {
             position: relative;
-            width: 424px;
-            height: 200px;
+            width: 318px;
+            height: 150px;
             background-image: url('${backgroundImageData}');
             background-size: cover;
             background-position: center;
@@ -456,17 +456,17 @@ class CertificatePdfGenerator {
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding-right: 15px;
+            padding-right: 8px;
         }
         
         .certificate-info {
             background: rgba(0, 0, 0, 0.67);
             color: white;
-            padding: 10px;
-            border-radius: 8px;
-            width: 120px;
-            height: 180px;
-            margin-right: 10px;
+            padding: 5px;
+            border-radius: 4px;
+            width: 91px;
+            height: 140px;
+            margin-right: 5px;
             text-align: center;
             backdrop-filter: blur(8px);
             border: none;
@@ -477,77 +477,77 @@ class CertificatePdfGenerator {
         }
         
         .certificate-title {
-            font-size: 8px;
+            font-size: 6px;
             font-weight: bold;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
             color: #FFFFFF;
             text-transform: uppercase;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.1px;
             line-height: 1.0;
             text-shadow: none;
             font-family: Arial, sans-serif;
         }
         
         .certificate-subtitle {
-            font-size: 7px;
+            font-size: 5px;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             color: #FFFFFF;
-            line-height: 1.1;
+            line-height: 1.0;
             text-transform: uppercase;
             font-family: Arial, sans-serif;
         }
         
         .certificate-number {
-            font-size: 12px;
+            font-size: 8px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 6px;
+            margin-bottom: 3px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            letter-spacing: 0.5px;
+            letter-spacing: 0.2px;
             font-family: Arial, sans-serif;
         }
         
         .certificate-amount {
-            font-size: 12px;
+            font-size: 8px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 6px;
+            margin-bottom: 3px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             font-family: Arial, sans-serif;
         }
         
         .certificate-recipient {
-            font-size: 6px;
-            margin-bottom: 4px;
+            font-size: 4px;
+            margin-bottom: 2px;
             color: #FFFFFF;
             font-weight: normal;
             font-family: Arial, sans-serif;
         }
         
         .certificate-message {
-            font-size: 6px;
+            font-size: 4px;
             font-style: italic;
-            margin-bottom: 6px;
+            margin-bottom: 3px;
             color: #FFFFFF;
-            line-height: 1.1;
-            padding: 3px;
+            line-height: 1.0;
+            padding: 1px;
             background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
+            border-radius: 1px;
             font-family: Arial, sans-serif;
         }
         
         .certificate-expiry {
-            font-size: 6px;
+            font-size: 4px;
             color: #FFFFFF;
-            margin-top: 4px;
+            margin-top: 2px;
             font-weight: normal;
             font-family: Arial, sans-serif;
         }
         
         .certificate-icon {
-            font-size: 8px;
-            margin-right: 3px;
+            font-size: 5px;
+            margin-right: 1px;
             color: #FFD700;
             font-weight: bold;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
