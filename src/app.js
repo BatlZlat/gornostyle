@@ -167,6 +167,29 @@ app.get('/rules', (req, res) => {
     });
 });
 
+// Генерация изображения дизайна с предзаполненными данными
+app.get('/certificate/design-preview/:designId', async (req, res) => {
+    try {
+        const { designId } = req.params;
+        
+        if (!designId || !['1', '2', '3', '4'].includes(designId)) {
+            return res.status(400).send('Неверный ID дизайна');
+        }
+
+        const certificatePdfGenerator = require('./services/certificatePdfGenerator');
+        
+        // Генерируем HTML с предзаполненными данными
+        const html = await certificatePdfGenerator.generateDesignPreview(parseInt(designId));
+        
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+        
+    } catch (error) {
+        console.error('Ошибка при генерации превью дизайна:', error);
+        res.status(500).send('Ошибка при генерации превью дизайна');
+    }
+});
+
 // Предварительный просмотр сертификата
 app.get('/certificate/preview', async (req, res) => {
     try {
