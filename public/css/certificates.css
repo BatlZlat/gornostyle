@@ -449,6 +449,26 @@
     .modal {
         display: none !important;
     }
+    
+    /* Центрируем дизайн и название в мобильной версии */
+    .design-card {
+        text-align: center;
+    }
+    
+    .design-card iframe {
+        margin: 0 auto;
+        display: block;
+    }
+    
+    .design-card h3 {
+        text-align: center;
+        padding: 20px 20px 10px;
+    }
+    
+    .design-card p {
+        text-align: left; /* Текст оставляем по левому краю */
+        padding: 0 20px 20px;
+    }
 }
 
 .modal-content {
@@ -457,7 +477,7 @@
     border-radius: 10px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     width: 90%;
-    max-width: 1200px;
+    max-width: 1400px; /* Увеличиваем с 1200px до 1400px (+200px) */
     max-height: 90vh;
     overflow: hidden;
 }
@@ -496,7 +516,7 @@
 
 .modal-body iframe {
     width: 100%;
-    height: 600px;
+    height: 700px; /* Увеличиваем до 700px */
     border: none;
 }
 
@@ -504,7 +524,7 @@
 @media (min-width: 769px) {
     .modal-body iframe {
         width: 83%; /* Уменьшаем ширину в 1.2 раза (100/1.2 = 83%) */
-        height: 500px; /* Уменьшаем высоту пропорционально (600/1.2 = 500px) */
+        height: 583px; /* Уменьшаем высоту пропорционально (700/1.2 = 583px) */
         margin: 0 auto; /* Центрируем */
         display: block;
     }
