@@ -169,12 +169,20 @@ router.post('/purchase', async (req, res) => {
                 design_id: design_id
             };
             
-            // Генерируем PDF
+            // Генерируем JPG из веб-страницы сертификата
             try {
-                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
-                console.log(`✅ PDF сертификат создан: ${pdfUrl}`);
-            } catch (pdfError) {
-                console.error('Ошибка при генерации PDF сертификата:', pdfError);
+                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateNumber);
+                pdfUrl = jpgResult.jpg_url || jpgResult.pdf_url; // Используем JPG, fallback на PDF
+                console.log(`✅ JPG сертификат создан: ${pdfUrl}`);
+            } catch (jpgError) {
+                console.error('Ошибка при генерации JPG сертификата:', jpgError);
+                // Fallback на PDF если JPG не удался
+                try {
+                    pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
+                    console.log(`✅ PDF сертификат создан (fallback): ${pdfUrl}`);
+                } catch (pdfError) {
+                    console.error('Ошибка при генерации PDF сертификата (fallback):', pdfError);
+                }
             }
             
         } catch (fileError) {

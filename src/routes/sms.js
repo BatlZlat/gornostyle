@@ -84,12 +84,20 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
                 design_id: pendingCert.design_id
             };
             
-            // Генерируем PDF
+            // Генерируем JPG из веб-страницы сертификата
             try {
-                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
-                console.log(`✅ [processPendingCertificate] PDF сертификат создан: ${pdfUrl}`);
-            } catch (pdfError) {
-                console.error('❌ [processPendingCertificate] Ошибка при генерации PDF сертификата:', pdfError);
+                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateNumber);
+                pdfUrl = jpgResult.jpg_url || jpgResult.pdf_url; // Используем JPG, fallback на PDF
+                console.log(`✅ [processPendingCertificate] JPG сертификат создан: ${pdfUrl}`);
+            } catch (jpgError) {
+                console.error('❌ [processPendingCertificate] Ошибка при генерации JPG сертификата:', jpgError);
+                // Fallback на PDF если JPG не удался
+                try {
+                    pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
+                    console.log(`✅ [processPendingCertificate] PDF сертификат создан (fallback): ${pdfUrl}`);
+                } catch (pdfError) {
+                    console.error('❌ [processPendingCertificate] Ошибка при генерации PDF сертификата (fallback):', pdfError);
+                }
             }
             
         } catch (fileError) {
