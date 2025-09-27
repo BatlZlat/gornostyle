@@ -31,14 +31,34 @@ class SendGridEmailService {
             // Подготавливаем вложения
             const attachments = [];
             
-            // Добавляем PDF сертификат как вложение
-            if (pdfUrl) {
-                try {
-                    const pdfPath = pdfUrl.startsWith('/') 
-                        ? `${__dirname}/../../public${pdfUrl}` 
-                        : pdfUrl;
+            // Генерируем JPG из веб-страницы сертификата
+            try {
+                const certificatePdfGenerator = require('./certificatePdfGenerator');
+                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateCode);
+                
+                if (jpgResult.jpg_url) {
+                    const jpgPath = jpgResult.jpg_url.startsWith('/') 
+                        ? `${__dirname}/../../public${jpgResult.jpg_url}` 
+                        : jpgResult.jpg_url;
                     
-                    console.log(`📎 Попытка прикрепить PDF: ${pdfPath}`);
+                    console.log(`📎 Попытка прикрепить JPG: ${jpgPath}`);
+                    const jpgBuffer = await fs.readFile(jpgPath);
+                    
+                    attachments.push({
+                        content: jpgBuffer.toString('base64'),
+                        filename: `certificate_${certificateCode}.jpg`,
+                        type: 'image/jpeg',
+                        disposition: 'attachment'
+                    });
+                    
+                    console.log(`📎 JPG вложение добавлено: ${jpgPath}`);
+                } else if (jpgResult.pdf_url) {
+                    // Fallback на PDF если JPG не удался
+                    const pdfPath = jpgResult.pdf_url.startsWith('/') 
+                        ? `${__dirname}/../../public${jpgResult.pdf_url}` 
+                        : jpgResult.pdf_url;
+                    
+                    console.log(`📎 Fallback: попытка прикрепить PDF: ${pdfPath}`);
                     const pdfBuffer = await fs.readFile(pdfPath);
                     
                     attachments.push({
@@ -48,10 +68,33 @@ class SendGridEmailService {
                         disposition: 'attachment'
                     });
                     
-                    console.log(`📎 PDF вложение добавлено: ${pdfPath}`);
-                } catch (pdfError) {
-                    console.error('❌ Ошибка при чтении PDF файла:', pdfError);
-                    // Продолжаем отправку без PDF
+                    console.log(`📎 PDF вложение добавлено (fallback): ${pdfPath}`);
+                }
+            } catch (jpgError) {
+                console.error('❌ Ошибка при генерации JPG для email:', jpgError);
+                
+                // Fallback на старый PDF если есть
+                if (pdfUrl) {
+                    try {
+                        const pdfPath = pdfUrl.startsWith('/') 
+                            ? `${__dirname}/../../public${pdfUrl}` 
+                            : pdfUrl;
+                        
+                        console.log(`📎 Старый fallback: попытка прикрепить PDF: ${pdfPath}`);
+                        const pdfBuffer = await fs.readFile(pdfPath);
+                        
+                        attachments.push({
+                            content: pdfBuffer.toString('base64'),
+                            filename: `certificate_${certificateCode}.pdf`,
+                            type: 'application/pdf',
+                            disposition: 'attachment'
+                        });
+                        
+                        console.log(`📎 PDF вложение добавлено (старый fallback): ${pdfPath}`);
+                    } catch (pdfError) {
+                        console.error('❌ Ошибка при чтении старого PDF файла:', pdfError);
+                        // Продолжаем отправку без вложений
+                    }
                 }
             }
 

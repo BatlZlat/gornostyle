@@ -114,44 +114,52 @@ class EmailQueueProcessor {
                         };
                         
                         
-                        // Генерируем PDF (всегда проверяем физическое существование файла)
-                        let pdfUrl = certificate_data.pdfUrl;
-                        let needGeneratePdf = !pdfUrl;
+                        // Генерируем JPG для email (всегда проверяем физическое существование файла)
+                        let jpgUrl = null;
+                        let needGenerateJpg = true;
                         
-                        // Даже если URL есть в базе, проверяем существование файла
-                        if (pdfUrl) {
-                            const fs = require('fs').promises;
-                            const path = require('path');
-                            const pdfPath = path.join(__dirname, '../../public', pdfUrl);
-                            try {
-                                await fs.access(pdfPath);
-                                console.log(`📄 PDF файл найден: ${pdfPath}`);
-                            } catch {
-                                console.log(`⚠️  PDF файл не найден, нужна генерация: ${pdfPath}`);
-                                needGeneratePdf = true;
-                            }
+                        // Проверяем, есть ли уже JPG файл
+                        const fs = require('fs').promises;
+                        const path = require('path');
+                        const jpgPath = path.join(__dirname, '../../public/generated/certificates', `certificate_${cert.certificate_number}.jpg`);
+                        try {
+                            await fs.access(jpgPath);
+                            jpgUrl = `/generated/certificates/certificate_${cert.certificate_number}.jpg`;
+                            console.log(`📸 JPG файл найден: ${jpgPath}`);
+                            needGenerateJpg = false;
+                        } catch {
+                            console.log(`📸 JPG файл не найден, будет сгенерирован: ${jpgPath}`);
                         }
                         
-                        if (needGeneratePdf) {
+                        if (needGenerateJpg) {
                             try {
-                                pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateFileData);
-                                console.log(`✅ PDF создан: ${pdfUrl}`);
-                            } catch (pdfError) {
-                                console.error('❌ Ошибка при генерации PDF:', pdfError);
+                                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(cert.certificate_number);
+                                jpgUrl = jpgResult.jpg_url;
+                                console.log(`✅ JPG создан: ${jpgUrl}`);
+                            } catch (jpgError) {
+                                console.error('❌ Ошибка при генерации JPG:', jpgError);
+                                // Fallback на PDF если JPG не удался
+                                try {
+                                    const pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateFileData);
+                                    console.log(`✅ PDF создан (fallback): ${pdfUrl}`);
+                                    jpgUrl = pdfUrl; // Используем PDF URL для обратной совместимости
+                                } catch (pdfError) {
+                                    console.error('❌ Ошибка при генерации PDF (fallback):', pdfError);
+                                }
                             }
                         }
                         
                         // Изображения больше не генерируем - используем только PDF
                         
                         // Обновляем данные в базе
-                        if (pdfUrl) {
+                        if (jpgUrl) {
                             await pool.query(
                                 'UPDATE certificates SET pdf_url = COALESCE($1, pdf_url) WHERE id = $2',
-                                [pdfUrl, certificate_id]
+                                [jpgUrl, certificate_id]
                             );
                             
                             // Обновляем данные для email
-                            updatedCertificateData.pdfUrl = pdfUrl;
+                            updatedCertificateData.pdfUrl = jpgUrl;
                             updatedCertificateData.imageUrl = null; // Изображения больше не используем
                         }
                     }
