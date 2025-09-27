@@ -402,6 +402,63 @@ class CertificatePdfGenerator {
         }
     }
 
+    // Генерация JPG из веб-страницы сертификата
+    async generateCertificateJpgFromWeb(certificateNumber) {
+        await this.ensureOutputDir();
+        
+        const outputPath = path.join(this.outputDir, `certificate_${certificateNumber}.jpg`);
+        
+        try {
+            await this.initBrowser();
+            const page = await this.browser.newPage();
+            
+            // Настраиваем viewport для сертификата (1050x495)
+            await page.setViewport({
+                width: 1050,
+                height: 495,
+                deviceScaleFactor: 2 // Для лучшего качества
+            });
+            
+            // URL веб-страницы сертификата
+            const certificateUrl = `${process.env.BASE_URL || 'http://localhost:8080'}/certificate/${certificateNumber}`;
+            
+            console.log(`📸 Генерируем JPG для сертификата ${certificateNumber} с URL: ${certificateUrl}`);
+            
+            // Переходим на страницу сертификата
+            await page.goto(certificateUrl, {
+                waitUntil: 'networkidle0',
+                timeout: 30000
+            });
+            
+            // Ждем загрузки всех элементов
+            await page.waitForSelector('.certificate-container', { timeout: 10000 });
+            
+            // Делаем скриншот только контейнера сертификата
+            const certificateElement = await page.$('.certificate-container');
+            if (!certificateElement) {
+                throw new Error('Не найден элемент .certificate-container');
+            }
+            
+            // Делаем скриншот элемента
+            await certificateElement.screenshot({
+                path: outputPath,
+                type: 'jpeg',
+                quality: 90
+            });
+            
+            await page.close();
+            
+            console.log(`✅ JPG сертификат создан: ${outputPath}`);
+            
+            // Возвращаем относительный путь для веб-доступа
+            return `/generated/certificates/certificate_${certificateNumber}.jpg`;
+            
+        } catch (error) {
+            console.error('Ошибка при генерации JPG сертификата:', error);
+            throw new Error(`Не удалось создать JPG сертификат: ${error.message}`);
+        }
+    }
+
     // Метод для генерации только PDF
     async generateCertificateFiles(certificateData) {
         const pdfUrl = await this.generateCertificatePdf(certificateData);
@@ -410,6 +467,33 @@ class CertificatePdfGenerator {
             pdf_url: pdfUrl,
             image_url: null // Изображения больше не генерируем
         };
+    }
+
+    // Метод для генерации JPG из веб-страницы (для email)
+    async generateCertificateJpgForEmail(certificateNumber) {
+        try {
+            const jpgUrl = await this.generateCertificateJpgFromWeb(certificateNumber);
+            return {
+                jpg_url: jpgUrl,
+                pdf_url: null // PDF больше не нужен для email
+            };
+        } catch (error) {
+            console.error('Ошибка при генерации JPG для email:', error);
+            // Fallback на PDF если JPG не удался
+            const certificateData = {
+                certificate_number: certificateNumber,
+                nominal_value: 0, // Будет обновлено из БД
+                recipient_name: '',
+                message: '',
+                expiry_date: new Date(),
+                design_id: 1
+            };
+            const pdfUrl = await this.generateCertificatePdf(certificateData);
+            return {
+                jpg_url: null,
+                pdf_url: pdfUrl
+            };
+        }
     }
 
     // Генерация предзаполненного изображения для дизайнов

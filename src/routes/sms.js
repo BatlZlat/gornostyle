@@ -482,4 +482,4 @@ router.post('/process', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = { router, processPendingCertificate }; 

@@ -52,13 +52,43 @@ class EmailService {
             // Подготавливаем вложения
             const attachments = [];
             
-            // Добавляем PDF сертификат как вложение
-            if (pdfUrl) {
-                const pdfPath = path.join(__dirname, '../../public', pdfUrl);
+            // Генерируем JPG из веб-страницы сертификата
+            try {
+                const certificatePdfGenerator = require('./certificatePdfGenerator');
+                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateCode);
                 
-                // Пытаемся найти файл с повторными попытками (для устранения race condition)
-                let fileFound = false;
-                for (let attempt = 1; attempt <= 3; attempt++) {
+                if (jpgResult.jpg_url) {
+                    const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);
+                    
+                    // Пытаемся найти JPG файл с повторными попытками
+                    let fileFound = false;
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            await fs.access(jpgPath);
+                            attachments.push({
+                                filename: `Сертификат_${certificateCode}.jpg`,
+                                path: jpgPath,
+                                contentType: 'image/jpeg'
+                            });
+                            console.log(`📎 JPG вложение добавлено: ${jpgPath}`);
+                            fileFound = true;
+                            break;
+                        } catch (error) {
+                            if (attempt < 3) {
+                                console.log(`⏳ JPG файл не найден (попытка ${attempt}/3), ожидание...`);
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            } else {
+                                console.warn(`⚠️  JPG файл не найден после 3 попыток: ${jpgPath}`);
+                            }
+                        }
+                    }
+                    
+                    if (!fileFound) {
+                        console.warn(`⚠️  JPG сертификат не будет прикреплен к email: ${jpgPath}`);
+                    }
+                } else if (jpgResult.pdf_url) {
+                    // Fallback на PDF если JPG не удался
+                    const pdfPath = path.join(__dirname, '../../public', jpgResult.pdf_url);
                     try {
                         await fs.access(pdfPath);
                         attachments.push({
@@ -66,16 +96,27 @@ class EmailService {
                             path: pdfPath,
                             contentType: 'application/pdf'
                         });
-                        console.log(`📎 PDF вложение добавлено: ${pdfPath}`);
-                        fileFound = true;
-                        break;
+                        console.log(`📎 PDF вложение добавлено (fallback): ${pdfPath}`);
                     } catch (error) {
-                        if (attempt < 3) {
-                            console.log(`⏳ PDF файл не найден (попытка ${attempt}/3), ожидание...`);
-                            await new Promise(resolve => setTimeout(resolve, 1000)); // Ждем 1 секунду
-                        } else {
-                            console.warn(`⚠️  PDF файл не найден после 3 попыток: ${pdfPath}`);
-                        }
+                        console.warn(`⚠️  Fallback PDF файл не найден: ${pdfPath}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при генерации JPG для email:', error);
+                
+                // Fallback на старый PDF если есть
+                if (pdfUrl) {
+                    const pdfPath = path.join(__dirname, '../../public', pdfUrl);
+                    try {
+                        await fs.access(pdfPath);
+                        attachments.push({
+                            filename: `Сертификат_${certificateCode}.pdf`,
+                            path: pdfPath,
+                            contentType: 'application/pdf'
+                        });
+                        console.log(`📎 PDF вложение добавлено (старый fallback): ${pdfPath}`);
+                    } catch (error) {
+                        console.warn(`⚠️  Старый PDF файл не найден: ${pdfPath}`);
                     }
                 }
             }
