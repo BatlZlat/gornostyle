@@ -33,7 +33,21 @@ class CertificatePdfGenerator {
         if (!this.browser) {
             this.browser = await puppeteer.launch({
                 headless: 'new',
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--font-render-hinting=none',
+                    '--disable-gpu-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
+                ]
             });
         }
         return this.browser;
@@ -109,7 +123,7 @@ class CertificatePdfGenerator {
         }
         
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
             width: 1050px;
             height: 494px;
             overflow: hidden;
@@ -162,7 +176,7 @@ class CertificatePdfGenerator {
             letter-spacing: 0.5px;
             line-height: 1.1;
             text-shadow: none;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-subtitle {
@@ -172,7 +186,7 @@ class CertificatePdfGenerator {
             color: #FFFFFF;
             line-height: 1.2;
             text-transform: uppercase;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-number {
@@ -182,7 +196,7 @@ class CertificatePdfGenerator {
             margin-bottom: 15px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             letter-spacing: 1px;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-amount {
@@ -191,7 +205,7 @@ class CertificatePdfGenerator {
             color: #FFD700;
             margin-bottom: 15px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-recipient {
@@ -199,7 +213,7 @@ class CertificatePdfGenerator {
             margin-bottom: 10px;
             color: #FFFFFF;
             font-weight: normal;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-message {
@@ -211,7 +225,7 @@ class CertificatePdfGenerator {
             padding: 8px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 6px;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-expiry {
@@ -219,7 +233,7 @@ class CertificatePdfGenerator {
             color: #FFFFFF;
             margin-top: 10px;
             font-weight: normal;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
         
         .certificate-icon {
@@ -228,6 +242,7 @@ class CertificatePdfGenerator {
             color: #FFD700;
             font-weight: bold;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
     </style>
 </head>
@@ -298,17 +313,56 @@ class CertificatePdfGenerator {
                 waitUntil: 'networkidle0'
             });
             
-            // Генерируем PDF
+            // Дополнительные настройки для лучшего рендеринга эмодзи и цветов
+            await page.evaluateOnNewDocument(() => {
+                // Устанавливаем кодировку UTF-8
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['ru', 'en']
+                });
+                
+                // Добавляем поддержку эмодзи и принудительное применение цветов
+                const style = document.createElement('style');
+                style.textContent = `
+                    * {
+                        -webkit-font-feature-settings: 'liga' 1, 'kern' 1;
+                        font-feature-settings: 'liga' 1, 'kern' 1;
+                        text-rendering: optimizeLegibility;
+                        -webkit-print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    .certificate-number {
+                        color: #FFD700 !important;
+                    }
+                    
+                    .certificate-amount {
+                        color: #FFD700 !important;
+                    }
+                    
+                    .certificate-expiry {
+                        color: #FFFFFF !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            });
+            
+            // Генерируем PDF с дополнительными настройками для корректного рендеринга цветов
             const pdfBuffer = await page.pdf({
                 width: '1050px',
                 height: '494px',
                 printBackground: true,
+                preferCSSPageSize: false,
                 margin: {
                     top: '0px',
                     right: '0px',
                     bottom: '0px',
                     left: '0px'
-                }
+                },
+                // Дополнительные настройки для корректного рендеринга
+                format: undefined, // Используем точные размеры
+                scale: 1, // Без масштабирования
+                displayHeaderFooter: false
             });
             
             // Сохраняем PDF файл
