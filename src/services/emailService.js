@@ -54,8 +54,8 @@ class EmailService {
             
             // Генерируем JPG из веб-страницы сертификата
             try {
-                const certificatePdfGenerator = require('./certificatePdfGenerator');
-                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateCode);
+                const certificateJpgGenerator = require('./certificateJpgGenerator');
+                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateCode);
                 
                 if (jpgResult.jpg_url) {
                     const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);

@@ -688,7 +688,8 @@ BEGIN
     
     -- Если email найден, добавляем в очередь
     IF client_email IS NOT NULL THEN
-        -- Формируем данные для email
+        -- Формируем данные для email БЕЗ pdfUrl
+        -- emailQueueProcessor сам сгенерирует JPG
         SELECT jsonb_build_object(
             'certificateId', NEW.id,
             'certificateCode', NEW.certificate_number,
@@ -696,7 +697,7 @@ BEGIN
             'recipientName', COALESCE(NEW.recipient_name, c.full_name),
             'amount', NEW.nominal_value,
             'message', NEW.message,
-            'pdfUrl', NEW.pdf_url,
+            'pdfUrl', NULL, -- НЕ передаем pdfUrl, пусть emailQueueProcessor генерирует JPG
             'imageUrl', NEW.image_url,
             'designId', NEW.design_id,
             'designName', cd.name,
@@ -711,7 +712,7 @@ BEGIN
         VALUES (NEW.id, client_email, email_data);
         
         -- Логируем
-        RAISE NOTICE 'Email queued for certificate % to %', NEW.certificate_number, client_email;
+        RAISE NOTICE 'Email queued for certificate % to % (JPG will be generated)', NEW.certificate_number, client_email;
     END IF;
     
     RETURN NEW;

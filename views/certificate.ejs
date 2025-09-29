@@ -75,10 +75,15 @@
             top: 50%;
             transform: translateY(-50%);
             width: 300px;
+            height: 400px; /* ФИКСИРОВАННАЯ высота */
             background: rgba(0, 0, 0, 0.7);
             padding: 1.5rem;
             border-radius: 15px;
             backdrop-filter: blur(10px);
+            overflow: hidden; /* Скрываем переполнение */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start; /* Изменено с растягивания */
         }
 
         .certificate-header {
@@ -268,6 +273,7 @@
                 position: static;
                 transform: none;
                 width: 100%;
+                height: auto; /* На мобильных устройствах высота автоматическая */
                 margin: 1rem;
                 background: rgba(0, 0, 0, 0.8);
             }
