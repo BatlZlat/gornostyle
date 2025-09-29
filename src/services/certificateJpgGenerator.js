@@ -156,7 +156,7 @@ class CertificateJpgGenerator {
             padding: 25px;
             border-radius: 12px;
             width: 300px;
-            height: 400px; /* ФИКСИРОВАННАЯ высота вместо растягивания */
+            height: 440px; /* Увеличено на 40px */
             margin-right: 30px;
             text-align: center;
             backdrop-filter: blur(8px);
@@ -194,7 +194,7 @@ class CertificateJpgGenerator {
             font-size: 28px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 15px;
+            margin-bottom: 10px; /* Уменьшен интервал */
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             letter-spacing: 1px;
             font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
@@ -204,7 +204,7 @@ class CertificateJpgGenerator {
             font-size: 28px;
             font-weight: bold;
             color: #FFD700;
-            margin-bottom: 15px;
+            margin-bottom: 10px; /* Уменьшен интервал */
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
         }
@@ -267,20 +267,24 @@ class CertificateJpgGenerator {
                     <span class="certificate-icon">💰</span> ${nominal_value} руб.
                 </div>
                 
-                ${recipient_name ? `
-                <div class="certificate-recipient">
-                    <span class="certificate-icon">👤</span> Кому: ${recipient_name}
-                </div>
-                ` : ''}
-                
-                ${message ? `
-                <div class="certificate-message">
-                    "${message}"
-                </div>
-                ` : ''}
-                
-                <div class="certificate-expiry">
-                    <span class="certificate-icon">⏰</span> Использовать до: ${formattedDate}
+                <!-- Отступ от границы рамки -->
+                <div style="margin: 20px 0; text-align: left;">
+                    ${recipient_name ? `
+                    <div class="certificate-recipient" style="text-align: left; margin: 8px 0;">
+                        Кому: ${recipient_name}
+                    </div>
+                    ` : ''}
+                    
+                    ${message ? `
+                    <div class="certificate-message" style="text-align: left; margin: 8px 0;">
+                        "${message}"
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Отступ и дата -->
+                    <div class="certificate-expiry" style="text-align: left; margin-top: 15px;">
+                        Сертификат годен до: ${formattedDate}
+                    </div>
                 </div>
             </div>
         </div>
@@ -315,6 +319,47 @@ class CertificateJpgGenerator {
             
             console.log(`📸 Генерируем JPG для сертификата ${certificateNumber} с URL: ${certificateUrl}`);
             
+            // Дополнительные настройки для лучшего рендеринга эмодзи и цветов
+            await page.evaluateOnNewDocument(() => {
+                // Устанавливаем кодировку UTF-8
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['ru', 'en']
+                });
+                
+                // Добавляем поддержку эмодзи и принудительное применение цветов
+                const style = document.createElement('style');
+                style.textContent = `
+                    * {
+                        -webkit-font-feature-settings: 'liga' 1, 'kern' 1;
+                        font-feature-settings: 'liga' 1, 'kern' 1;
+                        text-rendering: optimizeLegibility;
+                        -webkit-print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
+                    }
+                    
+                    .certificate-number {
+                        color: #FFD700 !important;
+                    }
+                    
+                    .certificate-amount {
+                        color: #FFD700 !important;
+                    }
+                    
+                    .certificate-expiry {
+                        color: #FFFFFF !important;
+                    }
+                    
+                    /* Принудительное отображение эмодзи */
+                    .certificate-title, .certificate-value, .certificate-recipient, .certificate-message, .certificate-expiry {
+                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
+                        font-variant-emoji: emoji !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            });
+            
             // Переходим на страницу сертификата
             await page.goto(certificateUrl, {
                 waitUntil: 'networkidle0',
@@ -322,7 +367,9 @@ class CertificateJpgGenerator {
             });
             
             // Ждем загрузки всех элементов
-            await page.waitForSelector('.certificate-container', { timeout: 10000 });
+            console.log('🔍 Ждем загрузки .certificate-container...');
+            await page.waitForSelector('.certificate-container', { timeout: 30000 });
+            console.log('✅ Элемент .certificate-container найден');
             
             // Делаем скриншот только контейнера сертификата
             const certificateElement = await page.$('.certificate-container');
