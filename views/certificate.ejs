@@ -75,7 +75,7 @@
             top: 50%;
             transform: translateY(-50%);
             width: 300px;
-            height: 400px; /* ФИКСИРОВАННАЯ высота */
+            height: 440px; /* Увеличено на 40px */
             background: rgba(0, 0, 0, 0.7);
             padding: 1.5rem;
             border-radius: 15px;
@@ -110,7 +110,7 @@
             font-weight: bold;
             color: #FFD700;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            margin: 1rem 0;
+            margin: 0.5rem 0; /* Уменьшен интервал */
             letter-spacing: 0.1em;
             text-align: center;
         }
@@ -118,7 +118,7 @@
         .certificate-value {
             font-size: 1.8rem;
             font-weight: bold;
-            margin: 1rem 0;
+            margin: 0.5rem 0; /* Уменьшен интервал */
             color: #FFD700;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
             text-align: center;
@@ -319,30 +319,35 @@
                     <h1 class="certificate-title">🎁 СЕРТИФИКАТ<br>НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ</h1>
                 </div>
 
+                <!-- Номер сертификата и сумма подняты выше -->
                 <div class="certificate-number">№ <%= certificate.certificate_number %></div>
                 
                 <div class="certificate-value">💰 <%= certificate.nominal_value %> руб.</div>
 
-                <% if (certificate.recipient_name) { %>
-                    <div style="text-align: center; margin: 1rem 0; font-size: 1rem;">
-                        <strong>👤 Кому:</strong><br><%= certificate.recipient_name %>
-                    </div>
-                <% } %>
+                <!-- Отступ от границы рамки -->
+                <div style="margin: 1rem 0;">
+                    <% if (certificate.recipient_name) { %>
+                        <div style="text-align: left; margin: 0.5rem 0; font-size: 1rem;">
+                            <strong>Кому: <%= certificate.recipient_name %></strong>
+                        </div>
+                    <% } %>
 
-                <% if (certificate.message) { %>
-                    <div style="text-align: center; margin: 1rem 0; font-size: 0.9rem; font-style: italic;">
-                        "<%= certificate.message %>"
-                    </div>
-                <% } %>
+                    <% if (certificate.message) { %>
+                        <div style="text-align: left; margin: 0.5rem 0; font-size: 0.9rem; font-style: italic;">
+                            "<%= certificate.message %>"
+                        </div>
+                    <% } %>
 
-                <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; opacity: 0.8;">
-                    <% 
-                        let _expiry = certificate.expiry_date;
-                        if (!(_expiry instanceof Date)) { _expiry = new Date(_expiry); }
-                        const _expiryValid = !isNaN(_expiry.getTime());
-                        const _expiryText = _expiryValid ? _expiry.toLocaleDateString('ru-RU') : 'Дата не указана';
-                    %>
-                    ⏰ Использовать до: <%= _expiryText %>
+                    <!-- Отступ и дата -->
+                    <div style="text-align: left; margin-top: 1rem; font-size: 0.8rem; opacity: 0.8;">
+                        <% 
+                            let _expiry = certificate.expiry_date;
+                            if (!(_expiry instanceof Date)) { _expiry = new Date(_expiry); }
+                            const _expiryValid = !isNaN(_expiry.getTime());
+                            const _expiryText = _expiryValid ? _expiry.toLocaleDateString('ru-RU') : 'Дата не указана';
+                        %>
+                        Сертификат годен до: <%= _expiryText %>
+                    </div>
                 </div>
             </div>
         </div>
@@ -411,6 +416,7 @@
                 <p><em>Подробности использования уточняйте у администратора.</em></p>
             </div>
         </div>
+
     </div>
 
     <!-- Аналитика -->
