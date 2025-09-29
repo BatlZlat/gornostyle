@@ -93,7 +93,7 @@ class EmailQueueProcessor {
                 console.log(`📄 Генерируем файлы для сертификата ${certificate_data.certificateCode}...`);
                 
                 try {
-                    const certificatePdfGenerator = require('../services/certificatePdfGenerator');
+                    const certificateJpgGenerator = require('../services/certificateJpgGenerator');
                     const certificateImageGenerator = require('../services/certificateImageGenerator');
                     
                     // Получаем данные сертификата из базы
@@ -133,19 +133,12 @@ class EmailQueueProcessor {
                         
                         if (needGenerateJpg) {
                             try {
-                                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(cert.certificate_number);
+                                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(cert.certificate_number);
                                 jpgUrl = jpgResult.jpg_url;
                                 console.log(`✅ JPG создан: ${jpgUrl}`);
                             } catch (jpgError) {
                                 console.error('❌ Ошибка при генерации JPG:', jpgError);
-                                // Fallback на PDF если JPG не удался
-                                try {
-                                    const pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateFileData);
-                                    console.log(`✅ PDF создан (fallback): ${pdfUrl}`);
-                                    jpgUrl = pdfUrl; // Используем PDF URL для обратной совместимости
-                                } catch (pdfError) {
-                                    console.error('❌ Ошибка при генерации PDF (fallback):', pdfError);
-                                }
+                                throw jpgError; // Не используем fallback на PDF
                             }
                         }
                         

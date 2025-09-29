@@ -157,7 +157,7 @@ router.post('/purchase', async (req, res) => {
         let pdfUrl = null;
         
         try {
-            const certificatePdfGenerator = require('../services/certificatePdfGenerator');
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
             
             // Данные для генерации файлов
             const certificateData = {
@@ -171,18 +171,12 @@ router.post('/purchase', async (req, res) => {
             
             // Генерируем JPG из веб-страницы сертификата
             try {
-                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateNumber);
-                pdfUrl = jpgResult.jpg_url || jpgResult.pdf_url; // Используем JPG, fallback на PDF
+                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber);
+                pdfUrl = jpgResult.jpg_url; // Используем только JPG
                 console.log(`✅ JPG сертификат создан: ${pdfUrl}`);
             } catch (jpgError) {
                 console.error('Ошибка при генерации JPG сертификата:', jpgError);
-                // Fallback на PDF если JPG не удался
-                try {
-                    pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
-                    console.log(`✅ PDF сертификат создан (fallback): ${pdfUrl}`);
-                } catch (pdfError) {
-                    console.error('Ошибка при генерации PDF сертификата (fallback):', pdfError);
-                }
+                throw jpgError; // Не используем fallback на PDF
             }
             
         } catch (fileError) {

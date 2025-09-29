@@ -176,10 +176,10 @@ app.get('/certificate/design-preview/:designId', async (req, res) => {
             return res.status(400).send('Неверный ID дизайна');
         }
 
-        const certificatePdfGenerator = require('./services/certificatePdfGenerator');
+        const certificateJpgGenerator = require('./services/certificateJpgGenerator');
         
         // Генерируем HTML с предзаполненными данными
-        const html = await certificatePdfGenerator.generateDesignPreview(parseInt(designId));
+        const html = await certificateJpgGenerator.generateDesignPreview(parseInt(designId));
         
         res.setHeader('Content-Type', 'text/html');
         res.send(html);

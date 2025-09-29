@@ -68,48 +68,12 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         // Генерируем уникальный 6-значный номер сертификата
         const certificateNumber = Math.floor(Math.random() * 900000 + 100000).toString();
         
-        // Генерируем только PDF сертификата
-        let pdfUrl = null;
-        
-        try {
-            const certificatePdfGenerator = require('../services/certificatePdfGenerator');
-            
-            // Данные для генерации файлов
-            const certificateData = {
-                certificate_number: certificateNumber,
-                nominal_value: amount,
-                recipient_name: pendingCert.recipient_name,
-                message: pendingCert.message,
-                expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // +1 год
-                design_id: pendingCert.design_id
-            };
-            
-            // Генерируем JPG из веб-страницы сертификата
-            try {
-                const jpgResult = await certificatePdfGenerator.generateCertificateJpgForEmail(certificateNumber);
-                pdfUrl = jpgResult.jpg_url || jpgResult.pdf_url; // Используем JPG, fallback на PDF
-                console.log(`✅ [processPendingCertificate] JPG сертификат создан: ${pdfUrl}`);
-            } catch (jpgError) {
-                console.error('❌ [processPendingCertificate] Ошибка при генерации JPG сертификата:', jpgError);
-                // Fallback на PDF если JPG не удался
-                try {
-                    pdfUrl = await certificatePdfGenerator.generateCertificatePdf(certificateData);
-                    console.log(`✅ [processPendingCertificate] PDF сертификат создан (fallback): ${pdfUrl}`);
-                } catch (pdfError) {
-                    console.error('❌ [processPendingCertificate] Ошибка при генерации PDF сертификата (fallback):', pdfError);
-                }
-            }
-            
-        } catch (fileError) {
-            console.error('❌ [processPendingCertificate] Ошибка при генерации файлов сертификата:', fileError);
-            // Продолжаем без файлов
-        }
-        
+        // Сначала создаем сертификат в базе данных
         const certificateQuery = `
             INSERT INTO certificates (
                 purchaser_id, nominal_value, recipient_name, message, design_id, 
                 certificate_number, status, purchase_date, expiry_date, pdf_url
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 year', $7)
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 year', NULL)
             RETURNING id, certificate_number
         `;
         
@@ -119,11 +83,50 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
             pendingCert.recipient_name,
             pendingCert.message,
             pendingCert.design_id,
-            certificateNumber,
-            pdfUrl
+            certificateNumber
         ]);
 
         const certificateId = certResult.rows[0].id;
+        console.log(`✅ [processPendingCertificate] Сертификат создан в БД с ID: ${certificateId}`);
+        
+        // Теперь генерируем JPG файл
+        let pdfUrl = null;
+        
+        try {
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+            
+            // Генерируем JPG из веб-страницы сертификата
+            try {
+                // Формируем данные сертификата для генерации
+                const certificateData = {
+                    certificate_number: certificateNumber,
+                    nominal_value: amount,
+                    recipient_name: pendingCert.recipient_name,
+                    message: pendingCert.message,
+                    expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // +1 год
+                    design_id: pendingCert.design_id
+                };
+                
+                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber, certificateData);
+                pdfUrl = jpgResult.jpg_url; // Используем только JPG
+                console.log(`✅ [processPendingCertificate] JPG сертификат создан: ${pdfUrl}`);
+                
+                // Обновляем сертификат с URL файла
+                await dbClient.query(
+                    'UPDATE certificates SET pdf_url = $1 WHERE id = $2',
+                    [pdfUrl, certificateId]
+                );
+                console.log(`✅ [processPendingCertificate] URL файла обновлен в БД`);
+                
+            } catch (jpgError) {
+                console.error('❌ [processPendingCertificate] Ошибка при генерации JPG сертификата:', jpgError);
+                // Не прерываем процесс, продолжаем без файла
+            }
+            
+        } catch (fileError) {
+            console.error('❌ [processPendingCertificate] Ошибка при генерации файлов сертификата:', fileError);
+            // Продолжаем без файлов
+        }
         console.log(`✅ [processPendingCertificate] Создан сертификат ID: ${certificateId}, номер: ${certificateNumber}, сумма: ${amount}₽`);
 
         // Удаляем запись из pending_certificates

@@ -350,19 +350,102 @@ class CertificateJpgGenerator {
         }
     }
 
-    // Метод generateCertificateFiles удален - используем только JPG
+    // Генерация JPG из HTML напрямую (fallback когда веб-страница недоступна)
+    async generateCertificateJpgFromHTML(certificateNumber, certificateData = null) {
+        await this.ensureOutputDir();
+        
+        const outputPath = path.join(this.outputDir, `certificate_${certificateNumber}.jpg`);
+        
+        try {
+            let cert;
+            
+            if (certificateData) {
+                // Используем переданные данные
+                cert = certificateData;
+            } else {
+                // Получаем данные сертификата из базы
+                const { pool } = require('../db');
+                const certResult = await pool.query(
+                    'SELECT c.*, cd.name as design_name FROM certificates c LEFT JOIN certificate_designs cd ON c.design_id = cd.id WHERE c.certificate_number = $1',
+                    [certificateNumber]
+                );
+                
+                if (certResult.rows.length === 0) {
+                    throw new Error(`Сертификат ${certificateNumber} не найден в базе данных`);
+                }
+                
+                cert = certResult.rows[0];
+            }
+            
+            // Формируем данные для генерации HTML
+            const htmlData = {
+                certificate_number: cert.certificate_number,
+                nominal_value: cert.nominal_value,
+                recipient_name: cert.recipient_name,
+                message: cert.message,
+                expiry_date: cert.expiry_date,
+                design_id: cert.design_id
+            };
+            
+            // Генерируем HTML
+            const html = await this.generateCertificateHTML(htmlData);
+            
+            // Создаем страницу и делаем скриншот
+            const browser = await this.initBrowser();
+            const page = await browser.newPage();
+            
+            await page.setViewport({
+                width: 1050,
+                height: 495,
+                deviceScaleFactor: 2
+            });
+            
+            await page.setContent(html, {
+                waitUntil: 'networkidle0'
+            });
+            
+            // Делаем скриншот
+            await page.screenshot({
+                path: outputPath,
+                type: 'jpeg',
+                quality: 90
+            });
+            
+            await page.close();
+            
+            console.log(`✅ JPG сертификат создан из HTML: ${outputPath}`);
+            
+            return `/generated/certificates/certificate_${certificateNumber}.jpg`;
+            
+        } catch (error) {
+            console.error('Ошибка при генерации JPG из HTML:', error);
+            throw new Error(`Не удалось создать JPG сертификат из HTML: ${error.message}`);
+        }
+    }
 
     // Метод для генерации JPG из веб-страницы (для email)
-    async generateCertificateJpgForEmail(certificateNumber) {
+    async generateCertificateJpgForEmail(certificateNumber, certificateData = null) {
         try {
+            // Сначала пробуем загрузить с веб-страницы
             const jpgUrl = await this.generateCertificateJpgFromWeb(certificateNumber);
             return {
                 jpg_url: jpgUrl,
                 pdf_url: null // PDF больше не используется
             };
-        } catch (error) {
-            console.error('Ошибка при генерации JPG для email:', error);
-            throw new Error(`Не удалось создать JPG сертификат: ${error.message}`);
+        } catch (webError) {
+            console.log('⚠️ Веб-страница недоступна, используем HTML генерацию:', webError.message);
+            
+            // Fallback: генерируем JPG из HTML напрямую
+            try {
+                const jpgUrl = await this.generateCertificateJpgFromHTML(certificateNumber, certificateData);
+                return {
+                    jpg_url: jpgUrl,
+                    pdf_url: null
+                };
+            } catch (htmlError) {
+                console.error('❌ Ошибка при генерации JPG из HTML:', htmlError);
+                throw new Error(`Не удалось создать JPG сертификат: ${htmlError.message}`);
+            }
         }
     }
 
