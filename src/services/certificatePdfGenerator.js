@@ -46,8 +46,46 @@ class CertificateJpgGenerator {
                     '--single-process',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
-                ]
+                    '--disable-renderer-backgrounding',
+                    // Дополнительные параметры для стабильности
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-images',
+                    '--disable-javascript',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    '--no-default-browser-check',
+                    '--disable-logging',
+                    '--disable-gpu-logging',
+                    '--silent',
+                    '--disable-crash-reporter',
+                    '--disable-in-process-stack-traces',
+                    '--disable-logging',
+                    '--log-level=3',
+                    '--disable-breakpad',
+                    '--disable-component-extensions-with-background-pages',
+                    '--disable-background-networking',
+                    '--disable-background-timer-throttling',
+                    '--disable-client-side-phishing-detection',
+                    '--disable-default-apps',
+                    '--disable-hang-monitor',
+                    '--disable-prompt-on-repost',
+                    '--disable-sync',
+                    '--disable-domain-reliability',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--memory-pressure-off',
+                    '--max_old_space_size=4096'
+                ],
+                // Дополнительные настройки для стабильности
+                timeout: 60000,
+                protocolTimeout: 60000,
+                ignoreDefaultArgs: ['--enable-automation'],
+                ignoreHTTPSErrors: true,
+                dumpio: false
             });
         }
         return this.browser;
@@ -55,9 +93,21 @@ class CertificateJpgGenerator {
 
     async closeBrowser() {
         if (this.browser) {
-            await this.browser.close();
-            this.browser = null;
+            try {
+                await this.browser.close();
+            } catch (error) {
+                console.error('Ошибка при закрытии браузера:', error);
+            } finally {
+                this.browser = null;
+            }
         }
+    }
+
+    // Метод для перезапуска браузера при сбоях
+    async restartBrowser() {
+        console.log('🔄 Перезапускаем браузер...');
+        await this.closeBrowser();
+        await this.initBrowser();
     }
 
     async generateCertificateHTML(certificateData) {
@@ -299,54 +349,83 @@ class CertificateJpgGenerator {
         
         const outputPath = path.join(this.outputDir, `certificate_${certificateNumber}.jpg`);
         
-        try {
-            await this.initBrowser();
-            const page = await this.browser.newPage();
-            
-            // Настраиваем viewport для сертификата (1050x495)
-            await page.setViewport({
-                width: 1050,
-                height: 495,
-                deviceScaleFactor: 2 // Для лучшего качества
-            });
-            
-            // URL веб-страницы сертификата
-            const certificateUrl = `${process.env.BASE_URL || 'http://localhost:8080'}/certificate/${certificateNumber}`;
-            
-            console.log(`📸 Генерируем JPG для сертификата ${certificateNumber} с URL: ${certificateUrl}`);
-            
-            // Переходим на страницу сертификата
-            await page.goto(certificateUrl, {
-                waitUntil: 'networkidle0',
-                timeout: 30000
-            });
-            
-            // Ждем загрузки всех элементов
-            await page.waitForSelector('.certificate-container', { timeout: 10000 });
-            
-            // Делаем скриншот только контейнера сертификата
-            const certificateElement = await page.$('.certificate-container');
-            if (!certificateElement) {
-                throw new Error('Не найден элемент .certificate-container');
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                console.log(`📸 Попытка ${attempts}/${maxAttempts} генерации JPG для сертификата ${certificateNumber}`);
+                
+                await this.initBrowser();
+                const page = await this.browser.newPage();
+                
+                // Настраиваем viewport для сертификата (1050x495)
+                await page.setViewport({
+                    width: 1050,
+                    height: 495,
+                    deviceScaleFactor: 2 // Для лучшего качества
+                });
+                
+                // URL веб-страницы сертификата
+                const certificateUrl = `${process.env.BASE_URL || 'http://localhost:8080'}/certificate/${certificateNumber}`;
+                
+                console.log(`📸 Генерируем JPG для сертификата ${certificateNumber} с URL: ${certificateUrl}`);
+                
+                // Переходим на страницу сертификата
+                await page.goto(certificateUrl, {
+                    waitUntil: 'networkidle0',
+                    timeout: 30000
+                });
+                
+                // Ждем загрузки всех элементов
+                await page.waitForSelector('.certificate-container', { timeout: 10000 });
+                
+                // Делаем скриншот только контейнера сертификата
+                const certificateElement = await page.$('.certificate-container');
+                if (!certificateElement) {
+                    throw new Error('Не найден элемент .certificate-container');
+                }
+                
+                // Делаем скриншот элемента
+                await certificateElement.screenshot({
+                    path: outputPath,
+                    type: 'jpeg',
+                    quality: 90
+                });
+                
+                await page.close();
+                
+                console.log(`✅ JPG сертификат создан: ${outputPath}`);
+                
+                // Возвращаем относительный путь для веб-доступа
+                return `/generated/certificates/certificate_${certificateNumber}.jpg`;
+                
+            } catch (error) {
+                console.error(`❌ Ошибка при генерации JPG сертификата (попытка ${attempts}):`, error);
+                
+                // Закрываем страницу при ошибке
+                try {
+                    if (this.browser) {
+                        const pages = await this.browser.pages();
+                        for (const page of pages) {
+                            await page.close();
+                        }
+                    }
+                } catch (closeError) {
+                    console.error('Ошибка при закрытии страниц:', closeError);
+                }
+                
+                // Если это не последняя попытка, перезапускаем браузер
+                if (attempts < maxAttempts) {
+                    console.log(`🔄 Перезапускаем браузер и пробуем снова...`);
+                    await this.restartBrowser();
+                    // Небольшая пауза перед следующей попыткой
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                    throw new Error(`Не удалось создать JPG сертификат после ${maxAttempts} попыток: ${error.message}`);
+                }
             }
-            
-            // Делаем скриншот элемента
-            await certificateElement.screenshot({
-                path: outputPath,
-                type: 'jpeg',
-                quality: 90
-            });
-            
-            await page.close();
-            
-            console.log(`✅ JPG сертификат создан: ${outputPath}`);
-            
-            // Возвращаем относительный путь для веб-доступа
-            return `/generated/certificates/certificate_${certificateNumber}.jpg`;
-            
-        } catch (error) {
-            console.error('Ошибка при генерации JPG сертификата:', error);
-            throw new Error(`Не удалось создать JPG сертификат: ${error.message}`);
         }
     }
 
