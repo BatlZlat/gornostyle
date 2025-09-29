@@ -4771,7 +4771,33 @@ async function handleTextMessage(msg) {
             }
 
             if (msg.text === '✅ Купить сертификат') {
-                return createCertificate(chatId, purchaseData);
+                // Защита от множественных покупок
+                const currentState = userStates.get(chatId);
+                if (currentState && currentState.step === 'certificate_purchase_confirmation') {
+                    // Проверяем, не идет ли уже процесс покупки
+                    if (currentState.processing) {
+                        return bot.sendMessage(chatId, '⏳ Покупка уже обрабатывается, пожалуйста, подождите...');
+                    }
+                    
+                    // Устанавливаем флаг обработки
+                    userStates.set(chatId, {
+                        ...currentState,
+                        processing: true
+                    });
+                    
+                    // Показываем индикатор загрузки
+                    await bot.sendMessage(chatId, '⏳ Обрабатываем покупку...');
+                    
+                    // Выполняем покупку
+                    return createCertificate(chatId, purchaseData);
+                }
+                
+                return bot.sendMessage(chatId, '❌ Сессия истекла. Начните покупку заново.', {
+                    reply_markup: {
+                        keyboard: [['🔙 В главное меню']],
+                        resize_keyboard: true
+                    }
+                });
             }
 
             if (msg.text === '💰 Пополнить кошелек') {
@@ -6001,6 +6027,9 @@ async function createCertificate(chatId, purchaseData) {
         const result = await response.json();
 
         if (!result.success) {
+            // Очищаем состояние при ошибке
+            userStates.delete(chatId);
+            
             let errorMessage = '❌ Ошибка при создании сертификата: ';
             switch (result.code) {
                 case 'INSUFFICIENT_FUNDS':
@@ -6031,6 +6060,9 @@ async function createCertificate(chatId, purchaseData) {
         await showCertificateResult(chatId, result.certificate);
 
     } catch (error) {
+        // Очищаем состояние при ошибке
+        userStates.delete(chatId);
+        
         console.error('Ошибка при создании сертификата:', error);
         return bot.sendMessage(chatId, '❌ Произошла ошибка при создании сертификата. Попробуйте позже.', {
             reply_markup: {
