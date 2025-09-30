@@ -1653,8 +1653,14 @@ async function handleTextMessage(msg) {
                             const maxParticipants = session.max_participants;
                             const price = parseFloat(session.price).toFixed(2);
                             const skillLevel = session.skill_level;
-                            message += `${index + 1}. ${dateStr} (${weekday}) ${session.start_time}\n`;
+                            const trainerName = session.trainer_name || 'без тренера';
+                            
+                            // Форматируем время без секунд (HH:MM вместо HH:MM:SS)
+                            const timeStr = session.start_time ? session.start_time.slice(0, 5) : '--:--';
+                            
+                            message += `${index + 1}. ${weekday} (${dateStr}) ${timeStr}\n`;
                             message += `   👥 ${groupName} (${currentParticipants}/${maxParticipants})\n`;
+                            message += `   👨‍🏫 Тренер: ${trainerName}\n`;
                             message += `   📊 Уровень: ${skillLevel}/10\n`;
                             message += `   💰 ${price} руб.\n\n`;
                         });
@@ -3269,7 +3275,7 @@ async function handleTextMessage(msg) {
                 message += `👥 *Участников:* ${selectedSession.current_participants}/${selectedSession.max_participants}\n`;
                 message += `📊 *Уровень:* ${selectedSession.skill_level}/10\n`;
                 message += `🎿 *Тренажер:* ${selectedSession.simulator_name}\n`;
-                message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n`;
+                message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name || 'без тренера'}\n`;
                 message += `💰 *Цена:* ${formattedPrice} руб.\n`;
                 message += `💳 *Баланс:* ${formattedBalance} руб.\n\n`;
 
@@ -3352,7 +3358,7 @@ async function handleTextMessage(msg) {
                 message += `👥 *Участников:* ${selectedSession.current_participants}/${selectedSession.max_participants}\n`;
                 message += `📊 *Уровень:* ${selectedSession.skill_level}/10\n`;
                 message += `🎿 *Тренажер:* ${selectedSession.simulator_name}\n`;
-                message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n`;
+                message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name || 'без тренера'}\n`;
                 message += `💰 *Цена:* ${price.toFixed(2)} руб.\n`;
                 message += `💳 *Баланс:* ${balance.toFixed(2)} руб.\n\n`;
 
@@ -3457,7 +3463,7 @@ async function handleTextMessage(msg) {
             message += `👥 *Участников:* ${selectedSession.current_participants}/${selectedSession.max_participants}\n`;
             message += `📊 *Уровень:* ${selectedSession.skill_level}/10\n`;
             message += `🎿 *Тренажер:* ${selectedSession.simulator_name}\n`;
-            message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n`;
+            message += `👨‍🏫 *Тренер:* ${selectedSession.trainer_name || 'без тренера'}\n`;
             message += `💰 *Цена:* ${price.toFixed(2)} руб.\n`;
             message += `💳 *Баланс:* ${balance.toFixed(2)} руб.\n\n`;
 
@@ -3664,7 +3670,7 @@ async function handleTextMessage(msg) {
                         `👥 *Участников:* ${parseInt(participantsResult.rows[0].count) + 1}/${selectedSession.max_participants}\n` +
                         `📊 *Уровень:* ${selectedSession.skill_level}/10\n` +
                         `🎿 *Тренажер:* ${selectedSession.simulator_name}\n` +
-                        `👨‍🏫 *Тренер:* ${selectedSession.trainer_name}\n` +
+                        `👨‍🏫 *Тренер:* ${selectedSession.trainer_name || 'без тренера'}\n` +
                         `💰 *Стоимость:* ${price.toFixed(2)} руб.\n\n` +
                         'Ждем вас на тренировке!';
 
