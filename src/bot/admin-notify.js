@@ -449,18 +449,32 @@ ${participantsList}`;
     }
 }
 
+// Переменная для блокировки множественных вызовов
+let isNotificationInProgress = false;
+
 // Функция для отправки уведомления о тренировках на завтра
 async function notifyTomorrowTrainings(trainings) {
+    // Проверяем, не выполняется ли уже отправка уведомлений
+    if (isNotificationInProgress) {
+        console.log('Уведомление о тренировках на завтра уже отправляется, пропускаем дублирующий вызов');
+        return;
+    }
+    
+    // Устанавливаем блокировку
+    isNotificationInProgress = true;
+    
     try {
         const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
         if (!adminIds.length) {
             console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            isNotificationInProgress = false; // Снимаем блокировку
             return;
         }
 
         // Если тренировок нет, ничего не отправляем
         if (!trainings || trainings.length === 0) {
             console.log('Тренировок на завтра нет, уведомление не отправляется');
+            isNotificationInProgress = false; // Снимаем блокировку
             return;
         }
 
@@ -506,7 +520,7 @@ async function notifyTomorrowTrainings(trainings) {
             });
         }
 
-        // Отправляем уведомление всем администраторам
+        // Отправляем полное уведомление всем администраторам
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
@@ -514,6 +528,9 @@ async function notifyTomorrowTrainings(trainings) {
         console.log(`Уведомление о ${trainings.length} тренировках на завтра отправлено администраторам`);
     } catch (error) {
         console.error('Ошибка при отправке уведомления о тренировках на завтра:', error);
+    } finally {
+        // Снимаем блокировку
+        isNotificationInProgress = false;
     }
 }
 
