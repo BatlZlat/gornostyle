@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 const fetch = require('node-fetch');
+const { notifyAdminGroupTrainingCancellationByAdmin, calculateAge } = require('../bot/admin-notify');
 require('dotenv').config();
 
 // Создание новой тренировки
@@ -837,6 +838,39 @@ ${trainingInfo}
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: refund.telegram_id, text })
             });
+        }
+
+        // Отправляем уведомление администратору об отмене тренировки
+        try {
+            // Получаем информацию о клиентах для расчета возраста
+            const participantsWithAge = await Promise.all(refunds.map(async (refund) => {
+                const clientResult = await client.query(
+                    'SELECT birth_date FROM clients WHERE id = $1',
+                    [refund.client_id]
+                );
+                const age = clientResult.rows[0] ? calculateAge(clientResult.rows[0].birth_date) : null;
+                return {
+                    ...refund,
+                    age: age
+                };
+            }));
+
+            await notifyAdminGroupTrainingCancellationByAdmin({
+                session_date: training.session_date,
+                start_time: training.start_time,
+                end_time: training.end_time,
+                duration: training.duration,
+                group_name: training.group_name,
+                trainer_name: training.trainer_name,
+                skill_level: training.skill_level,
+                simulator_id: training.simulator_id,
+                simulator_name: training.simulator_name,
+                price: training.price,
+                refunds: participantsWithAge
+            });
+        } catch (notificationError) {
+            console.error('Ошибка при отправке уведомления администратору:', notificationError);
+            // Не прерываем выполнение, так как основная операция успешна
         }
 
         await client.query('COMMIT');
