@@ -456,8 +456,19 @@ const task = cron.schedule(cronExpression, async () => {
     timezone: "Asia/Yekaterinburg" // Указываем часовой пояс
 });
 
+// Переменная для предотвращения множественных запусков cron задачи
+let isTomorrowTrainingsTaskRunning = false;
+
 // Настройка cron-задачи для уведомлений о тренировках на завтра (каждый день в 22:00)
 const tomorrowTrainingsCron = cron.schedule('0 22 * * *', async () => {
+    // Проверяем, не выполняется ли уже задача
+    if (isTomorrowTrainingsTaskRunning) {
+        console.log('Задача проверки тренировок на завтра уже выполняется, пропускаем');
+        return;
+    }
+    
+    isTomorrowTrainingsTaskRunning = true;
+    
     console.log('\n=== Запуск проверки тренировок на завтра ===');
     console.log('Время запуска:', new Date().toLocaleString('ru-RU'));
     try {
@@ -466,6 +477,8 @@ const tomorrowTrainingsCron = cron.schedule('0 22 * * *', async () => {
         console.log('Проверка тренировок на завтра завершена');
     } catch (error) {
         console.error('Ошибка при проверке тренировок на завтра:', error);
+    } finally {
+        isTomorrowTrainingsTaskRunning = false;
     }
 }, {
     scheduled: true,

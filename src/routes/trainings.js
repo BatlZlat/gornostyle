@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 const fetch = require('node-fetch');
+const { notifyAdminGroupTrainingCancellationByAdmin, calculateAge } = require('../bot/admin-notify');
 require('dotenv').config();
 
 // Создание новой тренировки
@@ -737,12 +738,12 @@ router.delete('/:id', async (req, res) => {
         const training = trainingResult.rows[0];
         const price = Number(training.price);
 
-        // Получаем участников тренировки
+        // Получаем участников тренировки (ТОЛЬКО с подтвержденным статусом!)
         const participantsResult = await client.query(`
             SELECT sp.id, sp.client_id, c.full_name, c.telegram_id
             FROM session_participants sp
             LEFT JOIN clients c ON sp.client_id = c.id
-            WHERE sp.session_id = $1
+            WHERE sp.session_id = $1 AND sp.status = 'confirmed'
         `, [id]);
         const participants = participantsResult.rows;
 
@@ -802,7 +803,12 @@ router.delete('/:id', async (req, res) => {
         const maxPart = training.max_participants || '-';
         const sim = training.simulator_name || `Тренажер ${training.simulator_id}`;
         const priceStr = Number(training.price).toFixed(2);
-        const participantsCount = participants.length;
+        // Подсчитываем ТОЛЬКО подтвержденных участников для отображения
+        const confirmedParticipantsResult = await client.query(
+            'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+            [id, 'confirmed']
+        );
+        const participantsCount = parseInt(confirmedParticipantsResult.rows[0].count);
         const trainingInfo =
 `📅 Дата: ${dateStr}
 ⏰ Время: ${startTime} - ${endTime}
@@ -832,6 +838,39 @@ ${trainingInfo}
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: refund.telegram_id, text })
             });
+        }
+
+        // Отправляем уведомление администратору об отмене тренировки
+        try {
+            // Получаем информацию о клиентах для расчета возраста
+            const participantsWithAge = await Promise.all(refunds.map(async (refund) => {
+                const clientResult = await client.query(
+                    'SELECT birth_date FROM clients WHERE id = $1',
+                    [refund.client_id]
+                );
+                const age = clientResult.rows[0] ? calculateAge(clientResult.rows[0].birth_date) : null;
+                return {
+                    ...refund,
+                    age: age
+                };
+            }));
+
+            await notifyAdminGroupTrainingCancellationByAdmin({
+                session_date: training.session_date,
+                start_time: training.start_time,
+                end_time: training.end_time,
+                duration: training.duration,
+                group_name: training.group_name,
+                trainer_name: training.trainer_name,
+                skill_level: training.skill_level,
+                simulator_id: training.simulator_id,
+                simulator_name: training.simulator_name,
+                price: training.price,
+                refunds: participantsWithAge
+            });
+        } catch (notificationError) {
+            console.error('Ошибка при отправке уведомления администратору:', notificationError);
+            // Не прерываем выполнение, так как основная операция успешна
         }
 
         await client.query('COMMIT');

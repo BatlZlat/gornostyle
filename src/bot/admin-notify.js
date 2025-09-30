@@ -395,8 +395,8 @@ async function notifyNewClient({ full_name, birth_date, phone, skill_level, chil
     }
 }
 
-// Функция для отправки уведомления о тренировках на завтра
-async function notifyTomorrowTrainings(trainings) {
+// Функция для отправки уведомления администратору об отмене групповой тренировки
+async function notifyAdminGroupTrainingCancellationByAdmin(trainingData) {
     try {
         const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
         if (!adminIds.length) {
@@ -404,9 +404,77 @@ async function notifyTomorrowTrainings(trainings) {
             return;
         }
 
+        // Форматируем дату
+        const dateObj = new Date(trainingData.session_date);
+        const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+        const dayOfWeek = days[dateObj.getDay()];
+        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+        const startTime = trainingData.start_time ? trainingData.start_time.slice(0,5) : '';
+        const endTime = trainingData.end_time ? trainingData.end_time.slice(0,5) : '';
+        const duration = trainingData.duration || 60;
+        const group = trainingData.group_name || '-';
+        const trainer = trainingData.trainer_name || '-';
+        const level = trainingData.skill_level || '-';
+        const sim = trainingData.simulator_name || `Тренажер ${trainingData.simulator_id}`;
+        const priceStr = Number(trainingData.price).toFixed(2);
+
+        // Формируем список участников с возрастом
+        let participantsList = '';
+        if (trainingData.refunds && trainingData.refunds.length > 0) {
+            participantsList = trainingData.refunds.map(refund => {
+                const ageStr = refund.age ? ` (${refund.age}лет)` : '';
+                return `- ${refund.full_name}${ageStr} ${priceStr}р`;
+            }).join('\n');
+        }
+
+        const message = `❗️ *Администратор отменил групповую тренировку:*
+
+📅 Дата: ${dateStr}
+⏰ Время: ${startTime} - ${endTime}
+⏱️ Длительность: ${duration} минут
+👥 Группа: ${group}
+👨‍🏫 Тренер: ${trainer}
+📊 Уровень: ${level}
+🎿 Тренажер: ${sim}
+💰 Стоимость: ${priceStr} руб.
+
+Вернул деньги участникам:
+${participantsList}`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене групповой тренировки администратором:', error);
+    }
+}
+
+// Переменная для блокировки множественных вызовов
+let isNotificationInProgress = false;
+
+// Функция для отправки уведомления о тренировках на завтра
+async function notifyTomorrowTrainings(trainings) {
+    // Проверяем, не выполняется ли уже отправка уведомлений
+    if (isNotificationInProgress) {
+        console.log('Уведомление о тренировках на завтра уже отправляется, пропускаем дублирующий вызов');
+        return;
+    }
+    
+    // Устанавливаем блокировку
+    isNotificationInProgress = true;
+    
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            isNotificationInProgress = false; // Снимаем блокировку
+            return;
+        }
+
         // Если тренировок нет, ничего не отправляем
         if (!trainings || trainings.length === 0) {
             console.log('Тренировок на завтра нет, уведомление не отправляется');
+            isNotificationInProgress = false; // Снимаем блокировку
             return;
         }
 
@@ -452,7 +520,7 @@ async function notifyTomorrowTrainings(trainings) {
             });
         }
 
-        // Отправляем уведомление всем администраторам
+        // Отправляем полное уведомление всем администраторам
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
@@ -460,6 +528,9 @@ async function notifyTomorrowTrainings(trainings) {
         console.log(`Уведомление о ${trainings.length} тренировках на завтра отправлено администраторам`);
     } catch (error) {
         console.error('Ошибка при отправке уведомления о тренировках на завтра:', error);
+    } finally {
+        // Снимаем блокировку
+        isNotificationInProgress = false;
     }
 }
 
@@ -469,6 +540,7 @@ module.exports = {
     notifyNewIndividualTraining,
     notifyNewGroupTrainingParticipant,
     notifyAdminGroupTrainingCancellation,
+    notifyAdminGroupTrainingCancellationByAdmin,
     notifyAdminIndividualTrainingCancellation,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
