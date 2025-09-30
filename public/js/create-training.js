@@ -175,23 +175,40 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Отправка формы ---
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
-        const formData = new FormData(form);
-        const withTrainer = !!formData.get('trainer_id');
-        const price = Number(priceField.dataset.price) || 0;
-        const data = {
-            simulator_id: formData.get('simulator_id'),
-            trainer_id: formData.get('trainer_id') || null,
-            group_id: formData.get('group_id'),
-            date: formData.get('date'),
-            time_slot_id: formData.get('time_slot_id'),
-            skill_level: formData.get('skill_level') || null,
-            max_participants: formData.get('max_participants'),
-            training_type: true,
-            with_trainer: withTrainer,
-            price: price,
-            duration: 60
-        };
+        
+        // Защита от множественных отправок
+        if (form.dataset.submitting === 'true') {
+            console.log('Форма уже отправляется, игнорируем повторное нажатие');
+            return;
+        }
+        
+        // Устанавливаем флаг отправки
+        form.dataset.submitting = 'true';
+        
+        // Получаем кнопку отправки и блокируем её
+        const submitButton = form.querySelector('button[type="submit"]');
+        const originalButtonText = submitButton.textContent;
+        submitButton.disabled = true;
+        submitButton.textContent = 'Создание тренировки...';
+        
         try {
+            const formData = new FormData(form);
+            const withTrainer = !!formData.get('trainer_id');
+            const price = Number(priceField.dataset.price) || 0;
+            const data = {
+                simulator_id: formData.get('simulator_id'),
+                trainer_id: formData.get('trainer_id') || null,
+                group_id: formData.get('group_id'),
+                date: formData.get('date'),
+                time_slot_id: formData.get('time_slot_id'),
+                skill_level: formData.get('skill_level') || null,
+                max_participants: formData.get('max_participants'),
+                training_type: true,
+                with_trainer: withTrainer,
+                price: price,
+                duration: 60
+            };
+            
             const response = await fetch('/api/trainings', {
                 method: 'POST',
                 headers: {
@@ -199,16 +216,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify(data)
             });
+            
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || 'Ошибка при создании тренировки');
             }
+            
             showSuccess('Тренировка успешно создана');
             setTimeout(() => {
                 window.location.href = 'admin.html';
             }, 2000);
+            
         } catch (error) {
             showError(error.message);
+        } finally {
+            // Восстанавливаем кнопку (только если не произошло перенаправление)
+            if (form.dataset.submitting === 'true') {
+                submitButton.disabled = false;
+                submitButton.textContent = originalButtonText;
+                form.dataset.submitting = 'false';
+            }
         }
     });
 

@@ -1,3 +1,5 @@
+// Admin.js загружен
+
 // Глобальные переменные
 let currentPage = 'schedule';
 let currentDate = new Date();
@@ -13,13 +15,39 @@ let currentApplicationsSearch = '';
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Инициализация админской панели...');
+    
     initializeNavigation();
     initializeDatePicker();
     loadPageContent(currentPage);
     initializeEventListeners();
     
+    // Обработчики событий для поиска и сортировки клиентов
+    const searchInput = document.getElementById('clientSearch');
+    const sortSelect = document.getElementById('clientSort');
+    if (searchInput) {
+        searchInput.addEventListener('input', displayClients);
+    }
+    if (sortSelect) {
+        sortSelect.addEventListener('change', displayClients);
+    }
+    
+    // Обработчик для верхней кнопки "Уволенные тренеры"
+    const topDismissedBtn = document.getElementById('view-dismissed');
+    if (topDismissedBtn) {
+        topDismissedBtn.addEventListener('click', function() {
+            console.log('[top button] Кнопка "Уволенные тренеры" (верхняя) нажата');
+            fetch('/api/trainers').then(r => r.json()).then(trainers => {
+                const dismissed = trainers.filter(tr => !tr.is_active);
+                showDismissedTrainersModal(dismissed);
+            });
+        });
+    }
+    
     // Инициализируем функционал пополнения кошелька
     initializeWalletRefill();
+    
+    console.log('Инициализация админской панели завершена');
 });
 
 // Инициализация навигации
@@ -1462,19 +1490,7 @@ function displayClients() {
     clientsContainer.innerHTML = legendHtml + tableHtml;
 }
 
-// Добавляем обработчики событий для поиска и сортировки
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('clientSearch');
-    const sortSelect = document.getElementById('clientSort');
-
-    if (searchInput) {
-        searchInput.addEventListener('input', displayClients);
-    }
-
-    if (sortSelect) {
-        sortSelect.addEventListener('change', displayClients);
-    }
-});
+// Обработчики событий для поиска и сортировки клиентов (перенесены в основной обработчик)
 
 // Загрузка прайса
 async function loadPrices() {
@@ -1828,10 +1844,28 @@ function formatDate(dateString) {
 // Обработчики форм
 async function handleCreateTraining(event) {
     event.preventDefault();
-    const formData = new FormData(event.target);
-    const data = Object.fromEntries(formData.entries());
+    
+    // Проверяем, не выполняется ли уже отправка (используем data-атрибут формы)
+    if (event.target.dataset.submitting === 'true') {
+        console.log('Форма создания тренировки уже отправляется, игнорируем повторное нажатие');
+        return;
+    }
+    
+    // Устанавливаем флаг отправки
+    event.target.dataset.submitting = 'true';
+    
+    // Получаем кнопку отправки и блокируем её
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton ? submitButton.textContent : '';
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Создание...';
+    }
     
     try {
+        const formData = new FormData(event.target);
+        const data = Object.fromEntries(formData.entries());
+        
         const response = await fetch('/api/trainings', {
             method: 'POST',
             headers: {
@@ -1850,6 +1884,13 @@ async function handleCreateTraining(event) {
     } catch (error) {
         console.error('Ошибка при создании тренировки:', error);
         showError('Не удалось создать тренировку');
+    } finally {
+        // Восстанавливаем кнопку
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = originalButtonText;
+        }
+        event.target.dataset.submitting = 'false';
     }
 }
 
@@ -2865,20 +2906,7 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Обработчик для верхней кнопки "Уволенные тренеры"
-document.addEventListener('DOMContentLoaded', function() {
-    const topDismissedBtn = document.getElementById('view-dismissed');
-    if (topDismissedBtn) {
-        topDismissedBtn.addEventListener('click', function() {
-            console.log('[top button] Кнопка "Уволенные тренеры" (верхняя) нажата');
-            // Получаем актуальный список уволенных тренеров
-            fetch('/api/trainers').then(r => r.json()).then(trainers => {
-                const dismissed = trainers.filter(tr => !tr.is_active);
-                showDismissedTrainersModal(dismissed);
-            });
-        });
-    }
-});
+// Обработчик для верхней кнопки "Уволенные тренеры" (перенесен в основной обработчик)
 
 function formatDateWithWeekday(dateString) {
     const date = new Date(dateString);
@@ -3647,13 +3675,7 @@ function initializeWalletRefill() {
     }
 }
 
-// Добавляем инициализацию пополнения кошелька в основную функцию инициализации
-document.addEventListener('DOMContentLoaded', () => {
-    // ... existing initialization code ...
-    
-    // Инициализируем функционал пополнения кошелька
-    initializeWalletRefill();
-});
+// Инициализация пополнения кошелька (перенесена в основной обработчик)
 
 // Также инициализируем при переключении на страницу финансов
 const originalLoadPageContent = loadPageContent;
