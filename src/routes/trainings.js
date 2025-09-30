@@ -737,12 +737,12 @@ router.delete('/:id', async (req, res) => {
         const training = trainingResult.rows[0];
         const price = Number(training.price);
 
-        // Получаем участников тренировки
+        // Получаем участников тренировки (ТОЛЬКО с подтвержденным статусом!)
         const participantsResult = await client.query(`
             SELECT sp.id, sp.client_id, c.full_name, c.telegram_id
             FROM session_participants sp
             LEFT JOIN clients c ON sp.client_id = c.id
-            WHERE sp.session_id = $1
+            WHERE sp.session_id = $1 AND sp.status = 'confirmed'
         `, [id]);
         const participants = participantsResult.rows;
 
@@ -802,7 +802,12 @@ router.delete('/:id', async (req, res) => {
         const maxPart = training.max_participants || '-';
         const sim = training.simulator_name || `Тренажер ${training.simulator_id}`;
         const priceStr = Number(training.price).toFixed(2);
-        const participantsCount = participants.length;
+        // Подсчитываем ТОЛЬКО подтвержденных участников для отображения
+        const confirmedParticipantsResult = await client.query(
+            'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+            [id, 'confirmed']
+        );
+        const participantsCount = parseInt(confirmedParticipantsResult.rows[0].count);
         const trainingInfo =
 `📅 Дата: ${dateStr}
 ⏰ Время: ${startTime} - ${endTime}

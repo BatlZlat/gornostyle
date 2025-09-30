@@ -3935,10 +3935,10 @@ async function handleTextMessage(msg) {
                     );
                     const groupInfo = groupInfoRes.rows[0];
 
-                    // Считаем сколько мест осталось после удаления
+                    // Считаем сколько мест осталось после удаления (ТОЛЬКО подтвержденные участники!)
                     const seatsRes = await pool.query(
-                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1',
-                        [selectedSession.session_id]
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
                     );
                     const currentParticipants = parseInt(seatsRes.rows[0].count) - 1;
                     const maxParticipants = groupInfo.max_participants;

@@ -78,7 +78,7 @@ class Booking {
                     ts.skill_level,
                     ts.price,
                     ts.max_participants,
-                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id) as current_participants,
+                    (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                     c.full_name as client_name,
                     ch.full_name as child_name,
                     sp.is_child,
