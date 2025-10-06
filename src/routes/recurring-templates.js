@@ -427,5 +427,60 @@ router.get('/:id/preview', async (req, res) => {
     }
 });
 
+// Применение шаблонов к существующему расписанию
+router.post('/apply-current-month', async (req, res) => {
+    try {
+        const client = await pool.connect();
+        
+        // Получаем диапазон существующего расписания
+        const scheduleRangeResult = await client.query(
+            `SELECT MIN(date) as min_date, MAX(date) as max_date 
+             FROM schedule 
+             WHERE date >= CURRENT_DATE`
+        );
+        
+        if (!scheduleRangeResult.rows[0].min_date) {
+            client.release();
+            return res.status(400).json({
+                success: false,
+                message: 'Расписание не найдено. Сначала создайте расписание.'
+            });
+        }
+        
+        const startDate = new Date(scheduleRangeResult.rows[0].min_date);
+        const endDate = new Date(scheduleRangeResult.rows[0].max_date);
+        
+        console.log(`Применение шаблонов к расписанию с ${startDate.toISOString().split('T')[0]} по ${endDate.toISOString().split('T')[0]}`);
+        
+        // Импортируем функции из скрипта создания расписания
+        const { createTrainingsFromTemplates } = require('../scripts/create-next-month-schedule');
+        
+        // Применяем шаблоны к существующему расписанию
+        const result = await createTrainingsFromTemplates(client, startDate, endDate);
+        
+        client.release();
+        
+        res.json({
+            success: true,
+            message: 'Шаблоны успешно применены к существующему расписанию',
+            date_range: {
+                from: startDate.toISOString().split('T')[0],
+                to: endDate.toISOString().split('T')[0]
+            },
+            created: result.successCount,
+            conflicts: result.conflictCount,
+            conflicts_details: result.conflicts
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при применении шаблонов к существующему расписанию:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Ошибка при применении шаблонов к существующему расписанию',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
 

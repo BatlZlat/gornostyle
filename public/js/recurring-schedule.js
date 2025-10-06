@@ -67,11 +67,45 @@ async function loadInitialData() {
             loadTemplates(),
             loadSimulators(),
             loadGroups(),
-            loadTrainers()
+            loadTrainers(),
+            loadScheduleRange()
         ]);
     } catch (error) {
         console.error('Ошибка при загрузке данных:', error);
         showError('Не удалось загрузить данные');
+    }
+}
+
+// Загрузка диапазона расписания
+async function loadScheduleRange() {
+    try {
+        const response = await fetch(`${API_URL}/api/schedule/range`, {
+            headers: {
+                'Authorization': `Bearer ${getAuthToken()}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = 'login.html';
+                return;
+            }
+            throw new Error('Ошибка при загрузке диапазона расписания');
+        }
+
+        const data = await response.json();
+        
+        if (data.min_date && data.max_date) {
+            const minDate = new Date(data.min_date).toLocaleDateString('ru-RU');
+            const maxDate = new Date(data.max_date).toLocaleDateString('ru-RU');
+            document.getElementById('stat-range').textContent = `${minDate} - ${maxDate}`;
+        } else {
+            document.getElementById('stat-range').textContent = 'Нет расписания';
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке диапазона расписания:', error);
+        document.getElementById('stat-range').textContent = 'Ошибка';
     }
 }
 
@@ -263,6 +297,9 @@ function populateTrainerSelect() {
 function setupEventListeners() {
     // Кнопка создания шаблона
     document.getElementById('create-template-btn').addEventListener('click', openCreateModal);
+
+    // Кнопка применения к текущему месяцу
+    document.getElementById('apply-current-month-btn').addEventListener('click', applyToCurrentMonth);
 
     // Кнопки экспорта/импорта
     document.getElementById('export-templates-btn').addEventListener('click', exportTemplates);
@@ -482,6 +519,50 @@ function showPreview(data) {
     `;
 
     document.getElementById('preview-modal').style.display = 'block';
+}
+
+// Применение шаблонов к существующему расписанию
+async function applyToCurrentMonth() {
+    if (!confirm('Применить все активные шаблоны к существующему расписанию? Это создаст тренировки для всех подходящих дат в созданном расписании.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/recurring-templates/apply-current-month`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getAuthToken()}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = 'login.html';
+                return;
+            }
+            if (response.status === 400) {
+                const errorData = await response.json();
+                alert(`❌ ${errorData.message}`);
+                return;
+            }
+            throw new Error('Ошибка при применении шаблонов');
+        }
+
+        const result = await response.json();
+        
+        const dateRange = result.date_range ? 
+            `\nПериод: ${result.date_range.from} - ${result.date_range.to}` : '';
+        
+        alert(`✅ Успешно применено!${dateRange}\n\nСоздано тренировок: ${result.created}\nКонфликтов: ${result.conflicts}\n\n${result.conflicts > 0 ? 'Проверьте логи для деталей о конфликтах.' : ''}`);
+        
+        // Обновляем статистику
+        updateStatistics();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при применении шаблонов к существующему расписанию');
+    }
 }
 
 // Экспорт шаблонов

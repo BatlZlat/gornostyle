@@ -288,4 +288,8 @@ async function createNextMonthSchedule() {
 //     createNextMonthSchedule().catch(console.error);
 // }
 
-module.exports = { createNextMonthSchedule, CRON_SETTINGS }; 
+module.exports = { 
+    createNextMonthSchedule, 
+    createTrainingsFromTemplates,
+    CRON_SETTINGS 
+}; 

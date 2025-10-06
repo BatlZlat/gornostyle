@@ -103,4 +103,20 @@ router.get('/admin', async (req, res) => {
     }
 });
 
+// Получение диапазона существующего расписания
+router.get('/range', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT MIN(date) as min_date, MAX(date) as max_date 
+             FROM schedule 
+             WHERE date >= CURRENT_DATE`
+        );
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка при получении диапазона расписания:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
 module.exports = router; 
