@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
+const { notifyAdminGroupTrainingCancellationByAdmin } = require('../bot/admin-notify');
 
 /**
  * GET /api/recurring-templates
@@ -260,17 +261,86 @@ router.delete('/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
         
-        // Удаляем все будущие тренировки, созданные по этому шаблону
-        const deleteTrainingsResult = await client.query(
-            `DELETE FROM training_sessions 
-             WHERE template_id = $1 
-             AND session_date >= CURRENT_DATE
-             AND status = 'scheduled'`,
+        // Получаем все будущие тренировки, созданные по этому шаблону
+        const trainingsResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.template_id = $1 
+             AND ts.session_date >= CURRENT_DATE
+             AND ts.status = 'scheduled'`,
             [req.params.id]
         );
         
-        const deletedTrainingsCount = deleteTrainingsResult.rowCount;
-        console.log(`Удалено будущих тренировок: ${deletedTrainingsCount}`);
+        const trainings = trainingsResult.rows;
+        console.log(`Найдено будущих тренировок для удаления: ${trainings.length}`);
+        
+        // Обрабатываем каждую тренировку с возвратом средств и уведомлениями
+        let totalRefund = 0;
+        const allRefunds = [];
+        
+        for (const training of trainings) {
+            const price = Number(training.price);
+            
+            // Получаем участников тренировки
+            const participantsResult = await client.query(`
+                SELECT sp.id, sp.client_id, c.full_name, c.telegram_id, c.birth_date
+                FROM session_participants sp
+                LEFT JOIN clients c ON sp.client_id = c.id
+                WHERE sp.session_id = $1 AND sp.status = 'confirmed'
+            `, [training.id]);
+            const participants = participantsResult.rows;
+            
+            // Возвращаем средства каждому участнику
+            for (const participant of participants) {
+                const walletResult = await client.query('SELECT id, balance FROM wallets WHERE client_id = $1', [participant.client_id]);
+                if (walletResult.rows.length === 0) continue;
+                
+                const wallet = walletResult.rows[0];
+                const newBalance = Number(wallet.balance) + price;
+                
+                // Обновляем баланс кошелька
+                await client.query('UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2', [newBalance, wallet.id]);
+                
+                // Создаем транзакцию возврата
+                const dateObj = new Date(training.session_date);
+                const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+                const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+                const duration = training.duration || 60;
+                
+                await client.query(
+                    'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                    [wallet.id, price, 'amount', `Возврат (отмена шаблона): Группа, ${participant.full_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`]
+                );
+                
+                allRefunds.push({
+                    full_name: participant.full_name,
+                    telegram_id: participant.telegram_id,
+                    client_id: participant.client_id,
+                    amount: price,
+                    birth_date: participant.birth_date
+                });
+                totalRefund += price;
+            }
+            
+            // Освобождаем слоты в расписании
+            await client.query(
+                `UPDATE schedule 
+                 SET is_booked = false 
+                 WHERE simulator_id = $1 
+                 AND date = $2 
+                 AND start_time >= $3 
+                 AND start_time < $4`,
+                [training.simulator_id, training.session_date, training.start_time, training.end_time]
+            );
+            
+            // Удаляем тренировку
+            await client.query('DELETE FROM training_sessions WHERE id = $1', [training.id]);
+        }
+        
+        console.log(`Удалено тренировок: ${trainings.length}, возвращено средств: ${totalRefund}`);
         
         // Удаляем сам шаблон
         const deleteTemplateResult = await client.query(
@@ -285,11 +355,55 @@ router.delete('/:id', async (req, res) => {
         
         await client.query('COMMIT');
         
+        // Отправляем уведомления администратору
+        if (allRefunds.length > 0) {
+            try {
+                // Рассчитываем возраст участников
+                const calculateAge = (birthDate) => {
+                    if (!birthDate) return null;
+                    const today = new Date();
+                    const birth = new Date(birthDate);
+                    let age = today.getFullYear() - birth.getFullYear();
+                    const monthDiff = today.getMonth() - birth.getMonth();
+                    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+                        age--;
+                    }
+                    return age;
+                };
+                
+                const participantsWithAge = allRefunds.map(refund => ({
+                    ...refund,
+                    age: calculateAge(refund.birth_date)
+                }));
+                
+                // Отправляем уведомление для каждой тренировки
+                for (const training of trainings) {
+                    await notifyAdminGroupTrainingCancellationByAdmin({
+                        session_date: training.session_date,
+                        start_time: training.start_time,
+                        end_time: training.end_time,
+                        duration: training.duration,
+                        group_name: training.group_name,
+                        trainer_name: training.trainer_name,
+                        skill_level: training.skill_level,
+                        simulator_id: training.simulator_id,
+                        simulator_name: training.simulator_name,
+                        price: training.price,
+                        refunds: participantsWithAge
+                    });
+                }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления администратору:', notificationError);
+            }
+        }
+        
         console.log(`Шаблон "${deleteTemplateResult.rows[0].name}" успешно удалён`);
         res.json({
             message: 'Шаблон и все будущие тренировки успешно удалены',
             template_name: deleteTemplateResult.rows[0].name,
-            deleted_trainings_count: deletedTrainingsCount
+            deleted_trainings_count: trainings.length,
+            total_refund: totalRefund,
+            refunds_count: allRefunds.length
         });
     } catch (error) {
         await client.query('ROLLBACK');
