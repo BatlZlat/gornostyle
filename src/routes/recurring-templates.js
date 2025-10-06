@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminTemplateCancellation } = require('../bot/admin-notify');
+const { notifyAdminTemplateCancellation, notifyTemplatesApplied, notifyTemplateCreated } = require('../bot/admin-notify');
 
 /**
  * GET /api/recurring-templates
@@ -156,6 +156,28 @@ router.post('/', async (req, res) => {
         );
         
         console.log('Шаблон успешно создан:', result.rows[0]);
+        
+        // Отправляем уведомление администратору
+        try {
+            // Получаем дополнительную информацию для уведомления
+            const groupResult = await pool.query('SELECT name FROM groups WHERE id = $1', [group_id]);
+            const trainerResult = trainer_id ? await pool.query('SELECT full_name FROM trainers WHERE id = $1', [trainer_id]) : null;
+            
+            await notifyTemplateCreated({
+                name: result.rows[0].name,
+                day_of_week: result.rows[0].day_of_week,
+                start_time: result.rows[0].start_time,
+                simulator_id: result.rows[0].simulator_id,
+                group_name: groupResult.rows[0]?.name,
+                trainer_name: trainerResult?.rows[0]?.full_name,
+                equipment_type: result.rows[0].equipment_type,
+                skill_level: result.rows[0].skill_level,
+                max_participants: result.rows[0].max_participants
+            });
+        } catch (notificationError) {
+            console.error('Ошибка при отправке уведомления о создании шаблона:', notificationError);
+        }
+        
         res.status(201).json({
             message: 'Шаблон успешно создан',
             template: result.rows[0]
@@ -626,6 +648,21 @@ router.post('/apply-current-month', async (req, res) => {
         const result = await createTrainingsFromTemplates(client, startDate, endDate);
         
         client.release();
+        
+        // Отправляем уведомление администратору
+        try {
+            await notifyTemplatesApplied({
+                created: result.successCount,
+                conflicts: result.conflictCount,
+                date_range: {
+                    from: startDate.format('DD.MM.YYYY'),
+                    to: endDate.format('DD.MM.YYYY')
+                },
+                conflicts_list: result.conflicts
+            });
+        } catch (notificationError) {
+            console.error('Ошибка при отправке уведомления о применении шаблонов:', notificationError);
+        }
         
         res.json({
             success: true,

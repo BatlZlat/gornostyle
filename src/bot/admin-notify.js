@@ -667,6 +667,94 @@ ${refundsList}
     }
 }
 
+// Уведомление о применении шаблонов к расписанию
+async function notifyTemplatesApplied(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { created, conflicts, date_range, conflicts_list } = templateData;
+        
+        // Формируем информацию о периоде
+        let periodInfo = '';
+        if (date_range && date_range.from && date_range.to) {
+            periodInfo = `\n📅 *Период:* ${date_range.from} - ${date_range.to}`;
+        }
+        
+        // Формируем список конфликтов (если есть)
+        let conflictsList = '';
+        if (conflicts > 0 && conflicts_list && conflicts_list.length > 0) {
+            conflictsList = `\n⚠️ *Конфликты:*\n`;
+            conflictsList += conflicts_list.slice(0, 5).map(conflict => {
+                const dateObj = new Date(conflict.date);
+                const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+                const dayOfWeek = days[dateObj.getDay()];
+                const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+                const timeStr = conflict.time ? conflict.time.slice(0,5) : '';
+                return `• ${dateStr} ${timeStr} - ${conflict.template_name} (${conflict.reason})`;
+            }).join('\n');
+            
+            if (conflicts_list.length > 5) {
+                conflictsList += `\n... и еще ${conflicts_list.length - 5} конфликтов`;
+            }
+        }
+
+        const message = `📅 *Применение шаблонов к расписанию*
+
+✅ *Создано тренировок:* ${created}
+⚠️ *Конфликтов:* ${conflicts}${periodInfo}${conflictsList}
+
+${conflicts > 0 ? 'Проверьте логи для деталей о конфликтах.' : 'Все шаблоны успешно применены!'}`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о применении шаблонов:', error);
+    }
+}
+
+// Уведомление о создании нового шаблона
+async function notifyTemplateCreated(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { name, day_of_week, start_time, simulator_id, group_name, trainer_name, equipment_type, skill_level, max_participants } = templateData;
+        
+        const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+        const dayName = days[day_of_week];
+        const timeStr = start_time ? start_time.slice(0,5) : '';
+        const equipmentEmoji = equipment_type === 'ski' ? '🎿' : '🏂';
+        const simulatorName = simulator_id === 1 ? 'Тренажер 1' : 'Тренажер 2';
+        
+        const message = `📅 *Создан новый шаблон постоянного расписания*
+
+📋 *Название:* ${name}
+📅 *День недели:* ${dayName}
+⏰ *Время:* ${timeStr}
+${equipmentEmoji} *Тренажер:* ${simulatorName}
+👥 *Группа:* ${group_name || '-'}
+👨‍🏫 *Тренер:* ${trainer_name || '-'}
+📊 *Уровень:* ${skill_level || '-'}
+👥 *Макс. участников:* ${max_participants}
+
+Шаблон готов к применению к расписанию!`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании шаблона:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -685,5 +773,7 @@ module.exports = {
     calculateAge,
     notifyNewClient,
     notifyTomorrowTrainings,
-    notifyAdminTemplateCancellation
+    notifyAdminTemplateCancellation,
+    notifyTemplatesApplied,
+    notifyTemplateCreated
 }; 
