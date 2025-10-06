@@ -610,6 +610,63 @@ async function notifyTomorrowTrainings(trainings) {
     }
 }
 
+// Функция для отправки уведомления об отмене шаблона постоянного расписания
+async function notifyAdminTemplateCancellation(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { template_name, deleted_trainings_count, total_refund, refunds_count, trainings, refunds } = templateData;
+        
+        // Формируем список тренировок
+        let trainingsList = '';
+        if (trainings && trainings.length > 0) {
+            trainingsList = trainings.map(training => {
+                const dateObj = new Date(training.session_date);
+                const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+                const dayOfWeek = days[dateObj.getDay()];
+                const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+                const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+                const endTime = training.end_time ? training.end_time.slice(0,5) : '';
+                return `• ${dateStr} ${startTime}-${endTime} (${training.group_name})`;
+            }).join('\n');
+        }
+
+        // Формируем список участников с возвратами
+        let refundsList = '';
+        if (refunds && refunds.length > 0) {
+            refundsList = refunds.map(refund => {
+                const ageStr = refund.age ? ` (${refund.age} лет)` : '';
+                return `• ${refund.full_name}${ageStr} - ${Number(refund.amount).toFixed(2)} руб.`;
+            }).join('\n');
+        }
+
+        const message = `🗑️ *Отмена шаблона постоянного расписания*
+
+📋 *Шаблон:* ${template_name}
+📊 *Отменено тренировок:* ${deleted_trainings_count}
+👥 *Участников затронуто:* ${refunds_count}
+💰 *Общий возврат:* ${Number(total_refund).toFixed(2)} руб.
+
+📅 *Отмененные тренировки:*
+${trainingsList}
+
+💳 *Возвраты участникам:*
+${refundsList}
+
+Все участники получили возврат средств на свои кошельки.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене шаблона:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -627,5 +684,6 @@ module.exports = {
     notifyAdminWebCertificatePurchase,
     calculateAge,
     notifyNewClient,
-    notifyTomorrowTrainings
+    notifyTomorrowTrainings,
+    notifyAdminTemplateCancellation
 }; 

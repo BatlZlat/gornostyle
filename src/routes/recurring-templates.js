@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { notifyAdminGroupTrainingCancellationByAdmin } = require('../bot/admin-notify');
+const { notifyAdminTemplateCancellation } = require('../bot/admin-notify');
 
 /**
  * GET /api/recurring-templates
@@ -293,8 +293,22 @@ router.delete('/:id', async (req, res) => {
             `, [training.id]);
             const participants = participantsResult.rows;
             
-            // Возвращаем средства каждому участнику
+            // Возвращаем средства каждому участнику (с проверкой на двойной возврат)
             for (const participant of participants) {
+                // Проверяем, не был ли уже возврат по этой тренировке
+                const existingRefundCheck = await client.query(
+                    `SELECT id FROM transactions 
+                     WHERE wallet_id = (SELECT id FROM wallets WHERE client_id = $1)
+                     AND description LIKE $2
+                     AND type = 'amount'`,
+                    [participant.client_id, `%Возврат%${training.session_date}%`]
+                );
+                
+                if (existingRefundCheck.rows.length > 0) {
+                    console.log(`⚠️ Возврат уже был выполнен для участника ${participant.full_name} по тренировке ${training.id}`);
+                    continue; // Пропускаем, чтобы избежать двойного возврата
+                }
+                
                 const walletResult = await client.query('SELECT id, balance FROM wallets WHERE client_id = $1', [participant.client_id]);
                 if (walletResult.rows.length === 0) continue;
                 
@@ -355,43 +369,80 @@ router.delete('/:id', async (req, res) => {
         
         await client.query('COMMIT');
         
-        // Отправляем уведомления администратору
+        // Отправляем уведомления клиентам
         if (allRefunds.length > 0) {
             try {
-                // Рассчитываем возраст участников
-                const calculateAge = (birthDate) => {
-                    if (!birthDate) return null;
-                    const today = new Date();
-                    const birth = new Date(birthDate);
-                    let age = today.getFullYear() - birth.getFullYear();
-                    const monthDiff = today.getMonth() - birth.getMonth();
-                    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-                        age--;
+                const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+                
+                for (const refund of allRefunds) {
+                    if (!refund.telegram_id) continue;
+                    
+                    // Находим тренировку для этого участника (берем первую найденную)
+                    const participantTraining = trainings.find(t => 
+                        allRefunds.some(r => r.client_id === refund.client_id)
+                    );
+                    
+                    if (!participantTraining) continue;
+                    
+                    const dateObj = new Date(participantTraining.session_date);
+                    const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+                    const dayOfWeek = days[dateObj.getDay()];
+                    const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+                    const startTime = participantTraining.start_time ? participantTraining.start_time.slice(0,5) : '';
+                    const endTime = participantTraining.end_time ? participantTraining.end_time.slice(0,5) : '';
+                    const duration = participantTraining.duration || 60;
+                    const group = participantTraining.group_name || '-';
+                    const trainer = participantTraining.trainer_name || '-';
+                    const level = participantTraining.skill_level || '-';
+                    const sim = participantTraining.simulator_name || `Тренажер ${participantTraining.simulator_id}`;
+                    const priceStr = Number(refund.amount).toFixed(2);
+                    
+                    const text = `❗️ К сожалению, мы вынуждены отменить вашу тренировку:
+
+📅 Дата: ${formattedDate}
+⏰ Время: ${startTime} - ${endTime}
+⏱️ Длительность: ${duration} минут
+👥 Группа: ${group}
+👨‍🏫 Тренер: ${trainer}
+📊 Уровень: ${level}
+🎿 Тренажер: ${sim}
+💰 Стоимость: ${priceStr} руб.
+
+Деньги в размере ${priceStr} руб. возвращены на ваш счет.
+Тренировка могла быть отменена из-за недобора группы или болезни тренера.
+Подробнее вы можете уточнить у администратора: ${ADMIN_PHONE}`;
+                    
+                    try {
+                        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                chat_id: refund.telegram_id, 
+                                text,
+                                parse_mode: 'Markdown'
+                            })
+                        });
+                    } catch (error) {
+                        console.error('Ошибка отправки уведомления клиенту:', error);
                     }
-                    return age;
-                };
-                
-                const participantsWithAge = allRefunds.map(refund => ({
-                    ...refund,
-                    age: calculateAge(refund.birth_date)
-                }));
-                
-                // Отправляем уведомление для каждой тренировки
-                for (const training of trainings) {
-                    await notifyAdminGroupTrainingCancellationByAdmin({
-                        session_date: training.session_date,
-                        start_time: training.start_time,
-                        end_time: training.end_time,
-                        duration: training.duration,
-                        group_name: training.group_name,
-                        trainer_name: training.trainer_name,
-                        skill_level: training.skill_level,
-                        simulator_id: training.simulator_id,
-                        simulator_name: training.simulator_name,
-                        price: training.price,
-                        refunds: participantsWithAge
-                    });
                 }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомлений клиентам:', notificationError);
+            }
+        }
+        
+        // Отправляем одно общее уведомление администратору
+        if (trainings.length > 0) {
+            try {
+                await notifyAdminTemplateCancellation({
+                    template_name: deleteTemplateResult.rows[0].name,
+                    deleted_trainings_count: trainings.length,
+                    total_refund: totalRefund,
+                    refunds_count: allRefunds.length,
+                    trainings: trainings,
+                    refunds: allRefunds
+                });
             } catch (notificationError) {
                 console.error('Ошибка при отправке уведомления администратору:', notificationError);
             }
