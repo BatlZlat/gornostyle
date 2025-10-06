@@ -3687,3 +3687,35 @@ loadPageContent = async function(page) {
         setTimeout(initializeWalletRefill, 100);
     }
 };
+
+// Функция для открытия страницы управления постоянным расписанием
+function openRecurringSchedule() {
+    // Получаем токен из cookies (как это делает система авторизации)
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+    
+    const token = getCookie('adminToken');
+    
+    if (!token) {
+        alert('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
+        return;
+    }
+    
+    // Открываем в новой вкладке
+    const newWindow = window.open('recurring-schedule.html', '_blank');
+    
+    // Передаем токен в новое окно через localStorage
+    if (newWindow) {
+        newWindow.addEventListener('load', () => {
+            try {
+                newWindow.localStorage.setItem('authToken', token);
+                console.log('Токен передан в новое окно');
+            } catch (error) {
+                console.error('Ошибка при передаче токена:', error);
+            }
+        });
+    }
+}

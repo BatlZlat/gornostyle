@@ -25,6 +25,82 @@ async function notifyScheduleCreated(month) {
     }
 }
 
+// Функция для отправки уведомления о созданных тренировках из шаблонов
+async function notifyRecurringTrainingsCreated(month, count) {
+    try {
+        const message = `📅 *Постоянное расписание*\n\n` +
+            `Автоматически создано ${count} ${getTrainingWord(count)} из шаблонов на ${month}.`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о созданных тренировках:', error);
+    }
+}
+
+// Функция для отправки уведомления о конфликтах при создании тренировок
+async function notifyRecurringTrainingConflict(conflicts) {
+    try {
+        if (!conflicts || conflicts.length === 0) return;
+        
+        let message = `⚠️ *Конфликты при создании постоянного расписания*\n\n`;
+        message += `Не удалось создать ${conflicts.length} ${getTrainingWord(conflicts.length)}:\n\n`;
+        
+        // Ограничиваем количество конфликтов в сообщении (максимум 10)
+        const maxConflicts = 10;
+        const displayConflicts = conflicts.slice(0, maxConflicts);
+        
+        for (const conflict of displayConflicts) {
+            message += `📌 *${conflict.template_name}*\n`;
+            message += `   📅 Дата: ${formatDate(conflict.date)}\n`;
+            message += `   ⏰ Время: ${conflict.time}\n`;
+            message += `   🏂 Тренажер: ${conflict.simulator}\n`;
+            
+            if (conflict.conflict_with) {
+                message += `   ⚡ Конфликт с: ${conflict.conflict_with}\n`;
+            } else if (conflict.error) {
+                message += `   ❌ Ошибка: ${conflict.error}\n`;
+            }
+            message += `\n`;
+        }
+        
+        if (conflicts.length > maxConflicts) {
+            message += `\n... и ещё ${conflicts.length - maxConflicts} ${getTrainingWord(conflicts.length - maxConflicts)}`;
+        }
+        
+        message += `\n💡 Проверьте расписание и при необходимости создайте тренировки вручную.`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о конфликтах:', error);
+    }
+}
+
+// Вспомогательная функция для склонения слова "тренировка"
+function getTrainingWord(count) {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+        return 'тренировок';
+    }
+    
+    if (lastDigit === 1) {
+        return 'тренировка';
+    }
+    
+    if (lastDigit >= 2 && lastDigit <= 4) {
+        return 'тренировки';
+    }
+    
+    return 'тренировок';
+}
+
 // Функция для отправки уведомления о новой заявке на тренировку
 async function notifyNewTrainingRequest(trainingData) {
     try {
@@ -536,6 +612,8 @@ async function notifyTomorrowTrainings(trainings) {
 
 module.exports = {
     notifyScheduleCreated,
+    notifyRecurringTrainingsCreated,
+    notifyRecurringTrainingConflict,
     notifyNewTrainingRequest,
     notifyNewIndividualTraining,
     notifyNewGroupTrainingParticipant,

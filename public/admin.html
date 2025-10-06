@@ -24,6 +24,7 @@
                 <button class="menu-item" data-page="certificates">Сертификаты</button>
                 <button class="menu-item" data-page="finances">Финансы</button>
                 <button class="menu-item btn-primary" id="notify-clients-btn" style="margin-top:10px;">Отправить сообщение клиентам</button>
+                <button class="menu-item btn-secondary" onclick="openRecurringSchedule()" style="margin-top:5px;">📅 Постоянное расписание</button>
             </nav>
 
             <main class="admin-main">
@@ -70,8 +71,8 @@
                 <div class="page-content" id="schedule-page">
                     <div class="page-header">
                         <h2>Расписание</h2>
-                        <!-- Тут были кнопки управления расписанием я их удалил-->
                         <div class="page-actions">
+                            <button class="btn-primary" onclick="openRecurringSchedule()">📅 Управление постоянным расписанием</button>
                         </div>
                     </div>
                     <div class="schedule-controls">

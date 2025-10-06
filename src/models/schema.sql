@@ -73,6 +73,23 @@ CREATE TABLE groups (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица шаблонов постоянного расписания
+CREATE TABLE recurring_training_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL, -- Название шаблона, например "Воскресная группа лыжников"
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=ВС, 1=ПН, 2=ВТ, 3=СР, 4=ЧТ, 5=ПТ, 6=СБ
+    start_time TIME NOT NULL, -- Время начала тренировки
+    simulator_id INTEGER REFERENCES simulators(id) NOT NULL, -- Тренажер (1 или 2)
+    trainer_id INTEGER REFERENCES trainers(id), -- Тренер (опционально)
+    group_id INTEGER REFERENCES groups(id) NOT NULL, -- Группа
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10), -- Уровень сложности
+    max_participants INTEGER NOT NULL DEFAULT 4, -- Максимальное количество участников
+    equipment_type VARCHAR(20) DEFAULT 'ski', -- ski или snowboard
+    is_active BOOLEAN DEFAULT TRUE, -- Активен ли шаблон
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Таблица тренировок
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
@@ -90,6 +107,7 @@ CREATE TABLE training_sessions (
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
     with_trainer BOOLEAN NOT NULL DEFAULT false,
+    template_id INTEGER REFERENCES recurring_training_templates(id) ON DELETE SET NULL, -- Связь с шаблоном постоянного расписания
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -414,8 +432,15 @@ CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
 CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
+CREATE INDEX idx_training_sessions_template ON training_sessions(template_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
+-- Индексы для таблицы шаблонов постоянного расписания
+CREATE INDEX idx_recurring_templates_active ON recurring_training_templates(is_active);
+CREATE INDEX idx_recurring_templates_day_of_week ON recurring_training_templates(day_of_week);
+CREATE INDEX idx_recurring_templates_simulator ON recurring_training_templates(simulator_id);
+CREATE INDEX idx_recurring_templates_group ON recurring_training_templates(group_id);
+CREATE INDEX idx_recurring_templates_trainer ON recurring_training_templates(trainer_id);
 -- Индексы для таблицы дизайнов сертификатов
 CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);
 CREATE INDEX idx_certificate_designs_sort ON certificate_designs(sort_order);
@@ -522,6 +547,11 @@ CREATE TRIGGER update_certificates_updated_at
 
 CREATE TRIGGER update_schedule_updated_at
     BEFORE UPDATE ON schedule
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_recurring_templates_updated_at
+    BEFORE UPDATE ON recurring_training_templates
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

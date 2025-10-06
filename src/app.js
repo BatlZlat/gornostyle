@@ -10,6 +10,7 @@ const { notifyTomorrowTrainings } = require('./bot/admin-notify');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
+const recurringTemplatesRouter = require('./routes/recurring-templates');
 const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
 const pricesRouter = require('./routes/prices');
@@ -347,6 +348,7 @@ app.post('/api/certificate/register', registerHandler);
 
 // Защищенные маршруты
 app.use('/api/groups', verifyToken, groupsRouter);
+app.use('/api/recurring-templates', verifyToken, recurringTemplatesRouter);
 app.use('/api/trainers', verifyToken, trainersRouter);
 app.use('/api/trainings', verifyToken, trainingsRouter);
 app.use('/api/schedule', verifyToken, scheduleRouter);
