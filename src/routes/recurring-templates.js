@@ -447,10 +447,12 @@ router.post('/apply-current-month', async (req, res) => {
             });
         }
         
-        const startDate = new Date(scheduleRangeResult.rows[0].min_date);
-        const endDate = new Date(scheduleRangeResult.rows[0].max_date);
+        // Конвертируем в moment объекты
+        const moment = require('moment-timezone');
+        const startDate = moment(scheduleRangeResult.rows[0].min_date).tz('Asia/Yekaterinburg');
+        const endDate = moment(scheduleRangeResult.rows[0].max_date).tz('Asia/Yekaterinburg');
         
-        console.log(`Применение шаблонов к расписанию с ${startDate.toISOString().split('T')[0]} по ${endDate.toISOString().split('T')[0]}`);
+        console.log(`Применение шаблонов к расписанию с ${startDate.format('YYYY-MM-DD')} по ${endDate.format('YYYY-MM-DD')}`);
         
         // Импортируем функции из скрипта создания расписания
         const { createTrainingsFromTemplates } = require('../scripts/create-next-month-schedule');
@@ -464,8 +466,8 @@ router.post('/apply-current-month', async (req, res) => {
             success: true,
             message: 'Шаблоны успешно применены к существующему расписанию',
             date_range: {
-                from: startDate.toISOString().split('T')[0],
-                to: endDate.toISOString().split('T')[0]
+                from: startDate.format('YYYY-MM-DD'),
+                to: endDate.format('YYYY-MM-DD')
             },
             created: result.successCount,
             conflicts: result.conflictCount,
