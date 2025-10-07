@@ -269,6 +269,49 @@ router.post('/', async (req, res) => {
         
         console.log('Блокировка успешно создана:', result.rows[0]);
         
+        // Применяем блокировку к существующим слотам в таблице schedule
+        try {
+            if (block_type === 'specific') {
+                // Для конкретных дат
+                await pool.query(
+                    `UPDATE schedule
+                     SET is_booked = true
+                     WHERE date >= $1 AND date <= $2
+                     AND (simulator_id = $3 OR $3 IS NULL)
+                     AND start_time >= $4
+                     AND start_time < $5
+                     AND is_booked = false`,
+                    [start_date, end_date, simulator_id, start_time, end_time]
+                );
+                console.log('Блокировка применена к schedule для конкретных дат');
+            } else if (block_type === 'recurring') {
+                // Для постоянных блокировок - находим все даты с этим днем недели
+                const futureDatesResult = await pool.query(
+                    `SELECT DISTINCT date FROM schedule
+                     WHERE date >= CURRENT_DATE
+                     AND EXTRACT(DOW FROM date) = $1
+                     ORDER BY date`,
+                    [day_of_week]
+                );
+                
+                for (const row of futureDatesResult.rows) {
+                    await pool.query(
+                        `UPDATE schedule
+                         SET is_booked = true
+                         WHERE date = $1
+                         AND (simulator_id = $2 OR $2 IS NULL)
+                         AND start_time >= $3
+                         AND start_time < $4
+                         AND is_booked = false`,
+                        [row.date, simulator_id, start_time, end_time]
+                    );
+                }
+                console.log('Блокировка применена к schedule для постоянных дат');
+            }
+        } catch (scheduleError) {
+            console.error('Ошибка при применении блокировки к schedule:', scheduleError);
+        }
+        
         // Отправляем уведомление администратору
         try {
             const simulatorResult = simulator_id ? await pool.query('SELECT name FROM simulators WHERE id = $1', [simulator_id]) : null;
@@ -288,7 +331,7 @@ router.post('/', async (req, res) => {
         }
         
         res.status(201).json({
-            message: 'Блокировка успешно создана',
+            message: 'Блокировка успешно создана и применена к расписанию',
             block: result.rows[0]
         });
     } catch (error) {
@@ -386,6 +429,68 @@ router.delete('/:id', async (req, res) => {
         
         const blockData = blockResult.rows[0];
         
+        // Освобождаем слоты в таблице schedule перед удалением блокировки
+        try {
+            if (blockData.block_type === 'specific') {
+                // Для конкретных дат - просто освобождаем слоты
+                // НО только те, которые не имеют реальных бронирований (не связаны с training_sessions)
+                await pool.query(
+                    `UPDATE schedule
+                     SET is_booked = false
+                     WHERE date >= $1 AND date <= $2
+                     AND (simulator_id = $3 OR $3 IS NULL)
+                     AND start_time >= $4
+                     AND start_time < $5
+                     AND is_booked = true
+                     AND id NOT IN (
+                         SELECT DISTINCT s.id
+                         FROM schedule s
+                         JOIN training_sessions ts ON 
+                             s.date = ts.session_date 
+                             AND s.simulator_id = ts.simulator_id
+                             AND s.start_time >= ts.start_time
+                             AND s.start_time < ts.end_time
+                     )`,
+                    [blockData.start_date, blockData.end_date, blockData.simulator_id, blockData.start_time, blockData.end_time]
+                );
+                console.log('Слоты освобождены в schedule для конкретных дат');
+            } else if (blockData.block_type === 'recurring') {
+                // Для постоянных блокировок
+                const futureDatesResult = await pool.query(
+                    `SELECT DISTINCT date FROM schedule
+                     WHERE date >= CURRENT_DATE
+                     AND EXTRACT(DOW FROM date) = $1
+                     ORDER BY date`,
+                    [blockData.day_of_week]
+                );
+                
+                for (const row of futureDatesResult.rows) {
+                    await pool.query(
+                        `UPDATE schedule
+                         SET is_booked = false
+                         WHERE date = $1
+                         AND (simulator_id = $2 OR $2 IS NULL)
+                         AND start_time >= $3
+                         AND start_time < $4
+                         AND is_booked = true
+                         AND id NOT IN (
+                             SELECT DISTINCT s.id
+                             FROM schedule s
+                             JOIN training_sessions ts ON 
+                                 s.date = ts.session_date 
+                                 AND s.simulator_id = ts.simulator_id
+                                 AND s.start_time >= ts.start_time
+                                 AND s.start_time < ts.end_time
+                         )`,
+                        [row.date, blockData.simulator_id, blockData.start_time, blockData.end_time]
+                    );
+                }
+                console.log('Слоты освобождены в schedule для постоянных дат');
+            }
+        } catch (scheduleError) {
+            console.error('Ошибка при освобождении слотов в schedule:', scheduleError);
+        }
+        
         // Удаляем блокировку
         await pool.query('DELETE FROM schedule_blocks WHERE id = $1', [id]);
         
@@ -444,6 +549,70 @@ router.patch('/:id/toggle', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка при изменении статуса блокировки:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/schedule-blocks/apply-all
+ * Применить все активные блокировки к существующему расписанию
+ */
+router.post('/apply-all', async (req, res) => {
+    try {
+        const blocksResult = await pool.query(
+            'SELECT * FROM schedule_blocks WHERE is_active = TRUE'
+        );
+        
+        let appliedCount = 0;
+        
+        for (const block of blocksResult.rows) {
+            if (block.block_type === 'specific') {
+                const result = await pool.query(
+                    `UPDATE schedule
+                     SET is_booked = true
+                     WHERE date >= $1 AND date <= $2
+                     AND (simulator_id = $3 OR $3 IS NULL)
+                     AND start_time >= $4
+                     AND start_time < $5
+                     AND is_booked = false`,
+                    [block.start_date, block.end_date, block.simulator_id, block.start_time, block.end_time]
+                );
+                appliedCount += result.rowCount;
+            } else if (block.block_type === 'recurring') {
+                const futureDatesResult = await pool.query(
+                    `SELECT DISTINCT date FROM schedule
+                     WHERE date >= CURRENT_DATE
+                     AND EXTRACT(DOW FROM date) = $1
+                     ORDER BY date`,
+                    [block.day_of_week]
+                );
+                
+                for (const row of futureDatesResult.rows) {
+                    const result = await pool.query(
+                        `UPDATE schedule
+                         SET is_booked = true
+                         WHERE date = $1
+                         AND (simulator_id = $2 OR $2 IS NULL)
+                         AND start_time >= $3
+                         AND start_time < $4
+                         AND is_booked = false`,
+                        [row.date, block.simulator_id, block.start_time, block.end_time]
+                    );
+                    appliedCount += result.rowCount;
+                }
+            }
+        }
+        
+        res.json({
+            message: 'Блокировки применены к расписанию',
+            applied_slots: appliedCount,
+            blocks_count: blocksResult.rows.length
+        });
+    } catch (error) {
+        console.error('Ошибка при применении блокировок:', error);
         res.status(500).json({ 
             error: 'Внутренняя ошибка сервера',
             details: error.message

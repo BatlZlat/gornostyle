@@ -90,6 +90,7 @@ function setupEventListeners() {
     // Кнопки
     document.getElementById('create-block-btn').addEventListener('click', () => openCreateModal());
     document.getElementById('templates-btn').addEventListener('click', () => openTemplatesModal());
+    document.getElementById('apply-all-btn').addEventListener('click', () => applyAllBlocks());
     
     // Модальные окна
     setupModalHandlers();
@@ -285,7 +286,7 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Создаем структуру дней недели
+    // Создаем структуру дней недели (ВС-СБ)
     const weekDays = [];
     for (let i = 0; i < 7; i++) {
         const date = new Date(currentWeekStart);
@@ -304,10 +305,17 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
         slotsByDateTime[dateKey][timeKey] = slot;
     });
     
-    // Получаем уникальные временные слоты
+    // Получаем уникальные временные слоты (только рабочие часы 10:00-20:30)
     const timeSlots = new Set();
     Object.values(slotsByDateTime).forEach(daySlots => {
-        Object.keys(daySlots).forEach(time => timeSlots.add(time));
+        Object.keys(daySlots).forEach(time => {
+            const hour = parseInt(time.split(':')[0]);
+            const minute = parseInt(time.split(':')[1]);
+            // Показываем только слоты с 10:00 до 20:30
+            if ((hour >= 10 && hour < 20) || (hour === 20 && minute <= 30)) {
+                timeSlots.add(time);
+            }
+        });
     });
     const sortedTimeSlots = Array.from(timeSlots).sort();
     
@@ -315,13 +323,13 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
         <div class="simulator-section">
             <div class="simulator-header">${simulatorName}</div>
             <div class="calendar-header">
-                <div></div>
+                <div class="time-header">Время</div>
                 ${weekDays.map((date, i) => {
                     const isToday = date.getTime() === today.getTime();
                     return `
                         <div class="calendar-day-header ${isToday ? 'today' : ''}">
-                            ${days[date.getDay()]}<br>
-                            ${date.getDate()}.${(date.getMonth() + 1).toString().padStart(2, '0')}
+                            <div class="day-name">${days[date.getDay()]}</div>
+                            <div class="day-date">${date.getDate()}.${(date.getMonth() + 1).toString().padStart(2, '0')}</div>
                         </div>
                     `;
                 }).join('')}
@@ -336,21 +344,20 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
                             const slot = slotsByDateTime[dateKey]?.[timeSlot];
                             
                             if (!slot) {
-                                return '<div class="slot"></div>';
+                                return '<div class="slot empty"></div>';
                             }
                             
                             let slotClass = 'free';
-                            let slotContent = '🟢';
+                            let slotContent = '';
                             
                             if (slot.is_blocked) {
                                 slotClass = 'blocked';
-                                slotContent = `<div class="slot-info"><span class="slot-time">${slot.start_time.slice(0, 5)}</span><span class="slot-reason">${slot.block_reason || 'Заблокировано'}</span></div>`;
-                            } else if (slot.is_booked) {
+                                slotContent = `<div class="slot-icon">🔒</div><div class="slot-text">${slot.block_reason || 'Блок'}</div>`;
+                            } else if (slot.is_booked && !slot.is_blocked) {
                                 slotClass = 'booked';
-                                slotContent = '🔵';
-                            } else if (slot.is_holiday) {
-                                slotClass = 'holiday';
-                                slotContent = '📅';
+                                slotContent = '<div class="slot-icon">📅</div><div class="slot-text">Занят</div>';
+                            } else {
+                                slotContent = '<div class="slot-icon">✅</div><div class="slot-text">Свободен</div>';
                             }
                             
                             return `<div class="slot ${slotClass}" data-slot='${JSON.stringify({
@@ -638,6 +645,35 @@ async function handleBlockFormSubmit(e) {
     } catch (error) {
         console.error('Ошибка:', error);
         alert(error.message);
+    }
+}
+
+// Применить все блокировки к расписанию
+async function applyAllBlocks() {
+    if (!confirm('Применить все активные блокировки к существующему расписанию? Это обновит таблицу schedule.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/schedule-blocks/apply-all`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getAuthToken()}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Ошибка при применении блокировок');
+        }
+
+        const result = await response.json();
+        alert(`✅ Успешно применено!\n\nБлокировок: ${result.blocks_count}\nОбновлено слотов: ${result.applied_slots}`);
+        
+        await loadCalendar();
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при применении блокировок к расписанию');
     }
 }
 
