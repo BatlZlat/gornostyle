@@ -228,13 +228,14 @@ async function applyRecurringBlocksToSchedule(client, startDate, endDate) {
                 const dateStr = date.format('YYYY-MM-DD');
                 
                 // Помечаем слоты как забронированные для блокировки
+                // Используем пересечение: слот блокируется если start_time < block_end AND end_time > block_start
                 const updateResult = await client.query(
                     `UPDATE schedule
                      SET is_booked = true
                      WHERE date = $1
                      AND (simulator_id = $2 OR $2 IS NULL)
-                     AND start_time >= $3
                      AND start_time < $4
+                     AND end_time > $3
                      AND is_booked = false`,
                     [
                         dateStr,

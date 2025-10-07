@@ -235,9 +235,6 @@ async function loadCalendar() {
         const endDay = String(weekEnd.getDate()).padStart(2, '0');
         const endDate = `${endYear}-${endMonth}-${endDay}`;
         
-        console.log('=== API Request ===');
-        console.log('Запрос к API: start_date=' + startDate + ', end_date=' + endDate);
-        
         let url = `${API_URL}/api/schedule-blocks/slots?start_date=${startDate}&end_date=${endDate}`;
         if (currentSimulatorFilter) {
             url += `&simulator_id=${currentSimulatorFilter}`;
@@ -322,16 +319,6 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
         }
         slotsByDateTime[dateKey][timeKey] = slot;
     });
-    
-    console.log('=== После группировки ===');
-    console.log('slotsByDateTime keys:', Object.keys(slotsByDateTime).sort());
-    console.log('Пример slot.date:', slots[0]?.date);
-    console.log('weekDays:', weekDays.map(d => {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    }));
     
     // Получаем уникальные временные слоты (только рабочие часы 10:00-20:30)
     const timeSlots = new Set();
