@@ -73,8 +73,8 @@ async function fixScheduleBlocks() {
                      SET is_booked = true
                      WHERE date >= $1 AND date <= $2
                      AND (simulator_id = $3 OR $3 IS NULL)
-                     AND start_time < $5::time
-                     AND end_time > $4::time
+                     AND start_time <= $5::time
+                     AND start_time >= $4::time
                      AND is_booked = false`,
                     [block.start_date, block.end_date, block.simulator_id, block.start_time, block.end_time]
                 );
@@ -102,8 +102,8 @@ async function fixScheduleBlocks() {
                          SET is_booked = true
                          WHERE date = $1
                          AND (simulator_id = $2 OR $2 IS NULL)
-                         AND start_time < $4::time
-                         AND end_time > $3::time
+                         AND start_time <= $4::time
+                         AND start_time >= $3::time
                          AND is_booked = false`,
                         [row.date, block.simulator_id, block.start_time, block.end_time]
                     );
