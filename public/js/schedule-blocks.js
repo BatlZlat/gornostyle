@@ -224,8 +224,16 @@ async function loadCalendar() {
         const weekEnd = new Date(currentWeekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
-        const startDate = currentWeekStart.toISOString().split('T')[0];
-        const endDate = weekEnd.toISOString().split('T')[0];
+        // ВАЖНО: формируем даты в локальном времени, а не UTC
+        const startYear = currentWeekStart.getFullYear();
+        const startMonth = String(currentWeekStart.getMonth() + 1).padStart(2, '0');
+        const startDay = String(currentWeekStart.getDate()).padStart(2, '0');
+        const startDate = `${startYear}-${startMonth}-${startDay}`;
+        
+        const endYear = weekEnd.getFullYear();
+        const endMonth = String(weekEnd.getMonth() + 1).padStart(2, '0');
+        const endDay = String(weekEnd.getDate()).padStart(2, '0');
+        const endDate = `${endYear}-${endMonth}-${endDay}`;
         
         let url = `${API_URL}/api/schedule-blocks/slots?start_date=${startDate}&end_date=${endDate}`;
         if (currentSimulatorFilter) {
@@ -297,7 +305,10 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
     // Группируем слоты по датам и времени
     const slotsByDateTime = {};
     slots.forEach(slot => {
-        const dateKey = new Date(slot.date).toISOString().split('T')[0];
+        // ВАЖНО: используем substring вместо toISOString() чтобы избежать timezone проблем
+        // PostgreSQL возвращает дату в формате "2025-10-12T00:00:00.000Z"
+        // Берём только YYYY-MM-DD часть напрямую из строки
+        const dateKey = slot.date.substring(0, 10);
         const timeKey = slot.start_time;
         if (!slotsByDateTime[dateKey]) {
             slotsByDateTime[dateKey] = {};
@@ -340,7 +351,11 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
                     return `
                         <div class="time-label">${timeSlot.slice(0, 5)}</div>
                         ${weekDays.map(date => {
-                            const dateKey = date.toISOString().split('T')[0];
+                            // ВАЖНО: формируем dateKey в ЛОКАЛЬНОМ времени, а не UTC
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const dateKey = `${year}-${month}-${day}`;
                             const slot = slotsByDateTime[dateKey]?.[timeSlot];
                             
                             if (!slot) {
