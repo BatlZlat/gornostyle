@@ -717,6 +717,88 @@ ${conflicts > 0 ? 'Проверьте логи для деталей о конф
     }
 }
 
+// Уведомление о создании блокировки слота
+async function notifyBlockCreated(blockData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { reason, block_type, start_date, end_date, day_of_week, start_time, end_time, simulator_name } = blockData;
+        
+        let periodInfo = '';
+        if (block_type === 'specific') {
+            const startDateStr = new Date(start_date).toLocaleDateString('ru-RU');
+            const endDateStr = new Date(end_date).toLocaleDateString('ru-RU');
+            periodInfo = `📅 *Период:* ${startDateStr} - ${endDateStr}`;
+        } else {
+            const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+            periodInfo = `📅 *День недели:* ${days[day_of_week]}`;
+        }
+        
+        const timeStr = `${start_time.slice(0,5)} - ${end_time.slice(0,5)}`;
+        const typeStr = block_type === 'specific' ? 'Конкретные даты' : 'Постоянная';
+        
+        const message = `🔒 *Создана блокировка слота*
+
+📋 *Причина:* ${reason || 'Не указана'}
+📊 *Тип:* ${typeStr}
+${periodInfo}
+⏰ *Время:* ${timeStr}
+🎿 *Тренажер:* ${simulator_name || 'Оба тренажера'}
+
+Слоты заблокированы для бронирования.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании блокировки:', error);
+    }
+}
+
+// Уведомление об удалении блокировки слота
+async function notifyBlockDeleted(blockData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { reason, block_type, start_date, end_date, day_of_week, start_time, end_time, simulator_name } = blockData;
+        
+        let periodInfo = '';
+        if (block_type === 'specific') {
+            const startDateStr = new Date(start_date).toLocaleDateString('ru-RU');
+            const endDateStr = new Date(end_date).toLocaleDateString('ru-RU');
+            periodInfo = `📅 *Период:* ${startDateStr} - ${endDateStr}`;
+        } else {
+            const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+            periodInfo = `📅 *День недели:* ${days[day_of_week]}`;
+        }
+        
+        const timeStr = `${start_time.slice(0,5)} - ${end_time.slice(0,5)}`;
+        
+        const message = `🔓 *Удалена блокировка слота*
+
+📋 *Причина:* ${reason || 'Не указана'}
+${periodInfo}
+⏰ *Время:* ${timeStr}
+🎿 *Тренажер:* ${simulator_name || 'Оба тренажера'}
+
+Слоты снова доступны для бронирования.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об удалении блокировки:', error);
+    }
+}
+
 // Уведомление о создании нового шаблона
 async function notifyTemplateCreated(templateData) {
     try {
@@ -775,5 +857,7 @@ module.exports = {
     notifyTomorrowTrainings,
     notifyAdminTemplateCancellation,
     notifyTemplatesApplied,
-    notifyTemplateCreated
+    notifyTemplateCreated,
+    notifyBlockCreated,
+    notifyBlockDeleted
 }; 

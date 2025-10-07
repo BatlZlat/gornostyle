@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление блокировками слотов - Админ Панель</title>
+    <link rel="stylesheet" href="/css/admin.css">
+    <link rel="stylesheet" href="/css/schedule-blocks.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📅 Управление блокировками слотов</h1>
+            <button onclick="window.close()" class="btn-secondary">← Назад</button>
+        </header>
+
+        <!-- Панель управления -->
+        <div class="controls-panel">
+            <div class="controls-left">
+                <button id="create-block-btn" class="btn-primary">+ Создать блокировку</button>
+                <button id="templates-btn" class="btn-success">📋 Шаблоны блокировок</button>
+            </div>
+            <div class="controls-right">
+                <select id="simulator-filter" class="filter-select">
+                    <option value="">Все тренажеры</option>
+                    <option value="1">Тренажер 1</option>
+                    <option value="2">Тренажер 2</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Навигация по неделям -->
+        <div class="week-navigation">
+            <button id="prev-week-btn" class="btn-secondary">← Предыдущая неделя</button>
+            <h2 id="current-week-title">Неделя</h2>
+            <button id="next-week-btn" class="btn-secondary">Следующая неделя →</button>
+        </div>
+
+        <!-- Календарь слотов -->
+        <div id="calendar-view" class="calendar-view">
+            <div class="loading">Загрузка...</div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="stats-panel">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-active-blocks">0</div>
+                <div class="stat-label">Активных блокировок</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-recurring-blocks">0</div>
+                <div class="stat-label">Постоянных блокировок</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-blocked-slots">0</div>
+                <div class="stat-label">Заблокированных слотов на неделе</div>
+            </div>
+        </div>
+
+        <!-- Список блокировок -->
+        <div class="blocks-list-section">
+            <h3>Все блокировки</h3>
+            <div id="blocks-list" class="blocks-list">
+                <div class="loading">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания/редактирования блокировки -->
+    <div id="block-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Создать блокировку</h2>
+                <span class="close">&times;</span>
+            </div>
+            <form id="block-form">
+                <input type="hidden" id="block-id">
+                
+                <div class="form-group">
+                    <label>Тренажер:</label>
+                    <select id="modal-simulator" required>
+                        <option value="">Оба тренажера</option>
+                        <option value="1">Тренажер 1</option>
+                        <option value="2">Тренажер 2</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Тип блокировки:</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="block-type" value="specific" checked>
+                            Конкретные даты
+                        </label>
+                        <label>
+                            <input type="radio" name="block-type" value="recurring">
+                            Постоянно (по дням недели)
+                        </label>
+                    </div>
+                </div>
+
+                <div id="specific-dates-group" class="form-group">
+                    <label>Дата начала:</label>
+                    <input type="date" id="modal-start-date" required>
+                    
+                    <label>Дата окончания:</label>
+                    <input type="date" id="modal-end-date" required>
+                </div>
+
+                <div id="recurring-group" class="form-group" style="display: none;">
+                    <label>День недели:</label>
+                    <select id="modal-day-of-week">
+                        <option value="0">Воскресенье</option>
+                        <option value="1">Понедельник</option>
+                        <option value="2">Вторник</option>
+                        <option value="3">Среда</option>
+                        <option value="4">Четверг</option>
+                        <option value="5">Пятница</option>
+                        <option value="6">Суббота</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Время начала:</label>
+                    <input type="time" id="modal-start-time" required>
+                    
+                    <label>Время окончания:</label>
+                    <input type="time" id="modal-end-time" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Причина блокировки:</label>
+                    <input type="text" id="modal-reason" placeholder="Например: Обед, Техобслуживание">
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancel-btn">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно шаблонов -->
+    <div id="templates-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Шаблоны блокировок</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="templates-list">
+                <div class="template-item" data-template="lunch">
+                    <h3>🍽️ Обеденный перерыв</h3>
+                    <p>12:00 - 13:00 каждый день (оба тренажера)</p>
+                    <button class="btn-primary apply-template-btn" data-template="lunch">Применить</button>
+                </div>
+                <div class="template-item" data-template="tech-monday">
+                    <h3>🔧 Технический перерыв (Понедельник)</h3>
+                    <p>09:00 - 10:00 каждый понедельник (оба тренажера)</p>
+                    <button class="btn-primary apply-template-btn" data-template="tech-monday">Применить</button>
+                </div>
+                <div class="template-item" data-template="morning-break">
+                    <h3>☕ Утренний перерыв</h3>
+                    <p>10:30 - 11:00 каждый день (оба тренажера)</p>
+                    <button class="btn-primary apply-template-btn" data-template="morning-break">Применить</button>
+                </div>
+                <div class="template-item" data-template="evening-break">
+                    <h3>🌆 Вечерний перерыв</h3>
+                    <p>19:00 - 19:30 каждый день (оба тренажера)</p>
+                    <button class="btn-primary apply-template-btn" data-template="evening-break">Применить</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary close-templates-btn">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/schedule-blocks.js"></script>
+</body>
+</html>
+

@@ -197,6 +197,70 @@ async function createTrainingsFromTemplates(client, startDate, endDate) {
     return { successCount, conflictCount, conflicts };
 }
 
+/**
+ * Применить постоянные блокировки к расписанию
+ * @param {object} client - клиент БД
+ * @param {moment} startDate - начальная дата
+ * @param {moment} endDate - конечная дата
+ * @returns {number} количество заблокированных слотов
+ */
+async function applyRecurringBlocksToSchedule(client, startDate, endDate) {
+    try {
+        // Получаем все активные постоянные блокировки
+        const blocksResult = await client.query(
+            `SELECT * FROM schedule_blocks
+             WHERE is_active = TRUE
+             AND block_type = 'recurring'`
+        );
+        
+        if (blocksResult.rows.length === 0) {
+            console.log('Нет активных постоянных блокировок');
+            return 0;
+        }
+        
+        let blockedCount = 0;
+        
+        for (const block of blocksResult.rows) {
+            // Получаем все даты для этого дня недели в диапазоне
+            const dates = getDatesForDayOfWeek(startDate, endDate, block.day_of_week);
+            
+            for (const date of dates) {
+                const dateStr = date.format('YYYY-MM-DD');
+                
+                // Помечаем слоты как забронированные для блокировки
+                const updateResult = await client.query(
+                    `UPDATE schedule
+                     SET is_booked = true
+                     WHERE date = $1
+                     AND (simulator_id = $2 OR $2 IS NULL)
+                     AND start_time >= $3
+                     AND start_time < $4
+                     AND is_booked = false`,
+                    [
+                        dateStr,
+                        block.simulator_id,
+                        block.start_time,
+                        block.end_time
+                    ]
+                );
+                
+                blockedCount += updateResult.rowCount;
+                
+                if (updateResult.rowCount > 0) {
+                    const days = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+                    const simulatorInfo = block.simulator_id ? `Тренажер ${block.simulator_id}` : 'Оба тренажера';
+                    console.log(`Заблокировано ${updateResult.rowCount} слотов: ${dateStr} (${days[block.day_of_week]}) ${block.start_time.slice(0,5)}-${block.end_time.slice(0,5)} - ${simulatorInfo} - ${block.reason || 'Без причины'}`);
+                }
+            }
+        }
+        
+        return blockedCount;
+    } catch (error) {
+        console.error('Ошибка при применении блокировок:', error);
+        return 0;
+    }
+}
+
 async function createNextMonthSchedule() {
     console.log('\n=== Проверка времени запуска ===');
     const now = moment().tz('Asia/Yekaterinburg');
@@ -256,6 +320,15 @@ async function createNextMonthSchedule() {
         
         console.log(`Создано тренировок: ${successCount}`);
         console.log(`Конфликтов: ${conflictCount}`);
+
+        // Применяем постоянные блокировки слотов
+        console.log('\n=== Применение постоянных блокировок слотов ===');
+        const blockedSlotsCount = await applyRecurringBlocksToSchedule(
+            client,
+            nextMonth,
+            lastDayOfNextMonth
+        );
+        console.log(`Заблокировано слотов: ${blockedSlotsCount}`);
 
         await client.query('COMMIT');
         console.log('Расписание на следующий месяц успешно создано');

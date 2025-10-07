@@ -90,6 +90,32 @@ CREATE TABLE recurring_training_templates (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица блокировок слотов расписания
+CREATE TABLE schedule_blocks (
+    id SERIAL PRIMARY KEY,
+    simulator_id INTEGER REFERENCES simulators(id), -- NULL = оба тренажера
+    block_type VARCHAR(20) NOT NULL CHECK (block_type IN ('specific', 'recurring')), -- 'specific' (конкретные даты) или 'recurring' (постоянно)
+    
+    -- Для конкретных дат (block_type = 'specific')
+    start_date DATE,
+    end_date DATE,
+    
+    -- Для постоянных блокировок (block_type = 'recurring')
+    day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6), -- 0=ВС, 1=ПН, 2=ВТ, 3=СР, 4=ЧТ, 5=ПТ, 6=СБ
+    
+    -- Время блокировки
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    
+    -- Дополнительная информация
+    reason VARCHAR(255), -- Причина: "Обед", "Техническое обслуживание", и т.д.
+    is_active BOOLEAN DEFAULT TRUE,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES administrators(id)
+);
+
 -- Таблица тренировок
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
@@ -441,6 +467,15 @@ CREATE INDEX idx_recurring_templates_day_of_week ON recurring_training_templates
 CREATE INDEX idx_recurring_templates_simulator ON recurring_training_templates(simulator_id);
 CREATE INDEX idx_recurring_templates_group ON recurring_training_templates(group_id);
 CREATE INDEX idx_recurring_templates_trainer ON recurring_training_templates(trainer_id);
+
+-- Индексы для таблицы блокировок слотов
+CREATE INDEX idx_schedule_blocks_simulator ON schedule_blocks(simulator_id);
+CREATE INDEX idx_schedule_blocks_type ON schedule_blocks(block_type);
+CREATE INDEX idx_schedule_blocks_active ON schedule_blocks(is_active);
+CREATE INDEX idx_schedule_blocks_dates ON schedule_blocks(start_date, end_date);
+CREATE INDEX idx_schedule_blocks_day_of_week ON schedule_blocks(day_of_week);
+CREATE INDEX idx_schedule_blocks_time ON schedule_blocks(start_time, end_time);
+
 -- Индексы для таблицы дизайнов сертификатов
 CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);
 CREATE INDEX idx_certificate_designs_sort ON certificate_designs(sort_order);
@@ -552,6 +587,11 @@ CREATE TRIGGER update_schedule_updated_at
 
 CREATE TRIGGER update_recurring_templates_updated_at
     BEFORE UPDATE ON recurring_training_templates
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_schedule_blocks_updated_at
+    BEFORE UPDATE ON schedule_blocks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

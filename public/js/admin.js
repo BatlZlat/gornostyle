@@ -3719,3 +3719,35 @@ function openRecurringSchedule() {
         });
     }
 }
+
+// Функция для открытия страницы управления блокировками слотов
+function openScheduleBlocks() {
+    // Получаем токен из cookies (как это делает система авторизации)
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+    
+    const token = getCookie('adminToken');
+    
+    if (!token) {
+        alert('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
+        return;
+    }
+    
+    // Открываем в новой вкладке
+    const newWindow = window.open('schedule-blocks.html', '_blank');
+    
+    // Передаем токен в новое окно через localStorage
+    if (newWindow) {
+        newWindow.addEventListener('load', () => {
+            try {
+                newWindow.localStorage.setItem('authToken', token);
+                console.log('Токен передан в новое окно для блокировок');
+            } catch (error) {
+                console.error('Ошибка при передаче токена:', error);
+            }
+        });
+    }
+}
