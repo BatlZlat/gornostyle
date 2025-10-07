@@ -235,6 +235,9 @@ async function loadCalendar() {
         const endDay = String(weekEnd.getDate()).padStart(2, '0');
         const endDate = `${endYear}-${endMonth}-${endDay}`;
         
+        console.log('=== API Request ===');
+        console.log('Запрос к API: start_date=' + startDate + ', end_date=' + endDate);
+        
         let url = `${API_URL}/api/schedule-blocks/slots?start_date=${startDate}&end_date=${endDate}`;
         if (currentSimulatorFilter) {
             url += `&simulator_id=${currentSimulatorFilter}`;
@@ -305,16 +308,30 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
     // Группируем слоты по датам и времени
     const slotsByDateTime = {};
     slots.forEach(slot => {
-        // ВАЖНО: используем substring вместо toISOString() чтобы избежать timezone проблем
-        // PostgreSQL возвращает дату в формате "2025-10-12T00:00:00.000Z"
-        // Берём только YYYY-MM-DD часть напрямую из строки
-        const dateKey = slot.date.substring(0, 10);
+        // PostgreSQL возвращает дату в формате "2025-10-05T19:00:00.000Z" (UTC)
+        // Нужно преобразовать в локальное время
+        const date = new Date(slot.date);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
+        
         const timeKey = slot.start_time;
         if (!slotsByDateTime[dateKey]) {
             slotsByDateTime[dateKey] = {};
         }
         slotsByDateTime[dateKey][timeKey] = slot;
     });
+    
+    console.log('=== После группировки ===');
+    console.log('slotsByDateTime keys:', Object.keys(slotsByDateTime).sort());
+    console.log('Пример slot.date:', slots[0]?.date);
+    console.log('weekDays:', weekDays.map(d => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }));
     
     // Получаем уникальные временные слоты (только рабочие часы 10:00-20:30)
     const timeSlots = new Set();
