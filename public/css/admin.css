@@ -875,6 +875,22 @@ body {
     color: white;
 }
 
+.data-table .notify-button {
+    background-color: #27ae60;
+    color: white;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 0 4px;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+.data-table .notify-button:hover {
+    background-color: #229954;
+}
+
 .export-button {
     padding: 0.5rem 1rem;
     background-color: #2ecc71;
@@ -1280,7 +1296,8 @@ body {
     background-color: #f9f9f9;
 }
 
-#notify-clients-modal .emoji-btn {
+#notify-clients-modal .emoji-btn,
+#client-notify-modal .emoji-btn {
     font-size: 1.2rem;
     padding: 0.25rem 0.5rem;
     border: 1px solid #ddd;
@@ -1290,7 +1307,8 @@ body {
     transition: background-color 0.2s;
 }
 
-#notify-clients-modal .emoji-btn:hover {
+#notify-clients-modal .emoji-btn:hover,
+#client-notify-modal .emoji-btn:hover {
     background-color: #f0f0f0;
 }
 
