@@ -157,7 +157,14 @@ router.get('/slots', async (req, res) => {
             AND (simulator_id = $1 OR simulator_id IS NULL OR $1 IS NULL)
         `, [simulator_id || null]);
         
-        // Обогащаем слоты информацией о блокировках
+        // Получаем все исключения из блокировок для заданного диапазона дат
+        const exceptionsResult = await pool.query(`
+            SELECT * FROM schedule_block_exceptions
+            WHERE date >= $1 AND date <= $2
+            AND (simulator_id = $3 OR simulator_id IS NULL OR $3 IS NULL)
+        `, [start_date, end_date, simulator_id || null]);
+        
+        // Обогащаем слоты информацией о блокировках с учётом исключений
         const slots = slotsResult.rows.map(slot => {
             const dateObj = new Date(slot.date);
             const dayOfWeek = dateObj.getDay();
@@ -175,10 +182,19 @@ router.get('/slots', async (req, res) => {
                 return false;
             });
             
+            // Проверяем есть ли исключение для этого слота
+            const hasException = exceptionsResult.rows.some(exception => {
+                return exception.date.toISOString().split('T')[0] === slot.date.toISOString().split('T')[0]
+                    && exception.start_time === slot.start_time
+                    && (exception.simulator_id === slot.simulator_id || exception.simulator_id === null)
+                    && applicableBlocks.some(block => block.id === exception.schedule_block_id);
+            });
+            
             return {
                 ...slot,
-                is_blocked: applicableBlocks.length > 0,
-                block_reason: applicableBlocks.length > 0 ? applicableBlocks[0].reason : null
+                is_blocked: applicableBlocks.length > 0 && !hasException,
+                block_reason: applicableBlocks.length > 0 && !hasException ? applicableBlocks[0].reason : null,
+                block_id: applicableBlocks.length > 0 ? applicableBlocks[0].id : null
             };
         });
         
@@ -683,6 +699,73 @@ router.post('/bulk', async (req, res) => {
         });
     } finally {
         client.release();
+    }
+});
+
+/**
+ * POST /api/schedule-blocks/exceptions
+ * Создать исключение из блокировки (точечно снять блокировку с одного слота)
+ */
+router.post('/exceptions', async (req, res) => {
+    try {
+        const { schedule_block_id, date, start_time, simulator_id } = req.body;
+        
+        // Валидация
+        if (!schedule_block_id || !date || !start_time) {
+            return res.status(400).json({ error: 'Требуются поля: schedule_block_id, date, start_time' });
+        }
+        
+        // Проверяем что блокировка существует
+        const blockResult = await pool.query(
+            'SELECT * FROM schedule_blocks WHERE id = $1',
+            [schedule_block_id]
+        );
+        
+        if (blockResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Блокировка не найдена' });
+        }
+        
+        // Создаём исключение
+        const exceptionResult = await pool.query(
+            `INSERT INTO schedule_block_exceptions 
+             (schedule_block_id, date, start_time, simulator_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (schedule_block_id, date, start_time, simulator_id) 
+             DO NOTHING
+             RETURNING *`,
+            [schedule_block_id, date, start_time, simulator_id || null]
+        );
+        
+        // Освобождаем слот в schedule
+        await pool.query(
+            `UPDATE schedule
+             SET is_booked = false
+             WHERE date = $1
+             AND start_time = $2
+             AND (simulator_id = $3 OR $3 IS NULL)
+             AND is_booked = true
+             AND id NOT IN (
+                 SELECT DISTINCT s.id
+                 FROM schedule s
+                 JOIN training_sessions ts ON 
+                     s.date = ts.session_date 
+                     AND s.simulator_id = ts.simulator_id
+                     AND s.start_time < ts.end_time
+                     AND s.end_time > ts.start_time
+             )`,
+            [date, start_time, simulator_id || null]
+        );
+        
+        res.json({
+            message: 'Исключение создано, слот освобождён',
+            exception: exceptionResult.rows[0] || null
+        });
+    } catch (error) {
+        console.error('Ошибка при создании исключения:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
     }
 });
 

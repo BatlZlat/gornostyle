@@ -116,6 +116,18 @@ CREATE TABLE schedule_blocks (
     created_by INTEGER REFERENCES administrators(id)
 );
 
+-- Таблица исключений из блокировок (для точечного снятия блокировок)
+CREATE TABLE schedule_block_exceptions (
+    id SERIAL PRIMARY KEY,
+    schedule_block_id INTEGER REFERENCES schedule_blocks(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    simulator_id INTEGER REFERENCES simulators(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES administrators(id),
+    UNIQUE(schedule_block_id, date, start_time, simulator_id)
+);
+
 -- Таблица тренировок
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
@@ -475,6 +487,12 @@ CREATE INDEX idx_schedule_blocks_active ON schedule_blocks(is_active);
 CREATE INDEX idx_schedule_blocks_dates ON schedule_blocks(start_date, end_date);
 CREATE INDEX idx_schedule_blocks_day_of_week ON schedule_blocks(day_of_week);
 CREATE INDEX idx_schedule_blocks_time ON schedule_blocks(start_time, end_time);
+
+-- Индексы для таблицы исключений из блокировок
+CREATE INDEX idx_block_exceptions_block_id ON schedule_block_exceptions(schedule_block_id);
+CREATE INDEX idx_block_exceptions_date ON schedule_block_exceptions(date);
+CREATE INDEX idx_block_exceptions_simulator ON schedule_block_exceptions(simulator_id);
+CREATE INDEX idx_block_exceptions_lookup ON schedule_block_exceptions(schedule_block_id, date, start_time);
 
 -- Индексы для таблицы дизайнов сертификатов
 CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);

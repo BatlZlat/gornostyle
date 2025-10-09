@@ -385,7 +385,8 @@ function renderSimulatorCalendar(simulatorId, simulatorName, slots) {
                                 start_time: slot.start_time,
                                 end_time: slot.end_time,
                                 is_blocked: slot.is_blocked,
-                                is_booked: slot.is_booked
+                                is_booked: slot.is_booked,
+                                block_id: slot.block_id || null
                             })}' onclick='handleSlotClick(this)'>${slotContent}</div>`;
                         }).join('')}
                     `;
@@ -410,50 +411,71 @@ function calculateEndTime(startTime) {
 function handleSlotClick(element) {
     const slotData = JSON.parse(element.getAttribute('data-slot'));
     
-    if (slotData.is_booked) {
+    if (slotData.is_booked && !slotData.is_blocked) {
         alert('Этот слот уже забронирован. Отмените бронирование перед блокировкой.');
         return;
     }
     
     if (slotData.is_blocked) {
-        if (confirm('Этот слот заблокирован. Разблокировать?')) {
-            // Найти и удалить блокировку
-            unblockSlot(slotData);
-        }
+        // Показываем модальное окно подтверждения снятия блокировки
+        showUnblockConfirmation(slotData);
     } else {
         // Открыть модальное окно для создания блокировки
         openCreateModalWithData(slotData);
     }
 }
 
-// Разблокировать слот
+// Показать модальное окно подтверждения снятия блокировки
+function showUnblockConfirmation(slotData) {
+    const dateObj = new Date(slotData.date);
+    const dateStr = dateObj.toLocaleDateString('ru-RU', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = `${slotData.start_time.slice(0,5)} - ${slotData.end_time.slice(0,5)}`;
+    const simulatorStr = `Тренажер ${slotData.simulator_id}`;
+    
+    const message = `⚠️ Снять блокировку?\n\nДата: ${dateStr}\nВремя: ${timeStr}\n${simulatorStr}\n\nБлокировка будет снята только для этого слота.\nДругие слоты останутся заблокированными.`;
+    
+    if (confirm(message)) {
+        unblockSlot(slotData);
+    }
+}
+
+// Разблокировать слот (создать исключение)
 async function unblockSlot(slotData) {
     try {
-        // Находим блокировку, которая применяется к этому слоту
-        const dateObj = new Date(slotData.date);
-        const dayOfWeek = dateObj.getDay();
+        if (!slotData.block_id) {
+            alert('Не удалось определить ID блокировки');
+            return;
+        }
         
-        const applicableBlock = allBlocks.find(block => {
-            if (!block.is_active) return false;
-            
-            if (block.block_type === 'specific') {
-                return slotData.date >= block.start_date && slotData.date <= block.end_date
-                    && slotData.start_time < block.end_time && slotData.end_time > block.start_time
-                    && (block.simulator_id === parseInt(slotData.simulator_id) || block.simulator_id === null);
-            } else if (block.block_type === 'recurring') {
-                return block.day_of_week === dayOfWeek
-                    && slotData.start_time < block.end_time && slotData.end_time > block.start_time
-                    && (block.simulator_id === parseInt(slotData.simulator_id) || block.simulator_id === null);
-            }
-            return false;
+        // Создаём исключение из блокировки
+        const response = await fetch(`${API_URL}/api/schedule-blocks/exceptions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getAuthToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                schedule_block_id: slotData.block_id,
+                date: slotData.date,
+                start_time: slotData.start_time,
+                simulator_id: slotData.simulator_id
+            })
         });
         
-        if (applicableBlock) {
-            await deleteBlock(applicableBlock.id);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при снятии блокировки');
         }
+        
+        const result = await response.json();
+        console.log('Исключение создано:', result);
+        
+        // Обновляем календарь
+        await loadCalendar();
+        
     } catch (error) {
         console.error('Ошибка при разблокировке:', error);
-        alert('Ошибка при разблокировке слота');
+        alert('Ошибка при снятии блокировки: ' + error.message);
     }
 }
 
