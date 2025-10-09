@@ -419,6 +419,10 @@ function handleSlotClick(element) {
     if (slotData.is_blocked) {
         // Показываем модальное окно подтверждения снятия блокировки
         showUnblockConfirmation(slotData);
+    } else if (slotData.block_id) {
+        // Слот имеет block_id но не заблокирован - значит есть исключение
+        // Предлагаем восстановить блокировку
+        showRestoreBlockConfirmation(slotData);
     } else {
         // Открыть модальное окно для создания блокировки
         openCreateModalWithData(slotData);
@@ -436,6 +440,20 @@ function showUnblockConfirmation(slotData) {
     
     if (confirm(message)) {
         unblockSlot(slotData);
+    }
+}
+
+// Показать модальное окно подтверждения восстановления блокировки
+function showRestoreBlockConfirmation(slotData) {
+    const dateObj = new Date(slotData.date);
+    const dateStr = dateObj.toLocaleDateString('ru-RU', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = `${slotData.start_time.slice(0,5)} - ${slotData.end_time.slice(0,5)}`;
+    const simulatorStr = `Тренажер ${slotData.simulator_id}`;
+    
+    const message = `🔄 Восстановить блокировку?\n\nДата: ${dateStr}\nВремя: ${timeStr}\n${simulatorStr}\n\nБлокировка будет восстановлена для этого слота.`;
+    
+    if (confirm(message)) {
+        restoreBlock(slotData);
     }
 }
 
@@ -476,6 +494,46 @@ async function unblockSlot(slotData) {
     } catch (error) {
         console.error('Ошибка при разблокировке:', error);
         alert('Ошибка при снятии блокировки: ' + error.message);
+    }
+}
+
+// Восстановить блокировку (удалить исключение)
+async function restoreBlock(slotData) {
+    try {
+        if (!slotData.block_id) {
+            alert('Не удалось определить ID блокировки');
+            return;
+        }
+        
+        // Удаляем исключение из блокировки
+        const response = await fetch(`${API_URL}/api/schedule-blocks/exception`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${getAuthToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                schedule_block_id: slotData.block_id,
+                date: slotData.date,
+                start_time: slotData.start_time,
+                simulator_id: slotData.simulator_id
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при восстановлении блокировки');
+        }
+        
+        const result = await response.json();
+        console.log('Исключение удалено:', result);
+        
+        // Обновляем календарь
+        await loadCalendar();
+        
+    } catch (error) {
+        console.error('Ошибка при восстановлении блокировки:', error);
+        alert('Ошибка при восстановлении блокировки: ' + error.message);
     }
 }
 

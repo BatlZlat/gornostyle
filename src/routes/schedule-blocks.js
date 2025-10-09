@@ -423,6 +423,56 @@ router.put('/:id', async (req, res) => {
 });
 
 /**
+ * DELETE /api/schedule-blocks/exception
+ * Удалить исключение из блокировки (восстановить блокировку для одного слота)
+ */
+router.delete('/exception', async (req, res) => {
+    try {
+        const { schedule_block_id, date, start_time, simulator_id } = req.body;
+        
+        // Валидация
+        if (!schedule_block_id || !date || !start_time) {
+            return res.status(400).json({ error: 'Требуются поля: schedule_block_id, date, start_time' });
+        }
+        
+        // Удаляем исключение
+        const deleteResult = await pool.query(
+            `DELETE FROM schedule_block_exceptions 
+             WHERE schedule_block_id = $1 
+             AND date = $2 
+             AND start_time = $3 
+             AND (simulator_id = $4 OR $4 IS NULL)`,
+            [schedule_block_id, date, start_time, simulator_id || null]
+        );
+        
+        if (deleteResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Исключение не найдено' });
+        }
+        
+        // Блокируем слот в schedule
+        await pool.query(
+            `UPDATE schedule
+             SET is_booked = true
+             WHERE date = $1
+             AND start_time = $2
+             AND (simulator_id = $3 OR $3 IS NULL)
+             AND is_booked = false`,
+            [date, start_time, simulator_id || null]
+        );
+        
+        res.json({
+            message: 'Исключение удалено, блокировка восстановлена'
+        });
+    } catch (error) {
+        console.error('Ошибка при удалении исключения:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
+    }
+});
+
+/**
  * DELETE /api/schedule-blocks/:id
  * Удалить блокировку
  */
@@ -768,6 +818,7 @@ router.post('/exceptions', async (req, res) => {
         });
     }
 });
+
 
 module.exports = router;
 
