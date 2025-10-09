@@ -10,6 +10,8 @@ const { notifyTomorrowTrainings } = require('./bot/admin-notify');
 const scheduleRouter = require('./routes/schedule');
 const simulatorsRouter = require('./routes/simulators');
 const groupsRouter = require('./routes/groups');
+const recurringTemplatesRouter = require('./routes/recurring-templates');
+const scheduleBlocksRouter = require('./routes/schedule-blocks');
 const trainersRouter = require('./routes/trainers');
 const trainingsRouter = require('./routes/trainings');
 const pricesRouter = require('./routes/prices');
@@ -24,6 +26,7 @@ const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
 const fs = require('fs');
 const EmailQueueProcessor = require('./services/emailQueueProcessor');
+const scheduler = require('./services/scheduler');
 
 // Импортируем бота
 require('./bot/client-bot');
@@ -31,6 +34,9 @@ require('./bot/client-bot');
 // Запускаем обработчик очереди email
 const emailQueueProcessor = new EmailQueueProcessor();
 emailQueueProcessor.start();
+
+// Запускаем планировщик уведомлений
+scheduler.init();
 
 const app = express();
 const PORT = process.env.PORT;
@@ -347,6 +353,8 @@ app.post('/api/certificate/register', registerHandler);
 
 // Защищенные маршруты
 app.use('/api/groups', verifyToken, groupsRouter);
+app.use('/api/recurring-templates', verifyToken, recurringTemplatesRouter);
+app.use('/api/schedule-blocks', verifyToken, scheduleBlocksRouter);
 app.use('/api/trainers', verifyToken, trainersRouter);
 app.use('/api/trainings', verifyToken, trainingsRouter);
 app.use('/api/schedule', verifyToken, scheduleRouter);

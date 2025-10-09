@@ -73,6 +73,61 @@ CREATE TABLE groups (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица шаблонов постоянного расписания
+CREATE TABLE recurring_training_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL, -- Название шаблона, например "Воскресная группа лыжников"
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=ВС, 1=ПН, 2=ВТ, 3=СР, 4=ЧТ, 5=ПТ, 6=СБ
+    start_time TIME NOT NULL, -- Время начала тренировки
+    simulator_id INTEGER REFERENCES simulators(id) NOT NULL, -- Тренажер (1 или 2)
+    trainer_id INTEGER REFERENCES trainers(id), -- Тренер (опционально)
+    group_id INTEGER REFERENCES groups(id) NOT NULL, -- Группа
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10), -- Уровень сложности
+    max_participants INTEGER NOT NULL DEFAULT 4, -- Максимальное количество участников
+    equipment_type VARCHAR(20) DEFAULT 'ski', -- ski или snowboard
+    is_active BOOLEAN DEFAULT TRUE, -- Активен ли шаблон
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица блокировок слотов расписания
+CREATE TABLE schedule_blocks (
+    id SERIAL PRIMARY KEY,
+    simulator_id INTEGER REFERENCES simulators(id), -- NULL = оба тренажера
+    block_type VARCHAR(20) NOT NULL CHECK (block_type IN ('specific', 'recurring')), -- 'specific' (конкретные даты) или 'recurring' (постоянно)
+    
+    -- Для конкретных дат (block_type = 'specific')
+    start_date DATE,
+    end_date DATE,
+    
+    -- Для постоянных блокировок (block_type = 'recurring')
+    day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6), -- 0=ВС, 1=ПН, 2=ВТ, 3=СР, 4=ЧТ, 5=ПТ, 6=СБ
+    
+    -- Время блокировки
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    
+    -- Дополнительная информация
+    reason VARCHAR(255), -- Причина: "Обед", "Техническое обслуживание", и т.д.
+    is_active BOOLEAN DEFAULT TRUE,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES administrators(id)
+);
+
+-- Таблица исключений из блокировок (для точечного снятия блокировок)
+CREATE TABLE schedule_block_exceptions (
+    id SERIAL PRIMARY KEY,
+    schedule_block_id INTEGER REFERENCES schedule_blocks(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    simulator_id INTEGER REFERENCES simulators(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES administrators(id),
+    UNIQUE(schedule_block_id, date, start_time, simulator_id)
+);
+
 -- Таблица тренировок
 CREATE TABLE training_sessions (
     id SERIAL PRIMARY KEY,
@@ -90,6 +145,7 @@ CREATE TABLE training_sessions (
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
     with_trainer BOOLEAN NOT NULL DEFAULT false,
+    template_id INTEGER REFERENCES recurring_training_templates(id) ON DELETE SET NULL, -- Связь с шаблоном постоянного расписания
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -414,8 +470,30 @@ CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
 CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
+CREATE INDEX idx_training_sessions_template ON training_sessions(template_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
+-- Индексы для таблицы шаблонов постоянного расписания
+CREATE INDEX idx_recurring_templates_active ON recurring_training_templates(is_active);
+CREATE INDEX idx_recurring_templates_day_of_week ON recurring_training_templates(day_of_week);
+CREATE INDEX idx_recurring_templates_simulator ON recurring_training_templates(simulator_id);
+CREATE INDEX idx_recurring_templates_group ON recurring_training_templates(group_id);
+CREATE INDEX idx_recurring_templates_trainer ON recurring_training_templates(trainer_id);
+
+-- Индексы для таблицы блокировок слотов
+CREATE INDEX idx_schedule_blocks_simulator ON schedule_blocks(simulator_id);
+CREATE INDEX idx_schedule_blocks_type ON schedule_blocks(block_type);
+CREATE INDEX idx_schedule_blocks_active ON schedule_blocks(is_active);
+CREATE INDEX idx_schedule_blocks_dates ON schedule_blocks(start_date, end_date);
+CREATE INDEX idx_schedule_blocks_day_of_week ON schedule_blocks(day_of_week);
+CREATE INDEX idx_schedule_blocks_time ON schedule_blocks(start_time, end_time);
+
+-- Индексы для таблицы исключений из блокировок
+CREATE INDEX idx_block_exceptions_block_id ON schedule_block_exceptions(schedule_block_id);
+CREATE INDEX idx_block_exceptions_date ON schedule_block_exceptions(date);
+CREATE INDEX idx_block_exceptions_simulator ON schedule_block_exceptions(simulator_id);
+CREATE INDEX idx_block_exceptions_lookup ON schedule_block_exceptions(schedule_block_id, date, start_time);
+
 -- Индексы для таблицы дизайнов сертификатов
 CREATE INDEX idx_certificate_designs_active ON certificate_designs(is_active);
 CREATE INDEX idx_certificate_designs_sort ON certificate_designs(sort_order);
@@ -522,6 +600,16 @@ CREATE TRIGGER update_certificates_updated_at
 
 CREATE TRIGGER update_schedule_updated_at
     BEFORE UPDATE ON schedule
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_recurring_templates_updated_at
+    BEFORE UPDATE ON recurring_training_templates
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_schedule_blocks_updated_at
+    BEFORE UPDATE ON schedule_blocks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -792,4 +880,36 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION queue_certificate_email() IS 'Триггер для добавления email в очередь при создании сертификата';
 COMMENT ON FUNCTION get_pending_emails(INTEGER) IS 'Получение следующих email из очереди для обработки';
 COMMENT ON FUNCTION update_email_status(INTEGER, VARCHAR, TEXT) IS 'Обновление статуса отправки email';
-COMMENT ON FUNCTION cleanup_old_emails(INTEGER) IS 'Очистка старых записей из очереди email'; 
+COMMENT ON FUNCTION cleanup_old_emails(INTEGER) IS 'Очистка старых записей из очереди email';
+
+-- Таблица логов уведомлений
+CREATE TABLE IF NOT EXISTS notification_logs (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    telegram_id VARCHAR(255) NOT NULL,
+    notification_type VARCHAR(50) NOT NULL,
+    training_date DATE NOT NULL,
+    message TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('sent', 'failed')),
+    error_message TEXT,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Создание индексов для notification_logs
+CREATE INDEX IF NOT EXISTS idx_notification_logs_client_id ON notification_logs(client_id);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_training_date ON notification_logs(training_date);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_status ON notification_logs(status);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at ON notification_logs(sent_at);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_notification_type ON notification_logs(notification_type);
+
+-- Комментарии к таблице notification_logs
+COMMENT ON TABLE notification_logs IS 'Логи отправленных уведомлений клиентам';
+COMMENT ON COLUMN notification_logs.client_id IS 'ID клиента из таблицы clients';
+COMMENT ON COLUMN notification_logs.telegram_id IS 'Telegram ID клиента для отправки сообщений';
+COMMENT ON COLUMN notification_logs.notification_type IS 'Тип уведомления (training_reminder, payment_reminder, etc.)';
+COMMENT ON COLUMN notification_logs.training_date IS 'Дата тренировки, о которой напоминание';
+COMMENT ON COLUMN notification_logs.message IS 'Текст отправленного сообщения';
+COMMENT ON COLUMN notification_logs.status IS 'Статус отправки (sent - успешно, failed - ошибка)';
+COMMENT ON COLUMN notification_logs.error_message IS 'Текст ошибки, если отправка не удалась';
+COMMENT ON COLUMN notification_logs.sent_at IS 'Дата и время отправки уведомления'; 

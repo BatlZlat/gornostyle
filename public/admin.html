@@ -24,6 +24,7 @@
                 <button class="menu-item" data-page="certificates">Сертификаты</button>
                 <button class="menu-item" data-page="finances">Финансы</button>
                 <button class="menu-item btn-primary" id="notify-clients-btn" style="margin-top:10px;">Отправить сообщение клиентам</button>
+                <button class="menu-item btn-secondary" onclick="openRecurringSchedule()" style="margin-top:5px;">📅 Постоянное расписание</button>
             </nav>
 
             <main class="admin-main">
@@ -70,8 +71,9 @@
                 <div class="page-content" id="schedule-page">
                     <div class="page-header">
                         <h2>Расписание</h2>
-                        <!-- Тут были кнопки управления расписанием я их удалил-->
                         <div class="page-actions">
+                            <button class="btn-primary" onclick="openRecurringSchedule()">📅 Управление постоянным расписанием</button>
+                            <button class="btn-success" onclick="openScheduleBlocks()">🔒 Управление блокировками слотов</button>
                         </div>
                     </div>
                     <div class="schedule-controls">
@@ -302,6 +304,43 @@
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="close-notify-modal">Отмена</button>
+                    <button type="submit" class="btn-primary">Отправить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно для отправки сообщения конкретному клиенту -->
+    <div id="client-notify-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:500px;">
+            <h3>Отправить сообщение клиенту</h3>
+            <form onsubmit="event.preventDefault(); sendClientNotification();">
+                <div class="form-group">
+                    <label for="client-notify-message">Текст сообщения (можно вставлять эмодзи):</label>
+                    <textarea id="client-notify-message" rows="5" style="width:100%;resize:vertical;padding:8px;border:1px solid #ccc;border-radius:4px;" required></textarea>
+                </div>
+                <div class="form-group">
+                    <div id="client-emoji-panel" style="margin-bottom:8px;">
+                        <button type="button" class="emoji-btn" style="font-size:20px;">😀</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">🎿</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">⛷️</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">🏂</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">💰</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">📅</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">⏰</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">👥</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">👨‍🏫</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">❗️</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">✅</button>
+                        <button type="button" class="emoji-btn" style="font-size:20px;">❌</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Предпросмотр:</label>
+                    <div id="client-notify-preview" style="border:1px solid #ccc;padding:10px;min-height:40px;background:#fafafa;white-space:pre-wrap;"></div>
+                </div>
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:15px;">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('client-notify-modal').style.display='none'">Отмена</button>
                     <button type="submit" class="btn-primary">Отправить</button>
                 </div>
             </form>

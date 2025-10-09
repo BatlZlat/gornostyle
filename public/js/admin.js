@@ -1472,6 +1472,7 @@ function displayClients() {
                             <td>
                                 <button onclick="editClient(${client.id})" class="edit-button">✏️</button>
                                 ${client.child_id ? `<button onclick="editChild(${client.child_id})" class="edit-button">✏️👶</button>` : ''}
+                                <button onclick="openClientNotifyModal(${client.id}, '${client.full_name.replace(/'/g, "\\'")}')" class="notify-button" title="Отправить сообщение">💬</button>
                             </td>
                         </tr>
                     `;
@@ -3687,3 +3688,191 @@ loadPageContent = async function(page) {
         setTimeout(initializeWalletRefill, 100);
     }
 };
+
+// Функция для открытия страницы управления постоянным расписанием
+function openRecurringSchedule() {
+    // Получаем токен из cookies (как это делает система авторизации)
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+    
+    const token = getCookie('adminToken');
+    
+    if (!token) {
+        alert('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
+        return;
+    }
+    
+    // Открываем в новой вкладке
+    const newWindow = window.open('recurring-schedule.html', '_blank');
+    
+    // Передаем токен в новое окно через localStorage
+    if (newWindow) {
+        newWindow.addEventListener('load', () => {
+            try {
+                newWindow.localStorage.setItem('authToken', token);
+                console.log('Токен передан в новое окно');
+            } catch (error) {
+                console.error('Ошибка при передаче токена:', error);
+            }
+        });
+    }
+}
+
+// Функция для открытия страницы управления блокировками слотов
+function openScheduleBlocks() {
+    // Получаем токен из cookies (как это делает система авторизации)
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+    
+    const token = getCookie('adminToken');
+    
+    if (!token) {
+        alert('Ошибка авторизации. Пожалуйста, перезайдите в систему.');
+        return;
+    }
+    
+    // Открываем в новой вкладке
+    const newWindow = window.open('schedule-blocks.html', '_blank');
+    
+    // Передаем токен в новое окно через localStorage
+    if (newWindow) {
+        newWindow.addEventListener('load', () => {
+            try {
+                newWindow.localStorage.setItem('authToken', token);
+                console.log('Токен передан в новое окно для блокировок');
+            } catch (error) {
+                console.error('Ошибка при передаче токена:', error);
+            }
+        });
+    }
+}
+
+// Функция для открытия модального окна отправки сообщения конкретному клиенту
+function openClientNotifyModal(clientId, clientName) {
+    const modal = document.getElementById('client-notify-modal');
+    if (!modal) {
+        console.error('Модальное окно client-notify-modal не найдено');
+        return;
+    }
+
+    // Сохраняем ID и имя клиента в data-атрибуты модального окна
+    modal.dataset.clientId = clientId;
+    modal.dataset.clientName = clientName;
+
+    // Обновляем заголовок модального окна
+    const modalTitle = modal.querySelector('h3');
+    if (modalTitle) {
+        modalTitle.textContent = `Отправить сообщение: ${clientName}`;
+    }
+
+    // Очищаем текстовое поле и предпросмотр
+    const messageInput = modal.querySelector('#client-notify-message');
+    const previewBox = modal.querySelector('#client-notify-preview');
+    if (messageInput) {
+        messageInput.value = '';
+    }
+    if (previewBox) {
+        previewBox.textContent = '';
+    }
+
+    // Инициализируем обработчики эмодзи
+    initClientEmojiHandlers();
+
+    // Показываем модальное окно
+    modal.style.display = 'block';
+}
+
+// Функция инициализации обработчиков эмодзи для модального окна клиента
+function initClientEmojiHandlers() {
+    const modal = document.getElementById('client-notify-modal');
+    if (!modal) return;
+
+    const messageInput = modal.querySelector('#client-notify-message');
+    const previewBox = modal.querySelector('#client-notify-preview');
+    const emojiPanel = modal.querySelector('#client-emoji-panel');
+
+    if (!messageInput || !previewBox || !emojiPanel) return;
+
+    // Обработчик изменения текста для обновления предпросмотра
+    messageInput.removeEventListener('input', updateClientPreview);
+    messageInput.addEventListener('input', updateClientPreview);
+
+    function updateClientPreview() {
+        previewBox.textContent = messageInput.value || '';
+    }
+
+    // Обработчики для кнопок эмодзи
+    const emojiButtons = emojiPanel.querySelectorAll('.emoji-btn');
+    emojiButtons.forEach(button => {
+        // Удаляем старые обработчики, если они есть
+        button.replaceWith(button.cloneNode(true));
+    });
+
+    // Добавляем новые обработчики
+    const newEmojiButtons = emojiPanel.querySelectorAll('.emoji-btn');
+    newEmojiButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const emoji = button.textContent;
+            const cursorPos = messageInput.selectionStart;
+            const textBefore = messageInput.value.substring(0, cursorPos);
+            const textAfter = messageInput.value.substring(cursorPos);
+            
+            messageInput.value = textBefore + emoji + textAfter;
+            messageInput.focus();
+            messageInput.setSelectionRange(cursorPos + emoji.length, cursorPos + emoji.length);
+            
+            // Обновляем предпросмотр
+            updateClientPreview();
+        });
+    });
+}
+
+// Функция для отправки сообщения конкретному клиенту
+async function sendClientNotification() {
+    const modal = document.getElementById('client-notify-modal');
+    if (!modal) return;
+
+    const clientId = modal.dataset.clientId;
+    const clientName = modal.dataset.clientName;
+    const messageInput = modal.querySelector('#client-notify-message');
+    
+    if (!messageInput || !messageInput.value.trim()) {
+        showError('Введите текст сообщения');
+        return;
+    }
+
+    const message = messageInput.value.trim();
+
+    try {
+        showLoading('Отправка сообщения...');
+        
+        const response = await fetch(`/api/trainings/notify-client/${clientId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при отправке сообщения');
+        }
+
+        showSuccess(`Сообщение успешно отправлено клиенту ${clientName}`);
+        modal.style.display = 'none';
+        messageInput.value = '';
+    } catch (error) {
+        console.error('Ошибка при отправке сообщения:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}

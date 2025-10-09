@@ -25,6 +25,82 @@ async function notifyScheduleCreated(month) {
     }
 }
 
+// Функция для отправки уведомления о созданных тренировках из шаблонов
+async function notifyRecurringTrainingsCreated(month, count) {
+    try {
+        const message = `📅 *Постоянное расписание*\n\n` +
+            `Автоматически создано ${count} ${getTrainingWord(count)} из шаблонов на ${month}.`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о созданных тренировках:', error);
+    }
+}
+
+// Функция для отправки уведомления о конфликтах при создании тренировок
+async function notifyRecurringTrainingConflict(conflicts) {
+    try {
+        if (!conflicts || conflicts.length === 0) return;
+        
+        let message = `⚠️ *Конфликты при создании постоянного расписания*\n\n`;
+        message += `Не удалось создать ${conflicts.length} ${getTrainingWord(conflicts.length)}:\n\n`;
+        
+        // Ограничиваем количество конфликтов в сообщении (максимум 10)
+        const maxConflicts = 10;
+        const displayConflicts = conflicts.slice(0, maxConflicts);
+        
+        for (const conflict of displayConflicts) {
+            message += `📌 *${conflict.template_name}*\n`;
+            message += `   📅 Дата: ${formatDate(conflict.date)}\n`;
+            message += `   ⏰ Время: ${conflict.time}\n`;
+            message += `   🏂 Тренажер: ${conflict.simulator}\n`;
+            
+            if (conflict.conflict_with) {
+                message += `   ⚡ Конфликт с: ${conflict.conflict_with}\n`;
+            } else if (conflict.error) {
+                message += `   ❌ Ошибка: ${conflict.error}\n`;
+            }
+            message += `\n`;
+        }
+        
+        if (conflicts.length > maxConflicts) {
+            message += `\n... и ещё ${conflicts.length - maxConflicts} ${getTrainingWord(conflicts.length - maxConflicts)}`;
+        }
+        
+        message += `\n💡 Проверьте расписание и при необходимости создайте тренировки вручную.`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о конфликтах:', error);
+    }
+}
+
+// Вспомогательная функция для склонения слова "тренировка"
+function getTrainingWord(count) {
+    const lastDigit = count % 10;
+    const lastTwoDigits = count % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+        return 'тренировок';
+    }
+    
+    if (lastDigit === 1) {
+        return 'тренировка';
+    }
+    
+    if (lastDigit >= 2 && lastDigit <= 4) {
+        return 'тренировки';
+    }
+    
+    return 'тренировок';
+}
+
 // Функция для отправки уведомления о новой заявке на тренировку
 async function notifyNewTrainingRequest(trainingData) {
     try {
@@ -534,8 +610,237 @@ async function notifyTomorrowTrainings(trainings) {
     }
 }
 
+// Функция для отправки уведомления об отмене шаблона постоянного расписания
+async function notifyAdminTemplateCancellation(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { template_name, deleted_trainings_count, total_refund, refunds_count, trainings, refunds } = templateData;
+        
+        // Формируем список тренировок
+        let trainingsList = '';
+        if (trainings && trainings.length > 0) {
+            trainingsList = trainings.map(training => {
+                const dateObj = new Date(training.session_date);
+                const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+                const dayOfWeek = days[dateObj.getDay()];
+                const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+                const startTime = training.start_time ? training.start_time.slice(0,5) : '';
+                const endTime = training.end_time ? training.end_time.slice(0,5) : '';
+                return `• ${dateStr} ${startTime}-${endTime} (${training.group_name})`;
+            }).join('\n');
+        }
+
+        // Формируем список участников с возвратами
+        let refundsList = '';
+        if (refunds && refunds.length > 0) {
+            refundsList = refunds.map(refund => {
+                const ageStr = refund.age ? ` (${refund.age} лет)` : '';
+                return `• ${refund.full_name}${ageStr} - ${Number(refund.amount).toFixed(2)} руб.`;
+            }).join('\n');
+        }
+
+        const message = `🗑️ *Отмена шаблона постоянного расписания*
+
+📋 *Шаблон:* ${template_name}
+📊 *Отменено тренировок:* ${deleted_trainings_count}
+👥 *Участников затронуто:* ${refunds_count}
+💰 *Общий возврат:* ${Number(total_refund).toFixed(2)} руб.
+
+📅 *Отмененные тренировки:*
+${trainingsList}
+
+💳 *Возвраты участникам:*
+${refundsList}
+
+Все участники получили возврат средств на свои кошельки.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене шаблона:', error);
+    }
+}
+
+// Уведомление о применении шаблонов к расписанию
+async function notifyTemplatesApplied(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { created, conflicts, date_range, conflicts_list } = templateData;
+        
+        // Формируем информацию о периоде
+        let periodInfo = '';
+        if (date_range && date_range.from && date_range.to) {
+            periodInfo = `\n📅 *Период:* ${date_range.from} - ${date_range.to}`;
+        }
+        
+        // Формируем список конфликтов (если есть)
+        let conflictsList = '';
+        if (conflicts > 0 && conflicts_list && conflicts_list.length > 0) {
+            conflictsList = `\n⚠️ *Конфликты:*\n`;
+            conflictsList += conflicts_list.slice(0, 5).map(conflict => {
+                const dateObj = new Date(conflict.date);
+                const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+                const dayOfWeek = days[dateObj.getDay()];
+                const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+                const timeStr = conflict.time ? conflict.time.slice(0,5) : '';
+                return `• ${dateStr} ${timeStr} - ${conflict.template_name} (${conflict.reason})`;
+            }).join('\n');
+            
+            if (conflicts_list.length > 5) {
+                conflictsList += `\n... и еще ${conflicts_list.length - 5} конфликтов`;
+            }
+        }
+
+        const message = `📅 *Применение шаблонов к расписанию*
+
+✅ *Создано тренировок:* ${created}
+⚠️ *Конфликтов:* ${conflicts}${periodInfo}${conflictsList}
+
+${conflicts > 0 ? 'Проверьте логи для деталей о конфликтах.' : 'Все шаблоны успешно применены!'}`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о применении шаблонов:', error);
+    }
+}
+
+// Уведомление о создании блокировки слота
+async function notifyBlockCreated(blockData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { reason, block_type, start_date, end_date, day_of_week, start_time, end_time, simulator_name } = blockData;
+        
+        let periodInfo = '';
+        if (block_type === 'specific') {
+            const startDateStr = new Date(start_date).toLocaleDateString('ru-RU');
+            const endDateStr = new Date(end_date).toLocaleDateString('ru-RU');
+            periodInfo = `📅 *Период:* ${startDateStr} - ${endDateStr}`;
+        } else {
+            const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+            periodInfo = `📅 *День недели:* ${days[day_of_week]}`;
+        }
+        
+        const timeStr = `${start_time.slice(0,5)} - ${end_time.slice(0,5)}`;
+        const typeStr = block_type === 'specific' ? 'Конкретные даты' : 'Постоянная';
+        
+        const message = `🔒 *Создана блокировка слота*
+
+📋 *Причина:* ${reason || 'Не указана'}
+📊 *Тип:* ${typeStr}
+${periodInfo}
+⏰ *Время:* ${timeStr}
+🎿 *Тренажер:* ${simulator_name || 'Оба тренажера'}
+
+Слоты заблокированы для бронирования.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании блокировки:', error);
+    }
+}
+
+// Уведомление об удалении блокировки слота
+async function notifyBlockDeleted(blockData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { reason, block_type, start_date, end_date, day_of_week, start_time, end_time, simulator_name } = blockData;
+        
+        let periodInfo = '';
+        if (block_type === 'specific') {
+            const startDateStr = new Date(start_date).toLocaleDateString('ru-RU');
+            const endDateStr = new Date(end_date).toLocaleDateString('ru-RU');
+            periodInfo = `📅 *Период:* ${startDateStr} - ${endDateStr}`;
+        } else {
+            const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+            periodInfo = `📅 *День недели:* ${days[day_of_week]}`;
+        }
+        
+        const timeStr = `${start_time.slice(0,5)} - ${end_time.slice(0,5)}`;
+        
+        const message = `🔓 *Удалена блокировка слота*
+
+📋 *Причина:* ${reason || 'Не указана'}
+${periodInfo}
+⏰ *Время:* ${timeStr}
+🎿 *Тренажер:* ${simulator_name || 'Оба тренажера'}
+
+Слоты снова доступны для бронирования.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об удалении блокировки:', error);
+    }
+}
+
+// Уведомление о создании нового шаблона
+async function notifyTemplateCreated(templateData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { name, day_of_week, start_time, simulator_id, group_name, trainer_name, equipment_type, skill_level, max_participants } = templateData;
+        
+        const days = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+        const dayName = days[day_of_week];
+        const timeStr = start_time ? start_time.slice(0,5) : '';
+        const equipmentEmoji = equipment_type === 'ski' ? '🎿' : '🏂';
+        const simulatorName = simulator_id === 1 ? 'Тренажер 1' : 'Тренажер 2';
+        
+        const message = `📅 *Создан новый шаблон постоянного расписания*
+
+📋 *Название:* ${name}
+📅 *День недели:* ${dayName}
+⏰ *Время:* ${timeStr}
+${equipmentEmoji} *Тренажер:* ${simulatorName}
+👥 *Группа:* ${group_name || '-'}
+👨‍🏫 *Тренер:* ${trainer_name || '-'}
+📊 *Уровень:* ${skill_level || '-'}
+👥 *Макс. участников:* ${max_participants}
+
+Шаблон готов к применению к расписанию!`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании шаблона:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
+    notifyRecurringTrainingsCreated,
+    notifyRecurringTrainingConflict,
     notifyNewTrainingRequest,
     notifyNewIndividualTraining,
     notifyNewGroupTrainingParticipant,
@@ -549,5 +854,10 @@ module.exports = {
     notifyAdminWebCertificatePurchase,
     calculateAge,
     notifyNewClient,
-    notifyTomorrowTrainings
+    notifyTomorrowTrainings,
+    notifyAdminTemplateCancellation,
+    notifyTemplatesApplied,
+    notifyTemplateCreated,
+    notifyBlockCreated,
+    notifyBlockDeleted
 }; 

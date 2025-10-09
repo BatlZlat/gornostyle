@@ -1,9 +1,51 @@
 const Booking = require('../models/Booking');
+const { pool } = require('../db');
 
 const bookingController = {
     async createBooking(req, res) {
         try {
             const { simulator_id, booking_date, start_time, end_time } = req.body;
+            
+            // Проверяем, не заблокирован ли слот
+            const dateObj = new Date(booking_date);
+            const dayOfWeek = dateObj.getDay();
+            
+            const blockCheckQuery = `
+                SELECT * FROM schedule_blocks
+                WHERE is_active = TRUE
+                AND (simulator_id = $1 OR simulator_id IS NULL)
+                AND (
+                    (block_type = 'specific' 
+                        AND $2::date >= start_date 
+                        AND $2::date <= end_date
+                        AND start_time < $4::time
+                        AND end_time > $3::time
+                    )
+                    OR
+                    (block_type = 'recurring' 
+                        AND day_of_week = $5
+                        AND start_time < $4::time
+                        AND end_time > $3::time
+                    )
+                )
+            `;
+            
+            const blockResult = await pool.query(blockCheckQuery, [
+                simulator_id,
+                booking_date,
+                start_time,
+                end_time,
+                dayOfWeek
+            ]);
+            
+            if (blockResult.rows.length > 0) {
+                const block = blockResult.rows[0];
+                return res.status(400).json({
+                    error: 'Этот временной слот заблокирован',
+                    reason: block.reason || 'Слот недоступен для бронирования',
+                    block_type: block.block_type
+                });
+            }
             
             // Проверяем доступность тренажера
             const isAvailable = await Booking.checkAvailability(
@@ -22,6 +64,7 @@ const bookingController = {
             const booking = await Booking.create(req.body);
             res.status(201).json(booking);
         } catch (error) {
+            console.error('Ошибка при создании бронирования:', error);
             res.status(500).json({ error: 'Ошибка при создании бронирования' });
         }
     },
