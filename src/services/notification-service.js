@@ -31,6 +31,10 @@ class NotificationService {
                     ts.equipment_type,
                     ts.skill_level,
                     ts.price,
+                    ts.with_trainer,
+                    ts.max_participants,
+                    (SELECT COUNT(*) FROM session_participants 
+                     WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                     s.name as simulator_name,
                     g.name as group_name,
                     t.full_name as trainer_name,
@@ -69,12 +73,12 @@ class NotificationService {
                     its.equipment_type,
                     NULL as skill_level,
                     its.price,
+                    its.with_trainer,
+                    NULL as max_participants,
+                    NULL as current_participants,
                     s.name as simulator_name,
                     NULL as group_name,
-                    CASE 
-                        WHEN its.with_trainer THEN 'С тренером'
-                        ELSE NULL
-                    END as trainer_name,
+                    NULL as trainer_name,
                     its.client_id,
                     its.child_id,
                     CASE WHEN its.child_id IS NOT NULL THEN true ELSE false END as is_child,
@@ -202,13 +206,27 @@ class NotificationService {
             }
 
             // Тренер
-            if (training.trainer_name && training.trainer_name !== 'С тренером') {
-                message += `👨‍🏫 Тренер: ${training.trainer_name}\n`;
-            } else if (training.trainer_name === 'С тренером') {
-                message += `👨‍🏫 С тренером\n`;
+            if (training.training_type === 'group') {
+                // Для групповых тренировок
+                if (training.trainer_name) {
+                    message += `👨‍🏫 Тренер: ${training.trainer_name}\n`;
+                } else {
+                    message += `👨‍🏫 Без тренера\n`;
+                }
+                // Количество участников для групповых
+                if (training.current_participants && training.max_participants) {
+                    message += `👥 Участников: ${training.current_participants}/${training.max_participants}\n`;
+                }
+            } else {
+                // Для индивидуальных тренировок
+                if (training.with_trainer) {
+                    message += `👨‍🏫 С тренером\n`;
+                } else {
+                    message += `👨‍🏫 Без тренера\n`;
+                }
             }
 
-            // Уровень сложности
+            // Уровень сложности (только для групповых)
             if (training.skill_level) {
                 message += `📊 Уровень: ${training.skill_level}\n`;
             }
