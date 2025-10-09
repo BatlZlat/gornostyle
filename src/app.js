@@ -26,6 +26,7 @@ const { verifyToken, verifyAuth } = require('./middleware/auth');
 const cron = require('node-cron');
 const fs = require('fs');
 const EmailQueueProcessor = require('./services/emailQueueProcessor');
+const scheduler = require('./services/scheduler');
 
 // Импортируем бота
 require('./bot/client-bot');
@@ -33,6 +34,9 @@ require('./bot/client-bot');
 // Запускаем обработчик очереди email
 const emailQueueProcessor = new EmailQueueProcessor();
 emailQueueProcessor.start();
+
+// Запускаем планировщик уведомлений
+scheduler.init();
 
 const app = express();
 const PORT = process.env.PORT;
