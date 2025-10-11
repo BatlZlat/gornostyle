@@ -144,6 +144,7 @@ router.get('/schedule', async (req, res) => {
             let blockedByTrainer = false;
             let blockedByAdmin = false;
             let blockId = null;
+            let isBookingStart = false; // Является ли этот слот началом бронирования
             
             if (applicableBlocks.length > 0 && !hasException) {
                 const block = applicableBlocks[0];
@@ -152,6 +153,8 @@ router.get('/schedule', async (req, res) => {
                 if (block.trainer_id) {
                     blockReason = block.trainer_name || 'Тренер';
                     blockedByTrainer = true;
+                    // Проверяем, является ли этот слот началом бронирования
+                    isBookingStart = (slot.start_time === block.start_time);
                 } else if (block.blocked_by_type === 'admin' || block.created_by) {
                     blockReason = block.reason || 'Блокировка администратора';
                     blockedByAdmin = true;
@@ -166,6 +169,7 @@ router.get('/schedule', async (req, res) => {
                 block_id: blockId,
                 blocked_by_trainer: blockedByTrainer,
                 blocked_by_admin: blockedByAdmin,
+                is_booking_start: isBookingStart,
                 has_training: training !== undefined,
                 training_info: training ? {
                     id: training.id,

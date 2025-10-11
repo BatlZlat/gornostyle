@@ -317,8 +317,10 @@ function renderSimulatorSlots(container, simulatorId, slots, dateStr) {
                 if (slot.blocked_by_trainer) {
                     // Проверяем - это наша блокировка?
                     const isMyBooking = slot.block_reason === trainerData.fullName;
+                    // Показываем как "Моя бронь" только начальный слот бронирования
+                    const isMyBookingStart = isMyBooking && slot.is_booking_start;
                     
-                    if (isMyBooking && canBook) {
+                    if (isMyBookingStart && canBook) {
                         slotElement.classList.add('my-booking');
                         slotElement.innerHTML = `
                             <div class="slot-time">${slot.start_time.slice(0, 5)}</div>
