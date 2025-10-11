@@ -230,6 +230,42 @@ router.get('/slots', async (req, res) => {
 });
 
 /**
+ * GET /api/schedule-blocks/:id
+ * Получить информацию о конкретной блокировке
+ */
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const query = `
+            SELECT sb.*, 
+                   s.name as simulator_name,
+                   a.full_name as created_by_name,
+                   t.full_name as trainer_name
+            FROM schedule_blocks sb
+            LEFT JOIN simulators s ON sb.simulator_id = s.id
+            LEFT JOIN administrators a ON sb.created_by = a.id
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
+            WHERE sb.id = $1
+        `;
+        
+        const result = await pool.query(query, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Блокировка не найдена' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка при получении блокировки:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
+    }
+});
+
+/**
  * POST /api/schedule-blocks
  * Создать новую блокировку
  */

@@ -466,7 +466,7 @@ function showRestoreBlockConfirmation(slotData) {
     }
 }
 
-// Разблокировать слот (создать исключение)
+// Разблокировать слот (удалить блокировку или создать исключение)
 async function unblockSlot(slotData) {
     try {
         if (!slotData.block_id) {
@@ -474,31 +474,50 @@ async function unblockSlot(slotData) {
             return;
         }
         
-        // Создаём исключение из блокировки
-        const response = await fetch(`${API_URL}/api/schedule-blocks/exceptions`, {
-            method: 'POST',
+        // Получаем информацию о блокировке
+        const blockResponse = await fetch(`${API_URL}/api/schedule-blocks/${slotData.block_id}`, {
             headers: {
-                'Authorization': `Bearer ${getAuthToken()}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                schedule_block_id: slotData.block_id,
-                date: slotData.date,
-                start_time: slotData.start_time,
-                simulator_id: slotData.simulator_id
-            })
+                'Authorization': `Bearer ${getAuthToken()}`
+            }
         });
         
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка при снятии блокировки');
+        if (!blockResponse.ok) {
+            throw new Error('Не удалось получить информацию о блокировке');
         }
         
-        const result = await response.json();
-        console.log('Исключение создано:', result);
+        const blockInfo = await blockResponse.json();
         
-        // Обновляем календарь
-        await loadCalendar();
+        // Проверяем, является ли это разовой блокировкой тренера
+        if (blockInfo.block_type === 'specific' && blockInfo.trainer_id) {
+            // Для разовых блокировок тренера - удаляем полностью
+            await deleteBlock(slotData.block_id);
+        } else {
+            // Для остальных блокировок - создаем исключение
+            const response = await fetch(`${API_URL}/api/schedule-blocks/exceptions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${getAuthToken()}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    schedule_block_id: slotData.block_id,
+                    date: slotData.date,
+                    start_time: slotData.start_time,
+                    simulator_id: slotData.simulator_id
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка при снятии блокировки');
+            }
+            
+            const result = await response.json();
+            console.log('Исключение создано:', result);
+            
+            // Обновляем календарь
+            await loadCalendar();
+        }
         
     } catch (error) {
         console.error('Ошибка при разблокировке:', error);
