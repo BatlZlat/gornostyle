@@ -14,10 +14,12 @@ router.get('/', async (req, res) => {
         let query = `
             SELECT sb.*, 
                    s.name as simulator_name,
-                   a.full_name as created_by_name
+                   a.full_name as created_by_name,
+                   t.full_name as trainer_name
             FROM schedule_blocks sb
             LEFT JOIN simulators s ON sb.simulator_id = s.id
             LEFT JOIN administrators a ON sb.created_by = a.id
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
             WHERE 1=1
         `;
         
@@ -152,9 +154,12 @@ router.get('/slots', async (req, res) => {
         
         // Получаем все активные блокировки
         const blocksResult = await pool.query(`
-            SELECT * FROM schedule_blocks
-            WHERE is_active = TRUE
-            AND (simulator_id = $1 OR simulator_id IS NULL OR $1 IS NULL)
+            SELECT sb.*, 
+                   t.full_name as trainer_name
+            FROM schedule_blocks sb
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
+            WHERE sb.is_active = TRUE
+            AND (sb.simulator_id = $1 OR sb.simulator_id IS NULL OR $1 IS NULL)
         `, [simulator_id || null]);
         
         // Получаем все исключения из блокировок для заданного диапазона дат
@@ -172,11 +177,11 @@ router.get('/slots', async (req, res) => {
             const applicableBlocks = blocksResult.rows.filter(block => {
                 if (block.block_type === 'specific') {
                     return slot.date >= block.start_date && slot.date <= block.end_date
-                        && slot.start_time <= block.end_time && slot.start_time >= block.start_time
+                        && slot.start_time < block.end_time && slot.start_time >= block.start_time
                         && (block.simulator_id === slot.simulator_id || block.simulator_id === null);
                 } else if (block.block_type === 'recurring') {
                     return block.day_of_week === dayOfWeek
-                        && slot.start_time <= block.end_time && slot.start_time >= block.start_time
+                        && slot.start_time < block.end_time && slot.start_time >= block.start_time
                         && (block.simulator_id === slot.simulator_id || block.simulator_id === null);
                 }
                 return false;
@@ -190,10 +195,26 @@ router.get('/slots', async (req, res) => {
                     && applicableBlocks.some(block => block.id === exception.schedule_block_id);
             });
             
+            // Формируем причину блокировки
+            let blockReason = null;
+            let blockedByType = null;
+            
+            if (applicableBlocks.length > 0 && !hasException) {
+                const block = applicableBlocks[0];
+                if (block.trainer_id && block.trainer_name) {
+                    blockReason = block.trainer_name; // ФИО тренера
+                    blockedByType = 'trainer';
+                } else {
+                    blockReason = block.reason || 'Блокировка администратора';
+                    blockedByType = 'admin';
+                }
+            }
+            
             return {
                 ...slot,
                 is_blocked: applicableBlocks.length > 0 && !hasException,
-                block_reason: applicableBlocks.length > 0 && !hasException ? applicableBlocks[0].reason : null,
+                block_reason: blockReason,
+                blocked_by_type: blockedByType,
                 block_id: applicableBlocks.length > 0 ? applicableBlocks[0].id : null
             };
         });
@@ -201,6 +222,42 @@ router.get('/slots', async (req, res) => {
         res.json(slots);
     } catch (error) {
         console.error('Ошибка при получении слотов:', error);
+        res.status(500).json({ 
+            error: 'Внутренняя ошибка сервера',
+            details: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/schedule-blocks/:id
+ * Получить информацию о конкретной блокировке
+ */
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const query = `
+            SELECT sb.*, 
+                   s.name as simulator_name,
+                   a.full_name as created_by_name,
+                   t.full_name as trainer_name
+            FROM schedule_blocks sb
+            LEFT JOIN simulators s ON sb.simulator_id = s.id
+            LEFT JOIN administrators a ON sb.created_by = a.id
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
+            WHERE sb.id = $1
+        `;
+        
+        const result = await pool.query(query, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Блокировка не найдена' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка при получении блокировки:', error);
         res.status(500).json({ 
             error: 'Внутренняя ошибка сервера',
             details: error.message
@@ -268,8 +325,8 @@ router.post('/', async (req, res) => {
         const result = await pool.query(
             `INSERT INTO schedule_blocks (
                 simulator_id, block_type, start_date, end_date, 
-                day_of_week, start_time, end_time, reason, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+                day_of_week, start_time, end_time, reason, is_active, blocked_by_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 'admin')
             RETURNING *`,
             [
                 simulator_id || null,
@@ -294,7 +351,7 @@ router.post('/', async (req, res) => {
                      SET is_booked = true
                      WHERE date >= $1 AND date <= $2
                      AND (simulator_id = $3 OR $3 IS NULL)
-                     AND start_time <= $5
+                     AND start_time < $5
                      AND start_time >= $4
                      AND is_booked = false`,
                     [start_date, end_date, simulator_id, start_time, end_time]
@@ -316,7 +373,7 @@ router.post('/', async (req, res) => {
                          SET is_booked = true
                          WHERE date = $1
                          AND (simulator_id = $2 OR $2 IS NULL)
-                         AND start_time <= $4
+                         AND start_time < $4
                          AND start_time >= $3
                          AND is_booked = false`,
                         [row.date, simulator_id, start_time, end_time]
@@ -641,7 +698,7 @@ router.post('/apply-all', async (req, res) => {
                      SET is_booked = true
                      WHERE date >= $1 AND date <= $2
                      AND (simulator_id = $3 OR $3 IS NULL)
-                     AND start_time <= $5
+                     AND start_time < $5
                      AND start_time >= $4
                      AND is_booked = false`,
                     [block.start_date, block.end_date, block.simulator_id, block.start_time, block.end_time]
@@ -662,7 +719,7 @@ router.post('/apply-all', async (req, res) => {
                          SET is_booked = true
                          WHERE date = $1
                          AND (simulator_id = $2 OR $2 IS NULL)
-                         AND start_time <= $4
+                         AND start_time < $4
                          AND start_time >= $3
                          AND is_booked = false`,
                         [row.date, block.simulator_id, block.start_time, block.end_time]
@@ -710,8 +767,8 @@ router.post('/bulk', async (req, res) => {
                 const result = await client.query(
                     `INSERT INTO schedule_blocks (
                         simulator_id, block_type, start_date, end_date, 
-                        day_of_week, start_time, end_time, reason, is_active
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+                        day_of_week, start_time, end_time, reason, is_active, blocked_by_type
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 'admin')
                     RETURNING *`,
                     [
                         block.simulator_id || null,

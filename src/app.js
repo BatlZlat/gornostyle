@@ -22,7 +22,10 @@ const financesRouter = require('./routes/finances');
 const applicationsRouter = require('./routes/applications');
 const certificatesRouter = require('./routes/certificates');
 const adminAuthRouter = require('./routes/adminAuth');
+const trainerAuthRouter = require('./routes/trainerAuth');
+const trainerBookingsRouter = require('./routes/trainerBookings');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
+const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
 const fs = require('fs');
 const EmailQueueProcessor = require('./services/emailQueueProcessor');
@@ -50,8 +53,9 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Middleware для проверки аутентификации
+// Middleware для проверки аутентификации админов и тренеров
 app.use(verifyAuth);
+app.use(verifyTrainerAuth);
 
 // Главная страница с EJS (только для корня)
 app.get('/', (req, res) => {
@@ -346,6 +350,10 @@ app.use('/generated', express.static(path.join(__dirname, '../public/generated')
 
 // Маршруты аутентификации
 app.use('/api/admin', adminAuthRouter);
+app.use('/api/trainer', trainerAuthRouter);
+
+// Защищенные маршруты тренеров
+app.use('/api/trainer', trainerBookingsRouter);
 
 // Публичные маршруты для покупки сертификатов через сайт (без авторизации)
 const { registerHandler } = require('./routes/certificates');

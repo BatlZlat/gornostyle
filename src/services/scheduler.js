@@ -110,14 +110,14 @@ class Scheduler {
      * @param {Date} targetDate - Дата тренировок
      */
     async notifyAdmin(stats, targetDate) {
-        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.TELEGRAM_BOT_TOKEN) {
-            console.log('ADMIN_TELEGRAM_ID или TELEGRAM_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
             return;
         }
 
         try {
             const TelegramBot = require('node-telegram-bot-api');
-            const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
             
             let message = `📊 <b>Отчет об отправке напоминаний</b>\n\n`;
             message += `📅 Дата тренировок: ${targetDate.toISOString().split('T')[0]}\n`;
@@ -149,13 +149,13 @@ class Scheduler {
      * @param {Error} error - Объект ошибки
      */
     async notifyAdminError(error) {
-        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.TELEGRAM_BOT_TOKEN) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
             return;
         }
 
         try {
             const TelegramBot = require('node-telegram-bot-api');
-            const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
             
             let message = `⚠️ <b>Ошибка при отправке напоминаний о тренировках</b>\n\n`;
             message += `<code>${error.message}</code>\n\n`;

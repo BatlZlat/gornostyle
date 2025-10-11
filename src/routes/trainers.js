@@ -26,7 +26,9 @@ router.post('/', async (req, res) => {
         sport_type,
         description,
         hire_date,
-        is_active
+        is_active,
+        username,
+        password
     } = req.body;
 
     // Проверка обязательных полей
@@ -35,17 +37,32 @@ router.post('/', async (req, res) => {
     }
 
     try {
+        // Проверяем уникальность username если он указан
+        if (username) {
+            const usernameCheck = await pool.query(
+                'SELECT id FROM trainers WHERE username = $1',
+                [username]
+            );
+            
+            if (usernameCheck.rows.length > 0) {
+                return res.status(400).json({ error: 'Логин уже используется' });
+            }
+        }
+        
         const result = await pool.query(
             `INSERT INTO trainers (
                 full_name, phone, birth_date, sport_type, 
-                description, hire_date, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [full_name, phone, birth_date, sport_type, description, hire_date, is_active]
+                description, hire_date, is_active, username, password
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [full_name, phone, birth_date, sport_type, description, hire_date, is_active, username || null, password || null]
         );
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при создании тренера:', error);
+        if (error.code === '23505') { // Уникальное нарушение
+            return res.status(400).json({ error: 'Логин уже используется' });
+        }
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
 });
@@ -79,17 +96,32 @@ router.put('/:id', async (req, res) => {
         description,
         hire_date,
         is_active,
-        photo_url
+        photo_url,
+        username,
+        password
     } = req.body;
 
     try {
+        // Проверяем уникальность username если он указан и изменился
+        if (username) {
+            const usernameCheck = await pool.query(
+                'SELECT id FROM trainers WHERE username = $1 AND id != $2',
+                [username, id]
+            );
+            
+            if (usernameCheck.rows.length > 0) {
+                return res.status(400).json({ error: 'Логин уже используется другим тренером' });
+            }
+        }
+        
         const result = await pool.query(
             `UPDATE trainers 
              SET full_name = $1, phone = $2, birth_date = $3, 
                  sport_type = $4, description = $5, hire_date = $6, 
-                 is_active = $7, photo_url = $8, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $9 RETURNING *`,
-            [full_name, phone, birth_date, sport_type, description, hire_date, is_active, photo_url, id]
+                 is_active = $7, photo_url = $8, username = $9, password = $10,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $11 RETURNING *`,
+            [full_name, phone, birth_date, sport_type, description, hire_date, is_active, photo_url, username || null, password || null, id]
         );
 
         if (result.rows.length === 0) {
@@ -99,6 +131,9 @@ router.put('/:id', async (req, res) => {
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при обновлении информации о тренере:', error);
+        if (error.code === '23505') { // Уникальное нарушение
+            return res.status(400).json({ error: 'Логин уже используется' });
+        }
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
 });

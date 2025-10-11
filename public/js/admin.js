@@ -1166,6 +1166,17 @@ async function editTrainer(trainerId) {
                         <label for="description">Описание:</label>
                         <textarea id="description" name="description">${trainer.description || ''}</textarea>
                     </div>
+                    <div class="form-group" style="border-top: 2px solid #e0e0e0; padding-top: 15px; margin-top: 15px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea;">🔐 Доступ к системе бронирования</h4>
+                        <label for="trainer_username">Логин (для входа в систему):</label>
+                        <input type="text" id="trainer_username" name="username" value="${trainer.username || ''}" placeholder="Введите логин">
+                        <small style="color: #666; display: block; margin-top: 5px;">Если не указан, тренер не сможет входить в систему бронирования</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="trainer_password">Пароль (для входа в систему):</label>
+                        <input type="text" id="trainer_password" name="password" value="${trainer.password || ''}" placeholder="Введите пароль">
+                        <small style="color: #666; display: block; margin-top: 5px;">Пароль хранится в открытом виде. Оставьте пустым, чтобы не менять.</small>
+                    </div>
                     <div class="form-actions">
                         <button type="submit" class="btn-primary">Сохранить</button>
                         <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
@@ -1223,6 +1234,8 @@ async function editTrainer(trainerId) {
                     description: formData.get('description'),
                     hire_date: formData.get('hire_date'),
                     is_active: formData.get('is_active'),
+                    username: formData.get('username') || null,
+                    password: formData.get('password') || null,
                 id: trainerId // Убеждаемся, что ID не изменился
             };
             
