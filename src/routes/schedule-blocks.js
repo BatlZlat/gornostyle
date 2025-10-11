@@ -315,7 +315,7 @@ router.post('/', async (req, res) => {
                      SET is_booked = true
                      WHERE date >= $1 AND date <= $2
                      AND (simulator_id = $3 OR $3 IS NULL)
-                     AND start_time <= $5
+                     AND start_time < $5
                      AND start_time >= $4
                      AND is_booked = false`,
                     [start_date, end_date, simulator_id, start_time, end_time]
@@ -337,7 +337,7 @@ router.post('/', async (req, res) => {
                          SET is_booked = true
                          WHERE date = $1
                          AND (simulator_id = $2 OR $2 IS NULL)
-                         AND start_time <= $4
+                         AND start_time < $4
                          AND start_time >= $3
                          AND is_booked = false`,
                         [row.date, simulator_id, start_time, end_time]
@@ -662,7 +662,7 @@ router.post('/apply-all', async (req, res) => {
                      SET is_booked = true
                      WHERE date >= $1 AND date <= $2
                      AND (simulator_id = $3 OR $3 IS NULL)
-                     AND start_time <= $5
+                     AND start_time < $5
                      AND start_time >= $4
                      AND is_booked = false`,
                     [block.start_date, block.end_date, block.simulator_id, block.start_time, block.end_time]
@@ -683,7 +683,7 @@ router.post('/apply-all', async (req, res) => {
                          SET is_booked = true
                          WHERE date = $1
                          AND (simulator_id = $2 OR $2 IS NULL)
-                         AND start_time <= $4
+                         AND start_time < $4
                          AND start_time >= $3
                          AND is_booked = false`,
                         [row.date, block.simulator_id, block.start_time, block.end_time]
