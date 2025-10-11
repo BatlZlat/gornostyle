@@ -201,11 +201,12 @@ function renderCalendar() {
             dayElement.classList.add('today');
         }
 
-        // Проверяем статус дня (есть ли тренировки)
+        // Проверяем статус дня (есть ли тренировки или блокировки)
         const daySlots = scheduleData.filter(slot => slot.date === dateStr);
         const hasTraining = daySlots.some(slot => slot.has_training);
+        const hasBlocking = daySlots.some(slot => slot.is_blocked);
 
-        if (hasTraining) {
+        if (hasTraining || hasBlocking) {
             dayElement.classList.add('has-training');
         } else {
             dayElement.classList.add('free');
