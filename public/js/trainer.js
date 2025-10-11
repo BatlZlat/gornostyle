@@ -121,9 +121,16 @@ async function loadCalendar() {
         const startDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
         const endDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 2, 0); // +2 месяца
 
-        // Форматируем даты для API
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        // Форматируем даты для API без учета часового пояса
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        const startDateStr = formatDate(startDate);
+        const endDateStr = formatDate(endDate);
 
         // Загружаем расписание
         const response = await apiRequest(`/api/trainer/schedule?start_date=${startDateStr}&end_date=${endDateStr}`);
@@ -223,8 +230,9 @@ async function openDayModal(dateStr) {
     const modal = document.getElementById('day-modal');
     const container = document.getElementById('simulators-container');
     
-    // Форматируем дату для заголовка
-    const date = new Date(dateStr + 'T00:00:00');
+    // Форматируем дату для заголовка без учета часового пояса
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     const dateFormatted = date.toLocaleDateString('ru-RU', { 
         day: 'numeric', 
         month: 'long',
@@ -280,7 +288,8 @@ function renderSimulatorSlots(container, simulatorId, slots, dateStr) {
     slotsGrid.className = 'slots-grid';
 
     // Проверяем - можно ли бронировать (только на неделю вперед)
-    const selectedDate = new Date(dateStr + 'T00:00:00');
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(year, month - 1, day);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const oneWeekLater = new Date(today);

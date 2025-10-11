@@ -3,6 +3,14 @@ const router = express.Router();
 const { pool } = require('../db/index');
 const { verifyTrainerToken } = require('../middleware/trainerAuth');
 
+// Функция для форматирования даты без учета часового пояса
+function formatDateForDB(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // Все роуты защищены middleware аутентификации
 router.use(verifyTrainerToken);
 
@@ -40,7 +48,7 @@ router.get('/schedule', async (req, res) => {
             WHERE s.date >= $1 AND s.date <= $2
         `;
         
-        const params = [today.toISOString().split('T')[0], twoMonthsLater.toISOString().split('T')[0]];
+        const params = [formatDateForDB(today), formatDateForDB(twoMonthsLater)];
         
         if (simulator_id) {
             scheduleQuery += ` AND s.simulator_id = $3`;
@@ -69,8 +77,8 @@ router.get('/schedule', async (req, res) => {
             WHERE date >= $1 AND date <= $2
             AND (simulator_id = $3 OR simulator_id IS NULL OR $3 IS NULL)
         `, [
-            today.toISOString().split('T')[0], 
-            twoMonthsLater.toISOString().split('T')[0],
+            formatDateForDB(today), 
+            formatDateForDB(twoMonthsLater),
             simulator_id || null
         ]);
         
@@ -90,7 +98,7 @@ router.get('/schedule', async (req, res) => {
             LEFT JOIN trainers t ON ts.trainer_id = t.id
             WHERE ts.session_date >= $1 AND ts.session_date <= $2
             AND ts.status = 'scheduled'
-        `, [today.toISOString().split('T')[0], twoMonthsLater.toISOString().split('T')[0]]);
+        `, [formatDateForDB(today), formatDateForDB(twoMonthsLater)]);
         
         // Обогащаем слоты информацией о блокировках, исключениях и тренировках
         const enrichedSlots = scheduleResult.rows.map(slot => {
@@ -100,9 +108,9 @@ router.get('/schedule', async (req, res) => {
             // Проверяем блокировки
             const applicableBlocks = blocksResult.rows.filter(block => {
                 if (block.block_type === 'specific') {
-                    const slotDate = slot.date.toISOString().split('T')[0];
-                    const blockStartDate = block.start_date.toISOString().split('T')[0];
-                    const blockEndDate = block.end_date.toISOString().split('T')[0];
+                    const slotDate = formatDateForDB(slot.date);
+                    const blockStartDate = formatDateForDB(block.start_date);
+                    const blockEndDate = formatDateForDB(block.end_date);
                     
                     return slotDate >= blockStartDate && slotDate <= blockEndDate
                         && slot.start_time >= block.start_time && slot.start_time <= block.end_time
@@ -117,7 +125,7 @@ router.get('/schedule', async (req, res) => {
             
             // Проверяем исключения
             const hasException = exceptionsResult.rows.some(exception => {
-                return exception.date.toISOString().split('T')[0] === slot.date.toISOString().split('T')[0]
+                return formatDateForDB(exception.date) === formatDateForDB(slot.date)
                     && exception.start_time === slot.start_time
                     && (exception.simulator_id === slot.simulator_id || exception.simulator_id === null)
                     && applicableBlocks.some(block => block.id === exception.schedule_block_id);
@@ -126,7 +134,7 @@ router.get('/schedule', async (req, res) => {
             // Проверяем тренировки
             const training = trainingsResult.rows.find(t => {
                 return t.simulator_id === slot.simulator_id
-                    && t.session_date.toISOString().split('T')[0] === slot.date.toISOString().split('T')[0]
+                    && formatDateForDB(t.session_date) === formatDateForDB(slot.date)
                     && slot.start_time >= t.start_time 
                     && slot.start_time < t.end_time;
             });
@@ -152,7 +160,7 @@ router.get('/schedule', async (req, res) => {
             
             return {
                 ...slot,
-                date: slot.date.toISOString().split('T')[0],
+                date: formatDateForDB(slot.date),
                 is_blocked: (applicableBlocks.length > 0 && !hasException) || training !== undefined,
                 block_reason: training ? 'Занят 📅' : blockReason,
                 block_id: blockId,
@@ -203,8 +211,8 @@ router.get('/my-bookings', async (req, res) => {
         
         res.json(result.rows.map(row => ({
             ...row,
-            start_date: row.start_date ? row.start_date.toISOString().split('T')[0] : null,
-            end_date: row.end_date ? row.end_date.toISOString().split('T')[0] : null
+            start_date: row.start_date ? formatDateForDB(row.start_date) : null,
+            end_date: row.end_date ? formatDateForDB(row.end_date) : null
         })));
     } catch (error) {
         console.error('Ошибка при получении бронирований тренера:', error);
@@ -391,8 +399,8 @@ router.post('/bookings', async (req, res) => {
             message: 'Бронирование создано успешно',
             booking: {
                 ...booking,
-                start_date: booking.start_date.toISOString().split('T')[0],
-                end_date: booking.end_date.toISOString().split('T')[0]
+                start_date: formatDateForDB(booking.start_date),
+                end_date: formatDateForDB(booking.end_date)
             }
         });
     } catch (error) {
@@ -479,7 +487,7 @@ router.delete('/bookings/:id', async (req, res) => {
             const { notifyTrainerBookingCancelled } = require('../bot/admin-notify');
             await notifyTrainerBookingCancelled({
                 trainerName,
-                date: booking.start_date.toISOString().split('T')[0],
+                date: formatDateForDB(booking.start_date),
                 startTime: booking.start_time,
                 endTime: booking.end_time,
                 simulatorId: booking.simulator_id,
@@ -494,7 +502,7 @@ router.delete('/bookings/:id', async (req, res) => {
             message: 'Бронирование отменено успешно',
             booking: {
                 id: booking.id,
-                date: booking.start_date.toISOString().split('T')[0],
+                date: formatDateForDB(booking.start_date),
                 startTime: booking.start_time,
                 endTime: booking.end_time
             }
