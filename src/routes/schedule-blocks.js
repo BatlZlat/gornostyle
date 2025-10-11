@@ -177,11 +177,11 @@ router.get('/slots', async (req, res) => {
             const applicableBlocks = blocksResult.rows.filter(block => {
                 if (block.block_type === 'specific') {
                     return slot.date >= block.start_date && slot.date <= block.end_date
-                        && slot.start_time <= block.end_time && slot.start_time >= block.start_time
+                        && slot.start_time < block.end_time && slot.start_time >= block.start_time
                         && (block.simulator_id === slot.simulator_id || block.simulator_id === null);
                 } else if (block.block_type === 'recurring') {
                     return block.day_of_week === dayOfWeek
-                        && slot.start_time <= block.end_time && slot.start_time >= block.start_time
+                        && slot.start_time < block.end_time && slot.start_time >= block.start_time
                         && (block.simulator_id === slot.simulator_id || block.simulator_id === null);
                 }
                 return false;
