@@ -197,6 +197,14 @@ function renderBlocksList() {
         const timeInfo = `${block.start_time.slice(0, 5)} - ${block.end_time.slice(0, 5)}`;
         const simulatorInfo = block.simulator_id ? block.simulator_name : 'Оба тренажера';
         
+        // Определяем кто заблокировал
+        let blockedByInfo = '';
+        if (block.trainer_id && block.trainer_name) {
+            blockedByInfo = `<div class="block-info"><strong>Заблокировал:</strong> 🎿 ${block.trainer_name} (тренер)</div>`;
+        } else if (block.blocked_by_type === 'admin' || block.created_by_name) {
+            blockedByInfo = `<div class="block-info"><strong>Заблокировал:</strong> 👤 Администратор</div>`;
+        }
+        
         return `
             <div class="block-item ${block.is_active ? '' : 'inactive'}">
                 <div class="block-info">
@@ -206,6 +214,7 @@ function renderBlocksList() {
                     </div>
                     <div class="block-details">
                         📅 ${dateInfo} | ⏰ ${timeInfo} | 🎿 ${simulatorInfo}
+                        ${blockedByInfo ? `<br>${blockedByInfo.replace('<div class="block-info">', '').replace('</div>', '')}` : ''}
                     </div>
                 </div>
                 <div class="block-actions">

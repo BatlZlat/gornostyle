@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 sport_type: document.getElementById('trainer-sport-type').value,
                 description: document.getElementById('trainer-description').value,
                 hire_date: document.getElementById('trainer-hire-date').value,
+                username: document.getElementById('trainer-username').value || null,
+                password: document.getElementById('trainer-password').value || null,
                 is_active: true // По умолчанию тренер активен
             };
 

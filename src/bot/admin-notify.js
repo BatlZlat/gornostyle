@@ -837,6 +837,74 @@ ${equipmentEmoji} *Тренажер:* ${simulatorName}
     }
 }
 
+// Функция для отправки уведомления о бронировании тренером
+async function notifyTrainerBookingCreated(bookingData) {
+    try {
+        const { trainerName, date, startTime, endTime, simulatorId } = bookingData;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const formattedDate = formatDate(date);
+        const simulatorName = simulatorId === 1 ? 'Тренажер 1' : simulatorId === 2 ? 'Тренажер 2' : `Тренажер ${simulatorId}`;
+        
+        let message = `🎿 *Бронирование тренером*\n\n`;
+        message += `👤 *Тренер:* ${trainerName}\n`;
+        message += `📅 *Дата:* ${formattedDate}\n`;
+        message += `⏰ *Время:* ${startTime.slice(0, 5)} - ${endTime.slice(0, 5)}\n`;
+        message += `🎿 *Тренажер:* ${simulatorName}\n`;
+
+        for (const adminId of adminIds) {
+            try {
+                await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error(`Ошибка при отправке уведомления администратору ${adminId}:`, error.message);
+            }
+        }
+        
+        console.log(`✓ Уведомление о бронировании отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о бронировании тренером:', error);
+    }
+}
+
+// Функция для отправки уведомления об отмене бронирования тренером
+async function notifyTrainerBookingCancelled(bookingData) {
+    try {
+        const { trainerName, date, startTime, endTime, simulatorId, simulatorName } = bookingData;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const formattedDate = formatDate(date);
+        const simName = simulatorName || (simulatorId === 1 ? 'Тренажер 1' : simulatorId === 2 ? 'Тренажер 2' : `Тренажер ${simulatorId}`);
+        
+        let message = `❌ *Отмена бронирования тренером*\n\n`;
+        message += `👤 *Тренер:* ${trainerName}\n`;
+        message += `📅 *Дата:* ${formattedDate}\n`;
+        message += `⏰ *Время:* ${startTime.slice(0, 5)} - ${endTime.slice(0, 5)}\n`;
+        message += `🎿 *Тренажер:* ${simName}\n`;
+
+        for (const adminId of adminIds) {
+            try {
+                await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error(`Ошибка при отправке уведомления администратору ${adminId}:`, error.message);
+            }
+        }
+        
+        console.log(`✓ Уведомление об отмене бронирования отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене бронирования тренером:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -859,5 +927,7 @@ module.exports = {
     notifyTemplatesApplied,
     notifyTemplateCreated,
     notifyBlockCreated,
-    notifyBlockDeleted
+    notifyBlockDeleted,
+    notifyTrainerBookingCreated,
+    notifyTrainerBookingCancelled
 }; 

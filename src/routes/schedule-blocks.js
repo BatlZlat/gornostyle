@@ -14,10 +14,12 @@ router.get('/', async (req, res) => {
         let query = `
             SELECT sb.*, 
                    s.name as simulator_name,
-                   a.full_name as created_by_name
+                   a.full_name as created_by_name,
+                   t.full_name as trainer_name
             FROM schedule_blocks sb
             LEFT JOIN simulators s ON sb.simulator_id = s.id
             LEFT JOIN administrators a ON sb.created_by = a.id
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
             WHERE 1=1
         `;
         
@@ -152,9 +154,12 @@ router.get('/slots', async (req, res) => {
         
         // Получаем все активные блокировки
         const blocksResult = await pool.query(`
-            SELECT * FROM schedule_blocks
-            WHERE is_active = TRUE
-            AND (simulator_id = $1 OR simulator_id IS NULL OR $1 IS NULL)
+            SELECT sb.*, 
+                   t.full_name as trainer_name
+            FROM schedule_blocks sb
+            LEFT JOIN trainers t ON sb.trainer_id = t.id
+            WHERE sb.is_active = TRUE
+            AND (sb.simulator_id = $1 OR sb.simulator_id IS NULL OR $1 IS NULL)
         `, [simulator_id || null]);
         
         // Получаем все исключения из блокировок для заданного диапазона дат
@@ -190,10 +195,26 @@ router.get('/slots', async (req, res) => {
                     && applicableBlocks.some(block => block.id === exception.schedule_block_id);
             });
             
+            // Формируем причину блокировки
+            let blockReason = null;
+            let blockedByType = null;
+            
+            if (applicableBlocks.length > 0 && !hasException) {
+                const block = applicableBlocks[0];
+                if (block.trainer_id && block.trainer_name) {
+                    blockReason = block.trainer_name; // ФИО тренера
+                    blockedByType = 'trainer';
+                } else {
+                    blockReason = block.reason || 'Блокировка администратора';
+                    blockedByType = 'admin';
+                }
+            }
+            
             return {
                 ...slot,
                 is_blocked: applicableBlocks.length > 0 && !hasException,
-                block_reason: applicableBlocks.length > 0 && !hasException ? applicableBlocks[0].reason : null,
+                block_reason: blockReason,
+                blocked_by_type: blockedByType,
                 block_id: applicableBlocks.length > 0 ? applicableBlocks[0].id : null
             };
         });
@@ -268,8 +289,8 @@ router.post('/', async (req, res) => {
         const result = await pool.query(
             `INSERT INTO schedule_blocks (
                 simulator_id, block_type, start_date, end_date, 
-                day_of_week, start_time, end_time, reason, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+                day_of_week, start_time, end_time, reason, is_active, blocked_by_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 'admin')
             RETURNING *`,
             [
                 simulator_id || null,
@@ -710,8 +731,8 @@ router.post('/bulk', async (req, res) => {
                 const result = await client.query(
                     `INSERT INTO schedule_blocks (
                         simulator_id, block_type, start_date, end_date, 
-                        day_of_week, start_time, end_time, reason, is_active
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+                        day_of_week, start_time, end_time, reason, is_active, blocked_by_type
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 'admin')
                     RETURNING *`,
                     [
                         block.simulator_id || null,

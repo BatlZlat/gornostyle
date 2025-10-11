@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Календарь тренера - Горностайл72</title>
+    <link rel="stylesheet" href="/css/trainer.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Шапка -->
+        <header class="header">
+            <div class="header-left">
+                <h1>🎿 Календарь тренера</h1>
+                <p>Управление бронированием времени</p>
+            </div>
+            <div class="header-right">
+                <div class="trainer-info">
+                    <div class="trainer-name" id="trainer-name">Загрузка...</div>
+                    <div class="trainer-role">Тренер</div>
+                </div>
+                <button class="btn-logout" onclick="logout()">Выход</button>
+            </div>
+        </header>
+
+        <!-- Панель управления -->
+        <div class="controls-panel">
+            <div class="month-navigation">
+                <button id="prev-month-btn">←</button>
+                <h2 id="current-month-title">Месяц</h2>
+                <button id="next-month-btn">→</button>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color free"></div>
+                    <span>Свободно</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color has-training"></div>
+                    <span>Есть тренировки</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Календарь -->
+        <div class="calendar">
+            <div class="calendar-header">
+                <div class="calendar-day-name">Пн</div>
+                <div class="calendar-day-name">Вт</div>
+                <div class="calendar-day-name">Ср</div>
+                <div class="calendar-day-name">Чт</div>
+                <div class="calendar-day-name">Пт</div>
+                <div class="calendar-day-name">Сб</div>
+                <div class="calendar-day-name">Вс</div>
+            </div>
+            <div class="calendar-grid" id="calendar-grid">
+                <div class="loading">Загрузка календаря</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно расписания дня -->
+    <div id="day-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Расписание на день</h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="booking-info">
+                    <h4>ℹ️ Информация о бронировании</h4>
+                    <ul>
+                        <li>🟢 <strong>Свободные слоты</strong> - можно забронировать</li>
+                        <li>🔵 <strong>Синие слоты</strong> - ваши бронирования (клик для отмены)</li>
+                        <li>⚫ <strong>Серые слоты</strong> - занято (тренировка или другой тренер)</li>
+                    </ul>
+                    <div class="booking-restriction">
+                        ⚠️ Бронирование доступно только на <strong>неделю вперед</strong>
+                    </div>
+                </div>
+
+                <div id="simulators-container" class="simulators-container">
+                    <div class="loading">Загрузка расписания</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/trainer.js"></script>
+</body>
+</html>
+
