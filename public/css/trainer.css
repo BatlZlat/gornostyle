@@ -472,5 +472,11 @@ body {
     .day-number {
         font-size: 16px;
     }
+
+    .calendar-day-name {
+        font-size: 12px;
+        padding: 8px 4px;
+        text-align: center;
+    }
 }
 

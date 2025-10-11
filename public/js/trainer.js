@@ -175,7 +175,11 @@ function renderCalendar() {
 
     for (let day = 1; day <= lastDay.getDate(); day++) {
         const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-        const dateStr = date.toISOString().split('T')[0];
+        // Формируем dateStr без учета часового пояса
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const dayStr = String(date.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${dayStr}`;
 
         const dayElement = document.createElement('div');
         dayElement.className = 'calendar-day';
