@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 const TelegramBot = require('node-telegram-bot-api');
+const { notifyAdminIndividualTrainingDeleted, calculateAge } = require('../bot/admin-notify');
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 /**
@@ -220,27 +221,27 @@ router.delete('/:id', async (req, res) => {
             }
         }
         
-        // Отправляем уведомление администраторам
-        const adminChatId = process.env.ADMIN_CHAT_ID;
-        if (adminChatId) {
-            try {
-                const adminMessage = `🗑 *Удалена индивидуальная тренировка*\n\n` +
-                    `👤 Клиент: ${training.client_name}\n` +
-                    `📱 Телефон: ${training.client_phone}\n` +
-                    `👶 Участник: ${participantName}\n` +
-                    `📅 Дата: ${formattedDate}\n` +
-                    `⏰ Время: ${startTime}\n` +
-                    `⏱ Длительность: ${training.duration} мин\n` +
-                    `🎿 Тип: ${equipmentName} ${trainerText}\n` +
-                    `🏔 Тренажер: ${training.simulator_name}\n\n` +
-                    `💰 Возвращено: ${price} ₽\n` +
-                    `💳 Новый баланс клиента: ${newBalance} ₽`;
-                
-                await bot.sendMessage(adminChatId, adminMessage, { parse_mode: 'Markdown' });
-            } catch (error) {
-                console.error('Ошибка при отправке уведомления администратору:', error);
-            }
-        }
+        // Отправляем уведомление администраторам через централизованную функцию
+        const participantBirthDate = training.child_id ? training.child_birth_date : training.client_birth_date;
+        const participantAge = calculateAge(participantBirthDate);
+        
+        await notifyAdminIndividualTrainingDeleted({
+            client_name: training.client_name,
+            client_phone: training.client_phone,
+            participant_name: participantName,
+            participant_age: participantAge,
+            date: training.preferred_date,
+            time: startTime,
+            duration: training.duration,
+            equipment_type: training.equipment_type,
+            with_trainer: training.with_trainer,
+            simulator_name: training.simulator_name,
+            price: price,
+            refund_amount: price,
+            new_balance: newBalance,
+            is_child: !!training.child_id,
+            parent_name: training.parent_name
+        });
         
         res.json({
             success: true,

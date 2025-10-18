@@ -905,6 +905,72 @@ async function notifyTrainerBookingCancelled(bookingData) {
     }
 }
 
+// Функция для отправки уведомления об удалении индивидуальной тренировки администратором
+async function notifyAdminIndividualTrainingDeleted(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { 
+            client_name, 
+            client_phone, 
+            participant_name,
+            participant_age,
+            date, 
+            time, 
+            duration,
+            equipment_type,
+            with_trainer,
+            simulator_name, 
+            price,
+            refund_amount,
+            new_balance,
+            is_child,
+            parent_name
+        } = trainingData;
+
+        const equipmentName = equipment_type === 'ski' ? '⛷ Лыжи' : '🏂 Сноуборд';
+        const trainerText = with_trainer ? 'С тренером' : 'Без тренера';
+        
+        let participantInfo = '';
+        if (is_child && parent_name) {
+            participantInfo = `👶 *Участник:* ${participant_name} (${participant_age} лет)\n` +
+                            `👨‍👩‍👧 *Родитель:* ${parent_name}\n`;
+        } else {
+            participantInfo = `👤 *Участник:* ${participant_name} (${participant_age} лет)\n`;
+        }
+
+        const message = 
+            '🗑 *Удалена индивидуальная тренировка*\n\n' +
+            `👨‍💼 *Клиент:* ${client_name}\n` +
+            participantInfo +
+            `📱 *Телефон:* ${client_phone}\n` +
+            `📅 *Дата:* ${formatDate(date)}\n` +
+            `⏰ *Время:* ${time}\n` +
+            `⏱ *Длительность:* ${duration} мин\n` +
+            `${equipmentName} ${trainerText}\n` +
+            `🎿 *Тренажер:* ${simulator_name}\n\n` +
+            `💰 *Возвращено:* ${refund_amount} ₽\n` +
+            `💳 *Новый баланс клиента:* ${new_balance} ₽\n\n` +
+            `_Удалено администратором через админ-панель_`;
+
+        for (const adminId of adminIds) {
+            try {
+                await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error(`Ошибка при отправке уведомления администратору ${adminId}:`, error.message);
+            }
+        }
+        
+        console.log(`✓ Уведомление об удалении индивидуальной тренировки отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об удалении индивидуальной тренировки:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -929,5 +995,6 @@ module.exports = {
     notifyBlockCreated,
     notifyBlockDeleted,
     notifyTrainerBookingCreated,
-    notifyTrainerBookingCancelled
+    notifyTrainerBookingCancelled,
+    notifyAdminIndividualTrainingDeleted
 }; 
