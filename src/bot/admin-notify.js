@@ -235,6 +235,36 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
     }
 }
 
+// Функция для отправки уведомления об удалении участника из тренировки
+async function notifyAdminParticipantRemoved(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message =
+            '👥 *Удаление участника из тренировки!*\n\n' +
+            `👤 *Клиент:* ${trainingData.client_name}\n` +
+            (trainingData.participant_name ? `👶 *Участник:* ${trainingData.participant_name} (${trainingData.age} лет)\n` : `👤 *Возраст:* ${trainingData.age} лет\n`) +
+            `📞 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👥 *Группа:* ${trainingData.group_name}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
+            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления:', error);
+    }
+}
+
 // Функция для отправки уведомления об отмене индивидуальной тренировки
 async function notifyAdminIndividualTrainingCancellation(trainingData) {
     try {
@@ -378,16 +408,33 @@ async function notifyAdminCertificateActivation({ clientName, certificateNumber,
 
 // Функция для вычисления возраста по дате рождения
 function calculateAge(birthDate) {
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-        age--;
+    if (!birthDate) {
+        console.warn('calculateAge: birthDate is null or undefined');
+        return null;
     }
     
-    return age;
+    try {
+        const today = new Date();
+        const birth = new Date(birthDate);
+        
+        // Проверяем, что дата валидна
+        if (isNaN(birth.getTime())) {
+            console.warn('calculateAge: invalid birthDate:', birthDate);
+            return null;
+        }
+        
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age--;
+        }
+        
+        return age;
+    } catch (error) {
+        console.error('calculateAge error:', error, 'birthDate:', birthDate);
+        return null;
+    }
 }
 
 // Функция для отправки уведомления о покупке сертификата через сайт
@@ -905,6 +952,81 @@ async function notifyTrainerBookingCancelled(bookingData) {
     }
 }
 
+// Функция для отправки уведомления об удалении индивидуальной тренировки администратором
+async function notifyAdminIndividualTrainingDeleted(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const { 
+            client_name, 
+            client_phone, 
+            participant_name,
+            participant_age,
+            date, 
+            time, 
+            duration,
+            equipment_type,
+            with_trainer,
+            simulator_name, 
+            price,
+            refund_amount,
+            new_balance,
+            is_child,
+            parent_name
+        } = trainingData;
+
+        const equipmentName = equipment_type === 'ski' ? '⛷ Лыжи' : '🏂 Сноуборд';
+        const trainerText = with_trainer ? 'С тренером' : 'Без тренера';
+        
+        // Проверяем и вычисляем возраст
+        let participantAgeDisplay;
+        if (participant_age !== null && participant_age !== undefined && !isNaN(participant_age) && participant_age >= 0) {
+            participantAgeDisplay = `${participant_age} лет`;
+        } else {
+            console.warn('Некорректный возраст участника:', participant_age);
+            participantAgeDisplay = 'возраст не указан';
+        }
+        
+        let participantInfo = '';
+        if (is_child && parent_name) {
+            participantInfo = `👶 *Участник:* ${participant_name} (${participantAgeDisplay})\n` +
+                            `👨‍👩‍👧 *Родитель:* ${parent_name}\n`;
+        } else {
+            participantInfo = `👤 *Участник:* ${participant_name} (${participantAgeDisplay})\n`;
+        }
+
+        const message = 
+            '🗑 *Удалена индивидуальная тренировка*\n\n' +
+            `👨‍💼 *Клиент:* ${client_name}\n` +
+            participantInfo +
+            `📱 *Телефон:* ${client_phone}\n` +
+            `📅 *Дата:* ${formatDate(date)}\n` +
+            `⏰ *Время:* ${time}\n` +
+            `⏱ *Длительность:* ${duration} мин\n` +
+            `${equipmentName} ${trainerText}\n` +
+            `🎿 *Тренажер:* ${simulator_name}\n\n` +
+            `💰 *Возвращено:* ${refund_amount} ₽\n` +
+            `💳 *Новый баланс клиента:* ${new_balance} ₽\n\n` +
+            `_Удалено администратором через админ-панель_`;
+
+        for (const adminId of adminIds) {
+            try {
+                await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error(`Ошибка при отправке уведомления администратору ${adminId}:`, error.message);
+            }
+        }
+        
+        console.log(`✓ Уведомление об удалении индивидуальной тренировки отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об удалении индивидуальной тренировки:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -915,6 +1037,7 @@ module.exports = {
     notifyAdminGroupTrainingCancellation,
     notifyAdminGroupTrainingCancellationByAdmin,
     notifyAdminIndividualTrainingCancellation,
+    notifyAdminParticipantRemoved,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
     notifyAdminCertificatePurchase,
@@ -929,5 +1052,6 @@ module.exports = {
     notifyBlockCreated,
     notifyBlockDeleted,
     notifyTrainerBookingCreated,
-    notifyTrainerBookingCancelled
+    notifyTrainerBookingCancelled,
+    notifyAdminIndividualTrainingDeleted
 }; 

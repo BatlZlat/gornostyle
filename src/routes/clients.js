@@ -181,4 +181,53 @@ router.put('/:id', async (req, res) => {
     }
 });
 
+// Обновление статуса отзыва клиента
+router.put('/:id/review-status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reviewType, value } = req.body;
+
+        // Валидация данных
+        if (!reviewType || typeof value !== 'boolean') {
+            return res.status(400).json({ 
+                error: 'Некорректные данные. Укажите reviewType (2gis или yandex) и value (boolean)' 
+            });
+        }
+
+        if (reviewType !== '2gis' && reviewType !== 'yandex') {
+            return res.status(400).json({ 
+                error: 'Некорректный тип отзыва. Допустимые значения: 2gis, yandex' 
+            });
+        }
+
+        // Определяем, какое поле обновлять
+        const fieldName = reviewType === '2gis' ? 'review_2gis' : 'review_yandex';
+
+        // Обновляем статус отзыва
+        const result = await pool.query(`
+            UPDATE clients 
+            SET ${fieldName} = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING id, full_name, review_2gis, review_yandex
+        `, [value, id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        console.log(`Обновлен статус отзыва ${reviewType} для клиента ${id}: ${value}`);
+        res.json({
+            success: true,
+            message: 'Статус отзыва успешно обновлен',
+            client: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса отзыва:', error);
+        res.status(500).json({ 
+            error: 'Ошибка при обновлении статуса отзыва',
+            details: error.message
+        });
+    }
+});
+
 module.exports = router; 

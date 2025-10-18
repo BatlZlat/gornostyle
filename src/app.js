@@ -24,6 +24,7 @@ const certificatesRouter = require('./routes/certificates');
 const adminAuthRouter = require('./routes/adminAuth');
 const trainerAuthRouter = require('./routes/trainerAuth');
 const trainerBookingsRouter = require('./routes/trainerBookings');
+const individualTrainingsRouter = require('./routes/individual-trainings');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
@@ -374,6 +375,7 @@ app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);
 app.use('/api/applications', verifyToken, applicationsRouter);
 app.use('/api/certificates', verifyToken, certificatesRouter);
+app.use('/api/individual-trainings', verifyToken, individualTrainingsRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {

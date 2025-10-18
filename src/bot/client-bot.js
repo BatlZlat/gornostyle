@@ -5531,6 +5531,30 @@ async function showPersonalCabinet(chatId) {
         const clientAge = calculateAge(client.birth_date);
         const formattedBirthDate = formatBirthDate(client.birth_date);
 
+        // Получаем статистику тренировок для клиента
+        const clientStatsResult = await pool.query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE training_type = 'individual') as individual_count,
+                COUNT(*) FILTER (WHERE training_type = 'group') as group_count
+            FROM (
+                SELECT 'individual' as training_type
+                FROM individual_training_sessions
+                WHERE client_id = $1 AND child_id IS NULL
+                  AND preferred_date <= CURRENT_DATE
+                
+                UNION ALL
+                
+                SELECT 'group' as training_type
+                FROM session_participants sp
+                JOIN training_sessions ts ON sp.session_id = ts.id
+                WHERE sp.client_id = $1 AND sp.is_child = false
+                  AND sp.status = 'confirmed'
+                  AND ts.session_date <= CURRENT_DATE
+            ) t
+        `, [client.id]);
+
+        const clientStats = clientStatsResult.rows[0];
+
         // Получаем информацию о детях
         const childrenResult = await pool.query(
             `SELECT c.*, 
@@ -5541,6 +5565,36 @@ async function showPersonalCabinet(chatId) {
             [client.id]
         );
 
+        // Получаем статистику тренировок для каждого ребенка
+        const childStats = {};
+        if (childrenResult.rows.length > 0) {
+            for (const child of childrenResult.rows) {
+                const childStatsResult = await pool.query(`
+                    SELECT 
+                        COUNT(*) FILTER (WHERE training_type = 'individual') as individual_count,
+                        COUNT(*) FILTER (WHERE training_type = 'group') as group_count
+                    FROM (
+                        SELECT 'individual' as training_type
+                        FROM individual_training_sessions
+                        WHERE child_id = $1
+                          AND preferred_date <= CURRENT_DATE
+                        
+                        UNION ALL
+                        
+                        SELECT 'group' as training_type
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        WHERE sp.child_id = $1
+                          AND sp.is_child = true
+                          AND sp.status = 'confirmed'
+                          AND ts.session_date <= CURRENT_DATE
+                    ) t
+                `, [child.id]);
+                
+                childStats[child.id] = childStatsResult.rows[0];
+            }
+        }
+
         // Формируем сообщение
         let message = `👤 *Личный кабинет*\n\n`;
         
@@ -5548,7 +5602,10 @@ async function showPersonalCabinet(chatId) {
         message += `*Информация о вас:*\n`;
         message += `👤 *ФИО:* ${client.full_name}\n`;
         message += `📅 *Дата рождения:* ${formattedBirthDate} (${clientAge} лет)\n`;
-        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/10\n\n`;
+        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n`;
+        message += `📊 *Статистика тренировок:*\n`;
+        message += `   • Индивидуальных: ${clientStats.individual_count || 0}\n`;
+        message += `   • Групповых: ${clientStats.group_count || 0}\n\n`;
 
         // Информация о детях
         if (childrenResult.rows.length > 0) {
@@ -5556,10 +5613,15 @@ async function showPersonalCabinet(chatId) {
             childrenResult.rows.forEach((child, index) => {
                 const childAge = calculateAge(child.birth_date);
                 const childBirthDate = formatBirthDate(child.birth_date);
+                const stats = childStats[child.id] || { individual_count: 0, group_count: 0 };
+                
                 message += `\n*Ребенок ${index + 1}:*\n`;
                 message += `👶 *ФИО:* ${child.full_name}\n`;
                 message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
-                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/10\n`;
+                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
+                message += `📊 *Статистика тренировок:*\n`;
+                message += `   • Индивидуальных: ${stats.individual_count || 0}\n`;
+                message += `   • Групповых: ${stats.group_count || 0}\n`;
             });
         }
 

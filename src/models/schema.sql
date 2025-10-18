@@ -4,7 +4,7 @@ CREATE TABLE clients (
     full_name VARCHAR(100) NOT NULL,
     birth_date DATE NOT NULL,
     phone VARCHAR(20) NOT NULL,
-    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10),
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
     telegram_id VARCHAR(100) UNIQUE,
     telegram_username VARCHAR(100),
     nickname VARCHAR(100),
@@ -19,8 +19,8 @@ CREATE TABLE children (
     parent_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     full_name VARCHAR(100) NOT NULL,
     birth_date DATE NOT NULL,
-    sport_type VARCHAR(20) NOT NULL, -- ski, snowboard
-    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 10),
+    sport_type VARCHAR(20), -- ski, snowboard
+    skill_level INTEGER CHECK (skill_level BETWEEN 1 AND 5),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,7 +38,9 @@ CREATE TABLE trainers (
     dismissal_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    photo_url VARCHAR(255)
+    photo_url VARCHAR(255),
+    username VARCHAR(100) UNIQUE,
+    password VARCHAR(255)
 );
 
 -- Таблица администраторов
@@ -113,7 +115,9 @@ CREATE TABLE schedule_blocks (
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by INTEGER REFERENCES administrators(id)
+    created_by INTEGER REFERENCES administrators(id),
+    trainer_id INTEGER REFERENCES trainers(id) ON DELETE SET NULL,
+    blocked_by_type VARCHAR(20) DEFAULT 'admin' CHECK (blocked_by_type IN ('admin', 'trainer'))
 );
 
 -- Таблица исключений из блокировок (для точечного снятия блокировок)
@@ -467,6 +471,7 @@ CREATE INDEX idx_clients_email ON clients(email);
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_trainers_is_active ON trainers(is_active);
 CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
+CREATE INDEX idx_trainers_username ON trainers(username);
 CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
@@ -487,6 +492,8 @@ CREATE INDEX idx_schedule_blocks_active ON schedule_blocks(is_active);
 CREATE INDEX idx_schedule_blocks_dates ON schedule_blocks(start_date, end_date);
 CREATE INDEX idx_schedule_blocks_day_of_week ON schedule_blocks(day_of_week);
 CREATE INDEX idx_schedule_blocks_time ON schedule_blocks(start_time, end_time);
+CREATE INDEX idx_schedule_blocks_trainer ON schedule_blocks(trainer_id);
+CREATE INDEX idx_schedule_blocks_blocked_by_type ON schedule_blocks(blocked_by_type);
 
 -- Индексы для таблицы исключений из блокировок
 CREATE INDEX idx_block_exceptions_block_id ON schedule_block_exceptions(schedule_block_id);

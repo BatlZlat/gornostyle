@@ -884,6 +884,181 @@ ${trainingInfo}
     }
 });
 
+// Удаление участника из тренировки с возвратом средств
+router.delete('/:id/participants/:participantId', async (req, res) => {
+    const { id: trainingId, participantId } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Получаем информацию о тренировке
+        const trainingResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
+            [trainingId]
+        );
+
+        if (trainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+
+        const training = trainingResult.rows[0];
+        const price = Number(training.price);
+
+        // Получаем информацию об участнике
+        const participantResult = await client.query(`
+            SELECT sp.*, c.full_name, c.telegram_id, c.id as client_id, c.birth_date, c.phone,
+                   ch.full_name as child_full_name, ch.birth_date as child_birth_date
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            WHERE sp.id = $1 AND sp.session_id = $2
+        `, [participantId, trainingId]);
+
+        if (participantResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Участник не найден' });
+        }
+
+        const participant = participantResult.rows[0];
+
+        // Проверяем, что участник с подтвержденным статусом
+        if (participant.status !== 'confirmed') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Можно удалять только подтвержденных участников' });
+        }
+
+        // Меняем статус участника на 'cancelled'
+        await client.query(
+            'UPDATE session_participants SET status = $1 WHERE id = $2',
+            ['cancelled', participantId]
+        );
+
+        // Возвращаем средства на счет клиента
+        const walletResult = await client.query(
+            'SELECT id, balance FROM wallets WHERE client_id = $1',
+            [participant.client_id]
+        );
+
+        if (walletResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Кошелек клиента не найден' });
+        }
+
+        const wallet = walletResult.rows[0];
+        const newBalance = Number(wallet.balance) + price;
+
+        await client.query(
+            'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
+            [newBalance, wallet.id]
+        );
+
+        // Создаем запись о возврате в транзакциях
+        const dateObj = new Date(training.session_date);
+        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+        const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
+        const duration = training.duration || 60;
+        const participantName = participant.is_child ? participant.child_full_name : participant.full_name;
+
+        await client.query(
+            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+            [
+                wallet.id,
+                price,
+                'refund',
+                `Возврат: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`
+            ]
+        );
+
+        // Подсчитываем оставшихся участников
+        const remainingParticipantsResult = await client.query(
+            'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+            [trainingId, 'confirmed']
+        );
+        const remainingCount = parseInt(remainingParticipantsResult.rows[0].count);
+        const seatsLeft = `${remainingCount}/${training.max_participants}`;
+
+        // Формируем информацию о тренировке для уведомлений
+        const days = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+        const dayOfWeek = days[dateObj.getDay()];
+        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+        const trainingInfo = `📅 Дата: ${dateStr}
+⏰ Время: ${startTime} - ${training.end_time ? training.end_time.slice(0, 5) : ''}
+👥 Группа: ${training.group_name || '-'}
+👨‍🏫 Тренер: ${training.trainer_name || '-'}
+🎿 Тренажер: ${training.simulator_name || `Тренажер ${training.simulator_id}`}
+💰 Возврат: ${price.toFixed(2)} руб.`;
+
+        // Отправляем уведомление клиенту
+        if (participant.telegram_id) {
+            const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+            const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+            const clientMessage = `❗️ Вы были удалены из тренировки администратором:
+
+${trainingInfo}
+
+Деньги в размере ${price.toFixed(2)} руб. возвращены на ваш счет.
+По всем вопросам обращайтесь к администратору: ${ADMIN_PHONE}`;
+
+            try {
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: participant.telegram_id,
+                        text: clientMessage
+                    })
+                });
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления клиенту:', notificationError);
+            }
+        }
+
+        // Отправляем уведомление администратору
+        try {
+            const { notifyAdminParticipantRemoved } = require('../bot/admin-notify');
+            const age = participant.is_child
+                ? Math.floor((new Date() - new Date(participant.child_birth_date)) / (365.25 * 24 * 60 * 60 * 1000))
+                : Math.floor((new Date() - new Date(participant.birth_date)) / (365.25 * 24 * 60 * 60 * 1000));
+
+            await notifyAdminParticipantRemoved({
+                client_name: participant.full_name,
+                participant_name: participant.is_child ? participant.child_full_name : null,
+                client_phone: participant.phone,
+                age: age,
+                date: training.session_date,
+                time: training.start_time,
+                group_name: training.group_name,
+                trainer_name: training.trainer_name,
+                simulator_name: training.simulator_name || `Тренажер ${training.simulator_id}`,
+                seats_left: seatsLeft,
+                refund: price
+            });
+        } catch (notificationError) {
+            console.error('Ошибка при отправке уведомления администратору:', notificationError);
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            message: 'Участник успешно удален из тренировки',
+            refund: price,
+            remaining_participants: remainingCount
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении участника из тренировки:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
 // Удаление участника из архивной тренировки (без возврата средств)
 router.delete('/:id/participants/:participantId/archive', async (req, res) => {
     const { id: trainingId, participantId } = req.params;

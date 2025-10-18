@@ -5,6 +5,7 @@
 
 const cron = require('node-cron');
 const notificationService = require('./notification-service');
+const reviewNotificationService = require('./review-notification-service');
 
 class Scheduler {
     constructor() {
@@ -19,6 +20,9 @@ class Scheduler {
         
         // Запускаем задачу отправки напоминаний о тренировках
         this.scheduleTrainingReminders();
+        
+        // Запускаем задачу отправки запросов на отзывы
+        this.scheduleReviewRequests();
         
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
@@ -63,6 +67,46 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Напоминания о тренировках" настроена на 21:00 (Екатеринбург)');
+    }
+
+    /**
+     * Настраивает задачу отправки запросов на отзывы
+     * Запускается каждый день в 21:00 по времени Екатеринбурга (UTC+5)
+     */
+    scheduleReviewRequests() {
+        // Запускаем в 21:00 - сразу после завершения тренировок
+        const task = cron.schedule('0 21 * * *', async () => {
+            const today = new Date();
+            
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: отправка запросов на отзывы`);
+                
+                const stats = await reviewNotificationService.sendReviewRequests(today);
+                
+                console.log(`[${new Date().toISOString()}] Задача завершена. Отправлено: ${stats.sent}, Пропущено: ${stats.skipped_no_links}, Ошибок: ${stats.failed}`);
+                
+                // Отправляем отчет администратору
+                await this.notifyAdminReviews(stats, today);
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при выполнении задачи отправки запросов на отзывы:`, error);
+                
+                // Уведомляем администратора об ошибке
+                await this.notifyAdminErrorReviews(error);
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'review_requests',
+            description: 'Отправка запросов на отзывы клиентам',
+            schedule: '0 21 * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Запросы на отзывы" настроена на 21:00 (Екатеринбург)');
     }
 
     /**
@@ -165,6 +209,71 @@ class Scheduler {
             console.log('✓ Уведомление об ошибке отправлено администратору');
         } catch (notifyError) {
             console.error('Ошибка при отправке уведомления об ошибке администратору:', notifyError.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору отчет о результатах отправки запросов на отзывы
+     * @param {Object} stats - Статистика отправки
+     * @param {Date} targetDate - Дата тренировок
+     */
+    async notifyAdminReviews(stats, targetDate) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `📊 <b>Отчет об отправке запросов на отзывы</b>\n\n`;
+            message += `📅 Дата тренировок: ${targetDate.toISOString().split('T')[0]}\n`;
+            message += `👥 Клиентов обработано: ${stats.total_clients}\n`;
+            message += `✅ Отправлено: ${stats.sent}\n`;
+            message += `⏭️ Пропущено (все отзывы оставлены): ${stats.skipped_no_links}\n`;
+            message += `❌ Ошибок: ${stats.failed}\n\n`;
+            
+            if (stats.errors && stats.errors.length > 0) {
+                message += `<b>Ошибки:</b>\n`;
+                stats.errors.slice(0, 5).forEach((error, index) => {
+                    message += `${index + 1}. ${error.client_name} - ${error.error}\n`;
+                });
+                if (stats.errors.length > 5) {
+                    message += `... и еще ${stats.errors.length - 5}\n`;
+                }
+            }
+            
+            message += `\n⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Отчет об отзывах отправлен администратору');
+        } catch (error) {
+            console.error('Ошибка при отправке отчета об отзывах администратору:', error.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору уведомление об ошибке при отправке запросов на отзывы
+     * @param {Error} error - Объект ошибки
+     */
+    async notifyAdminErrorReviews(error) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `⚠️ <b>Ошибка при отправке запросов на отзывы</b>\n\n`;
+            message += `<code>${error.message}</code>\n\n`;
+            message += `⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Уведомление об ошибке отправки отзывов отправлено администратору');
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления об ошибке отзывов администратору:', notifyError.message);
         }
     }
 }

@@ -873,6 +873,7 @@ async function loadSchedule() {
                                 <th>Участников</th>
                                 <th>Уровень</th>
                                 <th>Цена</th>
+                                <th>Действия</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -886,6 +887,11 @@ async function loadSchedule() {
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
                                     <td>${training.skill_level || '-'}</td>
                                     <td>${training.price} ₽</td>
+                                    <td class="training-actions">
+                                        <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual})">
+                                            Подробнее
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -1436,6 +1442,8 @@ function displayClients() {
                     <th>Возраст</th>
                     <th>Уровень</th>
                     <th>Баланс</th>
+                    <th>Отзыв 2ГИС</th>
+                    <th>Отзыв Яндекс</th>
                     <th>Действия</th>
                 </tr>
             </thead>
@@ -1482,6 +1490,18 @@ function displayClients() {
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="updateReviewStatus(${client.id}, '2gis', this.checked)"
+                                       ${client.review_2gis ? 'checked' : ''}
+                                       title="Отметить, что клиент оставил отзыв на 2ГИС">
+                            </td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="updateReviewStatus(${client.id}, 'yandex', this.checked)"
+                                       ${client.review_yandex ? 'checked' : ''}
+                                       title="Отметить, что клиент оставил отзыв на Яндекс картах">
+                            </td>
                             <td>
                                 <button onclick="editClient(${client.id})" class="edit-button">✏️</button>
                                 ${client.child_id ? `<button onclick="editChild(${client.child_id})" class="edit-button">✏️👶</button>` : ''}
@@ -2045,6 +2065,7 @@ async function viewTrainingDetails(trainingId) {
                                     <th>Возраст</th>
                                     <th>Уровень</th>
                                     <th>Контактный телефон</th>
+                                    <th>Действия</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2057,9 +2078,17 @@ async function viewTrainingDetails(trainingId) {
                                             <td>${age} лет</td>
                                             <td>${participant.skill_level || '-'}</td>
                                             <td>${participant.phone || '-'}</td>
+                                            <td>
+                                                <button 
+                                                    class="btn-danger btn-small" 
+                                                    onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
+                                                    title="Удалить участника с возвратом средств">
+                                                    ❌ Удалить
+                                                </button>
+                                            </td>
                                         </tr>
                                     `;
-                                }).join('') : '<tr><td colspan="4">Нет участников</td></tr>'}
+                                }).join('') : '<tr><td colspan="5">Нет участников</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -2082,6 +2111,205 @@ async function viewTrainingDetails(trainingId) {
     } catch (error) {
         console.error('Ошибка при загрузке деталей тренировки:', error);
         showError('Не удалось загрузить детали тренировки');
+    }
+}
+
+// Просмотр деталей тренировки из расписания (групповой или индивидуальной)
+async function viewScheduleDetails(trainingId, isIndividual) {
+    try {
+        let training;
+        
+        if (isIndividual) {
+            // Запрос деталей индивидуальной тренировки
+            const response = await fetch(`/api/individual-trainings/${trainingId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            training = await response.json();
+            training.is_individual = true;
+        } else {
+            // Запрос деталей групповой тренировки
+            const response = await fetch(`/api/trainings/${trainingId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            training = await response.json();
+            training.is_individual = false;
+        }
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        
+        if (training.is_individual) {
+            // Модальное окно для индивидуальной тренировки
+            const participant = training.participant;
+            const birthDate = new Date(participant.birth_date);
+            const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+            const equipmentName = training.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+            const trainerText = training.with_trainer ? 'С тренером' : 'Без тренера';
+            
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Детали индивидуальной тренировки</h3>
+                    <div class="training-details">
+                        <div class="detail-group">
+                            <h4>Основная информация</h4>
+                            <p><strong>Дата:</strong> ${formatDate(training.preferred_date)}</p>
+                            <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
+                            <p><strong>Длительность:</strong> ${training.duration} минут</p>
+                            <p><strong>Тренажёр:</strong> ${training.simulator_name}</p>
+                            <p><strong>Тип:</strong> ${equipmentName}</p>
+                            <p><strong>Тренер:</strong> ${trainerText}</p>
+                            <p><strong>Цена:</strong> ${training.price} ₽</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Информация об участнике</h4>
+                            <table class="participants-table">
+                                <thead>
+                                    <tr>
+                                        ${participant.is_child ? '<th>ФИО участника</th><th>ФИО родителя</th>' : '<th>ФИО</th>'}
+                                        <th>Возраст</th>
+                                        ${participant.skill_level ? '<th>Уровень</th>' : ''}
+                                        <th>Контактный телефон</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        ${participant.is_child ? 
+                                            `<td>${participant.full_name}</td><td>${participant.parent_name || '-'}</td>` : 
+                                            `<td>${participant.full_name}</td>`
+                                        }
+                                        <td>${age} лет</td>
+                                        ${participant.skill_level ? `<td>${participant.skill_level}</td>` : ''}
+                                        <td>${participant.phone || '-'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-danger" onclick="deleteIndividualTraining(${trainingId})">
+                            Удалить тренировку
+                        </button>
+                        <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Модальное окно для групповой тренировки
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Детали групповой тренировки</h3>
+                    <div class="training-details">
+                        <div class="detail-group">
+                            <h4>Основная информация</h4>
+                            <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
+                            <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
+                            <p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>
+                            <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
+                            <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
+                            <p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>
+                            <p><strong>Цена:</strong> ${training.price != null ? training.price : '-'} ₽</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>
+                            <table class="participants-table">
+                                <thead>
+                                    <tr>
+                                        <th>ФИО</th>
+                                        <th>Возраст</th>
+                                        <th>Уровень</th>
+                                        <th>Контактный телефон</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${training.participants ? training.participants.map(participant => {
+                                        const birthDate = new Date(participant.birth_date);
+                                        const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                                        return `
+                                            <tr>
+                                                <td>${participant.full_name}</td>
+                                                <td>${age} лет</td>
+                                                <td>${participant.skill_level || '-'}</td>
+                                                <td>${participant.phone || '-'}</td>
+                                                <td>
+                                                    <button 
+                                                        class="btn-danger btn-small" 
+                                                        onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
+                                                        title="Удалить участника с возвратом средств">
+                                                        ❌ Удалить
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('') : '<tr><td colspan="5">Нет участников</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        showError('Не удалось загрузить детали тренировки');
+    }
+}
+
+// Удаление индивидуальной тренировки с возвратом средств
+async function deleteIndividualTraining(trainingId) {
+    if (!confirm('Вы уверены, что хотите удалить эту индивидуальную тренировку? Средства будут возвращены клиенту.')) {
+        return;
+    }
+    
+    // Находим модальное окно заранее
+    const modal = document.querySelector('.modal');
+    
+    try {
+        const response = await fetch(`/api/individual-trainings/${trainingId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Закрываем модальное окно
+        if (modal) {
+            modal.remove();
+        }
+        
+        // Показываем сообщение об успехе
+        showSuccess(`Индивидуальная тренировка успешно удалена. Возвращено ${result.refund.amount} ₽ клиенту ${result.refund.client_name}. Новый баланс: ${result.refund.new_balance} ₽`);
+        
+        // Перезагружаем расписание
+        await loadSchedule();
+    } catch (error) {
+        console.error('Ошибка при удалении индивидуальной тренировки:', error);
+        
+        // Закрываем модальное окно даже при ошибке
+        if (modal) {
+            modal.remove();
+        }
+        
+        showError('Не удалось удалить индивидуальную тренировку');
     }
 }
 
@@ -2654,6 +2882,44 @@ async function editClient(id) {
     } catch (error) {
         console.error('Ошибка при загрузке данных клиента:', error);
         showError('Не удалось загрузить данные клиента');
+    }
+}
+
+// Функция для обновления статуса отзыва клиента
+async function updateReviewStatus(clientId, reviewType, isChecked) {
+    try {
+        console.log(`Обновление статуса отзыва: клиент ${clientId}, тип ${reviewType}, значение ${isChecked}`);
+        
+        const response = await fetch(`/api/clients/${clientId}/review-status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                reviewType: reviewType,
+                value: isChecked
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении статуса отзыва');
+        }
+
+        const result = await response.json();
+        console.log('Статус отзыва обновлен:', result);
+        
+        // Показываем уведомление об успешном обновлении
+        const reviewName = reviewType === '2gis' ? '2ГИС' : 'Яндекс Карты';
+        const statusText = isChecked ? 'оставлен' : 'не оставлен';
+        showSuccess(`Отзыв на ${reviewName} отмечен как "${statusText}"`);
+        
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса отзыва:', error);
+        showError(error.message || 'Не удалось обновить статус отзыва');
+        
+        // Возвращаем чекбокс в предыдущее состояние
+        loadClients();
     }
 }
 
@@ -3884,6 +4150,49 @@ async function sendClientNotification() {
         messageInput.value = '';
     } catch (error) {
         console.error('Ошибка при отправке сообщения:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Функция для удаления участника из тренировки
+async function removeParticipantFromTraining(trainingId, participantId, participantName) {
+    // Подтверждение удаления
+    if (!confirm(`Вы уверены, что хотите удалить участника "${participantName}" из тренировки?\n\nДействия:\n✅ Статус участника будет изменен на "отменено"\n💰 Средства будут возвращены на счет клиента\n📨 Клиент получит уведомление об удалении\n📱 Администратор получит уведомление`)) {
+        return;
+    }
+
+    try {
+        showLoading('Удаление участника...');
+
+        const response = await fetch(`/api/trainings/${trainingId}/participants/${participantId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при удалении участника');
+        }
+
+        showSuccess(`Участник "${participantName}" успешно удален из тренировки\nВозврат: ${result.refund} руб.\nОсталось участников: ${result.remaining_participants}`);
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('.modal');
+        if (modal) {
+            modal.remove();
+        }
+
+        // Обновляем список тренировок
+        if (typeof loadTrainings === 'function') {
+            loadTrainings();
+        }
+    } catch (error) {
+        console.error('Ошибка при удалении участника:', error);
         showError(error.message);
     } finally {
         hideLoading();
