@@ -378,16 +378,33 @@ async function notifyAdminCertificateActivation({ clientName, certificateNumber,
 
 // Функция для вычисления возраста по дате рождения
 function calculateAge(birthDate) {
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-        age--;
+    if (!birthDate) {
+        console.warn('calculateAge: birthDate is null or undefined');
+        return null;
     }
     
-    return age;
+    try {
+        const today = new Date();
+        const birth = new Date(birthDate);
+        
+        // Проверяем, что дата валидна
+        if (isNaN(birth.getTime())) {
+            console.warn('calculateAge: invalid birthDate:', birthDate);
+            return null;
+        }
+        
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age--;
+        }
+        
+        return age;
+    } catch (error) {
+        console.error('calculateAge error:', error, 'birthDate:', birthDate);
+        return null;
+    }
 }
 
 // Функция для отправки уведомления о покупке сертификата через сайт
@@ -935,12 +952,21 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
         const equipmentName = equipment_type === 'ski' ? '⛷ Лыжи' : '🏂 Сноуборд';
         const trainerText = with_trainer ? 'С тренером' : 'Без тренера';
         
+        // Проверяем и вычисляем возраст
+        let participantAgeDisplay;
+        if (participant_age !== null && participant_age !== undefined && !isNaN(participant_age) && participant_age >= 0) {
+            participantAgeDisplay = `${participant_age} лет`;
+        } else {
+            console.warn('Некорректный возраст участника:', participant_age);
+            participantAgeDisplay = 'возраст не указан';
+        }
+        
         let participantInfo = '';
         if (is_child && parent_name) {
-            participantInfo = `👶 *Участник:* ${participant_name} (${participant_age} лет)\n` +
+            participantInfo = `👶 *Участник:* ${participant_name} (${participantAgeDisplay})\n` +
                             `👨‍👩‍👧 *Родитель:* ${parent_name}\n`;
         } else {
-            participantInfo = `👤 *Участник:* ${participant_name} (${participant_age} лет)\n`;
+            participantInfo = `👤 *Участник:* ${participant_name} (${participantAgeDisplay})\n`;
         }
 
         const message = 

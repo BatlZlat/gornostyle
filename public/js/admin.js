@@ -2245,6 +2245,9 @@ async function deleteIndividualTraining(trainingId) {
         return;
     }
     
+    // Находим модальное окно заранее
+    const modal = document.querySelector('.modal');
+    
     try {
         const response = await fetch(`/api/individual-trainings/${trainingId}`, {
             method: 'DELETE'
@@ -2257,7 +2260,6 @@ async function deleteIndividualTraining(trainingId) {
         const result = await response.json();
         
         // Закрываем модальное окно
-        const modal = document.querySelector('.modal');
         if (modal) {
             modal.remove();
         }
@@ -2269,6 +2271,12 @@ async function deleteIndividualTraining(trainingId) {
         await loadSchedule();
     } catch (error) {
         console.error('Ошибка при удалении индивидуальной тренировки:', error);
+        
+        // Закрываем модальное окно даже при ошибке
+        if (modal) {
+            modal.remove();
+        }
+        
         showError('Не удалось удалить индивидуальную тренировку');
     }
 }

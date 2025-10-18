@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 const TelegramBot = require('node-telegram-bot-api');
-const { notifyAdminIndividualTrainingDeleted, calculateAge } = require('../bot/admin-notify');
+const { notifyAdminIndividualTrainingDeleted } = require('../bot/admin-notify');
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 /**
@@ -120,6 +120,7 @@ router.delete('/:id', async (req, res) => {
                 s.name as simulator_name,
                 c.full_name as client_name,
                 c.phone as client_phone,
+                c.birth_date as client_birth_date,
                 c.telegram_id as client_telegram_id,
                 ch.full_name as child_name,
                 ch.birth_date as child_birth_date,
@@ -141,6 +142,14 @@ router.delete('/:id', async (req, res) => {
         
         const training = trainingResult.rows[0];
         const price = Number(training.price);
+        
+        console.log('Данные тренировки из БД:', {
+            client_name: training.client_name,
+            client_birth_date: training.client_birth_date,
+            child_id: training.child_id,
+            child_name: training.child_name,
+            child_birth_date: training.child_birth_date
+        });
         
         // Получаем кошелек клиента
         const walletResult = await client.query(
@@ -223,7 +232,21 @@ router.delete('/:id', async (req, res) => {
         
         // Отправляем уведомление администраторам через централизованную функцию
         const participantBirthDate = training.child_id ? training.child_birth_date : training.client_birth_date;
-        const participantAge = calculateAge(participantBirthDate);
+        
+        // Вычисляем возраст так же, как в модальном окне
+        let participantAge = null;
+        if (participantBirthDate) {
+            const birthDate = new Date(participantBirthDate);
+            participantAge = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+        }
+        
+        console.log('Данные для уведомления администратору:', {
+            participantBirthDate,
+            participantAge,
+            participantName,
+            is_child: !!training.child_id,
+            parent_name: training.parent_name
+        });
         
         await notifyAdminIndividualTrainingDeleted({
             client_name: training.client_name,
