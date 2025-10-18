@@ -1442,6 +1442,8 @@ function displayClients() {
                     <th>Возраст</th>
                     <th>Уровень</th>
                     <th>Баланс</th>
+                    <th>Отзыв 2ГИС</th>
+                    <th>Отзыв Яндекс</th>
                     <th>Действия</th>
                 </tr>
             </thead>
@@ -1488,6 +1490,18 @@ function displayClients() {
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="updateReviewStatus(${client.id}, '2gis', this.checked)"
+                                       ${client.review_2gis ? 'checked' : ''}
+                                       title="Отметить, что клиент оставил отзыв на 2ГИС">
+                            </td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="updateReviewStatus(${client.id}, 'yandex', this.checked)"
+                                       ${client.review_yandex ? 'checked' : ''}
+                                       title="Отметить, что клиент оставил отзыв на Яндекс картах">
+                            </td>
                             <td>
                                 <button onclick="editClient(${client.id})" class="edit-button">✏️</button>
                                 ${client.child_id ? `<button onclick="editChild(${client.child_id})" class="edit-button">✏️👶</button>` : ''}
@@ -2850,6 +2864,44 @@ async function editClient(id) {
     } catch (error) {
         console.error('Ошибка при загрузке данных клиента:', error);
         showError('Не удалось загрузить данные клиента');
+    }
+}
+
+// Функция для обновления статуса отзыва клиента
+async function updateReviewStatus(clientId, reviewType, isChecked) {
+    try {
+        console.log(`Обновление статуса отзыва: клиент ${clientId}, тип ${reviewType}, значение ${isChecked}`);
+        
+        const response = await fetch(`/api/clients/${clientId}/review-status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                reviewType: reviewType,
+                value: isChecked
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении статуса отзыва');
+        }
+
+        const result = await response.json();
+        console.log('Статус отзыва обновлен:', result);
+        
+        // Показываем уведомление об успешном обновлении
+        const reviewName = reviewType === '2gis' ? '2ГИС' : 'Яндекс Карты';
+        const statusText = isChecked ? 'оставлен' : 'не оставлен';
+        showSuccess(`Отзыв на ${reviewName} отмечен как "${statusText}"`);
+        
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса отзыва:', error);
+        showError(error.message || 'Не удалось обновить статус отзыва');
+        
+        // Возвращаем чекбокс в предыдущее состояние
+        loadClients();
     }
 }
 
