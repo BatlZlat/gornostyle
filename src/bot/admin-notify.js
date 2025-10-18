@@ -235,6 +235,36 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
     }
 }
 
+// Функция для отправки уведомления об удалении участника из тренировки
+async function notifyAdminParticipantRemoved(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message =
+            '👥 *Удаление участника из тренировки!*\n\n' +
+            `👤 *Клиент:* ${trainingData.client_name}\n` +
+            (trainingData.participant_name ? `👶 *Участник:* ${trainingData.participant_name} (${trainingData.age} лет)\n` : `👤 *Возраст:* ${trainingData.age} лет\n`) +
+            `📞 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👥 *Группа:* ${trainingData.group_name}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
+            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
+            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления:', error);
+    }
+}
+
 // Функция для отправки уведомления об отмене индивидуальной тренировки
 async function notifyAdminIndividualTrainingCancellation(trainingData) {
     try {
@@ -1007,6 +1037,7 @@ module.exports = {
     notifyAdminGroupTrainingCancellation,
     notifyAdminGroupTrainingCancellationByAdmin,
     notifyAdminIndividualTrainingCancellation,
+    notifyAdminParticipantRemoved,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
     notifyAdminCertificatePurchase,

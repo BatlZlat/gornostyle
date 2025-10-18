@@ -2065,6 +2065,7 @@ async function viewTrainingDetails(trainingId) {
                                     <th>Возраст</th>
                                     <th>Уровень</th>
                                     <th>Контактный телефон</th>
+                                    <th>Действия</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2077,9 +2078,17 @@ async function viewTrainingDetails(trainingId) {
                                             <td>${age} лет</td>
                                             <td>${participant.skill_level || '-'}</td>
                                             <td>${participant.phone || '-'}</td>
+                                            <td>
+                                                <button 
+                                                    class="btn-danger btn-small" 
+                                                    onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
+                                                    title="Удалить участника с возвратом средств">
+                                                    ❌ Удалить
+                                                </button>
+                                            </td>
                                         </tr>
                                     `;
-                                }).join('') : '<tr><td colspan="4">Нет участников</td></tr>'}
+                                }).join('') : '<tr><td colspan="5">Нет участников</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -2212,6 +2221,7 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                                         <th>Возраст</th>
                                         <th>Уровень</th>
                                         <th>Контактный телефон</th>
+                                        <th>Действия</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2224,9 +2234,17 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                                                 <td>${age} лет</td>
                                                 <td>${participant.skill_level || '-'}</td>
                                                 <td>${participant.phone || '-'}</td>
+                                                <td>
+                                                    <button 
+                                                        class="btn-danger btn-small" 
+                                                        onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
+                                                        title="Удалить участника с возвратом средств">
+                                                        ❌ Удалить
+                                                    </button>
+                                                </td>
                                             </tr>
                                         `;
-                                    }).join('') : '<tr><td colspan="4">Нет участников</td></tr>'}
+                                    }).join('') : '<tr><td colspan="5">Нет участников</td></tr>'}
                                 </tbody>
                             </table>
                         </div>
@@ -4132,6 +4150,49 @@ async function sendClientNotification() {
         messageInput.value = '';
     } catch (error) {
         console.error('Ошибка при отправке сообщения:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Функция для удаления участника из тренировки
+async function removeParticipantFromTraining(trainingId, participantId, participantName) {
+    // Подтверждение удаления
+    if (!confirm(`Вы уверены, что хотите удалить участника "${participantName}" из тренировки?\n\nДействия:\n✅ Статус участника будет изменен на "отменено"\n💰 Средства будут возвращены на счет клиента\n📨 Клиент получит уведомление об удалении\n📱 Администратор получит уведомление`)) {
+        return;
+    }
+
+    try {
+        showLoading('Удаление участника...');
+
+        const response = await fetch(`/api/trainings/${trainingId}/participants/${participantId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при удалении участника');
+        }
+
+        showSuccess(`Участник "${participantName}" успешно удален из тренировки\nВозврат: ${result.refund} руб.\nОсталось участников: ${result.remaining_participants}`);
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('.modal');
+        if (modal) {
+            modal.remove();
+        }
+
+        // Обновляем список тренировок
+        if (typeof loadTrainings === 'function') {
+            loadTrainings();
+        }
+    } catch (error) {
+        console.error('Ошибка при удалении участника:', error);
         showError(error.message);
     } finally {
         hideLoading();
