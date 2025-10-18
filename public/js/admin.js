@@ -873,6 +873,7 @@ async function loadSchedule() {
                                 <th>Участников</th>
                                 <th>Уровень</th>
                                 <th>Цена</th>
+                                <th>Действия</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -886,6 +887,11 @@ async function loadSchedule() {
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
                                     <td>${training.skill_level || '-'}</td>
                                     <td>${training.price} ₽</td>
+                                    <td class="training-actions">
+                                        <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual})">
+                                            Подробнее
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2082,6 +2088,188 @@ async function viewTrainingDetails(trainingId) {
     } catch (error) {
         console.error('Ошибка при загрузке деталей тренировки:', error);
         showError('Не удалось загрузить детали тренировки');
+    }
+}
+
+// Просмотр деталей тренировки из расписания (групповой или индивидуальной)
+async function viewScheduleDetails(trainingId, isIndividual) {
+    try {
+        let training;
+        
+        if (isIndividual) {
+            // Запрос деталей индивидуальной тренировки
+            const response = await fetch(`/api/individual-trainings/${trainingId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            training = await response.json();
+            training.is_individual = true;
+        } else {
+            // Запрос деталей групповой тренировки
+            const response = await fetch(`/api/trainings/${trainingId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            training = await response.json();
+            training.is_individual = false;
+        }
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        
+        if (training.is_individual) {
+            // Модальное окно для индивидуальной тренировки
+            const participant = training.participant;
+            const birthDate = new Date(participant.birth_date);
+            const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+            const equipmentName = training.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+            const trainerText = training.with_trainer ? 'С тренером' : 'Без тренера';
+            
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Детали индивидуальной тренировки</h3>
+                    <div class="training-details">
+                        <div class="detail-group">
+                            <h4>Основная информация</h4>
+                            <p><strong>Дата:</strong> ${formatDate(training.preferred_date)}</p>
+                            <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
+                            <p><strong>Длительность:</strong> ${training.duration} минут</p>
+                            <p><strong>Тренажёр:</strong> ${training.simulator_name}</p>
+                            <p><strong>Тип:</strong> ${equipmentName}</p>
+                            <p><strong>Тренер:</strong> ${trainerText}</p>
+                            <p><strong>Цена:</strong> ${training.price} ₽</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Информация об участнике</h4>
+                            <table class="participants-table">
+                                <thead>
+                                    <tr>
+                                        ${participant.is_child ? '<th>ФИО участника</th><th>ФИО родителя</th>' : '<th>ФИО</th>'}
+                                        <th>Возраст</th>
+                                        ${participant.skill_level ? '<th>Уровень</th>' : ''}
+                                        <th>Контактный телефон</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        ${participant.is_child ? 
+                                            `<td>${participant.full_name}</td><td>${participant.parent_name || '-'}</td>` : 
+                                            `<td>${participant.full_name}</td>`
+                                        }
+                                        <td>${age} лет</td>
+                                        ${participant.skill_level ? `<td>${participant.skill_level}</td>` : ''}
+                                        <td>${participant.phone || '-'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-danger" onclick="deleteIndividualTraining(${trainingId})">
+                            Удалить тренировку
+                        </button>
+                        <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Модальное окно для групповой тренировки
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Детали групповой тренировки</h3>
+                    <div class="training-details">
+                        <div class="detail-group">
+                            <h4>Основная информация</h4>
+                            <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
+                            <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
+                            <p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>
+                            <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
+                            <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
+                            <p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>
+                            <p><strong>Цена:</strong> ${training.price != null ? training.price : '-'} ₽</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>
+                            <table class="participants-table">
+                                <thead>
+                                    <tr>
+                                        <th>ФИО</th>
+                                        <th>Возраст</th>
+                                        <th>Уровень</th>
+                                        <th>Контактный телефон</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${training.participants ? training.participants.map(participant => {
+                                        const birthDate = new Date(participant.birth_date);
+                                        const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                                        return `
+                                            <tr>
+                                                <td>${participant.full_name}</td>
+                                                <td>${age} лет</td>
+                                                <td>${participant.skill_level || '-'}</td>
+                                                <td>${participant.phone || '-'}</td>
+                                            </tr>
+                                        `;
+                                    }).join('') : '<tr><td colspan="4">Нет участников</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        showError('Не удалось загрузить детали тренировки');
+    }
+}
+
+// Удаление индивидуальной тренировки с возвратом средств
+async function deleteIndividualTraining(trainingId) {
+    if (!confirm('Вы уверены, что хотите удалить эту индивидуальную тренировку? Средства будут возвращены клиенту.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/individual-trainings/${trainingId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('.modal');
+        if (modal) {
+            modal.remove();
+        }
+        
+        // Показываем сообщение об успехе
+        showSuccess(`Индивидуальная тренировка успешно удалена. Возвращено ${result.refund.amount} ₽ клиенту ${result.refund.client_name}. Новый баланс: ${result.refund.new_balance} ₽`);
+        
+        // Перезагружаем расписание
+        await loadSchedule();
+    } catch (error) {
+        console.error('Ошибка при удалении индивидуальной тренировки:', error);
+        showError('Не удалось удалить индивидуальную тренировку');
     }
 }
 
