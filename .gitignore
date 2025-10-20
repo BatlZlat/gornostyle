@@ -86,4 +86,11 @@ backups/
 # Generated files
 public/generated/
 
+# Trainer photos (uploaded directly to host)
+# Temporarily commented out to add existing trainer photos to git
+# public/images/trainers/*.webp
+# public/images/trainers/*.jpg
+# public/images/trainers/*.jpeg
+# public/images/trainers/*.png
+
 *.docx
