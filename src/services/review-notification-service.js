@@ -57,7 +57,7 @@ class ReviewNotificationService {
                 JOIN clients c ON sp.client_id = c.id
                 LEFT JOIN children ch ON sp.child_id = ch.id
                 WHERE ts.session_date = $1
-                    AND ts.status = 'scheduled'
+                    AND ts.status IN ('scheduled', 'completed')
                     AND sp.status = 'confirmed'
                     AND c.telegram_id IS NOT NULL
                 

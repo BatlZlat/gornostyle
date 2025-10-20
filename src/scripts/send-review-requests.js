@@ -6,6 +6,48 @@
 
 require('dotenv').config();
 const reviewNotificationService = require('../services/review-notification-service');
+const moment = require('moment-timezone');
+
+/**
+ * Отправляет администратору отчет об отправке запросов на отзывы
+ * @param {Object} stats - Статистика отправки
+ * @param {Date} targetDate - Дата тренировок
+ */
+async function notifyAdminReviews(stats, targetDate) {
+    if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+        console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+        return;
+    }
+
+    try {
+        const TelegramBot = require('node-telegram-bot-api');
+        const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+        
+        let message = `📊 <b>Отчет об отправке запросов на отзывы</b>\n\n`;
+        message += `📅 Дата тренировок: ${targetDate.toISOString().split('T')[0]}\n`;
+        message += `👥 Клиентов обработано: ${stats.total_clients}\n`;
+        message += `✅ Отправлено: ${stats.sent}\n`;
+        message += `⏭️ Пропущено (все отзывы оставлены): ${stats.skipped_no_links}\n`;
+        message += `❌ Ошибок: ${stats.failed}\n\n`;
+        
+        if (stats.errors && stats.errors.length > 0) {
+            message += `<b>Ошибки:</b>\n`;
+            stats.errors.slice(0, 5).forEach((error, index) => {
+                message += `${index + 1}. ${error.client_name} - ${error.error}\n`;
+            });
+            if (stats.errors.length > 5) {
+                message += `... и еще ${stats.errors.length - 5}\n`;
+            }
+        }
+        
+        message += `\n⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+        await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+        console.log('✓ Отчет об отзывах отправлен администратору');
+    } catch (error) {
+        console.error('Ошибка при отправке отчета об отзывах администратору:', error.message);
+    }
+}
 
 async function main() {
     try {
@@ -31,6 +73,9 @@ async function main() {
 
         // Отправляем запросы на отзывы
         const stats = await reviewNotificationService.sendReviewRequests(targetDate);
+
+        // Отправляем отчет администратору
+        await notifyAdminReviews(stats, targetDate);
 
         console.log('');
         console.log('═══════════════════════════════════════════════════════════');
