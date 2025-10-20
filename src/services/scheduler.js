@@ -24,6 +24,9 @@ class Scheduler {
         // Запускаем задачу отправки запросов на отзывы
         this.scheduleReviewRequests();
         
+        // Запускаем задачу обновления статусов тренировок
+        this.scheduleStatusUpdates();
+        
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
 
@@ -107,6 +110,49 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Запросы на отзывы" настроена на 21:00 (Екатеринбург)');
+    }
+
+    /**
+     * Настраивает задачу обновления статусов завершенных тренировок
+     * Запускается каждые 30 минут
+     */
+    scheduleStatusUpdates() {
+        const { exec } = require('child_process');
+        const path = require('path');
+        
+        const task = cron.schedule('*/30 * * * *', async () => {
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: обновление статусов тренировок`);
+                
+                const scriptPath = path.join(__dirname, '../scripts/complete-past-group-sessions.js');
+                
+                exec(`node ${scriptPath}`, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(`[${new Date().toISOString()}] Ошибка обновления статусов:`, error);
+                        return;
+                    }
+                    if (stderr) {
+                        console.error(`[${new Date().toISOString()}] Stderr обновления статусов:`, stderr);
+                    }
+                    console.log(`[${new Date().toISOString()}] ${stdout}`);
+                });
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при запуске обновления статусов:`, error);
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'status_updates',
+            description: 'Обновление статусов завершенных тренировок',
+            schedule: '*/30 * * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Обновление статусов" настроена на каждые 30 минут');
     }
 
     /**

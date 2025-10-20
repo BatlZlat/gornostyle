@@ -25,6 +25,7 @@ const adminAuthRouter = require('./routes/adminAuth');
 const trainerAuthRouter = require('./routes/trainerAuth');
 const trainerBookingsRouter = require('./routes/trainerBookings');
 const individualTrainingsRouter = require('./routes/individual-trainings');
+const clientSettingsRouter = require('./routes/client-settings');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
@@ -370,6 +371,7 @@ app.use('/api/schedule', verifyToken, scheduleRouter);
 app.use('/api/simulators', verifyToken, simulatorsRouter);
 app.use('/api/prices', verifyToken, pricesRouter);
 app.use('/api/clients', verifyToken, clientsRouter);
+app.use('/api/clients', clientSettingsRouter); // Роуты настроек клиентов (без токена для бота)
 app.use('/api/finances', verifyToken, financesRouter);
 app.use('/api/sms', verifyToken, smsRouter);
 app.use('/api/children', verifyToken, childrenRouter);

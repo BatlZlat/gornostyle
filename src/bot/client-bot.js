@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
 const jwt = require('jsonwebtoken');
+const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -31,14 +32,14 @@ function getJWTToken() {
     );
 }
 
-function showMainMenu(chatId) {
+async function showMainMenu(chatId, telegramId = null) {
     return bot.sendMessage(chatId, 'Выберите действие:', {
         reply_markup: {
             keyboard: [
                 ['📝 Записаться на тренировку'],
                 ['📋 Мои записи', '👤 Личный кабинет'],
                 ['🎁 Сертификаты', '💰 Кошелек'],
-                ['📤 Поделиться ботом']
+                ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
             ],
             resize_keyboard: true,
             one_time_keyboard: false,
@@ -767,6 +768,20 @@ async function handleTextMessage(msg) {
     // Обработка кнопки "Поделиться ботом"
     if (msg.text === '📤 Поделиться ботом') {
         return handleShareBotCommand(msg);
+    }
+
+    // Обработка кнопки "Настройка уведомлений"
+    if (msg.text === '⚙️ Настройка уведомлений') {
+        return showNotificationSettingsMenu(msg);
+    }
+
+    // Обработка кнопок выбора режима уведомлений
+    if (msg.text === '🔊 Со звуком') {
+        return setNotificationMode(msg, false); // false = обычный режим
+    }
+
+    if (msg.text === '🔇 Без звука') {
+        return setNotificationMode(msg, true); // true = беззвучный режим
     }
 
     if (msg.text === '🔙 В главное меню' || msg.text === '🔙 Назад в меню') {
@@ -6547,9 +6562,96 @@ bot.onText(/\/start/, async (msg) => {
             data: { telegram_id: telegramId, username, nickname }
         });
     } else {
-        await showMainMenu(chatId);
+        await showMainMenu(chatId, telegramId);
     }
 });
+
+// Отображение меню настроек уведомлений
+async function showNotificationSettingsMenu(msg) {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
+    
+    try {
+        // Получаем текущие настройки клиента
+        const clientSettings = await getClientWithSettings(telegramId);
+        
+        if (!clientSettings) {
+            await bot.sendMessage(chatId, '❌ Клиент не найден. Пожалуйста, зарегистрируйтесь в системе.');
+            return;
+        }
+        
+        const currentMode = clientSettings.silent_notifications ? 'без звука' : 'со звуком';
+        
+        const message = 
+            '⚙️ <b>Настройка уведомлений</b>\n\n' +
+            `📌 <b>Текущий режим:</b> ${currentMode}\n\n` +
+            '🔔 Выберите способ получения уведомлений:\n\n' +
+            '🔊 <b>Со звуком</b> — вы точно не пропустите важные сообщения от бота\n\n' +
+            '🔇 <b>Без звука</b> — уведомления будут приходить тихо\n\n' +
+            '⚠️ <i>Важно: При отключении звука есть риск пропустить важную информацию о тренировках</i>\n\n' +
+            '🌙 <i>В период с 22:00 до 9:00 все уведомления автоматически отправляются без звука</i>';
+        
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                keyboard: [
+                    ['🔊 Со звуком'],
+                    ['🔇 Без звука'],
+                    ['🔙 Назад в меню']
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: false
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при отображении меню настроек:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Установка режима уведомлений
+async function setNotificationMode(msg, isSilent) {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
+    
+    try {
+        const success = await updateClientSilentMode(telegramId, isSilent);
+        
+        if (success) {
+            let message;
+            if (isSilent) {
+                message = 
+                    '🔇 <b>Режим без звука активирован</b>\n\n' +
+                    '✅ Уведомления будут приходить тихо, без звуковых сигналов\n\n' +
+                    '⚠️ <b>Обратите внимание:</b>\n' +
+                    '• Есть риск пропустить важную информацию о тренировках\n' +
+                    '• Рекомендуем регулярно проверять бота\n\n' +
+                    '💡 <i>Вы всегда можете вернуться к режиму со звуком через настройки</i>';
+            } else {
+                message = 
+                    '🔊 <b>Режим со звуком активирован</b>\n\n' +
+                    '✅ Теперь вы точно не пропустите важную информацию от бота!\n\n' +
+                    '📢 Вы будете получать:\n' +
+                    '• Напоминания о предстоящих тренировках\n' +
+                    '• Уведомления об изменениях в расписании\n' +
+                    '• Важные сообщения от администрации\n\n' +
+                    '🌙 <i>В ночное время (22:00-9:00) уведомления автоматически приходят без звука</i>';
+            }
+            
+            await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+            
+            // Возвращаемся в главное меню
+            setTimeout(() => {
+                showMainMenu(chatId, telegramId);
+            }, 1000);
+        } else {
+            await bot.sendMessage(chatId, '❌ Не удалось изменить настройки. Попробуйте позже.');
+        }
+    } catch (error) {
+        console.error('Ошибка при установке режима уведомлений:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
 
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {

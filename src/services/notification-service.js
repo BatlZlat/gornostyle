@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { pool } = require('../db');
 const TelegramBot = require('node-telegram-bot-api');
+const { getClientSilentMode } = require('./silent-notification-helper');
 
 /**
  * Сервис для отправки уведомлений клиентам о предстоящих тренировках
@@ -249,8 +250,12 @@ class NotificationService {
      */
     async sendNotification(telegramId, message) {
         try {
+            // Проверяем настройку беззвучного режима
+            const isSilent = await getClientSilentMode(telegramId);
+            
             await this.bot.sendMessage(telegramId, message, {
-                parse_mode: 'HTML'
+                parse_mode: 'HTML',
+                disable_notification: isSilent
             });
             return { success: true };
         } catch (error) {
