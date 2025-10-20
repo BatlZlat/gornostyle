@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
 const jwt = require('jsonwebtoken');
+const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -31,20 +32,48 @@ function getJWTToken() {
     );
 }
 
-function showMainMenu(chatId) {
-    return bot.sendMessage(chatId, 'Выберите действие:', {
-        reply_markup: {
-            keyboard: [
-                ['📝 Записаться на тренировку'],
-                ['📋 Мои записи', '👤 Личный кабинет'],
-                ['🎁 Сертификаты', '💰 Кошелек'],
-                ['📤 Поделиться ботом']
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: false,
-            persistent: true
+async function showMainMenu(chatId, telegramId = null) {
+    try {
+        // Получаем настройки клиента для правильного отображения кнопки
+        let notificationButton = '🔊 Уведомления';
+        
+        if (telegramId) {
+            const clientSettings = await getClientWithSettings(telegramId);
+            if (clientSettings && clientSettings.silent_notifications) {
+                notificationButton = '🔇 Беззвучно';
+            }
         }
-    });
+        
+        return bot.sendMessage(chatId, 'Выберите действие:', {
+            reply_markup: {
+                keyboard: [
+                    ['📝 Записаться на тренировку'],
+                    ['📋 Мои записи', '👤 Личный кабинет'],
+                    ['🎁 Сертификаты', '💰 Кошелек'],
+                    ['📤 Поделиться ботом', notificationButton]
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: false,
+                persistent: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при отображении главного меню:', error);
+        // Если произошла ошибка, показываем меню без кнопки уведомлений
+        return bot.sendMessage(chatId, 'Выберите действие:', {
+            reply_markup: {
+                keyboard: [
+                    ['📝 Записаться на тренировку'],
+                    ['📋 Мои записи', '👤 Личный кабинет'],
+                    ['🎁 Сертификаты', '💰 Кошелек'],
+                    ['📤 Поделиться ботом']
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: false,
+                persistent: true
+            }
+        });
+    }
 }
 
 // Валидация
@@ -767,6 +796,11 @@ async function handleTextMessage(msg) {
     // Обработка кнопки "Поделиться ботом"
     if (msg.text === '📤 Поделиться ботом') {
         return handleShareBotCommand(msg);
+    }
+
+    // Обработка кнопок управления уведомлениями
+    if (msg.text === '🔊 Уведомления' || msg.text === '🔇 Беззвучно') {
+        return handleNotificationToggle(msg);
     }
 
     if (msg.text === '🔙 В главное меню' || msg.text === '🔙 Назад в меню') {
@@ -6547,9 +6581,47 @@ bot.onText(/\/start/, async (msg) => {
             data: { telegram_id: telegramId, username, nickname }
         });
     } else {
-        await showMainMenu(chatId);
+        await showMainMenu(chatId, telegramId);
     }
 });
+
+// Обработчик переключения беззвучного режима
+async function handleNotificationToggle(msg) {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
+    
+    try {
+        // Получаем текущие настройки клиента
+        const clientSettings = await getClientWithSettings(telegramId);
+        
+        if (!clientSettings) {
+            await bot.sendMessage(chatId, '❌ Клиент не найден. Пожалуйста, зарегистрируйтесь в системе.');
+            return;
+        }
+        
+        // Переключаем режим
+        const currentMode = clientSettings.silent_notifications || false;
+        const newMode = !currentMode;
+        
+        const success = await updateClientSilentMode(telegramId, newMode);
+        
+        if (success) {
+            const message = newMode 
+                ? '🔇 <b>Беззвучный режим включен</b>\n\nУведомления будут приходить без звука. Вы будете получать все сообщения, но они не будут вас беспокоить звуковым сигналом.'
+                : '🔊 <b>Обычный режим уведомлений</b>\n\nУведомления снова будут приходить со звуком.';
+            
+            await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+            
+            // Обновляем главное меню с новой кнопкой
+            await showMainMenu(chatId, telegramId);
+        } else {
+            await bot.sendMessage(chatId, '❌ Не удалось изменить настройки. Попробуйте позже.');
+        }
+    } catch (error) {
+        console.error('Ошибка при переключении режима уведомлений:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
 
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {
