@@ -10,12 +10,35 @@ const pool = new Pool({
 });
 
 /**
+ * Проверяет является ли текущее время ночным (22:00 - 9:00)
+ * @returns {boolean} true если сейчас ночное время
+ */
+function isNightTime() {
+    // Используем часовой пояс Екатеринбурга (UTC+5)
+    const now = new Date();
+    const ekbOffset = 5 * 60; // UTC+5 в минутах
+    const localOffset = now.getTimezoneOffset(); // смещение локального времени от UTC
+    const ekbTime = new Date(now.getTime() + (ekbOffset + localOffset) * 60000);
+    
+    const hour = ekbTime.getHours();
+    
+    // Ночное время: с 22:00 до 9:00
+    return hour >= 22 || hour < 9;
+}
+
+/**
  * Проверяет включен ли беззвучный режим для клиента по Telegram ID
+ * С учетом ночного времени (22:00 - 9:00)
  * @param {string} telegramId - Telegram ID клиента
  * @returns {Promise<boolean>} true если беззвучный режим включен
  */
 async function getClientSilentMode(telegramId) {
     try {
+        // Проверяем ночное время - если ночь, всегда беззвучно
+        if (isNightTime()) {
+            return true;
+        }
+        
         const result = await pool.query(
             'SELECT silent_notifications FROM clients WHERE telegram_id = $1',
             [telegramId]
@@ -34,11 +57,17 @@ async function getClientSilentMode(telegramId) {
 
 /**
  * Проверяет включен ли беззвучный режим для клиента по Client ID
+ * С учетом ночного времени (22:00 - 9:00)
  * @param {number} clientId - ID клиента
  * @returns {Promise<boolean>} true если беззвучный режим включен
  */
 async function getClientSilentModeById(clientId) {
     try {
+        // Проверяем ночное время - если ночь, всегда беззвучно
+        if (isNightTime()) {
+            return true;
+        }
+        
         const result = await pool.query(
             'SELECT silent_notifications FROM clients WHERE id = $1',
             [clientId]
