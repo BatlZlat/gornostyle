@@ -707,6 +707,15 @@ router.post('/refill-wallet', async (req, res) => {
         // Фиксируем транзакцию
         await client.query('COMMIT');
         
+        // Обновляем реферальный статус при пополнении
+        try {
+            const { updateReferralStatusOnDeposit } = require('../services/referral-service');
+            await updateReferralStatusOnDeposit(client_id, amount);
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении реферального статуса:', error);
+            // Не прерываем основной процесс при ошибке в реферальной системе
+        }
+        
         // Отправляем уведомление в админ-бот
         try {
             const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
