@@ -10,6 +10,8 @@ CREATE TABLE clients (
     nickname VARCHAR(100),
     email VARCHAR(255),
     silent_notifications BOOLEAN DEFAULT FALSE,
+    referral_code VARCHAR(20) UNIQUE,
+    referred_by INTEGER REFERENCES clients(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -150,6 +152,7 @@ CREATE TABLE training_sessions (
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
     with_trainer BOOLEAN NOT NULL DEFAULT false,
+    slope_type VARCHAR(20) DEFAULT 'simulator' CHECK (slope_type IN ('simulator', 'natural_slope')),
     template_id INTEGER REFERENCES recurring_training_templates(id) ON DELETE SET NULL, -- Связь с шаблоном постоянного расписания
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -235,6 +238,7 @@ CREATE TABLE schedule (
     end_time TIME NOT NULL,
     is_holiday BOOLEAN DEFAULT FALSE,
     is_booked BOOLEAN DEFAULT FALSE,
+    trainer_id INTEGER REFERENCES trainers(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -470,6 +474,8 @@ CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
 CREATE INDEX idx_clients_email ON clients(email);
 CREATE INDEX idx_clients_silent_notifications ON clients(silent_notifications);
+CREATE INDEX idx_clients_referral_code ON clients(referral_code);
+CREATE INDEX idx_clients_referred_by ON clients(referred_by);
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_trainers_is_active ON trainers(is_active);
 CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
@@ -478,6 +484,9 @@ CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
 CREATE INDEX idx_training_sessions_template ON training_sessions(template_id);
+CREATE INDEX idx_training_sessions_slope_type ON training_sessions(slope_type);
+CREATE INDEX idx_training_sessions_simulator ON training_sessions(simulator_id);
+CREATE INDEX idx_training_sessions_group ON training_sessions(group_id);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
 -- Индексы для таблицы шаблонов постоянного расписания
@@ -524,6 +533,7 @@ CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
+CREATE INDEX idx_schedule_trainer_id ON schedule(trainer_id);
 CREATE INDEX idx_training_requests_client ON training_requests(client_id);
 CREATE INDEX idx_training_requests_status ON training_requests(status);
 CREATE INDEX idx_individual_training_client ON individual_training_sessions(client_id);
@@ -921,4 +931,205 @@ COMMENT ON COLUMN notification_logs.training_date IS 'Дата трениров�
 COMMENT ON COLUMN notification_logs.message IS 'Текст отправленного сообщения';
 COMMENT ON COLUMN notification_logs.status IS 'Статус отправки (sent - успешно, failed - ошибка)';
 COMMENT ON COLUMN notification_logs.error_message IS 'Текст ошибки, если отправка не удалась';
-COMMENT ON COLUMN notification_logs.sent_at IS 'Дата и время отправки уведомления'; 
+COMMENT ON COLUMN notification_logs.sent_at IS 'Дата и время отправки уведомления';
+
+-- ============================================================================
+-- НОВЫЕ ТАБЛИЦЫ (Миграции 009, 010, 011)
+-- ============================================================================
+
+-- Таблица настроек бонусов
+CREATE TABLE bonus_settings (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    slope_type VARCHAR(20) NOT NULL CHECK (slope_type IN ('simulator', 'natural_slope', 'both')),
+    bonus_type VARCHAR(50) NOT NULL CHECK (bonus_type IN ('registration', 'booking', 'referral', 'group_booking', 'individual_booking', 'attendance_milestone', 'subscription_purchase', 'early_booking', 'review', 'birthday', 'morning_training', 'evening_training')),
+    bonus_amount DECIMAL(10,2) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    min_amount DECIMAL(10,2) DEFAULT 0,
+    max_bonus_per_user DECIMAL(10,2),
+    valid_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    valid_until TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица транзакций бонусов
+CREATE TABLE bonus_transactions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    bonus_setting_id INTEGER REFERENCES bonus_settings(id),
+    amount DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    booking_id INTEGER,
+    booking_type VARCHAR(20),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'cancelled')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    approved_by INTEGER REFERENCES administrators(id)
+);
+
+-- Таблица расписания для зимнего сезона (естественный склон)
+CREATE TABLE winter_schedule (
+    id SERIAL PRIMARY KEY,
+    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    is_available BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица выплат тренерам
+CREATE TABLE trainer_payments (
+    id SERIAL PRIMARY KEY,
+    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
+    training_session_id INTEGER REFERENCES training_sessions(id) ON DELETE CASCADE,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_type VARCHAR(20) DEFAULT 'percentage' CHECK (payment_type IN ('percentage', 'fixed')),
+    percentage DECIMAL(5,2),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'paid')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица правил отмены
+CREATE TABLE cancellation_rules (
+    id SERIAL PRIMARY KEY,
+    hours_before INTEGER NOT NULL,
+    refund_percentage DECIMAL(5,2) NOT NULL CHECK (refund_percentage >= 0 AND refund_percentage <= 100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица договоров-оферт
+CREATE TABLE terms_of_service (
+    id SERIAL PRIMARY KEY,
+    version VARCHAR(20) NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    effective_date TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица согласий пользователей
+CREATE TABLE user_agreements (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    terms_id INTEGER REFERENCES terms_of_service(id),
+    agreed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45),
+    user_agent TEXT
+);
+
+-- Таблица реферальных транзакций
+CREATE TABLE referral_transactions (
+    id SERIAL PRIMARY KEY,
+    referrer_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    referee_id INTEGER UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'registered', 'deposited', 'trained', 'completed', 'cancelled')),
+    referrer_bonus DECIMAL(10,2) DEFAULT 500.00,
+    referee_bonus DECIMAL(10,2) DEFAULT 500.00,
+    referrer_bonus_paid BOOLEAN DEFAULT FALSE,
+    referee_bonus_paid BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Таблица типов абонементов
+CREATE TABLE subscription_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    sessions_count INTEGER NOT NULL,
+    discount_percentage DECIMAL(5,2) NOT NULL CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
+    validity_days INTEGER NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица абонементов клиентов
+CREATE TABLE client_subscriptions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    subscription_type_id INTEGER REFERENCES subscription_types(id),
+    sessions_remaining INTEGER NOT NULL,
+    purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expiry_date TIMESTAMP NOT NULL,
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица использования абонементов
+CREATE TABLE subscription_usage (
+    id SERIAL PRIMARY KEY,
+    subscription_id INTEGER REFERENCES client_subscriptions(id) ON DELETE CASCADE,
+    training_session_id INTEGER REFERENCES training_sessions(id),
+    individual_training_id INTEGER REFERENCES individual_training_sessions(id),
+    used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT usage_training_check CHECK (
+        (training_session_id IS NOT NULL AND individual_training_id IS NULL) OR
+        (training_session_id IS NULL AND individual_training_id IS NOT NULL)
+    )
+);
+
+-- Таблица достижений клиентов
+CREATE TABLE client_achievements (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    achievement_type VARCHAR(50) NOT NULL,
+    achieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    bonus_awarded BOOLEAN DEFAULT FALSE,
+    bonus_amount DECIMAL(10,2)
+);
+
+-- Таблица отзывов (обновленная)
+CREATE TABLE IF NOT EXISTS reviews (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id),
+    training_session_id INTEGER REFERENCES training_sessions(id),
+    individual_training_id INTEGER REFERENCES individual_training_sessions(id),
+    rating INTEGER CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    review_type VARCHAR(20) CHECK (review_type IN ('2gis', 'yandex', 'both')),
+    bonus_awarded BOOLEAN DEFAULT FALSE,
+    review_notification_log_id INTEGER REFERENCES review_notification_logs(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT review_training_check CHECK (
+        (training_session_id IS NOT NULL AND individual_training_id IS NULL) OR
+        (training_session_id IS NULL AND individual_training_id IS NOT NULL)
+    )
+);
+
+-- Таблица логов запросов на отзывы (уже существует, но для справки)
+CREATE TABLE IF NOT EXISTS review_notification_logs (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    telegram_id VARCHAR(255) NOT NULL,
+    training_count INTEGER NOT NULL,
+    participant_type VARCHAR(20) NOT NULL,
+    participant_details JSONB,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    review_2gis_requested BOOLEAN DEFAULT TRUE,
+    review_yandex_requested BOOLEAN DEFAULT TRUE,
+    notification_text TEXT
+);
+
+COMMENT ON TABLE bonus_settings IS 'Настройки бонусов для различных действий';
+COMMENT ON TABLE bonus_transactions IS 'История начисления бонусов';
+COMMENT ON TABLE winter_schedule IS 'Расписание тренеров для тренировок на естественном склоне';
+COMMENT ON TABLE trainer_payments IS 'Выплаты тренерам за проведенные тренировки';
+COMMENT ON TABLE cancellation_rules IS 'Правила отмены тренировок и возврата средств';
+COMMENT ON TABLE terms_of_service IS 'Договоры-оферты и пользовательские соглашения';
+COMMENT ON TABLE user_agreements IS 'Согласия пользователей с договорами-офертами';
+COMMENT ON TABLE referral_transactions IS 'Реферальные транзакции и бонусы';
+COMMENT ON TABLE subscription_types IS 'Типы абонементов';
+COMMENT ON TABLE client_subscriptions IS 'Абонементы клиентов';
+COMMENT ON TABLE subscription_usage IS 'Использование абонементов';
+COMMENT ON TABLE client_achievements IS 'Достижения клиентов';
+COMMENT ON TABLE reviews IS 'Отзывы клиентов (интегрировано с существующей системой)'; 
