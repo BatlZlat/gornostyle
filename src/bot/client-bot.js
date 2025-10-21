@@ -189,16 +189,33 @@ async function registerClient(data) {
         throw new Error('Отсутствуют обязательные поля для регистрации');
     }
 
-    const client = await pool.connect();
+    const dbClient = await pool.connect();
     try {
         console.log('Начало транзакции');
-        await client.query('BEGIN');
+        await dbClient.query('BEGIN');
         
-        // Вставляем клиента с skill_level = 1 по умолчанию
-        const res = await client.query(
-            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level) 
-             VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id`,
-            [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname]
+        // Генерируем уникальный реферальный код для нового клиента
+        const newReferralCode = await generateUniqueReferralCode();
+        console.log('Сгенерирован реферальный код:', newReferralCode);
+        
+        // Если есть реферальный код пригласившего, проверяем его
+        let referrerId = null;
+        if (data.referral_code) {
+            const referrerResult = await dbClient.query(
+                'SELECT id FROM clients WHERE referral_code = $1',
+                [data.referral_code]
+            );
+            if (referrerResult.rows.length > 0) {
+                referrerId = referrerResult.rows[0].id;
+                console.log('Найден пригласивший пользователь, ID:', referrerId);
+            }
+        }
+        
+        // Вставляем клиента с skill_level = 1 по умолчанию и реферальными данными
+        const res = await dbClient.query(
+            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
+             VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8) RETURNING id`,
+            [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
         );
         
         console.log('Клиент создан, ID:', res.rows[0].id);
@@ -207,16 +224,26 @@ async function registerClient(data) {
         // Создаем кошелек
         const walletNumber = await generateUniqueWalletNumber();
         console.log('Создание кошелька:', walletNumber);
-        await client.query(
+        await dbClient.query(
             `INSERT INTO wallets (client_id, wallet_number, balance) 
              VALUES ($1, $2, 0)`,
             [clientId, walletNumber]
         );
         
+        // Если есть пригласивший, создаем запись в referral_transactions
+        if (referrerId) {
+            await dbClient.query(
+                `INSERT INTO referral_transactions (referrer_id, referee_id, status) 
+                 VALUES ($1, $2, 'registered')`,
+                [referrerId, clientId]
+            );
+            console.log('Создана реферальная транзакция: referrer_id =', referrerId, ', referee_id =', clientId);
+        }
+        
         // Если есть данные о ребенке, создаем запись
         if (data.child && data.child.full_name && data.child.birth_date) {
             console.log('Создание записи о ребенке');
-            await client.query(
+            await dbClient.query(
                 `INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) 
                  VALUES ($1, $2, $3, 'ski', 1)`,
                 [clientId, data.child.full_name, data.child.birth_date]
@@ -224,15 +251,15 @@ async function registerClient(data) {
             console.log('Запись о ребенке создана');
         }
         
-        await client.query('COMMIT');
+        await dbClient.query('COMMIT');
         console.log('Транзакция успешно завершена');
-        return { walletNumber: formatWalletNumber(walletNumber) };
+        return { walletNumber: formatWalletNumber(walletNumber), referralCode: newReferralCode };
     } catch (e) {
         console.error('Ошибка при регистрации клиента:', e);
-        await client.query('ROLLBACK');
+        await dbClient.query('ROLLBACK');
         throw e;
     } finally {
-        client.release();
+        dbClient.release();
     }
 }
 
@@ -275,15 +302,25 @@ async function finishRegistration(chatId, data) {
             skill_level: 1, // всегда 1 при регистрации
             child: data.child
         });
-        await bot.sendMessage(chatId,
-            '✅ *Регистрация успешно завершена!*\n\n' +
+        
+        let registrationMessage = '✅ *Регистрация успешно завершена!*\n\n' +
             '🎉 Добро пожаловать в Ski-instruktor!\n\n' +
-            '— *Записывайтесь на тренировки, управляйте своими занятиями и балансом прямо в Telegram!*\n\n' +
-            '👥 *Групповые тренировки выгоднее!* Если не удалось собрать свою команду, просто оставьте заявку через пункт меню "Записаться на тренировку" → "Предложить тренировку". Мы с радостью поможем вам найти единомышленников! 🏂\n\n' +
+            '— *Записывайтесь на тренировки, управляйте своими занятиями и балансом прямо в Telegram!*\n\n';
+        
+        // Если пользователь пришел по реферальной ссылке, показываем информацию о бонусе
+        if (data.referral_code) {
+            registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
+                'После пополнения баланса и первой тренировки вы и ваш друг получите по *500₽* на баланс!\n\n';
+        }
+        
+        registrationMessage += '👥 *Групповые тренировки выгоднее!* Если не удалось собрать свою команду, просто оставьте заявку через пункт меню "Записаться на тренировку" → "Предложить тренировку". Мы с радостью поможем вам найти единомышленников! 🏂\n\n' +
             '👶 *Есть дети?* Добавляйте их в личном кабинете и записывайте на тренировки. Пусть растут чемпионами!\n\n' +
             '💳 *Пополнение баланса* — легко и просто! Пополняйте счет на любую сумму. Главное — не забудьте указать номер вашего кошелька в комментарии к платежу. Если забыли — не беда, поддержка всегда на связи! 😉\n\n' +
             '🎁 *Подарочные сертификаты* — отличный способ порадовать друга или близкого. Дарите спорт и хорошее настроение!\n\n' +
-            `• Если возникли вопросы — пишите или звоните в поддержку: ${process.env.ADMIN_PHONE || 'не указан'}\n\n`,
+            '📤 *Приглашайте друзей!* Используйте кнопку "Поделиться ботом" и получайте бонусы за каждого приведенного друга!\n\n' +
+            `• Если возникли вопросы — пишите или звоните в поддержку: ${process.env.ADMIN_PHONE || 'не указан'}\n\n`;
+        
+        await bot.sendMessage(chatId, registrationMessage,
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
@@ -291,7 +328,7 @@ async function finishRegistration(chatId, data) {
                         ['📝 Записаться на тренировку'],
                         ['📋 Мои записи', '👤 Личный кабинет'],
                         ['🎁 Сертификаты', '💰 Кошелек'],
-                        ['📤 Поделиться ботом']
+                        ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
                     ],
                     resize_keyboard: true,
                     one_time_keyboard: false,
@@ -5007,6 +5044,26 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // Обработка копирования реферальной ссылки
+        if (data.startsWith('copy_referral_')) {
+            const referralCode = data.replace('copy_referral_', '');
+            const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+            const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
+            
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: `Реферальная ссылка скопирована!`,
+                show_alert: false
+            });
+            
+            // Отправляем ссылку отдельным сообщением для удобства копирования
+            await bot.sendMessage(chatId, 
+                `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
+                `📋 Нажмите на ссылку, чтобы скопировать её`,
+                { parse_mode: 'HTML' }
+            );
+            return;
+        }
+
         if (data.startsWith('time_')) {
             const [, simulatorId, time] = data.split('_');
             
@@ -6528,28 +6585,59 @@ async function showUserCertificates(chatId, clientId) {
     }
 }
 
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/start(.*)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const telegramId = msg.from.id.toString();
     const username = msg.from.username || '';
     const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
     const client = await getClientByTelegramId(telegramId);
+    
+    // Извлекаем реферальный код из команды /start
+    const referralCode = match[1] ? match[1].trim() : null;
 
     // Очищаем предыдущее состояние
     userStates.delete(chatId);
 
     if (!client) {
-        await bot.sendMessage(chatId,
-            '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
+        // Проверяем наличие реферального кода
+        let welcomeMessage = '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
             '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
             'Я помогу вам:\n' +
             '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
             '• ⛷ Забронировать занятия в Кулиге зимой\n' +
             '• 💳 Управлять вашим балансом\n' +
-            '• 🎁 Приобрести подарочные сертификаты\n\n' +
-            '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
+            '• 🎁 Приобрести подарочные сертификаты\n\n';
+        
+        // Если есть реферальный код, проверяем его валидность
+        if (referralCode) {
+            try {
+                const referrerResult = await pool.query(
+                    'SELECT id, full_name FROM clients WHERE referral_code = $1',
+                    [referralCode]
+                );
+                
+                if (referrerResult.rows.length > 0) {
+                    const referrer = referrerResult.rows[0];
+                    welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
+                        `Пригласил вас: ${referrer.full_name}\n\n` +
+                        `💰 После регистрации, пополнения баланса и первой тренировки:\n` +
+                        `• Вы получите <b>500₽</b> на баланс\n` +
+                        `• Ваш друг получит <b>500₽</b> на баланс\n\n`;
+                    
+                    console.log(`✅ Новый пользователь пришел по реферальной ссылке ${referralCode} от пользователя ID ${referrer.id}`);
+                } else {
+                    console.log(`⚠️ Неверный реферальный код: ${referralCode}`);
+                }
+            } catch (error) {
+                console.error('Ошибка при проверке реферального кода:', error);
+            }
+        }
+        
+        welcomeMessage += '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯';
+        
+        await bot.sendMessage(chatId, welcomeMessage,
             {
-                parse_mode: 'Markdown',
+                parse_mode: 'HTML',
                 reply_markup: {
                     keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
                     resize_keyboard: true,
@@ -6559,7 +6647,7 @@ bot.onText(/\/start/, async (msg) => {
         );
         userStates.set(chatId, {
             step: 'wait_start',
-            data: { telegram_id: telegramId, username, nickname }
+            data: { telegram_id: telegramId, username, nickname, referral_code: referralCode }
         });
     } else {
         await showMainMenu(chatId, telegramId);
@@ -6656,37 +6744,105 @@ async function setNotificationMode(msg, isSilent) {
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {
     const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
     const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
-    const botShareLink = `https://t.me/${botUsername}`;
+    
+    try {
+        // Получаем реферальный код пользователя
+        const result = await pool.query(
+            'SELECT referral_code FROM clients WHERE telegram_id = $1',
+            [telegramId]
+        );
 
-    const message = `🎿 <b>Поделитесь нашим ботом с друзьями!</b>\n\n` +
-        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
-        `🏂 <b>Ski-instruktor</b> — ваш помощник для записи на горнолыжный тренажер\n\n` +
-        `✨ <b>Основные возможности:</b>\n` +
-        `• 📝 Запись на групповые и индивидуальные тренировки\n` +
-        `• 👥 Управление детскими занятиями\n` +
-        `• 💰 Пополнение баланса\n` +
-        `• 📋 Просмотр своих записей\n` +
-        `• 🎁 Подарочные сертификаты\n\n` +
-        `📋 <b>Дополнительное меню (синяя кнопка справа):</b>\n` +
-        `• 📍 Бот подскажет адрес\n` +
-        `• 👥 Поделится информацией о тренере\n` +
-        `• 💰 Покажет актуальные цены\n\n` +
-        `🎯 <b>Перейти в бота можно щелкнув по имени ниже:</b>\n` +
-        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
-        `💡 <b>Или просто перешлите это сообщение друзьям!</b>`;
-
-    await bot.sendMessage(chatId, message, {
-        parse_mode: 'HTML',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: `🚀 Зайти в бота @${botUsername}`, url: botShareLink }],
-                [{ text: `📋 Скопировать имя бота`, callback_data: `copy_bot_name_${botUsername}` }]
-            ],
-            keyboard: [['🔙 В главное меню']],
-            resize_keyboard: true
+        if (!result.rows[0]) {
+            await bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+            return;
         }
-    });
+
+        let referralCode = result.rows[0].referral_code;
+
+        // Если у пользователя нет реферального кода, генерируем его
+        if (!referralCode) {
+            referralCode = await generateUniqueReferralCode();
+            await pool.query(
+                'UPDATE clients SET referral_code = $1 WHERE telegram_id = $2',
+                [referralCode, telegramId]
+            );
+            console.log(`✅ Сгенерирован реферальный код ${referralCode} для пользователя ${telegramId}`);
+        }
+
+        // Формируем реферальную ссылку
+        const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
+        const botShareLink = `https://t.me/${botUsername}`;
+
+        const message = `🎿 <b>Поделитесь ботом с друзьями и получите бонусы!</b>\n\n` +
+            `🎁 <b>Реферальная программа:</b>\n` +
+            `• Вы получите <b>500₽</b> на баланс\n` +
+            `• Ваш друг тоже получит <b>500₽</b>\n` +
+            `• Бонус начисляется после того, как друг пополнит баланс и пройдет первую тренировку\n\n` +
+            `🔗 <b>Ваша персональная ссылка:</b>\n` +
+            `<code>${referralLink}</code>\n\n` +
+            `📊 <b>Ваш реферальный код:</b> <code>${referralCode}</code>\n\n` +
+            `🏂 <b>Ski-instruktor</b> — ваш помощник для записи на горнолыжный тренажер\n\n` +
+            `✨ <b>Основные возможности:</b>\n` +
+            `• 📝 Запись на групповые и индивидуальные тренировки\n` +
+            `• 👥 Управление детскими занятиями\n` +
+            `• 💰 Пополнение баланса\n` +
+            `• 📋 Просмотр своих записей\n` +
+            `• 🎁 Подарочные сертификаты\n\n` +
+            `💡 <b>Поделитесь ссылкой или просто перешлите это сообщение!</b>`;
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ 
+                        text: `📤 Поделиться с друзьями`, 
+                        url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи 500₽ на баланс!')}`
+                    }],
+                    [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
+                    [{ text: `🚀 Зайти в бота`, url: botShareLink }]
+                ]
+            }
+        });
+
+        console.log(`📤 Пользователь ${telegramId} запросил реферальную ссылку: ${referralLink}`);
+
+    } catch (error) {
+        console.error('Ошибка при получении реферальной ссылки:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Функция генерации уникального реферального кода
+async function generateUniqueReferralCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    while (!isUnique && attempts < maxAttempts) {
+        code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+
+        // Проверяем уникальность
+        const result = await pool.query(
+            'SELECT COUNT(*) FROM clients WHERE referral_code = $1',
+            [code]
+        );
+        
+        isUnique = parseInt(result.rows[0].count) === 0;
+        attempts++;
+    }
+
+    if (!isUnique) {
+        throw new Error('Не удалось сгенерировать уникальный реферальный код');
+    }
+
+    return code;
 }
 
 // Вспомогательная функция для отображения типа спорта
