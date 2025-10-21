@@ -309,8 +309,23 @@ async function finishRegistration(chatId, data) {
         
         // Если пользователь пришел по реферальной ссылке, показываем информацию о бонусе
         if (data.referral_code) {
-            registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
-                'После пополнения баланса и первой тренировки вы и ваш друг получите по *500₽* на баланс!\n\n';
+            // Проверяем, активна ли реферальная программа
+            const referralActiveResult = await pool.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const isReferralActive = referralActiveResult.rows.length > 0;
+            
+            if (isReferralActive) {
+                const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
+                registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
+                    `После пополнения баланса и первой тренировки вы и ваш друг получите по *${bonusAmount}₽* на баланс!\n\n`;
+            } else {
+                registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
+                    'Спасибо, что присоединились к нам!\n\n';
+            }
         }
         
         // Проверяем и начисляем бонусы за регистрацию
@@ -5105,18 +5120,42 @@ bot.on('callback_query', async (callbackQuery) => {
             const referralCode = data.replace('copy_referral_', '');
             const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
             const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
+            const botShareLink = `https://t.me/${botUsername}`;
             
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: `Реферальная ссылка скопирована!`,
-                show_alert: false
-            });
-            
-            // Отправляем ссылку отдельным сообщением для удобства копирования
-            await bot.sendMessage(chatId, 
-                `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
-                `📋 Нажмите на ссылку, чтобы скопировать её`,
-                { parse_mode: 'HTML' }
+            // Проверяем, активна ли реферальная программа
+            const referralActiveResult = await pool.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
             );
+            
+            const isReferralActive = referralActiveResult.rows.length > 0;
+            
+            if (isReferralActive) {
+                // Реферальная программа активна - показываем реферальную ссылку
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Реферальная ссылка скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
+            } else {
+                // Реферальная программа неактивна - показываем обычную ссылку на бота
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Ссылка на бота скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ссылка на бота:</b>\n<code>${botShareLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
+            }
             return;
         }
 
@@ -6674,11 +6713,28 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
                 
                 if (referrerResult.rows.length > 0) {
                     const referrer = referrerResult.rows[0];
-                    welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
-                        `Пригласил вас: ${referrer.full_name}\n\n` +
-                        `💰 После регистрации, пополнения баланса и первой тренировки:\n` +
-                        `• Вы получите <b>500₽</b> на баланс\n` +
-                        `• Ваш друг получит <b>500₽</b> на баланс\n\n`;
+                    
+                    // Проверяем, активна ли реферальная программа
+                    const referralActiveResult = await pool.query(
+                        `SELECT bonus_amount FROM bonus_settings 
+                         WHERE bonus_type = 'referral' AND is_active = TRUE 
+                         ORDER BY created_at DESC LIMIT 1`
+                    );
+                    
+                    const isReferralActive = referralActiveResult.rows.length > 0;
+                    
+                    if (isReferralActive) {
+                        const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
+                        welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
+                            `Пригласил вас: ${referrer.full_name}\n\n` +
+                            `💰 После регистрации, пополнения баланса и первой тренировки:\n` +
+                            `• Вы получите <b>${bonusAmount}₽</b> на баланс\n` +
+                            `• Ваш друг получит <b>${bonusAmount}₽</b> на баланс\n\n`;
+                    } else {
+                        // Реферальная программа неактивна, но ссылка все равно работает
+                        welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
+                            `Пригласил вас: ${referrer.full_name}\n\n`;
+                    }
                     
                     console.log(`✅ Новый пользователь пришел по реферальной ссылке ${referralCode} от пользователя ID ${referrer.id}`);
                 } else {
@@ -6831,16 +6887,21 @@ async function handleShareBotCommand(msg) {
         const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
         const botShareLink = `https://t.me/${botUsername}`;
 
-        // Получаем актуальные суммы бонусов из настроек
-        const bonusResult = await pool.query(
+        // Проверяем, активна ли реферальная программа
+        const referralActiveResult = await pool.query(
             `SELECT bonus_amount FROM bonus_settings 
              WHERE bonus_type = 'referral' AND is_active = TRUE 
              ORDER BY created_at DESC LIMIT 1`
         );
         
-        const bonusAmount = bonusResult.rows.length > 0 ? Math.round(bonusResult.rows[0].bonus_amount) : 500;
+        const isReferralActive = referralActiveResult.rows.length > 0;
+        const bonusAmount = isReferralActive ? Math.round(referralActiveResult.rows[0].bonus_amount) : 500;
 
-        const message = `🎿 Поделитесь нашим ботом с друзьями!
+        let message;
+        
+        if (isReferralActive) {
+            // Реферальная программа активна - показываем с бонусами
+            message = `🎿 Поделитесь нашим ботом с друзьями!
 
 ${referralLink}
 
@@ -6865,18 +6926,61 @@ ${referralLink}
 • Вы получите ${bonusAmount}₽ на баланс
 • Ваш друг тоже получит ${bonusAmount}₽
 • Бонус начисляется после того, как друг пополнит баланс и пройдет первую тренировку.`;
+        } else {
+            // Реферальная программа неактивна - показываем обычное сообщение
+            message = `🎿 Поделитесь нашим ботом с друзьями!
+
+@${botUsername}
+
+🏂 Ski-instruktor — ваш помощник для записи на горнолыжный тренажер
+
+✨ Основные возможности:
+• 📝 Запись на групповые и индивидуальные тренировки
+• 👥 Управление детскими занятиями
+• 💰 Пополнение баланса
+• 📋 Просмотр своих записей
+• 🎁 Подарочные сертификаты
+
+📋 Дополнительное меню (синяя кнопка справа):
+• 📍 Бот подскажет адрес
+• 👥 Поделится информацией о тренере
+• 💰 Покажет актуальные цены
+
+🎯 Перейти в бота можно щелкнув по имени ниже:
+@${botUsername}
+
+💡 Или просто перешлите это сообщение друзьям!`;
+        }
+
+        // Создаем кнопки в зависимости от состояния реферальной программы
+        let inlineKeyboard;
+        
+        if (isReferralActive) {
+            // Реферальная программа активна - показываем все кнопки
+            inlineKeyboard = [
+                [{ 
+                    text: `📤 Поделиться с друзьями`, 
+                    url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи 500₽ на баланс!')}`
+                }],
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
+                [{ text: `🚀 Зайти в бота`, url: botShareLink }]
+            ];
+        } else {
+            // Реферальная программа неактивна - показываем только кнопки для обычного бота
+            inlineKeyboard = [
+                [{ 
+                    text: `📤 Поделиться с друзьями`, 
+                    url: `https://t.me/share/url?url=${encodeURIComponent(botShareLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂')}`
+                }],
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
+                [{ text: `🚀 Зайти в бота`, url: botShareLink }]
+            ];
+        }
 
         await bot.sendMessage(chatId, message, {
             parse_mode: 'HTML',
             reply_markup: {
-                inline_keyboard: [
-                    [{ 
-                        text: `📤 Поделиться с друзьями`, 
-                        url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи 500₽ на баланс!')}`
-                    }],
-                    [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
-                    [{ text: `🚀 Зайти в бота`, url: botShareLink }]
-                ]
+                inline_keyboard: inlineKeyboard
             }
         });
 
