@@ -5071,6 +5071,50 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // Обработка копирования реферальной ссылки (не требует состояния)
+        if (data.startsWith('copy_referral_')) {
+            const referralCode = data.replace('copy_referral_', '');
+            const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+            const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
+            const botShareLink = `https://t.me/${botUsername}`;
+            
+            // Проверяем, активна ли реферальная программа
+            const referralActiveResult = await pool.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const isReferralActive = referralActiveResult.rows.length > 0;
+            
+            if (isReferralActive) {
+                // Реферальная программа активна - показываем реферальную ссылку
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Реферальная ссылка скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
+            } else {
+                // Реферальная программа неактивна - показываем обычную ссылку на бота
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Ссылка на бота скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ссылка на бота:</b>\n<code>${botShareLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
+            }
+            return;
+        }
+
         if (!state) {
             await bot.answerCallbackQuery(callbackQuery.id, {
                 text: 'Сессия истекла. Пожалуйста, начните процесс записи заново.',
@@ -5115,49 +5159,6 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        // Обработка копирования реферальной ссылки
-        if (data.startsWith('copy_referral_')) {
-            const referralCode = data.replace('copy_referral_', '');
-            const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
-            const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
-            const botShareLink = `https://t.me/${botUsername}`;
-            
-            // Проверяем, активна ли реферальная программа
-            const referralActiveResult = await pool.query(
-                `SELECT bonus_amount FROM bonus_settings 
-                 WHERE bonus_type = 'referral' AND is_active = TRUE 
-                 ORDER BY created_at DESC LIMIT 1`
-            );
-            
-            const isReferralActive = referralActiveResult.rows.length > 0;
-            
-            if (isReferralActive) {
-                // Реферальная программа активна - показываем реферальную ссылку
-                await bot.answerCallbackQuery(callbackQuery.id, {
-                    text: `Реферальная ссылка скопирована!`,
-                    show_alert: false
-                });
-                
-                await bot.sendMessage(chatId, 
-                    `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
-                    `📋 Нажмите на ссылку, чтобы скопировать её`,
-                    { parse_mode: 'HTML' }
-                );
-            } else {
-                // Реферальная программа неактивна - показываем обычную ссылку на бота
-                await bot.answerCallbackQuery(callbackQuery.id, {
-                    text: `Ссылка на бота скопирована!`,
-                    show_alert: false
-                });
-                
-                await bot.sendMessage(chatId, 
-                    `🔗 <b>Ссылка на бота:</b>\n<code>${botShareLink}</code>\n\n` +
-                    `📋 Нажмите на ссылку, чтобы скопировать её`,
-                    { parse_mode: 'HTML' }
-                );
-            }
-            return;
-        }
 
         if (data.startsWith('time_')) {
             const [, simulatorId, time] = data.split('_');
@@ -6962,8 +6963,7 @@ ${referralLink}
                     text: `📤 Поделиться с друзьями`, 
                     url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи 500₽ на баланс!')}`
                 }],
-                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
-                [{ text: `🚀 Зайти в бота`, url: botShareLink }]
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }]
             ];
         } else {
             // Реферальная программа неактивна - показываем только кнопки для обычного бота
@@ -6972,8 +6972,7 @@ ${referralLink}
                     text: `📤 Поделиться с друзьями`, 
                     url: `https://t.me/share/url?url=${encodeURIComponent(botShareLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂')}`
                 }],
-                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }],
-                [{ text: `🚀 Зайти в бота`, url: botShareLink }]
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }]
             ];
         }
 
