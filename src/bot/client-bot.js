@@ -6958,10 +6958,11 @@ ${referralLink}
         
         if (isReferralActive) {
             // Реферальная программа активна - показываем все кнопки
+            const shareText = `🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи ${bonusAmount}₽ на баланс!`;
             inlineKeyboard = [
                 [{ 
                     text: `📤 Поделиться с друзьями`, 
-                    url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи 500₽ на баланс!')}`
+                    url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`
                 }],
                 [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }]
             ];
