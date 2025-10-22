@@ -193,19 +193,29 @@ router.get('/statistics', async (req, res) => {
             (individualExpensesResult.rows[0].count_30 * cost_30) + 
             (individualExpensesResult.rows[0].count_60 * cost_60);
 
-        // 7. Общие расходы
-        const totalExpenses = groupExpenses + individualExpenses;
+        // 7. Расходы на ЗП тренеров (только approved и paid)
+        const trainerSalaryResult = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total
+             FROM trainer_payments
+             WHERE status IN ('approved', 'paid')
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const trainerSalaryExpenses = parseFloat(trainerSalaryResult.rows[0].total);
 
-        // 8. Прибыль с групповых тренировок
+        // 8. Общие расходы (аренда + ЗП тренеров)
+        const totalExpenses = groupExpenses + individualExpenses + trainerSalaryExpenses;
+
+        // 9. Прибыль с групповых тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const groupProfit = groupIncome - groupExpenses;
 
-        // 9. Прибыль с индивидуальных тренировок
+        // 10. Прибыль с индивидуальных тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const individualProfit = individualIncome - individualExpenses;
 
-        // 10. Общая прибыль
-        const totalProfit = groupProfit + individualProfit;
+        // 11. Общая прибыль (доход минус все расходы включая ЗП тренеров)
+        const totalProfit = totalIncome - totalExpenses;
 
-        // 11. Количество тренировок
+        // 12. Количество тренировок
         const groupSessions = parseInt(groupExpensesResult.rows[0].count);
         const individualSessions30 = parseInt(individualExpensesResult.rows[0].count_30);
         const individualSessions60 = parseInt(individualExpensesResult.rows[0].count_60);
@@ -218,6 +228,7 @@ router.get('/statistics', async (req, res) => {
             total_income: totalIncome,
             group_expenses: groupExpenses,
             individual_expenses: individualExpenses,
+            trainer_salary_expenses: trainerSalaryExpenses,
             total_expenses: totalExpenses,
             group_profit: groupProfit,
             individual_profit: individualProfit,
@@ -398,19 +409,29 @@ router.get('/export', async (req, res) => {
             (individualExpensesResult.rows[0].count_30 * cost_30) + 
             (individualExpensesResult.rows[0].count_60 * cost_60);
 
-        // 7. Общие расходы
-        const totalExpenses = groupExpenses + individualExpenses;
+        // 7. Расходы на ЗП тренеров (только approved и paid)
+        const trainerSalaryResult = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total
+             FROM trainer_payments
+             WHERE status IN ('approved', 'paid')
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const trainerSalaryExpenses = parseFloat(trainerSalaryResult.rows[0].total);
 
-        // 8. Прибыль с групповых тренировок
+        // 8. Общие расходы (аренда + ЗП тренеров)
+        const totalExpenses = groupExpenses + individualExpenses + trainerSalaryExpenses;
+
+        // 9. Прибыль с групповых тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const groupProfit = groupIncome - groupExpenses;
 
-        // 9. Прибыль с индивидуальных тренировок
+        // 10. Прибыль с индивидуальных тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const individualProfit = individualIncome - individualExpenses;
 
-        // 10. Общая прибыль
-        const totalProfit = groupProfit + individualProfit;
+        // 11. Общая прибыль (доход минус все расходы включая ЗП тренеров)
+        const totalProfit = totalIncome - totalExpenses;
 
-        // 11. Количество тренировок
+        // 12. Количество тренировок
         const groupSessions = parseInt(groupExpensesResult.rows[0].count);
         const individualSessions30 = parseInt(individualExpensesResult.rows[0].count_30);
         const individualSessions60 = parseInt(individualExpensesResult.rows[0].count_60);
@@ -423,8 +444,9 @@ router.get('/export', async (req, res) => {
         statSheet.addRow(['Доходы от групповых', groupIncome]);
         statSheet.addRow(['Доходы от индивидуальных', individualIncome]);
         statSheet.addRow(['Общие доходы', totalIncome]);
-        statSheet.addRow(['Расходы на групповые', groupExpenses]);
-        statSheet.addRow(['Расходы на индивидуальные', individualExpenses]);
+        statSheet.addRow(['Расходы на групповые (аренда)', groupExpenses]);
+        statSheet.addRow(['Расходы на индивидуальные (аренда)', individualExpenses]);
+        statSheet.addRow(['Расходы на ЗП инструкторов', trainerSalaryExpenses]);
         statSheet.addRow(['Общие расходы', totalExpenses]);
         statSheet.addRow(['Прибыль от групповых', groupProfit]);
         statSheet.addRow(['Прибыль от индивидуальных', individualProfit]);

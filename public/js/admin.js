@@ -1733,12 +1733,16 @@ async function loadFinances() {
                 <div class="summary-section">
                     <h3>Расходы</h3>
                     <div class="summary-item">
-                        <span>Групповые тренировки:</span>
+                        <span>Групповые тренировки (аренда):</span>
                         <span class="amount expense">${formatCurrency(data.group_expenses)}</span>
                     </div>
                     <div class="summary-item">
-                        <span>Индивидуальные тренировки:</span>
+                        <span>Индивидуальные тренировки (аренда):</span>
                         <span class="amount expense">${formatCurrency(data.individual_expenses)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>ЗП Инструкторов:</span>
+                        <span class="amount expense">${formatCurrency(data.trainer_salary_expenses)}</span>
                     </div>
                     <div class="summary-item total">
                         <span>Общие расходы:</span>

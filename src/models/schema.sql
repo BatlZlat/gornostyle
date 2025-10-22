@@ -288,6 +288,7 @@ CREATE TABLE individual_training_sessions (
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
     simulator_id INTEGER REFERENCES simulators(id),
+    trainer_id INTEGER REFERENCES trainers(id), -- ID назначенного тренера
     price DECIMAL(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -543,6 +544,7 @@ CREATE INDEX idx_individual_training_client ON individual_training_sessions(clie
 CREATE INDEX idx_individual_training_child ON individual_training_sessions(child_id);
 CREATE INDEX idx_individual_training_date ON individual_training_sessions(preferred_date);
 CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(simulator_id);
+CREATE INDEX idx_individual_training_trainer ON individual_training_sessions(trainer_id);
 CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
 CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
