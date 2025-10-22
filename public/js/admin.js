@@ -2169,7 +2169,29 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                             <p><strong>Длительность:</strong> ${training.duration} минут</p>
                             <p><strong>Тренажёр:</strong> ${training.simulator_name}</p>
                             <p><strong>Тип:</strong> ${equipmentName}</p>
-                            <p><strong>Тренер:</strong> ${trainerText}</p>
+                            <p><strong>Тренер (требуется):</strong> ${trainerText}</p>
+                            ${training.with_trainer ? `
+                                <p><strong>Назначен:</strong> 
+                                    <span id="assigned-trainer-${trainingId}">
+                                        ${training.trainer_name 
+                                            ? `${training.trainer_name} (${training.trainer_phone})` 
+                                            : '<span style="color: #ff6b6b;">Не назначен</span>'}
+                                    </span>
+                                </p>
+                                ${!training.trainer_name ? `
+                                    <div class="form-group" style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px;" id="trainer-assignment-${trainingId}">
+                                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Назначить тренера:</label>
+                                        <select id="trainer-select-${trainingId}" class="form-control" style="width: 100%; padding: 8px; margin-bottom: 8px;">
+                                            <option value="">Загрузка...</option>
+                                        </select>
+                                        <button 
+                                            class="btn-primary" 
+                                            onclick="assignTrainer(${trainingId}, '${training.equipment_type}')">
+                                            Назначить тренера
+                                        </button>
+                                    </div>
+                                ` : ''}
+                            ` : ''}
                             <p><strong>Цена:</strong> ${training.price} ₽</p>
                         </div>
                         <div class="detail-group">
@@ -2267,6 +2289,11 @@ async function viewScheduleDetails(trainingId, isIndividual) {
         
         document.body.appendChild(modal);
         modal.style.display = 'block';
+        
+        // Автоматически загружаем тренеров если нужно
+        if (training.is_individual && training.with_trainer && !training.trainer_name) {
+            loadAvailableTrainers(trainingId, training.equipment_type);
+        }
 
         // Закрытие по клику вне окна
         modal.onclick = (e) => {
@@ -4205,5 +4232,88 @@ async function removeParticipantFromTraining(trainingId, participantId, particip
         showError(error.message);
     } finally {
         hideLoading();
+    }
+}
+
+// === НАЗНАЧЕНИЕ ТРЕНЕРОВ ===
+
+// Загрузка доступных тренеров в селектор
+async function loadAvailableTrainers(trainingId, equipmentType) {
+    try {
+        const response = await fetch(`/api/individual-trainings/trainers/available?equipment_type=${equipmentType}`);
+        if (!response.ok) throw new Error('Ошибка при загрузке тренеров');
+        
+        const trainers = await response.json();
+        const select = document.getElementById(`trainer-select-${trainingId}`);
+        
+        if (!select) {
+            console.error(`Селектор trainer-select-${trainingId} не найден`);
+            return;
+        }
+        
+        if (trainers.length === 0) {
+            select.innerHTML = '<option value="">Нет доступных тренеров</option>';
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Выберите тренера...</option>' +
+            trainers.map(t => `<option value="${t.id}">${t.full_name} (${t.phone})</option>`).join('');
+            
+    } catch (error) {
+        console.error('Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить список тренеров');
+    }
+}
+
+// Назначение тренера на индивидуальную тренировку
+async function assignTrainer(trainingId, equipmentType) {
+    const select = document.getElementById(`trainer-select-${trainingId}`);
+    const trainerId = select.value;
+    
+    if (!trainerId) {
+        showError('Пожалуйста, выберите тренера');
+        return;
+    }
+    
+    try {
+        showLoading('Назначение тренера...');
+        
+        const response = await fetch(`/api/individual-trainings/${trainingId}/assign-trainer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trainer_id: trainerId })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при назначении тренера');
+        }
+        
+        const result = await response.json();
+        
+        // Обновляем отображение
+        const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+        if (assignedSpan) {
+            assignedSpan.innerHTML = `${result.trainer_name} (${result.trainer_phone})`;
+        }
+        
+        // Скрываем форму назначения
+        const assignmentForm = document.getElementById(`trainer-assignment-${trainingId}`);
+        if (assignmentForm) {
+            assignmentForm.remove();
+        }
+        
+        hideLoading();
+        showSuccess(`Тренер ${result.trainer_name} успешно назначен!`);
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            loadSchedule();
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка при назначении тренера:', error);
+        showError(error.message || 'Не удалось назначить тренера');
     }
 }

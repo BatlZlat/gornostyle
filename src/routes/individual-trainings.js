@@ -26,6 +26,7 @@ router.get('/:id', async (req, res) => {
                 its.preferred_time,
                 (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
                 its.simulator_id,
+                its.trainer_id,
                 its.price,
                 its.created_at,
                 s.name as simulator_name,
@@ -38,12 +39,16 @@ router.get('/:id', async (req, res) => {
                 ch.sport_type as child_sport_type,
                 ch.skill_level as child_skill_level,
                 parent.full_name as parent_name,
-                parent.phone as parent_phone
+                parent.phone as parent_phone,
+                t.full_name as trainer_name,
+                t.phone as trainer_phone,
+                t.sport_type as trainer_sport_type
             FROM individual_training_sessions its
             LEFT JOIN simulators s ON its.simulator_id = s.id
             LEFT JOIN clients c ON its.client_id = c.id
             LEFT JOIN children ch ON its.child_id = ch.id
             LEFT JOIN clients parent ON ch.parent_id = parent.id
+            LEFT JOIN trainers t ON its.trainer_id = t.id
             WHERE its.id = $1
         `;
         
@@ -80,6 +85,10 @@ router.get('/:id', async (req, res) => {
             end_time: training.end_time,
             simulator_id: training.simulator_id,
             simulator_name: training.simulator_name,
+            trainer_id: training.trainer_id,
+            trainer_name: training.trainer_name,
+            trainer_phone: training.trainer_phone,
+            trainer_sport_type: training.trainer_sport_type,
             price: training.price,
             created_at: training.created_at,
             participant: participant,
@@ -90,6 +99,144 @@ router.get('/:id', async (req, res) => {
     } catch (error) {
         console.error('Ошибка при получении деталей индивидуальной тренировки:', error);
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
+/**
+ * GET /api/individual-trainings/trainers/available
+ * Получение списка доступных тренеров с фильтрацией по специализации
+ */
+router.get('/trainers/available', async (req, res) => {
+    try {
+        const { equipment_type } = req.query;
+        
+        // Определяем фильтр по спорту
+        // equipment_type: 'ski' (лыжи) или 'snowboard' (сноуборд)
+        const sportType = equipment_type === 'ski' ? 'ski' : 'snowboard';
+        
+        // Получаем тренеров, которые специализируются на этом виде спорта или на обоих
+        const trainers = await pool.query(`
+            SELECT id, full_name, phone, sport_type
+            FROM trainers
+            WHERE is_active = TRUE
+            AND (sport_type = $1 OR sport_type = 'both')
+            ORDER BY full_name
+        `, [sportType]);
+        
+        res.json(trainers.rows);
+    } catch (error) {
+        console.error('Ошибка при загрузке доступных тренеров:', error);
+        res.status(500).json({ error: 'Ошибка при загрузке тренеров' });
+    }
+});
+
+/**
+ * PUT /api/individual-trainings/:id/assign-trainer
+ * Назначение тренера на индивидуальную тренировку
+ */
+router.put('/:id/assign-trainer', async (req, res) => {
+    const dbClient = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { trainer_id } = req.body;
+        
+        await dbClient.query('BEGIN');
+        
+        // 1. Проверяем существование тренировки
+        const trainingResult = await dbClient.query(
+            'SELECT * FROM individual_training_sessions WHERE id = $1',
+            [id]
+        );
+        
+        if (trainingResult.rows.length === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+        
+        const training = trainingResult.rows[0];
+        
+        // 2. Обновляем trainer_id
+        await dbClient.query(
+            'UPDATE individual_training_sessions SET trainer_id = $1, updated_at = NOW() WHERE id = $2',
+            [trainer_id, id]
+        );
+        
+        // 3. Получаем информацию о тренере и клиенте
+        const trainerResult = await dbClient.query(
+            'SELECT full_name, phone FROM trainers WHERE id = $1',
+            [trainer_id]
+        );
+        
+        const clientResult = await dbClient.query(
+            'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+            [training.client_id]
+        );
+        
+        if (trainerResult.rows.length === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Тренер не найден' });
+        }
+        
+        const trainer = trainerResult.rows[0];
+        const client = clientResult.rows[0];
+        
+        // 4. Создаем выплату тренеру (если with_trainer = TRUE)
+        if (training.with_trainer) {
+            // Получаем настройки ЗП тренера
+            const salaryResult = await dbClient.query(`
+                SELECT default_payment_type, default_percentage, default_fixed_amount
+                FROM trainers
+                WHERE id = $1
+            `, [trainer_id]);
+            
+            const { default_payment_type, default_percentage, default_fixed_amount } = salaryResult.rows[0];
+            
+            let amount;
+            if (default_payment_type === 'percentage') {
+                amount = training.price * (default_percentage / 100);
+            } else {
+                amount = default_fixed_amount;
+            }
+            
+            // Проверяем, нет ли уже выплаты для этой тренировки
+            const existingPayment = await dbClient.query(
+                'SELECT id FROM trainer_payments WHERE individual_training_id = $1',
+                [id]
+            );
+            
+            if (existingPayment.rows.length === 0) {
+                await dbClient.query(`
+                    INSERT INTO trainer_payments (
+                        trainer_id, individual_training_id, amount, payment_type, status, created_at
+                    ) VALUES ($1, $2, $3, 'individual_training', 'pending', NOW())
+                `, [trainer_id, id, amount]);
+            }
+        }
+        
+        await dbClient.query('COMMIT');
+        
+        // 5. Отправляем уведомление клиенту (будет реализовано в ЭТАПЕ 3)
+        // if (client.telegram_id) {
+        //     await notifyClientAboutTrainer(client.telegram_id, training, trainer);
+        // }
+        
+        // 6. Отправляем уведомление в админ-бот (будет реализовано в ЭТАПЕ 3)
+        // await notifyAdminAboutAssignment(training, trainer, client);
+        
+        console.log(`✅ Тренер ${trainer.full_name} назначен на тренировку #${id}`);
+        
+        res.json({ 
+            success: true,
+            trainer_name: trainer.full_name,
+            trainer_phone: trainer.phone
+        });
+        
+    } catch (error) {
+        await dbClient.query('ROLLBACK');
+        console.error('Ошибка при назначении тренера:', error);
+        res.status(500).json({ error: 'Ошибка при назначении тренера' });
+    } finally {
+        dbClient.release();
     }
 });
 
@@ -186,6 +333,12 @@ router.delete('/:id', async (req, res) => {
                 'amount',
                 `Возврат: Индивидуальная, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${training.duration} мин.`
             ]
+        );
+        
+        // Отменяем выплату тренеру (только pending выплаты)
+        await client.query(
+            'DELETE FROM trainer_payments WHERE individual_training_id = $1 AND status = $2',
+            [id, 'pending']
         );
         
         // Освобождаем слоты в расписании
