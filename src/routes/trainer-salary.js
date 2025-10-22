@@ -25,7 +25,7 @@ router.get('/stats', async (req, res) => {
         const trainersCount = await pool.query(`
             SELECT COUNT(*) as count 
             FROM trainers 
-            WHERE is_dismissed = FALSE
+            WHERE is_active = TRUE
         `);
         
         // Выплачено в этом месяце
@@ -83,7 +83,7 @@ router.get('/trainers', async (req, res) => {
                 (SELECT COALESCE(SUM(amount), 0) FROM trainer_payments WHERE trainer_id = t.id AND status IN ('approved', 'paid')) as total_earned,
                 (SELECT COALESCE(SUM(amount), 0) FROM trainer_payments WHERE trainer_id = t.id AND status = 'pending') as pending_amount
             FROM trainers t
-            WHERE t.is_dismissed = FALSE
+            WHERE t.is_active = TRUE
             ORDER BY t.full_name
         `);
         
