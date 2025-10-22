@@ -133,7 +133,7 @@ async function notifyClientAboutTrainerChange({ clientTelegramId, training, oldT
             `👨‍🏫 <b>Новый тренер:</b> ${newTrainer.full_name}\n` +
             `📱 <b>Телефон:</b> ${newTrainer.phone}\n\n` +
             `💡 <i>Приносим извинения за вынужденную подмену. При необходимости причину можете узнать у администратора:</i>\n` +
-            `📞 <b>Номер администратора:</b> +7 (3452) 123-45-67`;
+            `📞 <b>Номер администратора:</b> ${process.env.ADMIN_PHONE || '+7 (3452) 123-45-67'}`;
 
         await clientBot.sendMessage(clientTelegramId, message, { 
             parse_mode: 'HTML',
