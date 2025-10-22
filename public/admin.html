@@ -235,6 +235,7 @@
                         <h2>Финансы</h2>
                         <div class="page-actions">
                             <a href="#" class="btn-primary" id="create-payment-link">Ссылка для оплаты</a>
+                            <button class="btn-secondary" id="trainer-salary-btn">💰 ЗП Инструктора</button>
                         </div>
                     </div>
                     
@@ -302,6 +303,57 @@
                         <h3>Все акции</h3>
                         <div id="bonuses-list">
                             <!-- Список акций будет загружен динамически -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница ЗП Инструктора -->
+                <div class="page-content" id="trainer-salary-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>💰 Управление ЗП Инструкторов</h2>
+                        <button class="btn-secondary" id="back-to-finances-btn">🔙 Назад к финансам</button>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="salary-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего инструкторов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-trainers-count">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Выплачено в этом месяце</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-salary-paid">0₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">К выплате (Pending)</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="pending-salary">0₽</p>
+                        </div>
+                    </div>
+
+                    <!-- Список инструкторов -->
+                    <div class="trainers-salary-list">
+                        <h3>Настройки ЗП инструкторов</h3>
+                        <div id="trainers-salary-list">
+                            <!-- Список инструкторов будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- История выплат -->
+                    <div class="salary-payments-history" style="margin-top: 40px;">
+                        <h3>История выплат</h3>
+                        <div class="filter-section" style="margin-bottom: 20px;">
+                            <select id="trainer-filter" class="form-control" style="max-width: 300px; display: inline-block;">
+                                <option value="">Все инструкторы</option>
+                            </select>
+                            <select id="status-filter" class="form-control" style="max-width: 200px; display: inline-block; margin-left: 10px;">
+                                <option value="">Все статусы</option>
+                                <option value="pending">В ожидании</option>
+                                <option value="approved">Одобрено</option>
+                                <option value="paid">Выплачено</option>
+                            </select>
+                        </div>
+                        <div id="salary-payments-list">
+                            <!-- История выплат будет загружена динамически -->
                         </div>
                     </div>
                 </div>
@@ -470,5 +522,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="js/admin.js?v=20250930"></script>
     <script src="js/admin-promotions.js?v=1"></script>
+    <script src="js/admin-trainer-salary.js?v=1"></script>
 </body>
 </html> 

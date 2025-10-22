@@ -43,7 +43,10 @@ CREATE TABLE trainers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     photo_url VARCHAR(255),
     username VARCHAR(100) UNIQUE,
-    password VARCHAR(255)
+    password VARCHAR(255),
+    default_payment_type VARCHAR(20) DEFAULT 'percentage' CHECK (default_payment_type IN ('percentage', 'fixed')),
+    default_percentage DECIMAL(5,2) DEFAULT 50.00,
+    default_fixed_amount DECIMAL(10,2)
 );
 
 -- Таблица администраторов
