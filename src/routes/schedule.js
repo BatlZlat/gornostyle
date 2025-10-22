@@ -74,8 +74,8 @@ router.get('/admin', async (req, res) => {
                     (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
                     its.duration,
                     TRUE as is_individual,
-                    NULL as trainer_id,
-                    NULL as trainer_name,
+                    its.trainer_id,
+                    t.full_name as trainer_name,
                     its.simulator_id,
                     s.name as simulator_name,
                     1 as max_participants,
@@ -87,6 +87,7 @@ router.get('/admin', async (req, res) => {
                     1 as current_participants
                 FROM individual_training_sessions its
                 LEFT JOIN simulators s ON its.simulator_id = s.id
+                LEFT JOIN trainers t ON its.trainer_id = t.id
                 WHERE its.preferred_date >= CURRENT_DATE
                     AND its.preferred_date <= CURRENT_DATE + INTERVAL '7 days'
             )
