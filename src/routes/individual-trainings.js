@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
+const { 
+    notifyClientAboutTrainerAssignment,
+    notifyAdminAboutTrainerAssignment,
+    notifyClientAboutTrainerChange,
+    notifyAdminAboutTrainerChange,
+    getTrainingAndClientData
+} = require('../services/trainer-notification-service');
 const TelegramBot = require('node-telegram-bot-api');
 const { notifyAdminIndividualTrainingDeleted } = require('../bot/admin-notify');
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -215,15 +222,36 @@ router.put('/:id/assign-trainer', async (req, res) => {
         
         await dbClient.query('COMMIT');
         
-        // 5. Отправляем уведомление клиенту (будет реализовано в ЭТАПЕ 3)
-        // if (client.telegram_id) {
-        //     await notifyClientAboutTrainer(client.telegram_id, training, trainer);
-        // }
-        
-        // 6. Отправляем уведомление в админ-бот (будет реализовано в ЭТАПЕ 3)
-        // await notifyAdminAboutAssignment(training, trainer, client);
-        
         console.log(`✅ Тренер ${trainer.full_name} назначен на тренировку #${id}`);
+        
+        // 5. Отправляем уведомления (асинхронно, не блокируем ответ)
+        setImmediate(async () => {
+            try {
+                // Получаем полные данные для уведомлений
+                const fullTrainingData = await getTrainingAndClientData(id);
+                
+                // Уведомление клиенту
+                if (fullTrainingData.client_telegram_id) {
+                    await notifyClientAboutTrainerAssignment({
+                        clientTelegramId: fullTrainingData.client_telegram_id,
+                        training: fullTrainingData,
+                        trainer: trainer
+                    });
+                }
+                
+                // Уведомление администраторам
+                await notifyAdminAboutTrainerAssignment({
+                    client: {
+                        full_name: fullTrainingData.client_full_name,
+                        phone: fullTrainingData.client_phone
+                    },
+                    training: fullTrainingData,
+                    trainer: trainer
+                });
+            } catch (notifyError) {
+                console.error('❌ Ошибка при отправке уведомлений о назначении тренера:', notifyError);
+            }
+        });
         
         res.json({ 
             success: true,
@@ -335,14 +363,45 @@ router.put('/:id/change-trainer', async (req, res) => {
         
         await dbClient.query('COMMIT');
         
-        // 5. Отправляем уведомления (будет реализовано в ЭТАПЕ 3)
-        // if (client.telegram_id) {
-        //     await notifyClientAboutTrainerChange(client.telegram_id, training, newTrainer, oldTrainer);
-        // }
+        // 5. Получаем информацию о старом тренере
+        const oldTrainerResult = await dbClient.query(
+            'SELECT full_name, phone FROM trainers WHERE id = $1',
+            [currentTrainerId]
+        );
+        const oldTrainer = oldTrainerResult.rows[0] || { full_name: 'Неизвестен', phone: '' };
         
-        // await notifyAdminAboutTrainerChange(training, newTrainer, oldTrainer, client);
+        console.log(`✅ Тренер изменен с ${oldTrainer.full_name} на ${newTrainer.full_name} для тренировки #${id}`);
         
-        console.log(`✅ Тренер изменен с ${currentTrainerId} на ${newTrainer.full_name} для тренировки #${id}`);
+        // 6. Отправляем уведомления (асинхронно, не блокируем ответ)
+        setImmediate(async () => {
+            try {
+                // Получаем полные данные для уведомлений
+                const fullTrainingData = await getTrainingAndClientData(id);
+                
+                // Уведомление клиенту
+                if (fullTrainingData.client_telegram_id) {
+                    await notifyClientAboutTrainerChange({
+                        clientTelegramId: fullTrainingData.client_telegram_id,
+                        training: fullTrainingData,
+                        oldTrainer: oldTrainer,
+                        newTrainer: newTrainer
+                    });
+                }
+                
+                // Уведомление администраторам
+                await notifyAdminAboutTrainerChange({
+                    client: {
+                        full_name: fullTrainingData.client_full_name,
+                        phone: fullTrainingData.client_phone
+                    },
+                    training: fullTrainingData,
+                    oldTrainer: oldTrainer,
+                    newTrainer: newTrainer
+                });
+            } catch (notifyError) {
+                console.error('❌ Ошибка при отправке уведомлений об изменении тренера:', notifyError);
+            }
+        });
         
         res.json({ 
             success: true,

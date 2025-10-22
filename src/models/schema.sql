@@ -991,10 +991,11 @@ CREATE TABLE trainer_payments (
     id SERIAL PRIMARY KEY,
     trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
     training_session_id INTEGER REFERENCES training_sessions(id) ON DELETE CASCADE,
+    individual_training_id INTEGER REFERENCES individual_training_sessions(id) ON DELETE CASCADE,
     amount DECIMAL(10,2) NOT NULL,
-    payment_type VARCHAR(20) DEFAULT 'percentage' CHECK (payment_type IN ('percentage', 'fixed')),
-    percentage DECIMAL(5,2),
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'paid')),
+    payment_type VARCHAR(20) NOT NULL CHECK (payment_type IN ('group_training', 'individual_training')),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+    payment_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

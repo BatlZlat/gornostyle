@@ -3880,47 +3880,77 @@ async function handleTextMessage(msg) {
         case 'main_menu': {
             if (msg.text === '📋 Мои записи') {
                 try {
-                    // Получаем все записи клиента и его детей
-                    const result = await pool.query(
-                        `WITH client_sessions AS (
-                            -- Групповые тренировки
-                            SELECT 
-                                sp.id,
-                                sp.session_id,
-                                sp.child_id,
-                                COALESCE(c.full_name, cl.full_name) as participant_name,
-                                ts.session_date,
-                                ts.start_time,
-                                ts.duration,
-                                ts.equipment_type,
-                                s.name as simulator_name,
-                                g.name as group_name,
-                                t.full_name as trainer_name,
-                                ts.skill_level,
-                                ts.price,
-                                ts.max_participants,
-                                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                                'group' as session_type
-                            FROM session_participants sp
-                            JOIN training_sessions ts ON sp.session_id = ts.id
-                            JOIN simulators s ON ts.simulator_id = s.id
-                            LEFT JOIN groups g ON ts.group_id = g.id
-                            LEFT JOIN trainers t ON ts.trainer_id = t.id
-                            LEFT JOIN children c ON sp.child_id = c.id
-                            JOIN clients cl ON sp.client_id = cl.id
-                            WHERE sp.client_id = $1
-                            AND ts.status = 'scheduled'
-                            AND sp.status = 'confirmed'
-                            AND (
-                              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
-                            )
+                    // Получаем групповые тренировки
+                    const groupResult = await pool.query(
+                        `SELECT 
+                            sp.id,
+                            sp.session_id,
+                            sp.child_id,
+                            COALESCE(c.full_name, cl.full_name) as participant_name,
+                            ts.session_date,
+                            ts.start_time,
+                            ts.duration,
+                            ts.equipment_type,
+                            s.name as simulator_name,
+                            g.name as group_name,
+                            t.full_name as trainer_name,
+                            ts.skill_level,
+                            ts.price,
+                            ts.max_participants,
+                            (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                            'group' as session_type
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        JOIN simulators s ON ts.simulator_id = s.id
+                        LEFT JOIN groups g ON ts.group_id = g.id
+                        LEFT JOIN trainers t ON ts.trainer_id = t.id
+                        LEFT JOIN children c ON sp.child_id = c.id
+                        JOIN clients cl ON sp.client_id = cl.id
+                        WHERE sp.client_id = $1
+                        AND ts.status = 'scheduled'
+                        AND sp.status = 'confirmed'
+                        AND (
+                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                         )
-                        SELECT * FROM client_sessions
-                        ORDER BY session_date, start_time`,
+                        ORDER BY ts.session_date, ts.start_time`,
                         [state.data.client_id]
                     );
 
-                    if (result.rows.length === 0) {
+                    // Получаем индивидуальные тренировки
+                    const individualResult = await pool.query(
+                        `SELECT 
+                            its.id,
+                            its.child_id,
+                            its.simulator_id,
+                            COALESCE(ch.full_name, cl.full_name) as participant_name,
+                            its.preferred_date as session_date,
+                            its.preferred_time as start_time,
+                            (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
+                            its.duration,
+                            its.equipment_type,
+                            s.name as simulator_name,
+                            NULL as group_name,
+                            NULL as trainer_name,
+                            NULL as skill_level,
+                            its.price,
+                            1 as max_participants,
+                            1 as current_participants,
+                            'individual' as session_type,
+                            its.with_trainer
+                        FROM individual_training_sessions its
+                        JOIN simulators s ON its.simulator_id = s.id
+                        LEFT JOIN children ch ON its.child_id = ch.id
+                        JOIN clients cl ON its.client_id = cl.id
+                        WHERE (its.client_id = $1 OR ch.parent_id = $1)
+                        AND (its.preferred_date::timestamp + its.preferred_time::interval + (its.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                        ORDER BY its.preferred_date, its.preferred_time`,
+                        [state.data.client_id]
+                    );
+
+                    const groupSessions = groupResult.rows;
+                    const individualSessions = individualResult.rows;
+
+                    if (groupSessions.length === 0 && individualSessions.length === 0) {
                         return bot.sendMessage(chatId,
                             'У вас пока нет записей на тренировки.',
                             {
@@ -4205,6 +4235,19 @@ async function handleTextMessage(msg) {
                     const client = clientRes.rows[0];
 
                     // Освобождаем слоты в расписании
+                    let endTime = selectedSession.end_time;
+                    if (!endTime) {
+                        // Вычисляем время окончания: start_time + duration минут
+                        const startTime = selectedSession.start_time;
+                        const duration = selectedSession.duration || 30;
+                        const [hours, minutes] = startTime.split(':').map(Number);
+                        const startMinutes = hours * 60 + minutes;
+                        const endMinutes = startMinutes + duration;
+                        const endHours = Math.floor(endMinutes / 60);
+                        const endMins = endMinutes % 60;
+                        endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+                    }
+                    
                     await pool.query(
                         `UPDATE schedule 
                          SET is_booked = false 
@@ -4216,7 +4259,7 @@ async function handleTextMessage(msg) {
                             selectedSession.simulator_id,
                             selectedSession.session_date,
                             selectedSession.start_time,
-                            selectedSession.end_time
+                            endTime
                         ]
                     );
 
@@ -5401,9 +5444,11 @@ async function showMyBookings(chatId) {
             `SELECT 
                 its.id,
                 its.child_id,
+                its.simulator_id,
                 COALESCE(ch.full_name, cl.full_name) as participant_name,
                 its.preferred_date as session_date,
                 its.preferred_time as start_time,
+                (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
                 its.duration,
                 its.equipment_type,
                 s.name as simulator_name,
