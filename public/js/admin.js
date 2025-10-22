@@ -2190,7 +2190,15 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                                             Назначить тренера
                                         </button>
                                     </div>
-                                ` : ''}
+                                ` : `
+                                    <div style="margin-top: 12px;">
+                                        <button 
+                                            class="btn-secondary" 
+                                            onclick="showChangeTrainerForm(${trainingId}, '${training.equipment_type}', '${training.trainer_name}')">
+                                            🔄 Изменить тренера
+                                        </button>
+                                    </div>
+                                `}
                             ` : ''}
                             <p><strong>Цена:</strong> ${training.price} ₽</p>
                         </div>
@@ -4315,5 +4323,151 @@ async function assignTrainer(trainingId, equipmentType) {
         hideLoading();
         console.error('Ошибка при назначении тренера:', error);
         showError(error.message || 'Не удалось назначить тренера');
+    }
+}
+
+// Показать форму изменения тренера
+function showChangeTrainerForm(trainingId, equipmentType, currentTrainerName) {
+    // Скрываем кнопку "Изменить тренера"
+    const changeButton = document.querySelector(`button[onclick="showChangeTrainerForm(${trainingId}, '${equipmentType}', '${currentTrainerName}')"]`);
+    if (changeButton) {
+        changeButton.style.display = 'none';
+    }
+    
+    // Создаем форму изменения
+    const formHtml = `
+        <div class="form-group" style="margin-top: 16px; padding: 16px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;" id="change-trainer-form-${trainingId}">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Изменить тренера:</label>
+            <p style="margin-bottom: 12px; color: #856404; font-size: 14px;">
+                Текущий: <strong>${currentTrainerName}</strong>
+            </p>
+            <select id="new-trainer-select-${trainingId}" class="form-control" style="width: 100%; padding: 8px; margin-bottom: 8px;">
+                <option value="">Загрузка...</option>
+            </select>
+            <div style="display: flex; gap: 8px;">
+                <button 
+                    class="btn-primary" 
+                    onclick="changeTrainer(${trainingId}, '${equipmentType}')">
+                    ✅ Изменить
+                </button>
+                <button 
+                    class="btn-secondary" 
+                    onclick="cancelChangeTrainer(${trainingId}, '${equipmentType}', '${currentTrainerName}')">
+                    ❌ Отмена
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Вставляем форму после информации о назначенном тренере
+    const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+    if (assignedSpan) {
+        assignedSpan.parentElement.insertAdjacentHTML('afterend', formHtml);
+    }
+    
+    // Загружаем список тренеров
+    loadAvailableTrainersForChange(trainingId, equipmentType);
+}
+
+// Загрузка тренеров для формы изменения
+async function loadAvailableTrainersForChange(trainingId, equipmentType) {
+    try {
+        const response = await fetch(`/api/individual-trainings/trainers/available?equipment_type=${equipmentType}`);
+        if (!response.ok) throw new Error('Ошибка при загрузке тренеров');
+        
+        const trainers = await response.json();
+        const select = document.getElementById(`new-trainer-select-${trainingId}`);
+        
+        if (!select) {
+            console.error(`Селектор new-trainer-select-${trainingId} не найден`);
+            return;
+        }
+        
+        if (trainers.length === 0) {
+            select.innerHTML = '<option value="">Нет доступных тренеров</option>';
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Выберите нового тренера...</option>' +
+            trainers.map(t => `<option value="${t.id}">${t.full_name} (${t.phone})</option>`).join('');
+            
+    } catch (error) {
+        console.error('Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить список тренеров');
+    }
+}
+
+// Изменение тренера
+async function changeTrainer(trainingId, equipmentType) {
+    const select = document.getElementById(`new-trainer-select-${trainingId}`);
+    const newTrainerId = select.value;
+    
+    if (!newTrainerId) {
+        showError('Пожалуйста, выберите нового тренера');
+        return;
+    }
+    
+    try {
+        showLoading('Изменение тренера...');
+        
+        const response = await fetch(`/api/individual-trainings/${trainingId}/change-trainer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trainer_id: newTrainerId })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при изменении тренера');
+        }
+        
+        const result = await response.json();
+        
+        // Обновляем отображение
+        const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+        if (assignedSpan) {
+            assignedSpan.innerHTML = `${result.trainer_name} (${result.trainer_phone})`;
+        }
+        
+        // Скрываем форму изменения
+        const changeForm = document.getElementById(`change-trainer-form-${trainingId}`);
+        if (changeForm) {
+            changeForm.remove();
+        }
+        
+        // Показываем кнопку "Изменить тренера" снова
+        const changeButton = document.querySelector(`button[onclick*="showChangeTrainerForm(${trainingId}"]`);
+        if (changeButton) {
+            changeButton.style.display = 'inline-block';
+            changeButton.setAttribute('onclick', `showChangeTrainerForm(${trainingId}, '${equipmentType}', '${result.trainer_name}')`);
+        }
+        
+        hideLoading();
+        showSuccess(`Тренер изменен на ${result.trainer_name}!`);
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            loadSchedule();
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка при изменении тренера:', error);
+        showError(error.message || 'Не удалось изменить тренера');
+    }
+}
+
+// Отмена изменения тренера
+function cancelChangeTrainer(trainingId, equipmentType, currentTrainerName) {
+    // Скрываем форму изменения
+    const changeForm = document.getElementById(`change-trainer-form-${trainingId}`);
+    if (changeForm) {
+        changeForm.remove();
+    }
+    
+    // Показываем кнопку "Изменить тренера" снова
+    const changeButton = document.querySelector(`button[onclick*="showChangeTrainerForm(${trainingId}"]`);
+    if (changeButton) {
+        changeButton.style.display = 'inline-block';
     }
 }

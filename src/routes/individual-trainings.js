@@ -241,6 +241,126 @@ router.put('/:id/assign-trainer', async (req, res) => {
 });
 
 /**
+ * PUT /api/individual-trainings/:id/change-trainer
+ * Изменение назначенного тренера на индивидуальной тренировке
+ */
+router.put('/:id/change-trainer', async (req, res) => {
+    const dbClient = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { trainer_id: newTrainerId } = req.body;
+        
+        await dbClient.query('BEGIN');
+        
+        // 1. Проверяем существование тренировки и получаем текущего тренера
+        const trainingResult = await dbClient.query(
+            'SELECT trainer_id FROM individual_training_sessions WHERE id = $1',
+            [id]
+        );
+        
+        if (trainingResult.rows.length === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+        
+        const currentTrainerId = trainingResult.rows[0].trainer_id;
+        
+        if (!currentTrainerId) {
+            await dbClient.query('ROLLBACK');
+            return res.status(400).json({ error: 'На тренировке нет назначенного тренера' });
+        }
+        
+        if (currentTrainerId == newTrainerId) {
+            await dbClient.query('ROLLBACK');
+            return res.status(400).json({ error: 'Новый тренер совпадает с текущим' });
+        }
+        
+        // 2. Обновляем trainer_id
+        await dbClient.query(
+            'UPDATE individual_training_sessions SET trainer_id = $1, updated_at = NOW() WHERE id = $2',
+            [newTrainerId, id]
+        );
+        
+        // 3. Получаем информацию о новом тренере
+        const trainerResult = await dbClient.query(
+            'SELECT full_name, phone FROM trainers WHERE id = $1',
+            [newTrainerId]
+        );
+        
+        if (trainerResult.rows.length === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Новый тренер не найден' });
+        }
+        
+        const newTrainer = trainerResult.rows[0];
+        
+        // 4. Обновляем выплаты тренерам
+        // Удаляем старую выплату (только pending)
+        await dbClient.query(
+            'DELETE FROM trainer_payments WHERE individual_training_id = $1 AND status = $2',
+            [id, 'pending']
+        );
+        
+        // Создаем новую выплату для нового тренера
+        const trainingData = await dbClient.query(
+            'SELECT price, with_trainer FROM individual_training_sessions WHERE id = $1',
+            [id]
+        );
+        
+        const training = trainingData.rows[0];
+        
+        if (training.with_trainer) {
+            // Получаем настройки ЗП нового тренера
+            const salaryResult = await dbClient.query(`
+                SELECT default_payment_type, default_percentage, default_fixed_amount
+                FROM trainers
+                WHERE id = $1
+            `, [newTrainerId]);
+            
+            const { default_payment_type, default_percentage, default_fixed_amount } = salaryResult.rows[0];
+            
+            let amount;
+            if (default_payment_type === 'percentage') {
+                amount = training.price * (default_percentage / 100);
+            } else {
+                amount = default_fixed_amount;
+            }
+            
+            await dbClient.query(`
+                INSERT INTO trainer_payments (
+                    trainer_id, individual_training_id, amount, payment_type, status, created_at
+                ) VALUES ($1, $2, $3, 'individual_training', 'pending', NOW())
+            `, [newTrainerId, id, amount]);
+        }
+        
+        await dbClient.query('COMMIT');
+        
+        // 5. Отправляем уведомления (будет реализовано в ЭТАПЕ 3)
+        // if (client.telegram_id) {
+        //     await notifyClientAboutTrainerChange(client.telegram_id, training, newTrainer, oldTrainer);
+        // }
+        
+        // await notifyAdminAboutTrainerChange(training, newTrainer, oldTrainer, client);
+        
+        console.log(`✅ Тренер изменен с ${currentTrainerId} на ${newTrainer.full_name} для тренировки #${id}`);
+        
+        res.json({ 
+            success: true,
+            trainer_name: newTrainer.full_name,
+            trainer_phone: newTrainer.phone,
+            previous_trainer_id: currentTrainerId
+        });
+        
+    } catch (error) {
+        await dbClient.query('ROLLBACK');
+        console.error('Ошибка при изменении тренера:', error);
+        res.status(500).json({ error: 'Ошибка при изменении тренера' });
+    } finally {
+        dbClient.release();
+    }
+});
+
+/**
  * DELETE /api/individual-trainings/:id
  * Удаление индивидуальной тренировки с возвратом средств и отправкой уведомлений
  */
