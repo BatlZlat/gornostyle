@@ -10,6 +10,7 @@ CREATE TABLE clients (
     nickname VARCHAR(100),
     email VARCHAR(255),
     silent_notifications BOOLEAN DEFAULT FALSE,
+    is_athlete BOOLEAN DEFAULT FALSE,
     referral_code VARCHAR(20) UNIQUE,
     referred_by INTEGER REFERENCES clients(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -156,6 +157,7 @@ CREATE TABLE training_sessions (
     equipment_type VARCHAR(20), -- ski, snowboard
     with_trainer BOOLEAN NOT NULL DEFAULT false,
     slope_type VARCHAR(20) DEFAULT 'simulator' CHECK (slope_type IN ('simulator', 'natural_slope')),
+    winter_training_type VARCHAR(20) CHECK (winter_training_type IN ('individual', 'sport_group', 'group') OR winter_training_type IS NULL),
     template_id INTEGER REFERENCES recurring_training_templates(id) ON DELETE SET NULL, -- Связь с шаблоном постоянного расписания
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -256,6 +258,26 @@ CREATE TABLE prices (
     price DECIMAL(10,2) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица цен для зимнего направления (естественный склон)
+CREATE TABLE winter_prices (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('individual', 'sport_group', 'group')),
+    duration INTEGER NOT NULL,
+    participants INTEGER,
+    price DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_price CHECK (price > 0),
+    CONSTRAINT valid_duration CHECK (duration > 0),
+    CONSTRAINT valid_participants CHECK (
+        (type = 'individual' AND participants IS NULL) OR
+        (type IN ('sport_group', 'group') AND participants > 0)
+    )
 );
 
 -- Таблица заявок на тренировки
@@ -1062,6 +1084,7 @@ CREATE TABLE natural_slope_subscription_types (
     price DECIMAL(10,2) NOT NULL,                 -- Цена абонемента
     price_per_session DECIMAL(10,2) NOT NULL,     -- Цена за занятие после скидки
     validity_days INTEGER NOT NULL,               -- Срок действия
+    applicable_to VARCHAR(50) DEFAULT 'sport_group' CHECK (applicable_to IN ('sport_group', 'any')),
     
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

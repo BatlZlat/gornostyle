@@ -701,6 +701,11 @@ async function loadPageContent(page) {
                 await loadSubscriptionsPage();
             }
             break;
+        case 'winter-trainings':
+            if (typeof initWinterTrainingsPage === 'function') {
+                initWinterTrainingsPage();
+            }
+            break;
     }
     
     if (page === 'finances') {

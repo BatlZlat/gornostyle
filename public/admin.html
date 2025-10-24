@@ -15,7 +15,8 @@
         <div class="admin-content">
             <nav class="admin-menu">
                 <button class="menu-item active" data-page="schedule">Расписание</button>
-                <button class="menu-item" data-page="training">Тренировки</button>
+                <button class="menu-item" data-page="training">🎿 Тренировки ТРЕНАЖЕР</button>
+                <button class="menu-item" data-page="winter-trainings">🏔️ Тренировки ЗИМА</button>
                 <button class="menu-item" data-page="applications">Заявки</button>
                 <button class="menu-item" data-page="simulators">Тренажеры</button>
                 <button class="menu-item" data-page="trainers">Тренера</button>
@@ -124,6 +125,13 @@
                         <div class="search-controls">
                             <input type="text" id="clientSearch" placeholder="Поиск по ФИО или телефону" class="search-input">
                         </div>
+                        <div class="filter-controls">
+                            <select id="clientAthleteFilter" class="filter-select">
+                                <option value="">Все клиенты</option>
+                                <option value="true">Только спортсмены</option>
+                                <option value="false">Только не спортсмены</option>
+                            </select>
+                        </div>
                         <div class="sort-controls">
                             <select id="clientSort" class="sort-select">
                                 <option value="created_desc">По дате создания (новые первые)</option>
@@ -143,7 +151,10 @@
                 <!-- Страница прайса -->
                 <div class="page-content" id="prices-page" style="display: none;">
                     <div class="page-header">
-                        <h2>Прайс</h2>
+                        <h2>🎿 Прайс (Тренажер)</h2>
+                        <div class="page-actions">
+                            <button class="btn-secondary" onclick="openWinterPricesModal()">🏔️ Прайс зимнее направление</button>
+                        </div>
                     </div>
                     <div class="prices-container">
                         <div class="price-section">
@@ -400,6 +411,43 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Страница зимних тренировок -->
+                <div class="page-content" id="winter-trainings-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🏔️ Тренировки на естественном склоне (ЗИМА)</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" onclick="openCreateWinterTraining()">➕ Создать тренировку</button>
+                            <button class="btn-secondary" onclick="openWinterPricesModal()">💰 Управление ценами</button>
+                        </div>
+                    </div>
+
+                    <div class="winter-trainings-controls" style="margin-bottom: 20px;">
+                        <div class="date-navigation">
+                            <button class="btn-icon" id="winter-prev-date">←</button>
+                            <input type="date" id="winter-trainings-date" class="date-picker">
+                            <button class="btn-icon" id="winter-next-date">→</button>
+                        </div>
+                        <div class="filter-controls" style="margin-top: 10px;">
+                            <select id="winter-type-filter" class="filter-select">
+                                <option value="">Все типы</option>
+                                <option value="individual">Индивидуальное</option>
+                                <option value="sport_group">Спортивная группа (до 4)</option>
+                                <option value="group">Обычная группа</option>
+                            </select>
+                            <select id="winter-status-filter" class="filter-select">
+                                <option value="">Все статусы</option>
+                                <option value="scheduled">Запланирована</option>
+                                <option value="completed">Завершена</option>
+                                <option value="cancelled">Отменена</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="winter-trainings-list">
+                        <!-- Список зимних тренировок будет загружен динамически -->
+                    </div>
+                </div>
             </main>
         </div>
     </div>
@@ -611,10 +659,85 @@
         </div>
     </div>
 
+    <!-- Модальное окно управления зимними ценами -->
+    <div id="winter-prices-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:900px;">
+            <div class="modal-header">
+                <h3>💰 Управление ценами (Зимнее направление)</h3>
+                <button class="close-btn" onclick="closeWinterPricesModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <button class="btn-primary" onclick="openCreateWinterPriceModal()" style="margin-bottom:20px;">➕ Добавить цену</button>
+                <div id="winter-prices-list">
+                    <!-- Список цен будет загружен динамически -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания/редактирования зимней цены -->
+    <div id="winter-price-edit-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3 id="winter-price-modal-title">Добавить цену</h3>
+                <button class="close-btn" onclick="closeWinterPriceEditModal()">×</button>
+            </div>
+            <form id="winter-price-form" onsubmit="saveWinterPrice(event)">
+                <input type="hidden" id="winter-price-id">
+                
+                <div class="form-group">
+                    <label for="winter-price-type">Тип тренировки *</label>
+                    <select id="winter-price-type" class="form-control" required onchange="updateWinterPriceFormFields()">
+                        <option value="">Выберите тип</option>
+                        <option value="individual">Индивидуальное</option>
+                        <option value="sport_group">Спортивная группа (до 4 чел)</option>
+                        <option value="group">Обычная группа</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="participants-group" style="display:none;">
+                    <label for="winter-price-participants">Количество участников *</label>
+                    <input type="number" id="winter-price-participants" class="form-control" min="1" max="20" step="1">
+                    <small style="color:#666;">Для спортивной группы - количество от 1 до 4</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-duration">Длительность (минут) *</label>
+                    <input type="number" id="winter-price-duration" class="form-control" value="60" required min="15" step="15">
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-price">Цена (₽) *</label>
+                    <input type="number" id="winter-price-price" class="form-control" required min="0" step="0.01">
+                    <small style="color:#666;" id="price-hint">Для индивидуальных и спортивных групп - цена за человека. Для обычных групп - общая цена.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-description">Описание</label>
+                    <textarea id="winter-price-description" class="form-control" rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="winter-price-active" checked>
+                        Цена активна
+                    </label>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeWinterPriceEditModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="js/admin.js?v=20250930"></script>
     <script src="js/admin-promotions.js?v=1"></script>
     <script src="js/admin-trainer-salary.js?v=1"></script>
     <script src="js/admin-subscriptions.js?v=1"></script>
+    <script src="js/admin-winter-prices.js?v=1"></script>
+    <script src="js/admin-winter-trainings.js?v=1"></script>
 </body>
 </html> 
