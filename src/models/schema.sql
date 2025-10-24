@@ -1046,42 +1046,73 @@ CREATE TABLE referral_transactions (
 );
 
 -- Таблица типов абонементов
-CREATE TABLE subscription_types (
+-- ================================================
+-- АБОНЕМЕНТЫ ДЛЯ ЕСТЕСТВЕННОГО СКЛОНА
+-- ================================================
+
+-- Типы абонементов для естественного склона
+CREATE TABLE natural_slope_subscription_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    sessions_count INTEGER NOT NULL,
-    discount_percentage DECIMAL(5,2) NOT NULL CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
-    validity_days INTEGER NOT NULL,
+    
+    -- Параметры
+    sessions_count INTEGER NOT NULL,              -- Количество занятий (5 или 10)
+    discount_percentage DECIMAL(5,2) NOT NULL,    -- Процент скидки (10 или 20)
+    price DECIMAL(10,2) NOT NULL,                 -- Цена абонемента
+    price_per_session DECIMAL(10,2) NOT NULL,     -- Цена за занятие после скидки
+    validity_days INTEGER NOT NULL,               -- Срок действия
+    
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_discount CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
+    CONSTRAINT valid_sessions CHECK (sessions_count > 0),
+    CONSTRAINT valid_price CHECK (price > 0),
+    CONSTRAINT valid_validity CHECK (validity_days > 0)
 );
 
--- Таблица абонементов клиентов
-CREATE TABLE client_subscriptions (
+-- Подписки клиентов на естественный склон
+CREATE TABLE natural_slope_subscriptions (
     id SERIAL PRIMARY KEY,
-    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
-    subscription_type_id INTEGER REFERENCES subscription_types(id),
-    sessions_remaining INTEGER NOT NULL,
-    purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expiry_date TIMESTAMP NOT NULL,
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscription_type_id INTEGER NOT NULL REFERENCES natural_slope_subscription_types(id),
+    
+    -- Остатки
+    remaining_sessions INTEGER NOT NULL,
+    
+    -- Статус
+    status VARCHAR(20) DEFAULT 'active' 
+        CHECK (status IN ('active', 'expired', 'used')),
+    
+    -- Даты
+    expires_at TIMESTAMP NOT NULL,
+    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Финансы
+    total_paid DECIMAL(10,2) NOT NULL,
+    
+    -- Метаданные для записи через админа
+    skill_level VARCHAR(50),                      -- Уровень катания
+    age_group VARCHAR(50),                        -- Возрастная группа
+    notes TEXT,                                   -- Заметки админа
+    
+    CONSTRAINT valid_remaining CHECK (remaining_sessions >= 0)
 );
 
--- Таблица использования абонементов
-CREATE TABLE subscription_usage (
+-- История использования абонементов
+CREATE TABLE natural_slope_subscription_usage (
     id SERIAL PRIMARY KEY,
-    subscription_id INTEGER REFERENCES client_subscriptions(id) ON DELETE CASCADE,
-    training_session_id INTEGER REFERENCES training_sessions(id),
-    individual_training_id INTEGER REFERENCES individual_training_sessions(id),
+    subscription_id INTEGER NOT NULL REFERENCES natural_slope_subscriptions(id) ON DELETE CASCADE,
+    training_session_id INTEGER NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
+    
     used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT usage_training_check CHECK (
-        (training_session_id IS NOT NULL AND individual_training_id IS NULL) OR
-        (training_session_id IS NULL AND individual_training_id IS NOT NULL)
-    )
+    
+    -- Финансы
+    original_price DECIMAL(10,2) NOT NULL,        -- Обычная цена (1700₽)
+    subscription_price DECIMAL(10,2) NOT NULL,    -- Цена по абонементу (1530₽ или 1360₽)
+    savings DECIMAL(10,2) NOT NULL                -- Сэкономлено
 );
 
 -- Таблица достижений клиентов
@@ -1134,8 +1165,16 @@ COMMENT ON TABLE cancellation_rules IS 'Правила отмены тренир
 COMMENT ON TABLE terms_of_service IS 'Договоры-оферты и пользовательские соглашения';
 COMMENT ON TABLE user_agreements IS 'Согласия пользователей с договорами-офертами';
 COMMENT ON TABLE referral_transactions IS 'Реферальные транзакции и бонусы';
-COMMENT ON TABLE subscription_types IS 'Типы абонементов';
-COMMENT ON TABLE client_subscriptions IS 'Абонементы клиентов';
-COMMENT ON TABLE subscription_usage IS 'Использование абонементов';
+COMMENT ON TABLE natural_slope_subscription_types IS 'Типы абонементов для тренировок на естественном склоне';
+COMMENT ON TABLE natural_slope_subscriptions IS 'Купленные абонементы клиентов на естественный склон';
+COMMENT ON TABLE natural_slope_subscription_usage IS 'История использования абонементов на естественном склоне';
 COMMENT ON TABLE client_achievements IS 'Достижения клиентов';
-COMMENT ON TABLE reviews IS 'Отзывы клиентов (интегрировано с существующей системой)'; 
+COMMENT ON TABLE reviews IS 'Отзывы клиентов (интегрировано с существующей системой)';
+
+-- Индексы для абонементов естественного склона
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_client ON natural_slope_subscriptions(client_id);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_status ON natural_slope_subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_slope_subscriptions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 

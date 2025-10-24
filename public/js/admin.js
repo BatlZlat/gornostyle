@@ -696,6 +696,11 @@ async function loadPageContent(page) {
                 await loadPromotionsPage();
             }
             break;
+        case 'subscriptions':
+            if (typeof loadSubscriptionsPage === 'function') {
+                await loadSubscriptionsPage();
+            }
+            break;
     }
     
     if (page === 'finances') {

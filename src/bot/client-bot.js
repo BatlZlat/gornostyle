@@ -20,6 +20,36 @@ const pool = new Pool({
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const userStates = new Map();
 
+// Глобальный обработчик ошибок бота
+bot.on('polling_error', (error) => {
+    console.error('❌ Ошибка polling:', error.code, error.message);
+});
+
+bot.on('error', (error) => {
+    console.error('❌ Ошибка бота:', error.code, error.message);
+});
+
+// Безопасная отправка сообщений с обработкой ошибок
+async function safeSendMessage(chatId, text, options = {}) {
+    try {
+        return await bot.sendMessage(chatId, text, options);
+    } catch (error) {
+        if (error.response && error.response.body) {
+            const errorBody = error.response.body;
+            console.error(`❌ Ошибка отправки сообщения пользователю ${chatId}:`, errorBody.description);
+            
+            // Если пользователь заблокировал бота или деактивирован
+            if (errorBody.error_code === 403) {
+                console.warn(`⚠️ Пользователь ${chatId} заблокировал бота или деактивирован`);
+                // Можно добавить логику для пометки пользователя как неактивного в БД
+            }
+        } else {
+            console.error(`❌ Ошибка отправки сообщения пользователю ${chatId}:`, error.message);
+        }
+        return null;
+    }
+}
+
 // Функция для получения JWT токена
 function getJWTToken() {
     return jwt.sign(
