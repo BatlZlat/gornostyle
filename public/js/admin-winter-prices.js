@@ -94,6 +94,9 @@ function renderWinterPriceItem(price) {
     const statusBadge = price.is_active 
         ? '<span style="color:#4CAF50;font-weight:bold;">✓ Активна</span>' 
         : '<span style="color:#999;">✗ Неактивна</span>';
+    
+    // Преобразуем цену в число
+    const priceValue = parseFloat(price.price) || 0;
 
     return `
         <div class="price-item" style="border:1px solid #ddd;padding:15px;margin-bottom:10px;border-radius:8px;background:${price.is_active ? '#fff' : '#f5f5f5'};">
@@ -103,7 +106,7 @@ function renderWinterPriceItem(price) {
                         ${typeLabels[price.type]} ${participantsText} - ${price.duration} мин
                     </div>
                     <div style="font-size:20px;color:#2196F3;font-weight:bold;margin:5px 0;">
-                        ${price.price.toFixed(2)} ₽
+                        ${priceValue.toFixed(2)} ₽
                         ${price.type === 'individual' || price.type === 'sport_group' ? '<span style="font-size:14px;color:#666;">/чел</span>' : ''}
                     </div>
                     ${price.description ? `<div style="color:#666;font-size:14px;">${price.description}</div>` : ''}
