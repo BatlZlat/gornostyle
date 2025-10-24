@@ -1291,7 +1291,15 @@ async function editTrainer(trainerId) {
 async function loadClients() {
     try {
         console.log('Начало загрузки клиентов');
-        const response = await fetch('/api/clients');
+        
+        // Получаем значение фильтра спортсменов
+        const athleteFilter = document.getElementById('clientAthleteFilter');
+        let url = '/api/clients';
+        if (athleteFilter && athleteFilter.value) {
+            url += `?is_athlete=${athleteFilter.value}`;
+        }
+        
+        const response = await fetch(url);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -1303,6 +1311,12 @@ async function loadClients() {
         const clientsContainer = document.getElementById('clientsContainer');
         if (!clientsContainer) {
             throw new Error('Элемент clientsContainer не найден');
+        }
+
+        // Добавляем обработчик фильтра при первой загрузке
+        if (athleteFilter && !athleteFilter.hasAttribute('data-initialized')) {
+            athleteFilter.addEventListener('change', loadClients);
+            athleteFilter.setAttribute('data-initialized', 'true');
         }
 
         // Применяем текущие фильтры и сортировку
@@ -1457,6 +1471,7 @@ function displayClients() {
                     <th>Возраст</th>
                     <th>Уровень</th>
                     <th>Баланс</th>
+                    <th>🏔️ Спортсмен</th>
                     <th>Отзыв 2ГИС</th>
                     <th>Отзыв Яндекс</th>
                     <th>Действия</th>
@@ -1505,6 +1520,12 @@ function displayClients() {
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="toggleClientAthleteStatus(${client.id}, ${client.is_athlete || false})"
+                                       ${client.is_athlete ? 'checked' : ''}
+                                       title="Отметить клиента как спортсмена (может покупать абонементы)">
+                            </td>
                             <td style="text-align: center;">
                                 <input type="checkbox" 
                                        onchange="updateReviewStatus(${client.id}, '2gis', this.checked)"
@@ -2974,6 +2995,46 @@ async function updateReviewStatus(clientId, reviewType, isChecked) {
         
         // Возвращаем чекбокс в предыдущее состояние
         loadClients();
+    }
+}
+
+// Функция для переключения статуса спортсмена
+async function toggleClientAthleteStatus(clientId, currentStatus) {
+    try {
+        console.log(`Переключение статуса спортсмена: клиент ${clientId}, текущий статус ${currentStatus}`);
+        
+        const response = await fetch(`/api/clients/${clientId}/athlete-status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                is_athlete: !currentStatus
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении статуса спортсмена');
+        }
+
+        const result = await response.json();
+        console.log('Статус спортсмена обновлен:', result);
+        
+        // Показываем уведомление об успешном обновлении
+        const statusText = !currentStatus ? 'спортсменом' : 'обычным клиентом';
+        showSuccess(`Клиент отмечен как ${statusText}`);
+        
+        // Перезагружаем список клиентов для обновления данных
+        await loadClients();
+        
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса спортсмена:', error);
+        showError(error.message || 'Не удалось обновить статус спортсмена');
+        
+        // Возвращаем чекбокс в предыдущее состояние
+        await loadClients();
     }
 }
 
