@@ -5435,6 +5435,214 @@ async function handleTextMessage(msg) {
             );
         }
 
+        case 'natural_slope_individual_confirm': {
+            if (msg.text === '✅ Записаться') {
+                // Проверяем баланс
+                const clientResult = await pool.query(
+                    `SELECT c.*, w.balance 
+                     FROM clients c 
+                     LEFT JOIN wallets w ON c.id = w.client_id 
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const client = clientResult.rows[0];
+                const balance = parseFloat(client.balance || 0);
+                
+                // Получаем цену
+                const priceResult = await pool.query(
+                    `SELECT price FROM winter_prices 
+                     WHERE type = 'individual' AND is_active = true 
+                     ORDER BY created_at DESC LIMIT 1`
+                );
+                
+                const price = priceResult.rows.length > 0 ? parseFloat(priceResult.rows[0].price) : 2500;
+                
+                if (balance < price) {
+                    return bot.sendMessage(chatId,
+                        `❌ *Недостаточно средств на балансе!*\n\n` +
+                        `💰 *Требуется:* ${price.toFixed(2)} руб.\n` +
+                        `💳 *Ваш баланс:* ${balance.toFixed(2)} руб.\n` +
+                        `📊 *Не хватает:* ${(price - balance).toFixed(2)} руб.\n\n` +
+                        `Пополните баланс и попробуйте снова.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['💰 Пополнить баланс'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Создаем запись в winter_schedule
+                const dbClient = await pool.connect();
+                try {
+                    await dbClient.query('BEGIN');
+                    
+                    // Находим слот в расписании
+                    const slotResult = await dbClient.query(
+                        `SELECT id FROM winter_schedule 
+                         WHERE date = $1 AND time_slot = $2 AND is_individual_training = true`,
+                        [state.data.selected_date, state.data.selected_time + ':00']
+                    );
+                    
+                    if (slotResult.rows.length === 0) {
+                        throw new Error('Слот не найден в расписании');
+                    }
+                    
+                    const slotId = slotResult.rows[0].id;
+                    
+                    // Помечаем слот как занятый
+                    await dbClient.query(
+                        `UPDATE winter_schedule 
+                         SET is_available = false, current_participants = 1
+                         WHERE id = $1`,
+                        [slotId]
+                    );
+                    
+                    // Создаем запись в training_sessions
+                    const trainingResult = await dbClient.query(
+                        `INSERT INTO training_sessions (
+                            client_id, session_date, start_time, end_time, 
+                            session_type, slope_type, winter_training_type,
+                            price, status, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                        RETURNING id`,
+                        [
+                            state.data.client_id,
+                            state.data.selected_date,
+                            state.data.selected_time + ':00',
+                            state.data.selected_time + ':00',
+                            'individual',
+                            'natural_slope',
+                            'individual',
+                            price,
+                            'confirmed'
+                        ]
+                    );
+                    
+                    const trainingId = trainingResult.rows[0].id;
+                    
+                    // Списываем деньги с баланса
+                    await dbClient.query(
+                        `UPDATE wallets 
+                         SET balance = balance - $1 
+                         WHERE client_id = $2`,
+                        [price, state.data.client_id]
+                    );
+                    
+                    // Создаем запись о платеже
+                    await dbClient.query(
+                        `INSERT INTO payments (
+                            client_id, amount, payment_type, status, 
+                            description, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
+                        [
+                            state.data.client_id,
+                            price,
+                            'debit',
+                            'completed',
+                            `Индивидуальная тренировка на естественном склоне ${state.data.selected_date} ${state.data.selected_time}`
+                        ]
+                    );
+                    
+                    await dbClient.query('COMMIT');
+                    
+                    // Очищаем состояние
+                    userStates.delete(chatId);
+                    
+                    // Форматируем дату для сообщения
+                    const date = new Date(state.data.selected_date);
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    
+                    // Отправляем подтверждение
+                    return bot.sendMessage(chatId,
+                        `✅ *Тренировка успешно забронирована!*\n\n` +
+                        `👤 *Участник:* ${state.data.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate}\n` +
+                        `⏰ *Время:* ${state.data.selected_time}\n` +
+                        `🏔️ *Место:* Естественный склон\n` +
+                        `💰 *Стоимость:* ${price.toFixed(2)} руб.\n` +
+                        `💳 *Остаток на балансе:* ${(balance - price).toFixed(2)} руб.\n\n` +
+                        `🎿 *Удачной тренировки!*`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                    
+                } catch (error) {
+                    await dbClient.query('ROLLBACK');
+                    console.error('Ошибка при записи на тренировку:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при записи на тренировку. Попробуйте позже.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } finally {
+                    dbClient.release();
+                }
+                
+            } else if (msg.text === '💰 Пополнить баланс') {
+                // Показываем информацию о пополнении баланса
+                const clientResult = await pool.query(
+                    `SELECT c.*, w.wallet_number, w.balance 
+                     FROM clients c 
+                     LEFT JOIN wallets w ON c.id = w.client_id 
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const client = clientResult.rows[0];
+                const walletNumber = client.wallet_number || 'не указан';
+                
+                return bot.sendMessage(chatId,
+                    `💰 *Пополнение баланса*\n\n` +
+                    `💳 *Номер кошелька:* \`${walletNumber}\`\n\n` +
+                    `📋 *Инструкция:*\n` +
+                    `1. Переведите деньги на номер кошелька\n` +
+                    `2. В комментарии укажите номер кошелька\n` +
+                    `3. Деньги поступят в течение 5 минут\n\n` +
+                    `После пополнения вернитесь к записи на тренировку.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🔙 Назад к записи'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                
+            } else if (msg.text === '❌ Я передумал') {
+                // Очищаем состояние и возвращаемся в меню
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+                
+            } else if (msg.text === '🔙 Назад к записи') {
+                // Возвращаемся к выбору времени
+                state.step = 'natural_slope_individual_time';
+                userStates.set(chatId, state);
+                return showNaturalSlopeTimeSlots(chatId, state.data.selected_date, state.data);
+                
+            } else {
+                return bot.sendMessage(chatId, 'Пожалуйста, выберите действие из предложенных вариантов.');
+            }
+        }
+
         // ... rest of the states ...
     }
 }
