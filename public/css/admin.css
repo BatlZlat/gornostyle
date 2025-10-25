@@ -1966,4 +1966,40 @@ body {
     gap: 10px;
     justify-content: center;
     flex-wrap: wrap;
+}
+
+/* Стили для секций расписания */
+.schedule-section {
+    margin-bottom: 2rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.schedule-section-title {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    margin: 0;
+    padding: 1rem 1.5rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.schedule-date-group {
+    margin-bottom: 1.5rem;
+}
+
+.schedule-date-group:last-child {
+    margin-bottom: 0;
+}
+
+.schedule-date-header {
+    background: #f8f9fa;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 1rem;
 } 

@@ -292,6 +292,61 @@ async function notifyAdminIndividualTrainingCancellation(trainingData) {
     }
 }
 
+// Функция для отправки уведомления об отмене индивидуальной тренировки естественного склона
+async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n' +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
+            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `👨‍🏫 *Тренер:* ${trainingData.trainer_name || 'Не указан'}\n` +
+            `🏔️ *Место:* Естественный склон\n` +
+            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене тренировки естественного склона:', error);
+    }
+}
+
+// Функция для отправки уведомления о новой записи на индивидуальную тренировку естественного склона
+async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            '✅ *Новая запись на индивидуальную тренировку естественного склона!*\n\n' +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
+            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `🏔️ *Место:* Естественный склон\n` +
+            `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о записи на тренировку естественного склона:', error);
+    }
+}
+
 // Уведомление о неудачном платеже
 async function notifyAdminFailedPayment({ amount, wallet_number, date, time }) {
     try {
@@ -1053,5 +1108,7 @@ module.exports = {
     notifyBlockDeleted,
     notifyTrainerBookingCreated,
     notifyTrainerBookingCancelled,
-    notifyAdminIndividualTrainingDeleted
+    notifyAdminIndividualTrainingDeleted,
+    notifyAdminNaturalSlopeTrainingCancellation,
+    notifyAdminNaturalSlopeTrainingBooking
 }; 

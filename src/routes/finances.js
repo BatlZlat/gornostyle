@@ -141,8 +141,11 @@ router.get('/statistics', async (req, res) => {
         );
         let individualIncome = 0;
         for (const payment of individualPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Индивидуальная тренировка на естественном склоне, (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) continue;
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
@@ -155,8 +158,8 @@ router.get('/statistics', async (req, res) => {
                  AND created_at BETWEEN $3 AND $4
                  LIMIT 1`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
@@ -363,8 +366,11 @@ router.get('/export', async (req, res) => {
         );
         let individualIncome = 0;
         for (const payment of individualPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Индивидуальная тренировка на естественном склоне, (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) continue;
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
@@ -377,8 +383,8 @@ router.get('/export', async (req, res) => {
                  AND created_at BETWEEN $3 AND $4
                  LIMIT 1`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );

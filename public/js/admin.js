@@ -839,18 +839,23 @@ function getEquipmentTypeName(equipmentType) {
 // Загрузка расписания
 async function loadSchedule() {
     try {
-        const response = await fetch('/api/schedule/admin');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        // Загружаем данные для тренажера и естественного склона параллельно
+        const [simulatorResponse, naturalSlopeResponse] = await Promise.all([
+            fetch('/api/schedule/admin?slope_type=simulator'),
+            fetch('/api/schedule/admin?slope_type=natural_slope')
+        ]);
+
+        if (!simulatorResponse.ok || !naturalSlopeResponse.ok) {
+            throw new Error(`HTTP error! status: ${simulatorResponse.status} / ${naturalSlopeResponse.status}`);
         }
         
-        const data = await response.json();
-        console.log('Полученные данные:', data);
+        const [simulatorData, naturalSlopeData] = await Promise.all([
+            simulatorResponse.json(),
+            naturalSlopeResponse.json()
+        ]);
         
-        if (!data || !Array.isArray(data)) {
-            console.error('Получены некорректные данные:', data);
-            throw new Error('Получены некорректные данные от сервера');
-        }
+        console.log('Полученные данные тренажера:', simulatorData);
+        console.log('Полученные данные естественного склона:', naturalSlopeData);
 
         const scheduleList = document.querySelector('.schedule-list');
         if (!scheduleList) {
@@ -858,29 +863,58 @@ async function loadSchedule() {
             return;
         }
 
-        if (data.length === 0) {
-            scheduleList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок на ближайшие 7 дней</div>';
-            return;
-        }
-
-        // Группируем тренировки по дате
-        const grouped = {};
-        data.forEach(training => {
-            const date = training.date;
-            if (!grouped[date]) grouped[date] = [];
-            grouped[date].push(training);
-        });
-
-        // Формируем HTML
+        // Формируем HTML для обеих секций
         let html = '';
-        Object.keys(grouped).forEach(date => {
-            html += `
-                <div class="training-date-header">${formatDateWithWeekday(date)}</div>
-                <div class="training-table-container">
-                    <table class="training-table">
-                        <thead>
-                            <tr>
-                                <th>Время</th>
+
+        // Секция тренажера
+        html += '<div class="schedule-section">';
+        html += '<h3 class="schedule-section-title">🏔️ Горнолыжный тренажер</h3>';
+        html += await renderScheduleSection(simulatorData, 'simulator');
+        html += '</div>';
+
+        // Секция естественного склона
+        html += '<div class="schedule-section">';
+        html += '<h3 class="schedule-section-title">🎿 Естественный склон</h3>';
+        html += await renderScheduleSection(naturalSlopeData, 'natural_slope');
+        html += '</div>';
+
+        scheduleList.innerHTML = html;
+    } catch (error) {
+        console.error('Ошибка при загрузке расписания:', error);
+        showError('Не удалось загрузить расписание');
+    }
+}
+
+// Рендеринг секции расписания
+async function renderScheduleSection(data, slopeType) {
+    if (!data || !Array.isArray(data)) {
+        console.error('Получены некорректные данные:', data);
+        return '<div class="alert alert-danger">Ошибка загрузки данных</div>';
+    }
+
+    if (data.length === 0) {
+        return '<div class="alert alert-info">Нет доступных тренировок на ближайшие 7 дней</div>';
+    }
+
+    // Группируем тренировки по дате
+    const grouped = {};
+    data.forEach(training => {
+        const date = training.date;
+        if (!grouped[date]) grouped[date] = [];
+        grouped[date].push(training);
+    });
+
+    // Формируем HTML
+    let html = '';
+    Object.keys(grouped).forEach(date => {
+        html += `<div class="schedule-date-group">
+            <div class="schedule-date-header">${formatDateWithWeekday(date)}</div>
+            <div class="training-table-container">
+                <table class="training-table">
+                    <thead>
+                        <tr>
+                            ${slopeType === 'simulator' ? 
+                                `<th>Время</th>
                                 <th>Тип</th>
                                 <th>Название</th>
                                 <th>Тренер</th>
@@ -888,37 +922,57 @@ async function loadSchedule() {
                                 <th>Участников</th>
                                 <th>Уровень</th>
                                 <th>Цена</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${grouped[date].map(training => `
-                                <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
-                                    <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
-                                    <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
-                                    <td>${training.is_individual ? getEquipmentTypeName(training.equipment_type) : (training.group_name || '-')}</td>
+                                <th>Действия</th>` :
+                                `<th>Время</th>
+                                <th>Тип</th>
+                                <th>Участник</th>
+                                <th>Тренер</th>
+                                <th>Участников</th>
+                                <th>Цена</th>
+                                <th>Действия</th>`
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${grouped[date].map(training => `
+                            <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
+                                <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
+                                ${slopeType === 'simulator' ? 
+                                    `<td>${training.is_individual ? getEquipmentTypeName(training.equipment_type) : (training.group_name || '-')}</td>
                                     <td>${training.trainer_name || 'Не указан'}</td>
-                                    <td>${training.simulator_name}</td>
+                                    <td>${training.simulator_name || '-'}</td>
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
                                     <td>${training.skill_level || '-'}</td>
-                                    <td>${training.price} ₽</td>
-                                    <td class="training-actions">
-                                        <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual})">
-                                            Подробнее
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        });
+                                    <td>${training.price} ₽</td>` :
+                                    `<td>${getParticipantName(training)}</td>
+                                    <td>${training.trainer_name || 'Не указан'}</td>
+                                    <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
+                                    <td>${training.price} ₽</td>`
+                                }
+                                <td class="training-actions">
+                                    <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual}, '${slopeType}')">
+                                        Подробнее
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    });
 
-        scheduleList.innerHTML = html;
-    } catch (error) {
-        console.error('Ошибка при загрузке расписания:', error);
-        showError('Не удалось загрузить расписание');
+    return html;
+}
+
+// Получение имени участника для естественного склона
+function getParticipantName(training) {
+    if (training.is_individual) {
+        // Для индивидуальных тренировок используем participant_names из API
+        return training.participant_names || 'Участник';
+    } else {
+        return training.group_name || '-';
     }
 }
 
