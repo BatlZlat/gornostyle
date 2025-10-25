@@ -5553,17 +5553,26 @@ async function handleTextMessage(msg) {
                         [price, state.data.client_id]
                     );
                     
-                    // Создаем запись о платеже
+                    // Создаем запись о транзакции
+                    const walletResult = await dbClient.query(
+                        `SELECT id FROM wallets WHERE client_id = $1`,
+                        [state.data.client_id]
+                    );
+                    
+                    if (walletResult.rows.length === 0) {
+                        throw new Error('Кошелек клиента не найден');
+                    }
+                    
+                    const walletId = walletResult.rows[0].id;
+                    
                     await dbClient.query(
-                        `INSERT INTO payments (
-                            client_id, amount, payment_type, status, 
-                            description, created_at
-                        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
+                        `INSERT INTO transactions (
+                            wallet_id, amount, type, description, created_at
+                        ) VALUES ($1, $2, $3, $4, NOW())`,
                         [
-                            state.data.client_id,
+                            walletId,
                             price,
-                            'debit',
-                            'completed',
+                            'payment',
                             `Индивидуальная тренировка на естественном склоне ${state.data.selected_date} ${state.data.selected_time}`
                         ]
                     );
