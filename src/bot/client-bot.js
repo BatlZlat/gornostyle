@@ -5504,28 +5504,46 @@ async function handleTextMessage(msg) {
                         [slotId]
                     );
                     
-                    // Создаем запись в training_sessions
+                    // Создаем запись в training_sessions для зимней тренировки
                     const trainingResult = await dbClient.query(
                         `INSERT INTO training_sessions (
-                            client_id, session_date, start_time, end_time, 
-                            session_type, slope_type, winter_training_type,
-                            price, status, created_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                            session_date, start_time, end_time, duration,
+                            training_type, max_participants, price, status,
+                            equipment_type, with_trainer, slope_type, winter_training_type,
+                            created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
                         RETURNING id`,
                         [
-                            state.data.client_id,
                             state.data.selected_date,
                             state.data.selected_time + ':00',
                             state.data.selected_time + ':00',
-                            'individual',
-                            'natural_slope',
-                            'individual',
+                            60, // duration
+                            false, // training_type: false = individual
+                            1, // max_participants
                             price,
-                            'confirmed'
+                            'scheduled', // status
+                            'ski', // equipment_type
+                            true, // with_trainer
+                            'natural_slope', // slope_type
+                            'individual' // winter_training_type
                         ]
                     );
                     
                     const trainingId = trainingResult.rows[0].id;
+                    
+                    // Создаем запись в session_participants
+                    await dbClient.query(
+                        `INSERT INTO session_participants (
+                            session_id, client_id, child_id, is_child, status, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
+                        [
+                            trainingId,
+                            state.data.client_id,
+                            state.data.participant_type === 'child' ? state.data.participant_id : null,
+                            state.data.participant_type === 'child',
+                            'confirmed'
+                        ]
+                    );
                     
                     // Списываем деньги с баланса
                     await dbClient.query(
