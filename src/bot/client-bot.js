@@ -4551,6 +4551,9 @@ async function handleTextMessage(msg) {
 
                     // Удаляем участника из session_participants
                     await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
+                    
+                    // Удаляем саму тренировку из training_sessions
+                    await pool.query('DELETE FROM training_sessions WHERE id = $1', [selectedSession.session_id]);
 
                     // Возвращаем средства
                     await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
