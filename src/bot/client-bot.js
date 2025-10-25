@@ -5565,6 +5565,10 @@ async function handleTextMessage(msg) {
                     
                     const walletId = walletResult.rows[0].id;
                     
+                    // Форматируем дату для транзакции
+                    const transactionDate = new Date(state.data.selected_date);
+                    const formattedTransactionDate = `${transactionDate.getDate().toString().padStart(2, '0')}.${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}.${transactionDate.getFullYear()}`;
+                    
                     await dbClient.query(
                         `INSERT INTO transactions (
                             wallet_id, amount, type, description, created_at
@@ -5573,7 +5577,7 @@ async function handleTextMessage(msg) {
                             walletId,
                             price,
                             'payment',
-                            `Индивидуальная тренировка на естественном склоне ${state.data.selected_date} ${state.data.selected_time}`
+                            `Индивидуальная тренировка на естественном склоне, Дата: ${formattedTransactionDate}, Время: ${state.data.selected_time}`
                         ]
                     );
                     
@@ -5588,7 +5592,7 @@ async function handleTextMessage(msg) {
                     
                     // Отправляем подтверждение
                     return bot.sendMessage(chatId,
-                        `✅ *Тренировка успешно забронирована!*\n\n` +
+                        `✅ Тренировка *НА ЕСТЕСТВЕННОМ СКЛОНЕ* успешно забронирована!\n\n` +
                         `👤 *Участник:* ${state.data.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate}\n` +
                         `⏰ *Время:* ${state.data.selected_time}\n` +

@@ -124,15 +124,19 @@ router.get('/statistics', async (req, res) => {
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
-             JOIN individual_training_sessions its ON 
-                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
-                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
-             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -184,9 +188,10 @@ router.get('/statistics', async (req, res) => {
             `SELECT 
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
-             FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2
-             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             FROM training_sessions 
+             WHERE session_date BETWEEN $1 AND $2
+             AND training_type = FALSE
+             AND ((session_date + start_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
@@ -241,7 +246,8 @@ router.get('/statistics', async (req, res) => {
             debugGroupIncome
         });
     } catch (e) {
-        console.error(e);
+        console.error('Ошибка в API финансов:', e);
+        console.error('Stack trace:', e.stack);
         res.status(500).json({ error: 'Ошибка при получении статистики' });
     }
 });
@@ -340,15 +346,19 @@ router.get('/export', async (req, res) => {
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
-             JOIN individual_training_sessions its ON 
-                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
-                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
-             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
@@ -400,9 +410,10 @@ router.get('/export', async (req, res) => {
             `SELECT 
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
-             FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2
-             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             FROM training_sessions 
+             WHERE session_date BETWEEN $1 AND $2
+             AND training_type = FALSE
+             AND ((session_date + start_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
@@ -481,17 +492,19 @@ router.get('/export', async (req, res) => {
         const indSheet = workbook.addWorksheet('Индивидуальные тренировки');
         indSheet.addRow(['ФИО участника', 'Дата', 'Время начала', 'Длительность', 'Стоимость', 'Телефон']);
         const indParticipants = await pool.query(`
-            SELECT c.full_name, its.preferred_date, its.preferred_time, its.duration, its.price, c.phone
-            FROM individual_training_sessions its
-            JOIN clients c ON its.client_id = c.id
-            WHERE its.preferred_date BETWEEN $1 AND $2
-            ORDER BY its.preferred_date, its.preferred_time
+            SELECT c.full_name, ts.session_date, ts.start_time, ts.duration, ts.price, c.phone
+            FROM training_sessions ts
+            JOIN session_participants sp ON ts.id = sp.session_id
+            JOIN clients c ON sp.client_id = c.id
+            WHERE ts.session_date BETWEEN $1 AND $2
+            AND ts.training_type = FALSE
+            ORDER BY ts.session_date, ts.start_time
         `, [start_date, end_date]);
         for (const row of indParticipants.rows) {
             indSheet.addRow([
                 row.full_name,
-                row.preferred_date ? row.preferred_date.toLocaleDateString('ru-RU') : '',
-                row.preferred_time ? row.preferred_time.slice(0,5) : '',
+                row.session_date ? row.session_date.toLocaleDateString('ru-RU') : '',
+                row.start_time ? row.start_time.slice(0,5) : '',
                 row.duration,
                 row.price,
                 row.phone
