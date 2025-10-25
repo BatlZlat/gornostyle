@@ -152,7 +152,7 @@ async function validateDateWithHumor(dateStr, trainingType = 'individual') {
     }
 
     // Проверяем максимальную дату расписания только для индивидуальных тренировок
-    if (trainingType === 'individual') {
+    if (trainingType === 'individual' || trainingType === 'natural_slope_individual') {
         const maxScheduleDate = await getMaxScheduleDate();
         
         // Проверяем, что дата не превышает максимальную дату расписания
@@ -168,6 +168,21 @@ async function validateDateWithHumor(dateStr, trainingType = 'individual') {
                 date: null
             };
         }
+    }
+
+    // Дополнительная проверка для зимних тренировок (только выходные)
+    if (trainingType === 'natural_slope_individual') {
+        // Убираем проверку выходных дней - теперь проверяем наличие расписания в БД
+        // const dayOfWeek = date.getDay(); // 0 = воскресенье, 6 = суббота
+        // if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        //     return {
+        //         valid: false,
+        //         message: '🏔️ *Зимние тренировки доступны только по выходным!*\n\n' +
+        //                  'Выберите субботу или воскресенье для записи на естественный склон. 🎿\n\n' +
+        //                  'В будние дни работают только тренажеры! 🏠',
+        //         date: null
+        //     };
+        // }
     }
 
     return {
@@ -991,16 +1006,174 @@ async function handleTextMessage(msg) {
     // Обработка "Естественный склон"
     if (msg.text === '🏔️ Естественный склон') {
         console.log('Выбран естественный склон');
+        
+        // Проверяем, что клиент зарегистрирован
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем меню выбора типа тренировки
         return bot.sendMessage(chatId,
             '🏔️ *Естественный склон*\n\n' +
-            '⚠️ *Раздел находится в разработке*\n\n' +
-            'Запись на тренировки на естественном склоне будет доступна после официального открытия горнолыжного сезона в Тюмени.',
+            'Выберите тип тренировки:',
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     keyboard: [
+                        ['🏔️ Индивидуальная тренировка'],
+                        ['👥 Групповая тренировка'],
                         ['🔙 Назад в меню']
                     ],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+
+    // Обработка "Индивидуальная тренировка" (естественный склон)
+    if (msg.text === '🏔️ Индивидуальная тренировка') {
+        console.log('Выбрана индивидуальная тренировка на естественном склоне');
+        
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Получаем список детей клиента
+        const childrenResult = await pool.query(
+            'SELECT id, full_name FROM children WHERE parent_id = $1',
+            [client.id]
+        );
+        const children = childrenResult.rows;
+
+        // Проверяем, есть ли дети
+        if (children.length > 0) {
+            // Есть дети - спрашиваем для кого запись
+            const childrenButtons = children.map(child => [`👶 ${child.full_name}`]);
+            childrenButtons.push(['👤 Для себя'], ['🔙 Назад в меню']);
+            
+            return bot.sendMessage(chatId,
+                '👤 *Для кого записываемся?*\n\n' +
+                'Выберите участника тренировки:',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: childrenButtons,
+                        resize_keyboard: true
+                    }
+                }
+            );
+        } else {
+            // Нет детей - записываем только для себя
+            userStates.set(chatId, {
+                step: 'natural_slope_individual_date',
+                data: {
+                    client_id: client.id,
+                    participant_type: 'self',
+                    participant_id: client.id,
+                    participant_name: client.full_name
+                }
+            });
+
+            return bot.sendMessage(chatId,
+                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+                'Например: 25.12.2024',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    // Обработка "Групповая тренировка" (естественный склон)
+    if (msg.text === '👥 Групповая тренировка') {
+        console.log('Выбрана групповая тренировка на естественном склоне');
+        
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем доступные групповые тренировки на ближайшую неделю
+        return showAvailableGroupTrainings(chatId, client.id);
+    }
+
+    // Обработка выбора участника для индивидуальной тренировки (естественный склон)
+    if (msg.text && msg.text.startsWith('👶 ')) {
+        const childName = msg.text.replace('👶 ', '');
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Находим ребенка по имени
+        const childResult = await pool.query(
+            'SELECT id, full_name FROM children WHERE parent_id = $1 AND full_name = $2',
+            [client.id, childName]
+        );
+
+        if (childResult.rows.length === 0) {
+            return bot.sendMessage(chatId, '❌ Ребенок не найден.');
+        }
+
+        const child = childResult.rows[0];
+
+        // Устанавливаем состояние для записи ребенка
+        userStates.set(chatId, {
+            step: 'natural_slope_individual_date',
+            data: {
+                client_id: client.id,
+                participant_type: 'child',
+                participant_id: child.id,
+                participant_name: child.full_name
+            }
+        });
+
+        return bot.sendMessage(chatId,
+            '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+            'Например: 25.12.2024',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+
+    // Обработка "Для себя" для индивидуальной тренировки (естественный склон)
+    if (msg.text === '👤 Для себя') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Устанавливаем состояние для записи самого клиента
+        userStates.set(chatId, {
+            step: 'natural_slope_individual_date',
+            data: {
+                client_id: client.id,
+                participant_type: 'self',
+                participant_id: client.id,
+                participant_name: client.full_name
+            }
+        });
+
+        return bot.sendMessage(chatId,
+            '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
+            'Например: 25.12.2024',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
                     resize_keyboard: true
                 }
             }
@@ -5115,6 +5288,153 @@ async function handleTextMessage(msg) {
             return activateCertificate(chatId, certificateNumber, clientId);
         }
 
+        // Обработка состояний для зимних тренировок
+        case 'natural_slope_individual_date': {
+            const validationResult = await validateDateWithHumor(msg.text, 'natural_slope_individual');
+            if (!validationResult.valid) {
+                return bot.sendMessage(chatId, validationResult.message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                });
+            }
+
+            const selectedDate = validationResult.date;
+            
+            // Проверяем, есть ли расписание на выбранную дату
+            const scheduleResult = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM winter_schedule 
+                 WHERE date = $1 AND is_individual_training = true`,
+                [selectedDate]
+            );
+            
+            if (parseInt(scheduleResult.rows[0].count) === 0) {
+                // Нет расписания на эту дату - ищем ближайшие доступные даты
+                const nearestDatesResult = await pool.query(
+                    `SELECT DISTINCT date 
+                     FROM winter_schedule 
+                     WHERE date > $1 AND is_individual_training = true
+                     ORDER BY date 
+                     LIMIT 3`,
+                    [selectedDate]
+                );
+                
+                if (nearestDatesResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ *К сожалению, на эту дату нет записи на тренировку.*\n\n' +
+                        'Расписание на зимние тренировки пока не создано. Обратитесь к администратору.',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Форматируем ближайшие даты
+                const nearestDates = nearestDatesResult.rows.map(row => {
+                    const date = new Date(row.date);
+                    return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                }).join(', ');
+                
+                return bot.sendMessage(chatId,
+                    `❌ *К сожалению, на эту дату нет записи на тренировку.*\n\n` +
+                    `📅 *Ближайшие доступные даты:* ${nearestDates}\n\n` +
+                    `Попробуйте выбрать одну из этих дат.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            state.data.selected_date = selectedDate;
+            state.step = 'natural_slope_individual_time';
+            userStates.set(chatId, state);
+
+            // Показываем доступные временные слоты для выбранной даты
+            return showNaturalSlopeTimeSlots(chatId, selectedDate, state.data);
+        }
+
+        case 'natural_slope_individual_time': {
+            // Обработка выбора времени
+            if (!msg.text || !msg.text.startsWith('⏰ ')) {
+                return bot.sendMessage(chatId, 'Пожалуйста, выберите время из предложенных вариантов.');
+            }
+            
+            const selectedTime = msg.text.replace('⏰ ', '');
+            const validTimes = ['10:30', '12:00', '14:30', '16:00', '17:30', '19:00'];
+            
+            if (!validTimes.includes(selectedTime)) {
+                return bot.sendMessage(chatId, '❌ Неверное время. Пожалуйста, выберите из предложенных вариантов.');
+            }
+            
+            // Сохраняем выбранное время
+            state.data.selected_time = selectedTime;
+            state.step = 'natural_slope_individual_confirm';
+            userStates.set(chatId, state);
+            
+            // Получаем цену для индивидуальной тренировки
+            const priceResult = await pool.query(
+                `SELECT price FROM winter_prices 
+                 WHERE type = 'individual' AND is_active = true 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const price = priceResult.rows.length > 0 ? parseFloat(priceResult.rows[0].price) : 2500;
+            
+            // Получаем баланс клиента
+            const clientResult = await pool.query(
+                `SELECT c.*, w.balance 
+                 FROM clients c 
+                 LEFT JOIN wallets w ON c.id = w.client_id 
+                 WHERE c.id = $1`,
+                [state.data.client_id]
+            );
+            
+            const client = clientResult.rows[0];
+            const balance = parseFloat(client.balance || 0);
+            
+            // Форматируем дату для отображения
+            const date = new Date(state.data.selected_date);
+            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            
+            // Показываем подтверждение записи
+            return bot.sendMessage(chatId,
+                `📋 *Проверьте данные заявки:*\n\n` +
+                `*Детали тренировки:*\n` +
+                `• ФИО участника: ${state.data.participant_name}\n` +
+                `• Тип тренировки: Индивидуальная\n` +
+                `• Снаряжение: Горные лыжи 🎿\n` +
+                `• Тренер: С тренером 👨‍🏫\n` +
+                `• Длительность: 60 минут ⏱️\n` +
+                `• Дата: ${formattedDate}\n` +
+                `• Время: ${selectedTime}\n` +
+                `• Стоимость: ${price.toFixed(2)} руб. 💰\n` +
+                `• Ваш баланс: ${balance.toFixed(2)} руб. 💳\n\n` +
+                `*Выберите действие:*`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['✅ Записаться'],
+                            ['💰 Пополнить баланс'],
+                            ['❌ Я передумал']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
         // ... rest of the states ...
     }
 }
@@ -7109,5 +7429,153 @@ function getSportTypeDisplay(sportType) {
             return 'Горные лыжи и сноуборд 🎿🏂';
         default:
             return sportType;
+    }
+}
+
+
+// Функция показа временных слотов для зимних тренировок
+async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
+    try {
+        // Фиксированные временные слоты для зимних тренировок
+        const timeSlots = ['10:30', '12:00', '14:30', '16:00', '17:30', '19:00'];
+        
+        // Проверяем занятые слоты в базе данных
+        const occupiedSlotsResult = await pool.query(
+            `SELECT DISTINCT time_slot 
+             FROM winter_schedule 
+             WHERE date = $1 AND is_available = false`,
+            [selectedDate]
+        );
+        
+        // Преобразуем время из формата HH:MM:SS в HH:MM для сравнения
+        const occupiedSlots = occupiedSlotsResult.rows.map(row => {
+            const timeStr = row.time_slot.toString();
+            return timeStr.substring(0, 5); // Берем только HH:MM
+        });
+        
+        // Создаем кнопки для доступных слотов
+        const availableSlots = timeSlots.filter(slot => !occupiedSlots.includes(slot));
+        
+        if (availableSlots.length === 0) {
+            return bot.sendMessage(chatId,
+                `❌ *На ${selectedDate} все слоты заняты!*\n\n` +
+                'Выберите другую дату или попробуйте позже.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        // Создаем кнопки для доступных слотов
+        const slotButtons = availableSlots.map(slot => [`⏰ ${slot}`]);
+        slotButtons.push(['🔙 Назад в меню']);
+        
+        return bot.sendMessage(chatId,
+            `⏰ *Выберите время тренировки на ${selectedDate}:*\n\n` +
+            `👤 *Участник:* ${data.participant_name}\n` +
+            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне\n\n` +
+            `📋 *Доступные слоты:*`,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: slotButtons,
+                    resize_keyboard: true
+                }
+            }
+        );
+        
+    } catch (error) {
+        console.error('Ошибка при показе временных слотов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при загрузке расписания. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// Функция показа доступных групповых тренировок для зимнего направления
+async function showAvailableGroupTrainings(chatId, clientId) {
+    try {
+        // Получаем групповые тренировки на ближайшую неделю
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(startDate.getDate() + 7);
+        
+        const result = await pool.query(
+            `SELECT ws.*, g.name as group_name, g.age_group, g.skill_level, g.max_participants,
+                    t.full_name as trainer_name, t.phone as trainer_phone
+             FROM winter_schedule ws
+             LEFT JOIN groups g ON ws.group_id = g.id
+             LEFT JOIN trainers t ON ws.trainer_id = t.id
+             WHERE ws.date BETWEEN $1 AND $2 
+             AND ws.is_group_training = true
+             AND ws.is_available = true
+             ORDER BY ws.date, ws.time_slot`,
+            [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
+        );
+        
+        if (result.rows.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *На ближайшую неделю групповых тренировок не найдено!*\n\n' +
+                'Попробуйте записаться на индивидуальную тренировку или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        // Формируем сообщение с доступными тренировками
+        let message = '👥 *Доступные групповые тренировки на ближайшую неделю:*\n\n';
+        
+        result.rows.forEach((training, index) => {
+            const date = new Date(training.date);
+            const dayName = date.toLocaleDateString('ru-RU', { weekday: 'short' });
+            const dateStr = date.toLocaleDateString('ru-RU');
+            
+            message += `${index + 1}. *${training.group_name}*\n`;
+            message += `   📅 ${dateStr} (${dayName})\n`;
+            message += `   ⏰ ${training.time_slot}\n`;
+            message += `   👥 ${training.age_group} (уровень ${training.skill_level}/10)\n`;
+            message += `   👨‍🏫 ${training.trainer_name}\n\n`;
+        });
+        
+        message += 'Выберите номер тренировки для записи:';
+        
+        // Создаем кнопки для выбора тренировки
+        const trainingButtons = result.rows.map((_, index) => [`${index + 1}`]);
+        trainingButtons.push(['🔙 Назад в меню']);
+        
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: trainingButtons,
+                resize_keyboard: true
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при показе групповых тренировок:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при загрузке групповых тренировок. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
     }
 }

@@ -999,13 +999,38 @@ CREATE TABLE bonus_transactions (
 -- Таблица расписания для зимнего сезона (естественный склон)
 CREATE TABLE winter_schedule (
     id SERIAL PRIMARY KEY,
-    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
     date DATE NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
+    time_slot TIME NOT NULL,
+    
+    -- Тип тренировки
+    is_group_training BOOLEAN DEFAULT FALSE,
+    is_individual_training BOOLEAN DEFAULT FALSE,
+    
+    -- Связи
+    group_id INTEGER REFERENCES groups(id),
+    trainer_id INTEGER REFERENCES trainers(id),
+    
+    -- Статус
     is_available BOOLEAN DEFAULT TRUE,
+    max_participants INTEGER DEFAULT 1,
+    current_participants INTEGER DEFAULT 0,
+    
+    -- Метаданные
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Ограничения
+    CONSTRAINT valid_time_slots CHECK (
+        time_slot IN ('10:30', '12:00', '14:30', '16:00', '17:30', '19:00')
+    ),
+    CONSTRAINT valid_training_type CHECK (
+        (is_group_training = true AND is_individual_training = false) OR
+        (is_group_training = false AND is_individual_training = true)
+    ),
+    CONSTRAINT valid_participants CHECK (
+        current_participants >= 0 AND 
+        current_participants <= max_participants
+    )
 );
 
 -- Таблица выплат тренерам
