@@ -4086,35 +4086,35 @@ async function handleTextMessage(msg) {
                     // Получаем групповые тренировки
                     const groupResult = await pool.query(
                         `SELECT 
-                            sp.id,
-                            sp.session_id,
-                            sp.child_id,
-                            COALESCE(c.full_name, cl.full_name) as participant_name,
-                            ts.session_date,
-                            ts.start_time,
-                            ts.duration,
-                            ts.equipment_type,
-                            s.name as simulator_name,
-                            g.name as group_name,
-                            t.full_name as trainer_name,
-                            ts.skill_level,
-                            ts.price,
-                            ts.max_participants,
-                            (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                            'group' as session_type
-                        FROM session_participants sp
-                        JOIN training_sessions ts ON sp.session_id = ts.id
-                        JOIN simulators s ON ts.simulator_id = s.id
-                        LEFT JOIN groups g ON ts.group_id = g.id
-                        LEFT JOIN trainers t ON ts.trainer_id = t.id
-                        LEFT JOIN children c ON sp.child_id = c.id
-                        JOIN clients cl ON sp.client_id = cl.id
-                        WHERE sp.client_id = $1
-                        AND ts.status = 'scheduled'
-                        AND sp.status = 'confirmed'
-                        AND (
-                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
-                        )
+                                sp.id,
+                                sp.session_id,
+                                sp.child_id,
+                                COALESCE(c.full_name, cl.full_name) as participant_name,
+                                ts.session_date,
+                                ts.start_time,
+                                ts.duration,
+                                ts.equipment_type,
+                                s.name as simulator_name,
+                                g.name as group_name,
+                                t.full_name as trainer_name,
+                                ts.skill_level,
+                                ts.price,
+                                ts.max_participants,
+                                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                                'group' as session_type
+                            FROM session_participants sp
+                            JOIN training_sessions ts ON sp.session_id = ts.id
+                            JOIN simulators s ON ts.simulator_id = s.id
+                            LEFT JOIN groups g ON ts.group_id = g.id
+                            LEFT JOIN trainers t ON ts.trainer_id = t.id
+                            LEFT JOIN children c ON sp.child_id = c.id
+                            JOIN clients cl ON sp.client_id = cl.id
+                            WHERE sp.client_id = $1
+                            AND ts.status = 'scheduled'
+                            AND sp.status = 'confirmed'
+                            AND (
+                              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                            )
                         ORDER BY ts.session_date, ts.start_time`,
                         [state.data.client_id]
                     );
@@ -7685,7 +7685,7 @@ async function handleShareBotCommand(msg) {
 
         // Формируем реферальную ссылку
         const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
-        const botShareLink = `https://t.me/${botUsername}`;
+    const botShareLink = `https://t.me/${botUsername}`;
 
         // Проверяем, активна ли реферальная программа
         const referralActiveResult = await pool.query(
@@ -7776,9 +7776,9 @@ ${referralLink}
             ];
         }
 
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'HTML',
-            reply_markup: {
+    await bot.sendMessage(chatId, message, {
+        parse_mode: 'HTML',
+        reply_markup: {
                 inline_keyboard: inlineKeyboard
             }
         });

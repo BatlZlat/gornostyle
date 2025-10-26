@@ -20,8 +20,8 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     
     try {
-        // Получаем основную информацию об индивидуальной тренировке
-        const trainingQuery = `
+        // Сначала пытаемся найти в individual_training_sessions (тренажер)
+        let trainingQuery = `
             SELECT 
                 its.id,
                 its.client_id,
@@ -49,7 +49,8 @@ router.get('/:id', async (req, res) => {
                 parent.phone as parent_phone,
                 t.full_name as trainer_name,
                 t.phone as trainer_phone,
-                t.sport_type as trainer_sport_type
+                t.sport_type as trainer_sport_type,
+                'simulator' as slope_type
             FROM individual_training_sessions its
             LEFT JOIN simulators s ON its.simulator_id = s.id
             LEFT JOIN clients c ON its.client_id = c.id
@@ -59,7 +60,55 @@ router.get('/:id', async (req, res) => {
             WHERE its.id = $1
         `;
         
-        const result = await pool.query(trainingQuery, [id]);
+        let result = await pool.query(trainingQuery, [id]);
+        
+        // Если не найдено в individual_training_sessions, ищем в training_sessions (естественный склон)
+        if (result.rows.length === 0) {
+            trainingQuery = `
+                SELECT 
+                    ts.id,
+                    sp.client_id,
+                    sp.child_id,
+                    ts.equipment_type,
+                    ts.with_trainer,
+                    ts.duration,
+                    ts.session_date as preferred_date,
+                    ts.start_time as preferred_time,
+                    ts.end_time,
+                    ts.simulator_id,
+                    ts.trainer_id,
+                    ts.price,
+                    ts.created_at,
+                    NULL as simulator_name,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    c.birth_date as client_birth_date,
+                    c.telegram_id as client_telegram_id,
+                    ch.full_name as child_name,
+                    ch.birth_date as child_birth_date,
+                    ch.sport_type as child_sport_type,
+                    ch.skill_level as child_skill_level,
+                    parent.full_name as parent_name,
+                    parent.phone as parent_phone,
+                    t.full_name as trainer_name,
+                    t.phone as trainer_phone,
+                    t.sport_type as trainer_sport_type,
+                    'natural_slope' as slope_type
+                FROM training_sessions ts
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id
+                LEFT JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                LEFT JOIN clients parent ON ch.parent_id = parent.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                WHERE ts.id = $1
+                AND ts.training_type = FALSE
+                AND ts.slope_type = 'natural_slope'
+                AND ts.status = 'scheduled'
+                AND sp.status = 'confirmed'
+            `;
+            
+            result = await pool.query(trainingQuery, [id]);
+        }
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Индивидуальная тренировка не найдена' });
@@ -99,7 +148,8 @@ router.get('/:id', async (req, res) => {
             price: training.price,
             created_at: training.created_at,
             participant: participant,
-            is_individual: true
+            is_individual: true,
+            slope_type: training.slope_type
         };
         
         res.json(response);
@@ -430,8 +480,8 @@ router.delete('/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
         
-        // Получаем информацию о тренировке
-        const trainingResult = await client.query(`
+        // Получаем информацию о тренировке (сначала ищем в individual_training_sessions)
+        let trainingResult = await client.query(`
             SELECT 
                 its.id,
                 its.client_id,
@@ -452,7 +502,8 @@ router.delete('/:id', async (req, res) => {
                 ch.birth_date as child_birth_date,
                 parent.full_name as parent_name,
                 parent.phone as parent_phone,
-                parent.telegram_id as parent_telegram_id
+                parent.telegram_id as parent_telegram_id,
+                'simulator' as slope_type
             FROM individual_training_sessions its
             LEFT JOIN simulators s ON its.simulator_id = s.id
             LEFT JOIN clients c ON its.client_id = c.id
@@ -460,6 +511,45 @@ router.delete('/:id', async (req, res) => {
             LEFT JOIN clients parent ON ch.parent_id = parent.id
             WHERE its.id = $1
         `, [id]);
+        
+        // Если не найдено в individual_training_sessions, ищем в training_sessions (естественный склон)
+        if (trainingResult.rows.length === 0) {
+            trainingResult = await client.query(`
+                SELECT 
+                    ts.id,
+                    sp.client_id,
+                    sp.child_id,
+                    ts.equipment_type,
+                    ts.with_trainer,
+                    ts.duration,
+                    ts.session_date as preferred_date,
+                    ts.start_time as preferred_time,
+                    ts.simulator_id,
+                    ts.price,
+                    NULL as simulator_name,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    c.birth_date as client_birth_date,
+                    c.telegram_id as client_telegram_id,
+                    ch.full_name as child_name,
+                    ch.birth_date as child_birth_date,
+                    parent.full_name as parent_name,
+                    parent.phone as parent_phone,
+                    parent.telegram_id as parent_telegram_id,
+                    'natural_slope' as slope_type,
+                    sp.id as participant_id
+                FROM training_sessions ts
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id
+                LEFT JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                LEFT JOIN clients parent ON ch.parent_id = parent.id
+                WHERE ts.id = $1
+                AND ts.training_type = FALSE
+                AND ts.slope_type = 'natural_slope'
+                AND ts.status = 'scheduled'
+                AND sp.status = 'confirmed'
+            `, [id]);
+        }
         
         if (trainingResult.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -514,25 +604,45 @@ router.delete('/:id', async (req, res) => {
             ]
         );
         
-        // Отменяем выплату тренеру (только pending выплаты)
-        await client.query(
-            'DELETE FROM trainer_payments WHERE individual_training_id = $1 AND status = $2',
-            [id, 'pending']
-        );
-        
-        // Освобождаем слоты в расписании
-        await client.query(
-            `UPDATE schedule 
-             SET is_booked = false 
-             WHERE simulator_id = $1 
-             AND date = $2 
-             AND start_time >= $3 
-             AND start_time < ($3 + ($4 || ' minutes')::interval)`,
-            [training.simulator_id, training.preferred_date, training.preferred_time, training.duration]
-        );
-        
-        // Удаляем тренировку (это также сработает через триггер, но мы уже освободили слоты выше)
-        await client.query('DELETE FROM individual_training_sessions WHERE id = $1', [id]);
+        // Отменяем выплату тренеру (только pending выплаты) - только для тренажера
+        if (training.slope_type === 'simulator') {
+            await client.query(
+                'DELETE FROM trainer_payments WHERE individual_training_id = $1 AND status = $2',
+                [id, 'pending']
+            );
+            
+            // Освобождаем слоты в расписании тренажера
+            await client.query(
+                `UPDATE schedule 
+                 SET is_booked = false 
+                 WHERE simulator_id = $1 
+                 AND date = $2 
+                 AND start_time >= $3 
+                 AND start_time < ($3 + ($4 || ' minutes')::interval)`,
+                [training.simulator_id, training.preferred_date, training.preferred_time, training.duration]
+            );
+            
+            // Удаляем тренировку тренажера
+            await client.query('DELETE FROM individual_training_sessions WHERE id = $1', [id]);
+        } else if (training.slope_type === 'natural_slope') {
+            // Для естественного склона освобождаем слот в winter_schedule
+            await client.query(
+                `UPDATE winter_schedule 
+                 SET is_available = true, current_participants = 0
+                 WHERE date = $1 
+                 AND time_slot = $2 
+                 AND is_individual_training = true`,
+                [training.preferred_date, training.preferred_time]
+            );
+            
+            // Удаляем участника из session_participants
+            if (training.participant_id) {
+                await client.query('DELETE FROM session_participants WHERE id = $1', [training.participant_id]);
+            }
+            
+            // Удаляем саму тренировку из training_sessions
+            await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
+        }
         
         await client.query('COMMIT');
         

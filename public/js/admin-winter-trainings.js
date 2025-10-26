@@ -146,7 +146,7 @@ function renderWinterTrainingRow(training) {
     const participants = training.participants || 0;
     const maxParticipants = training.max_participants || 0;
     const trainer = training.trainer_name || 'Не назначен';
-    const price = training.price ? `${training.price.toFixed(2)} ₽` : '—';
+    const price = training.price ? `${parseFloat(training.price).toFixed(2)} ₽` : '—';
     const status = statusLabels[training.status] || training.status;
     const statusColor = statusColors[training.status] || '#666';
     
