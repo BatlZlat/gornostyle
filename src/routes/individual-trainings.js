@@ -199,24 +199,50 @@ router.put('/:id/assign-trainer', async (req, res) => {
         
         await dbClient.query('BEGIN');
         
-        // 1. Проверяем существование тренировки
-        const trainingResult = await dbClient.query(
+        // 1. Проверяем существование тренировки (сначала в individual_training_sessions)
+        let trainingResult = await dbClient.query(
             'SELECT * FROM individual_training_sessions WHERE id = $1',
             [id]
         );
         
+        let training = null;
+        let isNaturalSlope = false;
+        
+        // Если не найдено в individual_training_sessions, ищем в training_sessions (естественный склон)
         if (trainingResult.rows.length === 0) {
-            await dbClient.query('ROLLBACK');
-            return res.status(404).json({ error: 'Тренировка не найдена' });
+            trainingResult = await dbClient.query(`
+                SELECT ts.*, sp.client_id, sp.child_id
+                FROM training_sessions ts
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id
+                WHERE ts.id = $1
+                AND ts.training_type = FALSE
+                AND ts.slope_type = 'natural_slope'
+                AND ts.status = 'scheduled'
+                AND sp.status = 'confirmed'
+            `, [id]);
+            
+            if (trainingResult.rows.length === 0) {
+                await dbClient.query('ROLLBACK');
+                return res.status(404).json({ error: 'Тренировка не найдена' });
+            }
+            
+            isNaturalSlope = true;
         }
         
-        const training = trainingResult.rows[0];
+        training = trainingResult.rows[0];
         
-        // 2. Обновляем trainer_id
-        await dbClient.query(
-            'UPDATE individual_training_sessions SET trainer_id = $1, updated_at = NOW() WHERE id = $2',
-            [trainer_id, id]
-        );
+        // 2. Обновляем trainer_id (в зависимости от типа тренировки)
+        if (isNaturalSlope) {
+            await dbClient.query(
+                'UPDATE training_sessions SET trainer_id = $1, updated_at = NOW() WHERE id = $2',
+                [trainer_id, id]
+            );
+        } else {
+            await dbClient.query(
+                'UPDATE individual_training_sessions SET trainer_id = $1, updated_at = NOW() WHERE id = $2',
+                [trainer_id, id]
+            );
+        }
         
         // 3. Получаем информацию о тренере и клиенте
         const trainerResult = await dbClient.query(
@@ -224,9 +250,10 @@ router.put('/:id/assign-trainer', async (req, res) => {
             [trainer_id]
         );
         
+        const clientId = isNaturalSlope ? training.client_id : training.client_id;
         const clientResult = await dbClient.query(
             'SELECT telegram_id, full_name FROM clients WHERE id = $1',
-            [training.client_id]
+            [clientId]
         );
         
         if (trainerResult.rows.length === 0) {
@@ -256,17 +283,32 @@ router.put('/:id/assign-trainer', async (req, res) => {
             }
             
             // Проверяем, нет ли уже выплаты для этой тренировки
-            const existingPayment = await dbClient.query(
-                'SELECT id FROM trainer_payments WHERE individual_training_id = $1',
-                [id]
-            );
-            
-            if (existingPayment.rows.length === 0) {
-                await dbClient.query(`
-                    INSERT INTO trainer_payments (
-                        trainer_id, individual_training_id, amount, payment_type, status, created_at
-                    ) VALUES ($1, $2, $3, 'individual_training', 'pending', NOW())
-                `, [trainer_id, id, amount]);
+            if (isNaturalSlope) {
+                const existingPayment = await dbClient.query(
+                    'SELECT id FROM trainer_payments WHERE training_session_id = $1',
+                    [id]
+                );
+                
+                if (existingPayment.rows.length === 0) {
+                    await dbClient.query(`
+                        INSERT INTO trainer_payments (
+                            trainer_id, training_session_id, amount, payment_type, status, created_at
+                        ) VALUES ($1, $2, $3, 'individual_training', 'pending', NOW())
+                    `, [trainer_id, id, amount]);
+                }
+            } else {
+                const existingPayment = await dbClient.query(
+                    'SELECT id FROM trainer_payments WHERE individual_training_id = $1',
+                    [id]
+                );
+                
+                if (existingPayment.rows.length === 0) {
+                    await dbClient.query(`
+                        INSERT INTO trainer_payments (
+                            trainer_id, individual_training_id, amount, payment_type, status, created_at
+                        ) VALUES ($1, $2, $3, 'individual_training', 'pending', NOW())
+                    `, [trainer_id, id, amount]);
+                }
             }
         }
         
