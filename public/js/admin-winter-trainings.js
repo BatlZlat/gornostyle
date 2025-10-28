@@ -167,7 +167,7 @@ function renderWinterTrainingRow(training) {
 
 // Открыть модальное окно создания зимней тренировки
 function openCreateWinterTraining() {
-    alert('Функция создания зимней тренировки будет добавлена в следующей версии.\n\nСейчас зимние тренировки можно создавать через общее расписание с типом "natural_slope".');
+    window.location.href = 'winter-training.html';
 }
 
 // Просмотр деталей зимней тренировки
