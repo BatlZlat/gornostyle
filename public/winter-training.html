@@ -21,10 +21,12 @@
                             <label for="trainingType">Тип тренировки:</label>
                             <select id="trainingType" name="training_type" required>
                                 <option value="">Выберите тип</option>
-                                <option value="individual">Индивидуальная</option>
                                 <option value="sport_group">Спортивная группа (до 4)</option>
                                 <option value="group">Обычная группа</option>
                             </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Примечание: Индивидуальные тренировки создаются автоматически на свободные слоты при записи клиентов.
+                            </small>
                         </div>
 
                         <div class="form-group" id="groupSelectionContainer" style="display: none;">

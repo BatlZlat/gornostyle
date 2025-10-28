@@ -6,8 +6,43 @@ let trainers = [];
 let groups = [];
 let prices = [];
 
+// Получить токен авторизации
+function getAuthToken() {
+    // Пробуем из cookie
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'adminToken') {
+            return value;
+        }
+    }
+    // Пробуем из localStorage
+    return localStorage.getItem('authToken') || localStorage.getItem('adminToken') || localStorage.getItem('token');
+}
+
+// Сделать авторизованный запрос
+async function authFetch(url, options = {}) {
+    const token = getAuthToken();
+    if (!token) {
+        throw new Error('Требуется авторизация');
+    }
+    
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`
+    };
+    
+    return fetch(url, { ...options, headers });
+}
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
+    // Проверяем авторизацию (опционально, т.к. можем заходить из админ-панели)
+    if (!getAuthToken()) {
+        console.warn('⚠️ Токен авторизации не найден');
+        // Не перенаправляем, т.к. это может быть норма для некоторых случаев
+    }
+    
     await Promise.all([
         loadTrainers(),
         loadGroups(),
@@ -28,7 +63,7 @@ function setupDateInput() {
 // Загрузить список тренеров
 async function loadTrainers() {
     try {
-        const response = await fetch('/api/trainers');
+        const response = await authFetch('/api/trainers');
         if (!response.ok) throw new Error('Ошибка загрузки тренеров');
         const data = await response.json();
         
@@ -49,7 +84,7 @@ async function loadTrainers() {
 // Загрузить список групп
 async function loadGroups() {
     try {
-        const response = await fetch('/api/groups');
+        const response = await authFetch('/api/groups');
         if (!response.ok) throw new Error('Ошибка загрузки групп');
         const data = await response.json();
         
@@ -70,11 +105,11 @@ async function loadGroups() {
 // Загрузить цены
 async function loadPrices() {
     try {
-        const response = await fetch('/api/winter-prices');
+        const response = await authFetch('/api/winter-prices');
         if (!response.ok) throw new Error('Ошибка загрузки цен');
         const data = await response.json();
         
-        prices = data.prices || [];
+        prices = Array.isArray(data) ? data : data.prices || [];
     } catch (error) {
         console.error('Ошибка загрузки цен:', error);
     }
@@ -93,12 +128,7 @@ function setupFormHandlers() {
         const type = e.target.value;
         
         // Показываем/скрываем поля в зависимости от типа
-        if (type === 'individual') {
-            maxParticipantsContainer.style.display = 'none';
-            groupSelectionContainer.style.display = 'none';
-            skillLevelContainer.style.display = 'none';
-            maxParticipantsSelect.value = '1';
-        } else if (type === 'sport_group') {
+        if (type === 'sport_group') {
             maxParticipantsContainer.style.display = 'flex';
             groupSelectionContainer.style.display = 'none';
             skillLevelContainer.style.display = 'flex';
@@ -136,9 +166,7 @@ async function updatePrice() {
         // Поиск цены для данного типа тренировки
         let price = null;
         
-        if (trainingType === 'individual') {
-            price = prices.find(p => p.type === 'individual');
-        } else if (trainingType === 'sport_group') {
+        if (trainingType === 'sport_group') {
             price = prices.find(p => p.type === 'sport_group' && p.participants === parseInt(maxParticipants));
         } else if (trainingType === 'group') {
             price = prices.find(p => p.type === 'group' && p.participants === parseInt(maxParticipants));
@@ -200,10 +228,7 @@ async function handleSubmit(e) {
         const maxParticipants = parseInt(formData.get('max_participants') || '1');
         let price = 0;
         
-        if (trainingType === 'individual') {
-            const priceObj = prices.find(p => p.type === 'individual');
-            price = priceObj ? priceObj.price : 0;
-        } else if (trainingType === 'sport_group') {
+        if (trainingType === 'sport_group') {
             const priceObj = prices.find(p => p.type === 'sport_group' && p.participants === maxParticipants);
             price = priceObj ? priceObj.price : 0;
         } else if (trainingType === 'group') {
@@ -213,7 +238,7 @@ async function handleSubmit(e) {
         
         data.price = price;
         
-        const response = await fetch('/api/winter-trainings', {
+        const response = await authFetch('/api/winter-trainings', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
