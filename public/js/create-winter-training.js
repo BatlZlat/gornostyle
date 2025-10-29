@@ -205,8 +205,10 @@ async function updatePrice() {
         );
         
         if (priceObj) {
-            const pricePerPerson = parseFloat(priceObj.price);
-            const totalPrice = pricePerPerson * parseInt(maxParticipants);
+            // Цена в базе - это общая цена за всю группу
+            const totalPrice = parseFloat(priceObj.price);
+            // Цена за человека = общая цена / количество участников
+            const pricePerPerson = totalPrice / parseInt(maxParticipants);
             priceDisplay.innerHTML = `
                 <div style="margin-top: 10px;">
                     <div><strong>💰 Цена за человека:</strong> ${pricePerPerson.toFixed(2)} руб.</div>
@@ -258,7 +260,7 @@ async function handleSubmit(e) {
         const endTimeHours = (parseInt(hours) + 1).toString().padStart(2, '0');
         const endTime = `${endTimeHours}:${minutes}:00`;
         
-        // Рассчитываем цену: цена за человека * количество участников
+        // Получаем цену из базы: цена в базе - это общая цена за всю группу
         const priceObj = prices.find(p => 
             p.type === 'group' && 
             p.participants === maxParticipants &&
@@ -269,8 +271,8 @@ async function handleSubmit(e) {
             throw new Error(`Цена не найдена для группы из ${maxParticipants} человек. Проверьте прайс зимних тренировок.`);
         }
         
-        const pricePerPerson = parseFloat(priceObj.price);
-        const totalPrice = pricePerPerson * maxParticipants;
+        // Цена в базе уже содержит общую цену за всю группу
+        const totalPrice = parseFloat(priceObj.price);
         
         const data = {
             training_type: true, // Всегда групповая тренировка
