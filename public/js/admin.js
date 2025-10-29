@@ -2209,7 +2209,7 @@ async function viewTrainingDetails(trainingId) {
 }
 
 // Просмотр деталей тренировки из расписания (групповой или индивидуальной)
-async function viewScheduleDetails(trainingId, isIndividual) {
+async function viewScheduleDetails(trainingId, isIndividual, slopeType) {
     try {
         let training;
         
@@ -2229,6 +2229,14 @@ async function viewScheduleDetails(trainingId, isIndividual) {
             }
             training = await response.json();
             training.is_individual = false;
+        }
+        
+        // Определяем тип склона из переданного параметра или из данных тренировки
+        if (slopeType) {
+            training.slope_type = slopeType;
+        } else if (!training.slope_type) {
+            // Если не указан явно, определяем по наличию simulator_id
+            training.slope_type = training.simulator_id ? 'simulator' : 'natural_slope';
         }
         
         // Создаем модальное окно
@@ -2322,6 +2330,11 @@ async function viewScheduleDetails(trainingId, isIndividual) {
             `;
         } else {
             // Модальное окно для групповой тренировки
+            const isNaturalSlope = training.slope_type === 'natural_slope';
+            const totalPrice = training.price != null ? parseFloat(training.price) : null;
+            const maxParticipants = training.max_participants || 1;
+            const pricePerPerson = totalPrice && maxParticipants > 0 ? (totalPrice / maxParticipants).toFixed(2) : null;
+            
             modal.innerHTML = `
                 <div class="modal-content">
                     <h3>Детали групповой тренировки</h3>
@@ -2330,11 +2343,14 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                             <h4>Основная информация</h4>
                             <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
                             <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
-                            <p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>
+                            ${!isNaturalSlope && training.simulator_id ? `<p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>` : ''}
                             <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
                             <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
                             <p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>
-                            <p><strong>Цена:</strong> ${training.price != null ? training.price : '-'} ₽</p>
+                            ${totalPrice != null ? `
+                                <p><strong>Цена общая:</strong> ${totalPrice.toFixed(2)} ₽</p>
+                                ${pricePerPerson ? `<p><strong>Цена за человека:</strong> ${pricePerPerson} ₽</p>` : ''}
+                            ` : '<p><strong>Цена:</strong> -</p>'}
                         </div>
                         <div class="detail-group">
                             <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>
