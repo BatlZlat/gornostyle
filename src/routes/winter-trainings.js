@@ -212,23 +212,58 @@ router.get('/:id', async (req, res) => {
         const { id } = req.params;
         
         const result = await pool.query(`
-            SELECT ts.*, 
-                   g.name as group_name,
-                   t.full_name as trainer_name,
-                   COUNT(sp.id) as current_participants
+            SELECT 
+                ts.id,
+                ts.session_date::text as session_date,
+                ts.start_time,
+                ts.end_time,
+                ts.duration,
+                ts.training_type,
+                ts.winter_training_type,
+                ts.trainer_id,
+                ts.group_id,
+                ts.max_participants,
+                ts.skill_level,
+                ts.price,
+                ts.status,
+                ts.slope_type,
+                ts.equipment_type,
+                ts.with_trainer,
+                ts.simulator_id,
+                ts.created_at,
+                ts.updated_at,
+                g.name as group_name,
+                t.full_name as trainer_name,
+                COUNT(sp.id) as current_participants
             FROM training_sessions ts
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN trainers t ON ts.trainer_id = t.id
             LEFT JOIN session_participants sp ON ts.id = sp.session_id AND sp.status = 'confirmed'
             WHERE ts.id = $1 AND ts.slope_type = 'natural_slope'
-            GROUP BY ts.id, g.name, t.full_name
+            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration,
+                     ts.training_type, ts.winter_training_type, ts.trainer_id, ts.group_id, ts.max_participants,
+                     ts.skill_level, ts.price, ts.status, ts.slope_type, ts.equipment_type, ts.with_trainer,
+                     ts.simulator_id, ts.created_at, ts.updated_at, g.name, t.full_name
         `, [id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Тренировка не найдена' });
         }
         
-        res.json(result.rows[0]);
+        // Дата уже должна быть строкой благодаря ::text в SQL запросе
+        const training = result.rows[0];
+        // Убеждаемся, что дата в формате YYYY-MM-DD (без времени)
+        if (training.session_date) {
+            training.session_date = String(training.session_date).split('T')[0].split(' ')[0];
+        }
+        
+        console.log('GET /api/winter-trainings/:id - возвращаемая дата:', {
+            id: training.id,
+            session_date: training.session_date,
+            type: typeof training.session_date
+        });
+        
+        res.json(training);
     } catch (error) {
         console.error('Ошибка при получении зимней тренировки:', error);
         res.status(500).json({ error: 'Ошибка при получении тренировки' });

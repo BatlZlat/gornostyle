@@ -349,7 +349,8 @@ async function editWinterTraining(id) {
         modal.id = 'edit-winter-training-modal';
         
         // Форматируем дату для input type="date"
-        const dateValue = training.session_date ? training.session_date.split('T')[0] : '';
+        // Дата уже должна быть в формате YYYY-MM-DD благодаря форматированию на сервере
+        const dateValue = training.session_date ? String(training.session_date).split('T')[0] : '';
         
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
