@@ -548,8 +548,9 @@ router.get('/archive', async (req, res) => {
         }
         
         query += `
-            GROUP BY ts.id, t.full_name, g.name, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
-                     ts.training_type, ts.winter_training_type, ts.trainer_id, ts.group_id, ts.max_participants, 
+            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
+                     ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
+                     ts.group_id, g.name, ts.max_participants, 
                      ts.skill_level, ts.price, ts.status, ts.slope_type
             ORDER BY ts.session_date DESC, ts.start_time DESC
         `;

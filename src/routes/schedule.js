@@ -57,6 +57,7 @@ router.get('/admin', async (req, res) => {
                 g.name as group_name,
                 ts.slope_type,
                 ts.winter_training_type,
+                ts.status,
                 COUNT(sp.id) as current_participants
             FROM training_sessions ts
             LEFT JOIN trainers t ON ts.trainer_id = t.id
@@ -66,10 +67,10 @@ router.get('/admin', async (req, res) => {
                 AND sp.status = 'confirmed'
             WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
                 AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
-                AND ts.status IN ('scheduled', 'completed')
+                AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))
                 AND ts.training_type = TRUE
                 ${slope_type ? `AND ts.slope_type = '${slope_type}'` : ''}
-            GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type
+            GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
         `;
         
         // Запрос для индивидуальных тренировок тренажера
@@ -123,6 +124,7 @@ router.get('/admin', async (req, res) => {
                 g.name as group_name,
                 ts.slope_type,
                 ts.winter_training_type,
+                ts.status,
                 COUNT(sp.id) as current_participants
             FROM training_sessions ts
             LEFT JOIN trainers t ON ts.trainer_id = t.id
@@ -132,10 +134,10 @@ router.get('/admin', async (req, res) => {
                 AND sp.status = 'confirmed'
             WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
                 AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
-                AND ts.status IN ('scheduled', 'completed')
+                AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))
                 AND ts.training_type = FALSE
                 AND ts.slope_type = 'natural_slope'
-            GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type
+            GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
         `;
         
         console.log('📊 Выполняем запросы...');
