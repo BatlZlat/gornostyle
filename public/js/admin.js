@@ -948,7 +948,7 @@ async function renderScheduleSection(data, slopeType) {
                                     `<td>${getParticipantName(training)}</td>
                                     <td>${training.trainer_name || 'Не указан'}</td>
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
-                                    <td>${training.price} ₽</td>`
+                                    <td>${formatNaturalSlopePricePerPerson(training)} ₽</td>`
                                 }
                                 <td class="training-actions">
                                     <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual}, '${slopeType}')">
@@ -974,6 +974,19 @@ function getParticipantName(training) {
     } else {
         return training.group_name || '-';
     }
+}
+
+// Форматирование цены для естественного склона: показываем цену за человека
+function formatNaturalSlopePricePerPerson(training) {
+    if (training.is_individual) {
+        // Для индивидуальных тренировок показываем как есть
+        return training.price != null ? Number(training.price).toFixed(2) : '-';
+    }
+    // Для групповых: делим общую стоимость на максимальное число участников
+    const totalPrice = training.price != null ? Number(training.price) : null;
+    const max = Number(training.max_participants) || 0;
+    if (totalPrice == null || max <= 0) return '-';
+    return (totalPrice / max).toFixed(2);
 }
 
 // Загрузка тренажеров
