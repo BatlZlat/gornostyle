@@ -285,31 +285,32 @@ router.put('/:id', async (req, res) => {
         
         // Обновляем тренировку в training_sessions
         // Для trainer_id и group_id: если передано значение - обновляем, если null - сохраняем старое
+        // Явно приводим типы параметров для избежания ошибок
         const updateResult = await client.query(`
             UPDATE training_sessions SET
-                session_date = COALESCE($1, session_date),
-                start_time = COALESCE($2, start_time),
-                end_time = COALESCE($3, end_time),
-                duration = COALESCE($4, duration),
-                trainer_id = CASE WHEN $5 IS NULL THEN trainer_id ELSE $5 END,
-                group_id = CASE WHEN $6 IS NULL THEN group_id ELSE $6 END,
-                skill_level = CASE WHEN $7 IS NULL THEN skill_level ELSE $7 END,
-                max_participants = COALESCE($8, max_participants),
-                price = COALESCE($9, price),
+                session_date = COALESCE($1::date, session_date),
+                start_time = COALESCE($2::time, start_time),
+                end_time = COALESCE($3::time, end_time),
+                duration = COALESCE($4::integer, duration),
+                trainer_id = CASE WHEN $5::integer IS NULL THEN trainer_id ELSE $5::integer END,
+                group_id = CASE WHEN $6::integer IS NULL THEN group_id ELSE $6::integer END,
+                skill_level = CASE WHEN $7::integer IS NULL THEN skill_level ELSE $7::integer END,
+                max_participants = COALESCE($8::integer, max_participants),
+                price = COALESCE($9::decimal, price),
                 updated_at = NOW()
-            WHERE id = $10 AND slope_type = 'natural_slope'
+            WHERE id = $10::integer AND slope_type = 'natural_slope'
             RETURNING *
         `, [
             session_date || null,
             start_time || null,
             end_time || null,
-            duration || null,
-            trainer_id !== undefined ? trainer_id : null,
-            group_id !== undefined ? group_id : null,
-            skill_level !== undefined ? skill_level : null,
-            max_participants || null,
-            price || null,
-            id
+            duration ? parseInt(duration) : null,
+            trainer_id !== undefined && trainer_id !== null && trainer_id !== '' ? parseInt(trainer_id) : null,
+            group_id !== undefined && group_id !== null && group_id !== '' ? parseInt(group_id) : null,
+            skill_level !== undefined && skill_level !== null && skill_level !== '' ? parseInt(skill_level) : null,
+            max_participants ? parseInt(max_participants) : null,
+            price ? parseFloat(price) : null,
+            parseInt(id)
         ]);
         
         // Если это групповая тренировка, обновляем слот в winter_schedule

@@ -307,6 +307,8 @@ async function editWinterTraining(id) {
         
         const training = await trainingResponse.json();
         
+        console.log('Загружены данные тренировки для редактирования:', training);
+        
         // Загружаем данные для выпадающих списков
         const [trainersResponse, groupsResponse] = await Promise.all([
             fetch('/api/trainers', {
@@ -328,11 +330,11 @@ async function editWinterTraining(id) {
         const trainerOptions = trainers
             .filter(tr => tr.is_active !== false)
             .map(tr => 
-                `<option value="${tr.id}" ${tr.id === training.trainer_id ? 'selected' : ''}>${tr.full_name}</option>`
+                `<option value="${tr.id}" ${String(tr.id) === String(training.trainer_id) ? 'selected' : ''}>${tr.full_name}</option>`
             ).join('');
         
         const groupOptions = groups.map(gr => 
-            `<option value="${gr.id}" ${gr.id === training.group_id ? 'selected' : ''}>${gr.name}</option>`
+            `<option value="${gr.id}" ${String(gr.id) === String(training.group_id) ? 'selected' : ''}>${gr.name}</option>`
         ).join('');
         
         // Удаляем старое модальное окно, если есть
@@ -370,10 +372,11 @@ async function editWinterTraining(id) {
                     </div>
                     <div class="form-group">
                         <label>Группа</label>
-                        <select name="group_id" required>
-                            <option value="">Выберите группу</option>
+                        <select name="group_id" ${training.training_type === true ? 'required' : ''}>
+                            <option value="">Выберите группу${training.training_type !== true ? ' (только для групповых)' : ''}</option>
                             ${groupOptions}
                         </select>
+                        ${training.training_type === false ? '<small style="color: #666;">Для индивидуальных тренировок группа не требуется</small>' : ''}
                     </div>
                     <div class="form-group">
                         <label>Тренер</label>
@@ -387,7 +390,7 @@ async function editWinterTraining(id) {
                         <select name="skill_level" required>
                             <option value="">Выберите уровень</option>
                             ${Array.from({length: 10}, (_, i) => i + 1).map(level => 
-                                `<option value="${level}" ${training.skill_level === level ? 'selected' : ''}>Уровень ${level}</option>`
+                                `<option value="${level}" ${String(training.skill_level) === String(level) ? 'selected' : ''}>Уровень ${level}</option>`
                             ).join('')}
                         </select>
                     </div>
@@ -395,10 +398,10 @@ async function editWinterTraining(id) {
                         <label>Максимальное количество участников</label>
                         <select name="max_participants" required>
                             <option value="">Выберите количество</option>
-                            <option value="2" ${training.max_participants === 2 ? 'selected' : ''}>2 человека</option>
-                            <option value="3" ${training.max_participants === 3 ? 'selected' : ''}>3 человека</option>
-                            <option value="4" ${training.max_participants === 4 ? 'selected' : ''}>4 человека</option>
-                            <option value="6" ${training.max_participants === 6 ? 'selected' : ''}>6 человек</option>
+                            <option value="2" ${String(training.max_participants) === '2' ? 'selected' : ''}>2 человека</option>
+                            <option value="3" ${String(training.max_participants) === '3' ? 'selected' : ''}>3 человека</option>
+                            <option value="4" ${String(training.max_participants) === '4' ? 'selected' : ''}>4 человека</option>
+                            <option value="6" ${String(training.max_participants) === '6' ? 'selected' : ''}>6 человек</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -484,10 +487,12 @@ async function editWinterTraining(id) {
             
             // Преобразуем числовые поля
             data.max_participants = parseInt(data.max_participants);
-            data.skill_level = parseInt(data.skill_level);
+            data.skill_level = data.skill_level && data.skill_level !== '' ? parseInt(data.skill_level) : null;
             data.price = parseFloat(data.price);
-            data.trainer_id = data.trainer_id ? parseInt(data.trainer_id) : null;
-            data.group_id = parseInt(data.group_id);
+            // Для trainer_id и group_id: если пустая строка - null, иначе число
+            data.trainer_id = data.trainer_id && data.trainer_id !== '' ? parseInt(data.trainer_id) : null;
+            // Для групповых тренировок group_id обязателен, для индивидуальных может быть null
+            data.group_id = data.group_id && data.group_id !== '' ? parseInt(data.group_id) : null;
             
             // Добавляем duration (по умолчанию 60 минут)
             const startTime = new Date(`2000-01-01T${data.start_time}`);
