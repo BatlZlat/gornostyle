@@ -204,6 +204,103 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/winter-trainings/archive
+ * Получение архива зимних тренировок (прошедших тренировок)
+ * ВАЖНО: Этот роут должен быть ПЕРЕД /:id, иначе /archive будет обрабатываться как /:id
+ */
+router.get('/archive', async (req, res) => {
+    try {
+        const { date_from, date_to, trainer_id } = req.query;
+        
+        let query = `
+            SELECT 
+                ts.id,
+                ts.session_date as date,
+                ts.start_time,
+                ts.end_time,
+                ts.duration,
+                ts.training_type as is_group,
+                ts.winter_training_type,
+                ts.trainer_id,
+                t.full_name as trainer_name,
+                ts.group_id,
+                g.name as group_name,
+                ts.max_participants,
+                ts.skill_level,
+                ts.price,
+                ts.status,
+                COUNT(sp.id) as current_participants,
+                ts.slope_type,
+                COALESCE(STRING_AGG(DISTINCT COALESCE(ch.full_name, c.full_name), ', ') FILTER (WHERE sp.id IS NOT NULL), '') as participant_names
+            FROM training_sessions ts
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                AND sp.status = 'confirmed'
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            WHERE ts.slope_type = 'natural_slope'
+                AND (
+                    ts.session_date < CURRENT_DATE 
+                    OR (ts.session_date = CURRENT_DATE AND ts.end_time < CURRENT_TIME)
+                )
+        `;
+        
+        const params = [];
+        let paramIndex = 1;
+        
+        if (date_from) {
+            query += ` AND ts.session_date >= $${paramIndex}`;
+            params.push(date_from);
+            paramIndex++;
+        } else {
+            // По умолчанию показываем тренировки за последние 30 дней
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            query += ` AND ts.session_date >= $${paramIndex}`;
+            params.push(thirtyDaysAgo.toISOString().split('T')[0]);
+            paramIndex++;
+        }
+        
+        if (date_to) {
+            query += ` AND ts.session_date <= $${paramIndex}`;
+            params.push(date_to);
+            paramIndex++;
+        }
+        
+        if (trainer_id) {
+            query += ` AND ts.trainer_id = $${paramIndex}`;
+            params.push(trainer_id);
+            paramIndex++;
+        }
+        
+        query += `
+            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
+                     ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
+                     ts.group_id, g.name, ts.max_participants, 
+                     ts.skill_level, ts.price, ts.status, ts.slope_type
+            ORDER BY ts.session_date DESC, ts.start_time DESC
+        `;
+        
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка при получении архива зимних тренировок:', error);
+        console.error('Детали ошибки:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint
+        });
+        res.status(500).json({ 
+            error: 'Ошибка при получении архива тренировок',
+            detail: error.message
+        });
+    }
+});
+
+/**
  * GET /api/winter-trainings/:id
  * Получение конкретной зимней тренировки
  */
@@ -474,92 +571,6 @@ router.delete('/:id', async (req, res) => {
         return res.status(500).json({ error: 'Ошибка при удалении тренировки' });
     } finally {
         client.release();
-    }
-});
-
-/**
- * GET /api/winter-trainings/archive
- * Получение архива зимних тренировок (прошедших тренировок)
- */
-router.get('/archive', async (req, res) => {
-    try {
-        const { date_from, date_to, trainer_id } = req.query;
-        
-        let query = `
-            SELECT 
-                ts.id,
-                ts.session_date as date,
-                ts.start_time,
-                ts.end_time,
-                ts.duration,
-                ts.training_type as is_group,
-                ts.winter_training_type,
-                ts.trainer_id,
-                t.full_name as trainer_name,
-                ts.group_id,
-                g.name as group_name,
-                ts.max_participants,
-                ts.skill_level,
-                ts.price,
-                ts.status,
-                COUNT(sp.id) as current_participants,
-                ts.slope_type,
-                STRING_AGG(DISTINCT COALESCE(ch.full_name, c.full_name), ', ') FILTER (WHERE sp.id IS NOT NULL) as participant_names
-            FROM training_sessions ts
-            LEFT JOIN trainers t ON ts.trainer_id = t.id
-            LEFT JOIN groups g ON ts.group_id = g.id
-            LEFT JOIN session_participants sp ON ts.id = sp.session_id 
-                AND sp.status = 'confirmed'
-            LEFT JOIN clients c ON sp.client_id = c.id
-            LEFT JOIN children ch ON sp.child_id = ch.id
-            WHERE ts.slope_type = 'natural_slope'
-                AND (
-                    ts.session_date < CURRENT_DATE 
-                    OR (ts.session_date = CURRENT_DATE AND ts.end_time < CURRENT_TIME)
-                )
-        `;
-        
-        const params = [];
-        let paramIndex = 1;
-        
-        if (date_from) {
-            query += ` AND ts.session_date >= $${paramIndex}`;
-            params.push(date_from);
-            paramIndex++;
-        } else {
-            // По умолчанию показываем тренировки за последние 30 дней
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            query += ` AND ts.session_date >= $${paramIndex}`;
-            params.push(thirtyDaysAgo.toISOString().split('T')[0]);
-            paramIndex++;
-        }
-        
-        if (date_to) {
-            query += ` AND ts.session_date <= $${paramIndex}`;
-            params.push(date_to);
-            paramIndex++;
-        }
-        
-        if (trainer_id) {
-            query += ` AND ts.trainer_id = $${paramIndex}`;
-            params.push(trainer_id);
-            paramIndex++;
-        }
-        
-        query += `
-            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
-                     ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
-                     ts.group_id, g.name, ts.max_participants, 
-                     ts.skill_level, ts.price, ts.status, ts.slope_type
-            ORDER BY ts.session_date DESC, ts.start_time DESC
-        `;
-        
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-    } catch (error) {
-        console.error('Ошибка при получении архива зимних тренировок:', error);
-        res.status(500).json({ error: 'Ошибка при получении архива тренировок' });
     }
 });
 
