@@ -18,22 +18,13 @@
                 <div class="page-content">
                     <form id="createWinterTrainingForm" class="form-container">
                         <div class="form-group">
-                            <label for="trainingType">Тип тренировки:</label>
-                            <select id="trainingType" name="training_type" required>
-                                <option value="">Выберите тип</option>
-                                <option value="sport_group">Спортивная группа (до 4)</option>
-                                <option value="group">Обычная группа</option>
-                            </select>
-                            <small style="color: #666; display: block; margin-top: 5px;">
-                                Примечание: Индивидуальные тренировки создаются автоматически на свободные слоты при записи клиентов.
-                            </small>
-                        </div>
-
-                        <div class="form-group" id="groupSelectionContainer" style="display: none;">
                             <label for="group">Группа:</label>
-                            <select id="group" name="group_id">
+                            <select id="group" name="group_id" required>
                                 <option value="">Выберите группу</option>
                             </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Группы можно управлять на странице <a href="groups.html" target="_blank">Группы</a>
+                            </small>
                         </div>
 
                         <div class="form-group">
@@ -61,9 +52,9 @@
                             </select>
                         </div>
 
-                        <div class="form-group" id="skillLevelContainer" style="display: none;">
+                        <div class="form-group">
                             <label for="skillLevel">Уровень подготовки:</label>
-                            <select id="skillLevel" name="skill_level">
+                            <select id="skillLevel" name="skill_level" required>
                                 <option value="">Выберите уровень</option>
                                 <option value="1">Уровень 1</option>
                                 <option value="2">Уровень 2</option>
@@ -78,16 +69,18 @@
                             </select>
                         </div>
 
-                        <div class="form-group" id="maxParticipantsContainer" style="display: none;">
+                        <div class="form-group">
                             <label for="maxParticipants">Максимальное количество участников:</label>
-                            <select id="maxParticipants" name="max_participants">
-                                <option value="1">1</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4</option>
-                                <option value="5">5</option>
-                                <option value="6">6</option>
+                            <select id="maxParticipants" name="max_participants" required>
+                                <option value="">Выберите количество</option>
+                                <option value="2">2 человека</option>
+                                <option value="3">3 человека</option>
+                                <option value="4">4 человека</option>
+                                <option value="6">6 человек</option>
                             </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Цена будет рассчитана за каждого участника из прайса зимних тренировок
+                            </small>
                         </div>
 
                         <div class="form-group">

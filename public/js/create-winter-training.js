@@ -38,18 +38,29 @@ async function authFetch(url, options = {}) {
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
     // Проверяем авторизацию (опционально, т.к. можем заходить из админ-панели)
-    if (!getAuthToken()) {
+    const token = getAuthToken();
+    if (!token) {
         console.warn('⚠️ Токен авторизации не найден');
-        // Не перенаправляем, т.к. это может быть норма для некоторых случаев
+        alert('Требуется авторизация. Перейдите в админ-панель и войдите в систему.');
+        window.location.href = 'login.html';
+        return;
     }
     
-    await Promise.all([
-        loadTrainers(),
-        loadGroups(),
-        loadPrices(),
-        setupDateInput(),
-        setupFormHandlers()
-    ]);
+    console.log('🚀 Инициализация страницы создания зимней тренировки...');
+    
+    try {
+        await Promise.all([
+            loadTrainers(),
+            loadGroups(),
+            loadPrices(),
+            setupDateInput(),
+            setupFormHandlers()
+        ]);
+        console.log('✅ Инициализация завершена');
+    } catch (error) {
+        console.error('❌ Ошибка инициализации:', error);
+        alert('Ошибка загрузки данных. Проверьте консоль браузера.');
+    }
 });
 
 // Установить дату по умолчанию
@@ -67,15 +78,24 @@ async function loadTrainers() {
         if (!response.ok) throw new Error('Ошибка загрузки тренеров');
         const data = await response.json();
         
-        trainers = data.trainers || [];
+        // API возвращает массив напрямую
+        trainers = Array.isArray(data) ? data : data.trainers || [];
         const trainerSelect = document.getElementById('trainer');
         
-        trainers.forEach(trainer => {
+        // Очищаем существующие опции (кроме первой пустой)
+        while (trainerSelect.options.length > 1) {
+            trainerSelect.remove(1);
+        }
+        
+        // Фильтруем только активных тренеров
+        trainers.filter(t => t.is_active !== false).forEach(trainer => {
             const option = document.createElement('option');
             option.value = trainer.id;
             option.textContent = trainer.full_name;
             trainerSelect.appendChild(option);
         });
+        
+        console.log(`✅ Загружено тренеров: ${trainers.filter(t => t.is_active !== false).length}`);
     } catch (error) {
         console.error('Ошибка загрузки тренеров:', error);
     }
@@ -88,17 +108,52 @@ async function loadGroups() {
         if (!response.ok) throw new Error('Ошибка загрузки групп');
         const data = await response.json();
         
-        groups = data.groups || [];
-        const groupSelect = document.getElementById('group');
+        // API возвращает массив напрямую
+        groups = Array.isArray(data) ? data : data.groups || [];
         
-        groups.forEach(group => {
+        if (!Array.isArray(groups)) {
+            console.error('❌ Неверный формат данных групп:', data);
+            throw new Error('Неверный формат ответа API групп');
+        }
+        
+        const groupSelect = document.getElementById('group');
+        if (!groupSelect) {
+            throw new Error('Элемент #group не найден в DOM');
+        }
+        
+        // Очищаем существующие опции (кроме первой пустой)
+        while (groupSelect.options.length > 1) {
+            groupSelect.remove(1);
+        }
+        
+        if (groups.length === 0) {
+            console.warn('⚠️ Группы не найдены. Убедитесь, что группы созданы в админ-панели.');
             const option = document.createElement('option');
-            option.value = group.id;
-            option.textContent = group.name;
+            option.value = '';
+            option.textContent = 'Группы не найдены. Создайте группы на странице "Группы"';
+            option.disabled = true;
             groupSelect.appendChild(option);
-        });
+        } else {
+            groups.forEach(group => {
+                if (!group.id || !group.name) {
+                    console.warn('⚠️ Пропущена группа с неполными данными:', group);
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = group.id;
+                option.textContent = group.name;
+                groupSelect.appendChild(option);
+            });
+        }
+        
+        console.log(`✅ Загружено групп: ${groups.length}`);
     } catch (error) {
-        console.error('Ошибка загрузки групп:', error);
+        console.error('❌ Ошибка загрузки групп:', error);
+        console.error('Детали:', {
+            message: error.message,
+            stack: error.stack
+        });
+        alert(`Ошибка загрузки списка групп: ${error.message}\n\nПроверьте консоль браузера для деталей.`);
     }
 }
 
@@ -117,31 +172,10 @@ async function loadPrices() {
 
 // Настроить обработчики формы
 function setupFormHandlers() {
-    const trainingTypeSelect = document.getElementById('trainingType');
-    const maxParticipantsContainer = document.getElementById('maxParticipantsContainer');
-    const groupSelectionContainer = document.getElementById('groupSelectionContainer');
-    const skillLevelContainer = document.getElementById('skillLevelContainer');
     const maxParticipantsSelect = document.getElementById('maxParticipants');
     
-    // Обработчик изменения типа тренировки
-    trainingTypeSelect.addEventListener('change', async (e) => {
-        const type = e.target.value;
-        
-        // Показываем/скрываем поля в зависимости от типа
-        if (type === 'sport_group') {
-            maxParticipantsContainer.style.display = 'flex';
-            groupSelectionContainer.style.display = 'none';
-            skillLevelContainer.style.display = 'flex';
-            maxParticipantsSelect.value = '4';
-        } else if (type === 'group') {
-            maxParticipantsContainer.style.display = 'flex';
-            groupSelectionContainer.style.display = 'flex';
-            skillLevelContainer.style.display = 'none';
-            maxParticipantsSelect.value = '6';
-        }
-        
-        await updatePrice();
-    });
+    // Обновление цены при изменении количества участников
+    maxParticipantsSelect.addEventListener('change', updatePrice);
     
     // Обновление цены при изменении параметров
     const form = document.getElementById('createWinterTrainingForm');
@@ -153,35 +187,41 @@ function setupFormHandlers() {
 
 // Обновить отображение цены
 async function updatePrice() {
-    const trainingType = document.getElementById('trainingType').value;
-    const maxParticipants = document.getElementById('maxParticipants').value || '1';
+    const maxParticipants = document.getElementById('maxParticipants').value;
     const priceDisplay = document.getElementById('trainingPrice');
     
-    if (!trainingType) {
+    if (!maxParticipants) {
         priceDisplay.textContent = '';
         return;
     }
     
     try {
-        // Поиск цены для данного типа тренировки
-        let price = null;
+        // Ищем цену для групповых тренировок с данным количеством участников
+        // Цена в базе хранится за одного человека
+        const priceObj = prices.find(p => 
+            p.type === 'group' && 
+            p.participants === parseInt(maxParticipants) &&
+            p.is_active === true
+        );
         
-        if (trainingType === 'sport_group') {
-            price = prices.find(p => p.type === 'sport_group' && p.participants === parseInt(maxParticipants));
-        } else if (trainingType === 'group') {
-            price = prices.find(p => p.type === 'group' && p.participants === parseInt(maxParticipants));
-        }
-        
-        if (price) {
-            priceDisplay.textContent = `💰 Цена: ${price.price} руб.`;
+        if (priceObj) {
+            const pricePerPerson = parseFloat(priceObj.price);
+            const totalPrice = pricePerPerson * parseInt(maxParticipants);
+            priceDisplay.innerHTML = `
+                <div style="margin-top: 10px;">
+                    <div><strong>💰 Цена за человека:</strong> ${pricePerPerson.toFixed(2)} руб.</div>
+                    <div><strong>💰 Общая цена (${maxParticipants} чел.):</strong> ${totalPrice.toFixed(2)} руб.</div>
+                </div>
+            `;
             priceDisplay.style.color = '#2ecc71';
-            priceDisplay.style.fontWeight = 'bold';
         } else {
-            priceDisplay.textContent = '⚠️ Цена не найдена';
+            priceDisplay.textContent = `⚠️ Цена не найдена для группы из ${maxParticipants} человек`;
             priceDisplay.style.color = '#e74c3c';
         }
     } catch (error) {
         console.error('Ошибка расчета цены:', error);
+        priceDisplay.textContent = '⚠️ Ошибка расчета цены';
+        priceDisplay.style.color = '#e74c3c';
     }
 }
 
@@ -198,8 +238,17 @@ async function handleSubmit(e) {
         submitButton.textContent = 'Создание тренировки...';
         
         const formData = new FormData(form);
-        const trainingType = formData.get('training_type');
         const timeSlot = formData.get('time_slot');
+        const groupId = formData.get('group_id');
+        const maxParticipants = parseInt(formData.get('max_participants'));
+        
+        // Валидация
+        if (!groupId) {
+            throw new Error('Необходимо выбрать группу');
+        }
+        if (!maxParticipants || maxParticipants < 2) {
+            throw new Error('Необходимо выбрать количество участников (минимум 2)');
+        }
         
         // Преобразуем время в формат для backend
         const [hours, minutes] = timeSlot.split(':');
@@ -209,34 +258,34 @@ async function handleSubmit(e) {
         const endTimeHours = (parseInt(hours) + 1).toString().padStart(2, '0');
         const endTime = `${endTimeHours}:${minutes}:00`;
         
+        // Рассчитываем цену: цена за человека * количество участников
+        const priceObj = prices.find(p => 
+            p.type === 'group' && 
+            p.participants === maxParticipants &&
+            p.is_active === true
+        );
+        
+        if (!priceObj) {
+            throw new Error(`Цена не найдена для группы из ${maxParticipants} человек. Проверьте прайс зимних тренировок.`);
+        }
+        
+        const pricePerPerson = parseFloat(priceObj.price);
+        const totalPrice = pricePerPerson * maxParticipants;
+        
         const data = {
-            training_type: trainingType === 'individual' ? false : true,
-            group_id: formData.get('group_id') || null,
+            training_type: true, // Всегда групповая тренировка
+            group_id: groupId,
             session_date: formData.get('date'),
             start_time: startTime,
             end_time: endTime,
             duration: 60,
             trainer_id: formData.get('trainer_id') || null,
-            skill_level: formData.get('skill_level') || null,
-            max_participants: parseInt(formData.get('max_participants') || '1'),
+            skill_level: parseInt(formData.get('skill_level')) || null,
+            max_participants: maxParticipants,
             slope_type: 'natural_slope',
-            winter_training_type: trainingType,
-            price: 0 // Будет рассчитана на сервере
+            winter_training_type: 'group',
+            price: totalPrice // Общая цена для всей группы
         };
-        
-        // Рассчитываем цену
-        const maxParticipants = parseInt(formData.get('max_participants') || '1');
-        let price = 0;
-        
-        if (trainingType === 'sport_group') {
-            const priceObj = prices.find(p => p.type === 'sport_group' && p.participants === maxParticipants);
-            price = priceObj ? priceObj.price : 0;
-        } else if (trainingType === 'group') {
-            const priceObj = prices.find(p => p.type === 'group' && p.participants === maxParticipants);
-            price = priceObj ? priceObj.price : 0;
-        }
-        
-        data.price = price;
         
         const response = await authFetch('/api/winter-trainings', {
             method: 'POST',
