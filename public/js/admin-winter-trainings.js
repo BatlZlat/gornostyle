@@ -547,11 +547,24 @@ async function deleteWinterTraining(id) {
     }
     
     try {
-        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-        const response = await fetch(`/api/individual-trainings/${id}`, {
+        // Получаем токен из cookies или localStorage
+        const getAuthToken = () => {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'adminToken') {
+                    return decodeURIComponent(value);
+                }
+            }
+            return localStorage.getItem('adminToken') || localStorage.getItem('authToken') || localStorage.getItem('token');
+        };
+        
+        const token = getAuthToken();
+        const response = await fetch(`/api/winter-trainings/${id}`, {
             method: 'DELETE',
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
         

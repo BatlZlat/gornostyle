@@ -403,6 +403,81 @@ router.put('/:id', async (req, res) => {
 });
 
 /**
+ * DELETE /api/winter-trainings/:id
+ * Удаление зимней тренировки (естественный склон)
+ * - Запрещаем удаление, если есть подтвержденные участники
+ * - Очищаем связанные записи и слот в winter_schedule (для групповой)
+ */
+router.delete('/:id', async (req, res) => {
+    const client = await pool.connect();
+    const { id } = req.params;
+
+    try {
+        await client.query('BEGIN');
+
+        // 1) Находим тренировку
+        const tsResult = await client.query(
+            `SELECT id, session_date, start_time, training_type, winter_training_type
+             FROM training_sessions
+             WHERE id = $1 AND slope_type = 'natural_slope'
+             FOR UPDATE`,
+            [id]
+        );
+
+        if (tsResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Тренировка не найдена' });
+        }
+
+        const training = tsResult.rows[0];
+
+        // 2) Проверяем наличие подтвержденных участников
+        const participantsResult = await client.query(
+            `SELECT COUNT(*)::int AS cnt
+             FROM session_participants
+             WHERE session_id = $1 AND status = 'confirmed'`,
+            [id]
+        );
+        const participantsCount = participantsResult.rows[0].cnt;
+
+        if (participantsCount > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'Нельзя удалить тренировку: есть подтвержденные участники. Сначала отмените их записи.'
+            });
+        }
+
+        // 3) Удаляем непотвержденные/черновые участники (если есть)
+        await client.query('DELETE FROM session_participants WHERE session_id = $1', [id]);
+
+        // 4) Для групповой тренировки — удаляем соответствующий слот из winter_schedule
+        if (training.training_type === true && training.winter_training_type === 'group') {
+            const timeSlot = String(training.start_time).substring(0, 5); // ЧЧ:ММ
+            await client.query(
+                `DELETE FROM winter_schedule 
+                 WHERE date = $1 
+                   AND time_slot = $2 
+                   AND is_group_training = true`,
+                [training.session_date, timeSlot]
+            );
+        }
+
+        // 5) Удаляем саму тренировку
+        await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
+
+        await client.query('COMMIT');
+
+        return res.json({ success: true });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении зимней тренировки:', error);
+        return res.status(500).json({ error: 'Ошибка при удалении тренировки' });
+    } finally {
+        client.release();
+    }
+});
+
+/**
  * GET /api/winter-trainings/archive
  * Получение архива зимних тренировок (прошедших тренировок)
  */
