@@ -64,9 +64,9 @@ router.get('/admin', async (req, res) => {
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN session_participants sp ON ts.id = sp.session_id 
                 AND sp.status = 'confirmed'
-            WHERE ts.session_date >= CURRENT_DATE
-                AND ts.session_date <= CURRENT_DATE + INTERVAL '7 days'
-                AND ts.status = 'scheduled'
+            WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
+                AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
+                AND ts.status IN ('scheduled', 'completed')
                 AND ts.training_type = TRUE
                 ${slope_type ? `AND ts.slope_type = '${slope_type}'` : ''}
             GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type
@@ -130,9 +130,9 @@ router.get('/admin', async (req, res) => {
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN session_participants sp ON ts.id = sp.session_id 
                 AND sp.status = 'confirmed'
-            WHERE ts.session_date >= CURRENT_DATE
-                AND ts.session_date <= CURRENT_DATE + INTERVAL '7 days'
-                AND ts.status = 'scheduled'
+            WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
+                AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
+                AND ts.status IN ('scheduled', 'completed')
                 AND ts.training_type = FALSE
                 AND ts.slope_type = 'natural_slope'
             GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type

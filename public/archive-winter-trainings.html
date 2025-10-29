@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Архив зимних тренировок - Ski-instruktor</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>📋 Архив тренировок на естественном склоне (ЗИМА)</h1>
+            <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
+        </header>
+        
+        <div class="admin-content">
+            <main class="admin-main">
+                <div class="page-content">
+                    <div class="archive-filters">
+                        <div class="form-group">
+                            <label for="archive-date-from">Дата с</label>
+                            <input type="date" id="archive-date-from">
+                        </div>
+                        <div class="form-group">
+                            <label for="archive-date-to">Дата по</label>
+                            <input type="date" id="archive-date-to">
+                        </div>
+                        <div class="form-group">
+                            <label for="archive-trainer">Тренер</label>
+                            <select id="archive-trainer">
+                                <option value="">Все тренеры</option>
+                                <!-- Список тренеров будет загружен динамически -->
+                            </select>
+                        </div>
+                        <button class="btn-primary" id="apply-filters">Применить фильтры</button>
+                    </div>
+                    <div class="archive-list">
+                        <!-- Список архивных тренировок будет загружен динамически -->
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="js/archive-winter-trainings.js"></script>
+</body>
+</html>
+

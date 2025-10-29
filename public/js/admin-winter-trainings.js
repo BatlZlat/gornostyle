@@ -290,8 +290,248 @@ function viewWinterTrainingDetails(id) {
 }
 
 // Редактирование зимней тренировки
-function editWinterTraining(id) {
-    alert(`Редактирование тренировки #${id}\n\nФункция редактирования будет добавлена в следующей версии.`);
+async function editWinterTraining(id) {
+    try {
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        // Загружаем данные тренировки
+        const trainingResponse = await fetch(`/api/winter-trainings/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!trainingResponse.ok) {
+            throw new Error('Не удалось загрузить данные тренировки');
+        }
+        
+        const training = await trainingResponse.json();
+        
+        // Загружаем данные для выпадающих списков
+        const [trainersResponse, groupsResponse] = await Promise.all([
+            fetch('/api/trainers', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }).then(res => res.json()),
+            fetch('/api/groups', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }).then(res => res.json())
+        ]);
+        
+        const trainers = Array.isArray(trainersResponse) ? trainersResponse : (trainersResponse.trainers || []);
+        const groups = Array.isArray(groupsResponse) ? groupsResponse : (groupsResponse.groups || []);
+        
+        // Формируем options для select
+        const trainerOptions = trainers
+            .filter(tr => tr.is_active !== false)
+            .map(tr => 
+                `<option value="${tr.id}" ${tr.id === training.trainer_id ? 'selected' : ''}>${tr.full_name}</option>`
+            ).join('');
+        
+        const groupOptions = groups.map(gr => 
+            `<option value="${gr.id}" ${gr.id === training.group_id ? 'selected' : ''}>${gr.name}</option>`
+        ).join('');
+        
+        // Удаляем старое модальное окно, если есть
+        const oldModal = document.getElementById('edit-winter-training-modal');
+        if (oldModal) {
+            oldModal.remove();
+        }
+        
+        // Формируем HTML модального окна
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'edit-winter-training-modal';
+        
+        // Форматируем дату для input type="date"
+        const dateValue = training.session_date ? training.session_date.split('T')[0] : '';
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <h3>Редактировать тренировку на естественном склоне</h3>
+                <form id="edit-winter-training-form">
+                    <div class="form-group">
+                        <label>Дата (только СБ и ВС)</label>
+                        <input type="date" name="session_date" id="edit-session-date" value="${dateValue}" required />
+                        <small id="date-warning" style="color: #e74c3c; display: none; margin-top: 5px;">
+                            ⚠️ Тренировки возможны только на выходные дни (Суббота и Воскресенье)
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label>Время начала</label>
+                        <input type="time" name="start_time" value="${training.start_time ? training.start_time.slice(0,5) : ''}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Время окончания</label>
+                        <input type="time" name="end_time" value="${training.end_time ? training.end_time.slice(0,5) : ''}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <select name="group_id" required>
+                            <option value="">Выберите группу</option>
+                            ${groupOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Тренер</label>
+                        <select name="trainer_id">
+                            <option value="">Выберите тренера (опционально)</option>
+                            ${trainerOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Уровень подготовки</label>
+                        <select name="skill_level" required>
+                            <option value="">Выберите уровень</option>
+                            ${Array.from({length: 10}, (_, i) => i + 1).map(level => 
+                                `<option value="${level}" ${training.skill_level === level ? 'selected' : ''}>Уровень ${level}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Максимальное количество участников</label>
+                        <select name="max_participants" required>
+                            <option value="">Выберите количество</option>
+                            <option value="2" ${training.max_participants === 2 ? 'selected' : ''}>2 человека</option>
+                            <option value="3" ${training.max_participants === 3 ? 'selected' : ''}>3 человека</option>
+                            <option value="4" ${training.max_participants === 4 ? 'selected' : ''}>4 человека</option>
+                            <option value="6" ${training.max_participants === 6 ? 'selected' : ''}>6 человек</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Цена общая (₽)</label>
+                        <input type="number" name="price" value="${training.price ? parseFloat(training.price).toFixed(2) : ''}" min="0" step="0.01" required />
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Цена за человека будет рассчитана автоматически: ${training.max_participants > 0 && training.price ? (parseFloat(training.price) / training.max_participants).toFixed(2) : '-'} ₽
+                        </small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" id="close-edit-winter-modal">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        
+        // Валидация даты - только выходные дни
+        const dateInput = document.getElementById('edit-session-date');
+        const dateWarning = document.getElementById('date-warning');
+        
+        function validateDate() {
+            if (!dateInput.value) {
+                dateWarning.style.display = 'none';
+                dateInput.style.borderColor = '';
+                return true;
+            }
+            
+            // Правильно определяем день недели (без учета timezone)
+            const [year, month, day] = dateInput.value.split('-').map(Number);
+            const selectedDate = new Date(year, month - 1, day); // Месяц в JS: 0-11
+            const dayOfWeek = selectedDate.getDay(); // 0 = ВС, 6 = СБ
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            if (!isWeekend) {
+                dateWarning.style.display = 'block';
+                dateInput.style.borderColor = '#e74c3c';
+                return false;
+            } else {
+                dateWarning.style.display = 'none';
+                dateInput.style.borderColor = '';
+                return true;
+            }
+        }
+        
+        dateInput.addEventListener('change', validateDate);
+        
+        // Закрытие по кнопке
+        document.getElementById('close-edit-winter-modal').onclick = () => modal.remove();
+        
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => { 
+            if (e.target === modal) modal.remove(); 
+        };
+        
+        // Обработка сохранения
+        document.getElementById('edit-winter-training-form').onsubmit = async function(e) {
+            e.preventDefault();
+            
+            // Валидация даты перед отправкой
+            const dateValue = document.getElementById('edit-session-date').value;
+            if (!dateValue) {
+                alert('⚠️ Пожалуйста, выберите дату тренировки.');
+                return;
+            }
+            
+            // Правильно определяем день недели (без учета timezone)
+            const [year, month, day] = dateValue.split('-').map(Number);
+            const selectedDate = new Date(year, month - 1, day); // Месяц в JS: 0-11
+            const dayOfWeek = selectedDate.getDay(); // 0 = ВС, 6 = СБ
+            
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                alert('⚠️ Тренировки возможны только на выходные дни (Суббота и Воскресенье). Пожалуйста, выберите другую дату.');
+                dateWarning.style.display = 'block';
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Преобразуем числовые поля
+            data.max_participants = parseInt(data.max_participants);
+            data.skill_level = parseInt(data.skill_level);
+            data.price = parseFloat(data.price);
+            data.trainer_id = data.trainer_id ? parseInt(data.trainer_id) : null;
+            data.group_id = parseInt(data.group_id);
+            
+            // Добавляем duration (по умолчанию 60 минут)
+            const startTime = new Date(`2000-01-01T${data.start_time}`);
+            const endTime = new Date(`2000-01-01T${data.end_time}`);
+            data.duration = Math.round((endTime - startTime) / (1000 * 60)) || 60;
+            
+            // Отправляем PUT-запрос
+            try {
+                const response = await fetch(`/api/winter-trainings/${id}`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Ошибка при сохранении');
+                }
+                
+                // Показываем успешное сообщение
+                if (typeof showSuccess === 'function') {
+                    showSuccess('Тренировка успешно обновлена');
+                } else {
+                    alert('✅ Тренировка успешно обновлена');
+                }
+                
+                modal.remove();
+                loadWinterTrainings(); // Перезагружаем список
+            } catch (error) {
+                console.error('Ошибка при сохранении:', error);
+                if (typeof showError === 'function') {
+                    showError(error.message);
+                } else {
+                    alert('❌ Ошибка: ' + error.message);
+                }
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке данных для редактирования:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
 }
 
 // Удаление зимней тренировки
@@ -321,6 +561,11 @@ async function deleteWinterTraining(id) {
         alert('❌ Ошибка при удалении тренировки: ' + error.message);
     }
 }
+
+// Делаем функции глобально доступными
+window.editWinterTraining = editWinterTraining;
+window.deleteWinterTraining = deleteWinterTraining;
+window.viewWinterTrainingDetails = viewWinterTrainingDetails;
 
 console.log('✅ admin-winter-trainings.js загружен');
 
