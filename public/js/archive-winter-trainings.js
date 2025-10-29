@@ -199,6 +199,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
                                                         Подробнее
                                                     </button>
+                                                    <button class="btn-danger" onclick="deleteArchiveWinterTraining(${training.id})" style="margin-left: 5px;">
+                                                        Удалить
+                                                    </button>
                                                 </td>
                                             </tr>
                                         `;
@@ -220,13 +223,117 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Функция просмотра деталей тренировки
-    window.viewWinterTrainingDetails = function(trainingId) {
-        // Используем функцию из admin.js если доступна
-        if (typeof viewScheduleDetails === 'function') {
-            viewScheduleDetails(trainingId, false, 'natural_slope');
-        } else {
-            // Открываем в новой вкладке или показываем модальное окно
-            window.open(`admin.html?view_training=${trainingId}`, '_blank');
+    window.viewWinterTrainingDetails = async function(trainingId) {
+        try {
+            const response = await authFetch(`/api/winter-trainings/${trainingId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const training = await response.json();
+            
+            // Форматируем дату
+            function formatDate(dateString) {
+                if (!dateString) return '—';
+                const date = new Date(dateString);
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}.${month}.${year}`;
+            }
+            
+            const startTime = training.start_time ? training.start_time.slice(0, 5) : '—';
+            const endTime = training.end_time ? training.end_time.slice(0, 5) : '—';
+            
+            const typeLabels = {
+                individual: 'Индивидуальное',
+                sport_group: 'Спортивная группа',
+                group: 'Групповая'
+            };
+            const type = typeLabels[training.winter_training_type] || 'Групповая';
+            
+            const statusLabels = {
+                scheduled: 'Запланирована',
+                completed: 'Завершена',
+                cancelled: 'Отменена'
+            };
+            const status = statusLabels[training.status] || training.status || '—';
+            
+            // Цена за человека
+            let pricePerPerson = '—';
+            let totalPrice = '—';
+            if (training.price != null && training.max_participants > 0) {
+                const price = parseFloat(training.price);
+                pricePerPerson = `${(price / training.max_participants).toFixed(2)} ₽`;
+                totalPrice = `${price.toFixed(2)} ₽`;
+            }
+            
+            // Создаем модальное окно
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <h3>Детали зимней тренировки</h3>
+                    <div class="training-details">
+                        <div class="detail-group">
+                            <h4>Основная информация</h4>
+                            <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
+                            <p><strong>Время:</strong> ${startTime} - ${endTime}</p>
+                            <p><strong>Тип:</strong> ${type}</p>
+                            <p><strong>Название:</strong> ${training.group_name || '—'}</p>
+                            <p><strong>Тренер:</strong> ${training.trainer_name || 'Не назначен'}</p>
+                            <p><strong>Уровень подготовки:</strong> ${training.skill_level || '—'}</p>
+                            <p><strong>Участников:</strong> ${training.current_participants || 0}/${training.max_participants || 0}</p>
+                            <p><strong>Цена за человека:</strong> ${pricePerPerson}</p>
+                            <p><strong>Цена общая:</strong> ${totalPrice}</p>
+                            <p><strong>Статус:</strong> <span style="font-weight: bold;">${status}</span></p>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                        <button class="btn-danger" onclick="deleteArchiveWinterTraining(${trainingId}); this.closest('.modal').remove();" style="margin-left: 10px;">
+                            Удалить тренировку
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Закрытие по клику вне окна
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            };
+        } catch (error) {
+            console.error('Ошибка при загрузке деталей тренировки:', error);
+            alert('Ошибка при загрузке деталей тренировки: ' + error.message);
+        }
+    };
+    
+    // Функция удаления архивной зимней тренировки
+    window.deleteArchiveWinterTraining = async function(trainingId) {
+        if (!confirm('Вы уверены, что хотите удалить эту архивную тренировку? Это действие нельзя отменить.')) {
+            return;
+        }
+        
+        try {
+            const response = await authFetch(`/api/winter-trainings/${trainingId}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка при удалении тренировки');
+            }
+            
+            alert('✅ Тренировка успешно удалена');
+            loadArchiveTrainings(); // Перезагружаем список
+        } catch (error) {
+            console.error('Ошибка удаления тренировки:', error);
+            alert('❌ Ошибка при удалении тренировки: ' + error.message);
         }
     };
 
