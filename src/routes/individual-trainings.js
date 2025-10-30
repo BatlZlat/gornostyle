@@ -696,14 +696,20 @@ router.delete('/:id', async (req, res) => {
         const clientTelegramId = training.child_id ? training.parent_telegram_id : training.client_telegram_id;
         if (clientTelegramId) {
             try {
+                const typeLine = training.slope_type === 'natural_slope'
+                    ? 'Индивидуальная'
+                    : `${equipmentName} ${trainerText}`;
+                const simulatorLine = training.slope_type === 'natural_slope'
+                    ? ''
+                    : `\n🏔 Тренажер: ${training.simulator_name}`;
+
                 const clientMessage = `⚠️ *Отмена индивидуальной тренировки*\n\n` +
                     `Администратор отменил вашу индивидуальную тренировку:\n\n` +
                     `👤 Участник: ${participantName}\n` +
                     `📅 Дата: ${formattedDate}\n` +
                     `⏰ Время: ${startTime}\n` +
                     `⏱ Длительность: ${training.duration} мин\n` +
-                    `🎿 Тип: ${equipmentName} ${trainerText}\n` +
-                    `🏔 Тренажер: ${training.simulator_name}\n\n` +
+                    `🎿 Тип: ${typeLine}${simulatorLine}\n\n` +
                     `💰 Возвращено на счет: ${price} ₽\n` +
                     `💳 Текущий баланс: ${newBalance} ₽\n\n` +
                     `По вопросам обращайтесь к администратору.`;

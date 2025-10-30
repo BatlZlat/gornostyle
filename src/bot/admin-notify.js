@@ -344,7 +344,7 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name || 'Не указан'}\n` +
-            `🏔️ *Место:* Естественный склон\n` +
+            `🏔️ *Место:* Кулига Парк\n` +
             `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
 
         for (const adminId of adminIds) {
@@ -371,7 +371,7 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
-            `🏔️ *Место:* Естественный склон\n` +
+            `🏔️ *Место:* Кулига Парк\n` +
             `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;
 
         for (const adminId of adminIds) {
@@ -1089,6 +1089,7 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
             participantInfo = `👤 *Участник:* ${participant_name} (${participantAgeDisplay})\n`;
         }
 
+        const simulatorLine = simulator_name ? `\n🎿 *Тренажер:* ${simulator_name}` : '';
         const message = 
             '🗑 *Удалена индивидуальная тренировка*\n\n' +
             `👨‍💼 *Клиент:* ${client_name}\n` +
@@ -1097,8 +1098,7 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
             `📅 *Дата:* ${formatDate(date)}\n` +
             `⏰ *Время:* ${time}\n` +
             `⏱ *Длительность:* ${duration} мин\n` +
-            `${equipmentName} ${trainerText}\n` +
-            `🎿 *Тренажер:* ${simulator_name}\n\n` +
+            `${equipmentName} ${trainerText}${simulatorLine}\n\n` +
             `💰 *Возвращено:* ${refund_amount} ₽\n` +
             `💳 *Новый баланс клиента:* ${new_balance} ₽\n\n` +
             `_Удалено администратором через админ-панель_`;

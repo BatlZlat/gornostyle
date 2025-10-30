@@ -4575,7 +4575,7 @@ async function handleTextMessage(msg) {
                         `👤 *Участник:* ${selectedSession.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
-                        `🏔️ *Место:* Естественный склон\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
 
@@ -5451,7 +5451,7 @@ async function handleTextMessage(msg) {
             }
             
             const selectedTime = msg.text.replace('⏰ ', '');
-            const validTimes = ['10:30', '12:00', '14:30', '16:00', '17:30', '19:00'];
+            const validTimes = (state && state.data && Array.isArray(state.data.available_times)) ? state.data.available_times : [];
             
             if (!validTimes.includes(selectedTime)) {
                 return bot.sendMessage(chatId, '❌ Неверное время. Пожалуйста, выберите из предложенных вариантов.');
@@ -7840,25 +7840,16 @@ function getSportTypeDisplay(sportType) {
 // Функция показа временных слотов для зимних тренировок
 async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
     try {
-        // Фиксированные временные слоты для зимних тренировок
-        const timeSlots = ['10:30', '12:00', '14:30', '16:00', '17:30', '19:00'];
-        
-        // Проверяем занятые слоты в базе данных
-        const occupiedSlotsResult = await pool.query(
-            `SELECT DISTINCT time_slot 
-             FROM winter_schedule 
-             WHERE date = $1 AND is_available = false`,
+        // Получаем свободные индивидуальные слоты из winter_schedule на выбранную дату
+        const freeSlotsRes = await pool.query(
+            `SELECT time_slot FROM winter_schedule
+             WHERE date = $1 
+               AND is_individual_training = true
+               AND is_available = true
+             ORDER BY time_slot`,
             [selectedDate]
         );
-        
-        // Преобразуем время из формата HH:MM:SS в HH:MM для сравнения
-        const occupiedSlots = occupiedSlotsResult.rows.map(row => {
-            const timeStr = row.time_slot.toString();
-            return timeStr.substring(0, 5); // Берем только HH:MM
-        });
-        
-        // Создаем кнопки для доступных слотов
-        const availableSlots = timeSlots.filter(slot => !occupiedSlots.includes(slot));
+        const availableSlots = freeSlotsRes.rows.map(r => String(r.time_slot).substring(0,5));
         
         if (availableSlots.length === 0) {
             return bot.sendMessage(chatId,
@@ -7874,6 +7865,10 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
             );
         }
         
+        // Сохраняем слоты в состоянии для последующей проверки
+        if (data) {
+            data.available_times = availableSlots;
+        }
         // Создаем кнопки для доступных слотов
         const slotButtons = availableSlots.map(slot => [`⏰ ${slot}`]);
         slotButtons.push(['🔙 Назад в меню']);
