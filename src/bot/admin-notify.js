@@ -205,6 +205,41 @@ ${trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n
     }
 }
 
+// Уведомление: создана зимняя групповая тренировка (естественный склон)
+async function notifyAdminWinterGroupTrainingCreated(data) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const dateFormatted = formatDate(data.session_date);
+        const timeFormatted = String(data.start_time).substring(0,5);
+        const totalPrice = (data.price != null) ? Number(data.price) : null;
+        const maxParticipants = (data.max_participants != null) ? Number(data.max_participants) : null;
+        const pricePerPerson = (totalPrice != null && maxParticipants && maxParticipants > 0)
+            ? (totalPrice / maxParticipants)
+            : null;
+
+        const message =
+            '✅ *Создана зимняя групповая тренировка*\n\n' +
+            `📅 *Дата:* ${dateFormatted}\n` +
+            `⏰ *Время:* ${timeFormatted}\n` +
+            `👥 *Группа:* ${data.group_name || '—'}\n` +
+            `👨‍🏫 *Тренер:* ${data.trainer_name || '—'}\n` +
+            `🧑‍🤝‍🧑 *Мест:* ${data.max_participants}` +
+            `${pricePerPerson != null ? `\n💳 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽` : ''}` +
+            `${totalPrice != null ? `\n💰 *Цена (общая):* ${totalPrice.toFixed(2)} ₽` : ''}`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании зимней групповой тренировки:', error);
+    }
+}
+
 // Функция для отправки уведомления об отмене групповой тренировки
 async function notifyAdminGroupTrainingCancellation(trainingData) {
     try {
@@ -1111,4 +1146,5 @@ module.exports = {
     notifyAdminIndividualTrainingDeleted,
     notifyAdminNaturalSlopeTrainingCancellation,
     notifyAdminNaturalSlopeTrainingBooking
+    ,notifyAdminWinterGroupTrainingCreated
 }; 

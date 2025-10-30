@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
+const { notifyAdminWinterGroupTrainingCreated } = require('../bot/admin-notify');
 
 /**
  * API для управления зимними тренировками (естественный склон)
@@ -134,6 +135,30 @@ router.post('/', async (req, res) => {
         
         console.log(`✅ Создана зимняя тренировка: ID=${newTraining.id}, тип=${winter_training_type}, дата=${session_date}, время=${start_time}`);
         
+        // Уведомление администратору (асинхронно)
+        if (isGroupTraining && winter_training_type === 'group') {
+            (async () => {
+                try {
+                    const info = await pool.query(
+                        `SELECT 
+                            ts.session_date, ts.start_time, ts.max_participants, ts.price,
+                            g.name as group_name,
+                            t.full_name as trainer_name
+                         FROM training_sessions ts
+                         LEFT JOIN groups g ON ts.group_id = g.id
+                         LEFT JOIN trainers t ON ts.trainer_id = t.id
+                         WHERE ts.id = $1`,
+                        [newTraining.id]
+                    );
+                    if (info.rows[0]) {
+                        await notifyAdminWinterGroupTrainingCreated(info.rows[0]);
+                    }
+                } catch (err) {
+                    console.error('Ошибка уведомления администратору о зимней групповой тренировке:', err);
+                }
+            })();
+        }
+
         res.status(201).json(newTraining);
     } catch (error) {
         await client.query('ROLLBACK');
@@ -551,14 +576,22 @@ router.delete('/:id', async (req, res) => {
         // 3) Удаляем непотвержденные/черновые участники (если есть)
         await client.query('DELETE FROM session_participants WHERE session_id = $1', [id]);
 
-        // 4) Для групповой тренировки — удаляем соответствующий слот из winter_schedule
+        // 4) Для групповой тренировки — освобождаем соответствующий слот в winter_schedule (возвращаем в исходное состояние)
         if (training.training_type === true && training.winter_training_type === 'group') {
             const timeSlot = String(training.start_time).substring(0, 5); // ЧЧ:ММ
             await client.query(
-                `DELETE FROM winter_schedule 
+                `UPDATE winter_schedule 
+                 SET 
+                    is_available = true,
+                    is_individual_training = true,
+                    is_group_training = false,
+                    group_id = NULL,
+                    trainer_id = NULL,
+                    max_participants = 1,
+                    current_participants = 0,
+                    updated_at = NOW()
                  WHERE date = $1 
-                   AND time_slot = $2 
-                   AND is_group_training = true`,
+                   AND time_slot = $2::time`,
                 [training.session_date, timeSlot]
             );
         }

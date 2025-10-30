@@ -732,13 +732,16 @@ async function loadTrainings() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
+        let data = await response.json();
         console.log('Полученные данные:', data);
         
         if (!data || !Array.isArray(data)) {
             console.error('Получены некорректные данные:', data);
             throw new Error('Получены некорректные данные от сервера');
         }
+
+        // Оставляем только тренировки на тренажере (исключаем естественный склон)
+        data = data.filter(t => (t.slope_type ? t.slope_type === 'simulator' : t.simulator_id != null));
 
         const trainingList = document.querySelector('.training-list');
         if (!trainingList) {
