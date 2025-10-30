@@ -1,3 +1,20 @@
+// Auth helpers (локальные для страницы)
+function getAuthToken() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'adminToken') return value;
+    }
+    return localStorage.getItem('authToken') || localStorage.getItem('adminToken') || localStorage.getItem('token');
+}
+
+async function authFetch(url, options = {}) {
+    const token = getAuthToken();
+    if (!token) throw new Error('Требуется авторизация');
+    const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+    return fetch(url, { ...options, headers });
+}
+
 function parseTimes(input) {
     return String(input || '')
         .split(',')
@@ -13,6 +30,38 @@ async function loadDaySlots(date) {
     const res = await authFetch(`/api/winter-schedule/${date}`);
     if (!res.ok) throw new Error('Ошибка загрузки слотов');
     return res.json();
+}
+
+async function deleteSlot(date, time) {
+    const res = await authFetch(`/api/winter-schedule/${date}/slots/${time}`, { method: 'DELETE' });
+    if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || 'Не удалось удалить слот');
+    }
+}
+
+async function addSlots(date, times) {
+    const res = await authFetch(`/api/winter-schedule/${date}/slots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ times })
+    });
+    if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || 'Не удалось добавить слот');
+    }
+}
+
+async function editSlot(date, oldTime, newTime) {
+    // Стратегия: сначала пытаемся добавить новый, затем удалить старый
+    await addSlots(date, [newTime]);
+    try {
+        await deleteSlot(date, oldTime);
+    } catch (e) {
+        // Откат: удалим добавленный, если не смогли удалить старый
+        try { await deleteSlot(date, newTime); } catch (_) {}
+        throw e;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -61,11 +110,79 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const data = await loadDaySlots(date);
-            if (!data.slots || data.slots.length === 0) {
+            const slots = data.slots || [];
+            if (slots.length === 0) {
                 daySlots.innerHTML = '<div>Слотов нет</div>';
                 return;
             }
-            daySlots.innerHTML = '<ul>' + data.slots.map(s => `<li>${s.time_slot.substring(0,5)} — ${s.is_available ? 'свободен' : 'занят'}</li>`).join('') + '</ul>';
+            // Рендер таблицей с индикатором статуса и действиями
+            const rows = slots.map(s => {
+                const time = String(s.time_slot).substring(0,5);
+                const statusBadge = s.is_available ? '<span style="color:#28a745;">свободен</span>' : '<span style="color:#dc3545;">занят</span>';
+                const actions = s.is_available
+                    ? `<button class="btn-secondary" data-action="edit" data-time="${time}">✏️</button>
+                       <button class="btn-secondary" data-action="delete" data-time="${time}">🗑️</button>`
+                    : '<span style="color:#999;">—</span>';
+                return `<tr>
+                    <td style="padding:6px 8px;">${time}</td>
+                    <td style="padding:6px 8px;">${statusBadge}</td>
+                    <td style="padding:6px 8px;">${actions}</td>
+                </tr>`;
+            }).join('');
+            daySlots.innerHTML = `
+                <table class="admin-table" style="min-width:360px;">
+                    <thead><tr><th>Время</th><th>Статус</th><th>Действия</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="add-slot-time" class="form-control" placeholder="HH:MM" style="max-width:120px;" />
+                    <button class="btn-primary" id="add-slot-btn">Добавить слот</button>
+                </div>
+            `;
+
+            // Навесим обработчики на действия
+            daySlots.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const t = btn.getAttribute('data-time');
+                    try {
+                        await deleteSlot(date, t);
+                        showMessage(dayResult, `Слот ${t} удалён`);
+                        btnLoadDay.click();
+                    } catch (e) {
+                        showMessage(dayResult, e.message || 'Ошибка удаления', false);
+                    }
+                });
+            });
+
+            daySlots.querySelectorAll('button[data-action="edit"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const oldTime = btn.getAttribute('data-time');
+                    const newTime = prompt('Новое время (HH:MM):', oldTime);
+                    if (!newTime) return;
+                    try {
+                        await editSlot(date, oldTime, newTime.trim());
+                        showMessage(dayResult, `Слот ${oldTime} → ${newTime} обновлён`);
+                        btnLoadDay.click();
+                    } catch (e) {
+                        showMessage(dayResult, e.message || 'Ошибка редактирования', false);
+                    }
+                });
+            });
+
+            const addBtn = document.getElementById('add-slot-btn');
+            if (addBtn) {
+                addBtn.addEventListener('click', async () => {
+                    const t = (document.getElementById('add-slot-time').value || '').trim();
+                    if (!t) return;
+                    try {
+                        await addSlots(date, [t]);
+                        showMessage(dayResult, `Слот ${t} добавлен`);
+                        btnLoadDay.click();
+                    } catch (e) {
+                        showMessage(dayResult, e.message || 'Ошибка добавления', false);
+                    }
+                });
+            }
         } catch (e) {
             showMessage(dayResult, e.message || 'Ошибка', false);
         }
