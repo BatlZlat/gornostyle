@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     return new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-'));
                 }).forEach(date => {
                     html += `
-                        <div class="training-date-header">${date}</div>
+                        <div class="training-date-header">${formatDateWithWeekdayRu(date)}</div>
                         <div class="training-table-container">
                             <table class="training-table">
                                 <thead>
@@ -156,6 +156,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!dateString) return 'Дата не указана';
         const date = new Date(dateString);
         return date.toLocaleDateString('ru-RU');
+    }
+
+    // Форматирование даты в формате DD.MM.YYYY с добавлением дня недели в скобках
+    function formatDateWithWeekdayRu(dateRu) {
+        if (!dateRu) return '';
+        const parts = dateRu.split('.');
+        if (parts.length !== 3) return dateRu; // fallback
+        const [dd, mm, yyyy] = parts;
+        const date = new Date(`${yyyy}-${mm}-${dd}`);
+        const weekdays = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+        const weekday = weekdays[date.getDay()];
+        return `${dateRu} (${weekday})`;
     }
 
     // Обработчик применения фильтров
