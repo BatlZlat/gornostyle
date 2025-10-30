@@ -52,10 +52,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await Promise.all([
             loadTrainers(),
             loadGroups(),
-            loadPrices(),
-            setupDateInput(),
-            setupFormHandlers()
+            loadPrices()
         ]);
+        setupDateInput();
+        setupFormHandlers();
+        setupTimeSlotsLoader();
         console.log('✅ Инициализация завершена');
     } catch (error) {
         console.error('❌ Ошибка инициализации:', error);
@@ -69,6 +70,57 @@ function setupDateInput() {
     if (dateInput && !dateInput.value) {
         dateInput.valueAsDate = new Date();
     }
+}
+
+// Загрузка свободных слотов на выбранную дату из winter_schedule
+function setupTimeSlotsLoader() {
+    const dateInput = document.getElementById('date');
+    const timeSelect = document.getElementById('timeSlot');
+    if (!dateInput || !timeSelect) return;
+
+    async function loadTimes(dateStr) {
+        // Очищаем список и ставим placeholder
+        while (timeSelect.options.length) timeSelect.remove(0);
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Выберите время';
+        timeSelect.appendChild(placeholder);
+
+        if (!dateStr) return;
+        try {
+            const res = await authFetch(`/api/winter-schedule/${dateStr}`);
+            if (!res.ok) throw new Error('Ошибка загрузки расписания');
+            const data = await res.json();
+            const slots = (data.slots || []).filter(s => s.is_available === true);
+            if (slots.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Свободных слотов нет';
+                timeSelect.appendChild(opt);
+                return;
+            }
+            // Сортировка по времени
+            slots.sort((a, b) => String(a.time_slot).localeCompare(String(b.time_slot)));
+            for (const s of slots) {
+                const t = String(s.time_slot).substring(0, 5);
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                timeSelect.appendChild(opt);
+            }
+        } catch (e) {
+            console.error('Ошибка загрузки слотов:', e);
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Ошибка загрузки слотов';
+            timeSelect.appendChild(opt);
+        }
+    }
+
+    // Смена даты => загрузка слотов
+    dateInput.addEventListener('change', () => loadTimes(dateInput.value));
+    // Первичная загрузка
+    if (dateInput.value) loadTimes(dateInput.value);
 }
 
 // Загрузить список тренеров
