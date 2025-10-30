@@ -6,6 +6,30 @@ function isValidTimeHHMM(value) {
     return /^\d{2}:\d{2}$/.test(value);
 }
 
+// ВАЖНО: сначала более специфичные маршруты, затем параметризированные
+
+// GET /api/winter-schedule/available?from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/available', async (req, res) => {
+    try {
+        const { from, to } = req.query;
+        if (!from || !to) return res.status(400).json({ error: 'Нужны параметры from и to' });
+        const result = await pool.query(
+            `SELECT date::text as date,
+                    COUNT(*) as slots,
+                    SUM(CASE WHEN is_available THEN 1 ELSE 0 END) as free_slots
+             FROM winter_schedule
+             WHERE date >= $1::date AND date <= $2::date
+             GROUP BY date
+             ORDER BY date`,
+            [from, to]
+        );
+        res.json({ dates: result.rows });
+    } catch (error) {
+        console.error('Ошибка получения доступных дат расписания:', error);
+        res.status(500).json({ error: 'Ошибка получения доступных дат' });
+    }
+});
+
 // GET /api/winter-schedule/:date - получить слоты на дату
 router.get('/:date', async (req, res) => {
     try {

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Создание зимней тренировки - Ski-instruktor</title>
     <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        .flatpickr-day.has-schedule {
+            background: rgba(46, 204, 113, 0.15);
+            box-shadow: inset 0 0 0 2px #2ecc71;
+        }
+        .flatpickr-day.has-schedule.free-none { /* есть расписание, но все слоты заняты */
+            background: rgba(241, 196, 15, 0.15);
+            box-shadow: inset 0 0 0 2px #f1c40f;
+        }
+    </style>
 </head>
 <body>
     <div class="admin-container">
@@ -97,6 +108,8 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr@4.6.13/dist/l10n/ru.js"></script>
     <script src="js/create-winter-training.js"></script>
 </body>
 </html>

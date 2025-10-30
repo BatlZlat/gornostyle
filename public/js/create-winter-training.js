@@ -70,6 +70,56 @@ function setupDateInput() {
     if (dateInput && !dateInput.value) {
         dateInput.valueAsDate = new Date();
     }
+    // Инициализируем flatpickr с подсветкой дат расписания
+    try {
+        if (window.flatpickr) {
+            const fp = flatpickr(dateInput, {
+                dateFormat: 'Y-m-d',
+                altInput: true,
+                altFormat: 'd.m.Y',
+                locale: window.flatpickr.l10ns.ru,
+                allowInput: true,
+                onReady: [loadMonthScheduleMarkers],
+                onMonthChange: [loadMonthScheduleMarkers],
+                onOpen: [loadMonthScheduleMarkers]
+            });
+
+            async function loadMonthScheduleMarkers(selectedDates, dateStr, instance) {
+                const cal = instance || fp;
+                const year = cal.currentYear;
+                const month = cal.currentMonth + 1; // 0-based
+                const first = `${year}-${String(month).padStart(2,'0')}-01`;
+                const lastDate = new Date(year, month, 0).getDate();
+                const last = `${year}-${String(month).padStart(2,'0')}-${String(lastDate).padStart(2,'0')}`;
+                try {
+                    const res = await authFetch(`/api/winter-schedule/available?from=${first}&to=${last}`);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const set = new Map();
+                    (data.dates || []).forEach(d => set.set(d.date, Number(d.free_slots)));
+                    const container = cal.calendarContainer || document;
+                    container.querySelectorAll('.flatpickr-day').forEach(dayElem => {
+                        const d = dayElem.dateObj;
+                        if (!d) return;
+                        const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        if (set.has(iso)) {
+                            const free = set.get(iso);
+                            dayElem.classList.add('has-schedule');
+                            if (!free || free === 0) dayElem.classList.add('free-none');
+                            dayElem.title = free > 0 ? `Есть расписание, свободных слотов: ${free}` : 'Все слоты заняты';
+                        } else {
+                            dayElem.classList.remove('has-schedule', 'free-none');
+                            dayElem.removeAttribute('title');
+                        }
+                    });
+                } catch (e) {
+                    // тихо игнорируем
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Flatpickr недоступен, используется стандартный date input');
+    }
 }
 
 // Загрузка свободных слотов на выбранную дату из winter_schedule
