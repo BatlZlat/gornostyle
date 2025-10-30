@@ -1015,7 +1015,7 @@ async function handleTextMessage(msg) {
 
         // Показываем меню выбора типа тренировки
         return bot.sendMessage(chatId,
-            '🏔️ *Естественный склон*\n\n' +
+            '🏔️ *Естественный склон (Кулига Парк)*\n\n' +
             'Выберите тип тренировки:',
             {
                 parse_mode: 'Markdown',
@@ -1067,7 +1067,7 @@ async function handleTextMessage(msg) {
         } else {
             // Нет детей - записываем только для себя
             userStates.set(chatId, {
-                step: 'natural_slope_individual_date',
+                step: 'natural_slope_individual_date_from_calendar',
                 data: {
                     client_id: client.id,
                     participant_type: 'self',
@@ -1075,18 +1075,7 @@ async function handleTextMessage(msg) {
                     participant_name: client.full_name
                 }
             });
-
-            return bot.sendMessage(chatId,
-                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                'Например: 25.12.2024',
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: [['🔙 Назад в меню']],
-                        resize_keyboard: true
-                    }
-                }
-            );
+            return showNaturalSlopeAvailableDates(chatId);
         }
     }
 
@@ -1126,7 +1115,7 @@ async function handleTextMessage(msg) {
 
         // Устанавливаем состояние для записи ребенка
         userStates.set(chatId, {
-            step: 'natural_slope_individual_date',
+            step: 'natural_slope_individual_date_from_calendar',
             data: {
                 client_id: client.id,
                 participant_type: 'child',
@@ -1134,18 +1123,7 @@ async function handleTextMessage(msg) {
                 participant_name: child.full_name
             }
         });
-
-        return bot.sendMessage(chatId,
-            '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-            'Например: 25.12.2024',
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    keyboard: [['🔙 Назад в меню']],
-                    resize_keyboard: true
-                }
-            }
-        );
+        return showNaturalSlopeAvailableDates(chatId);
     }
 
     // Обработка "Для себя" для индивидуальной тренировки (естественный склон)
@@ -1158,7 +1136,7 @@ async function handleTextMessage(msg) {
 
         // Устанавливаем состояние для записи самого клиента
         userStates.set(chatId, {
-            step: 'natural_slope_individual_date',
+            step: 'natural_slope_individual_date_from_calendar',
             data: {
                 client_id: client.id,
                 participant_type: 'self',
@@ -1166,18 +1144,7 @@ async function handleTextMessage(msg) {
                 participant_name: client.full_name
             }
         });
-
-        return bot.sendMessage(chatId,
-            '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-            'Например: 25.12.2024',
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    keyboard: [['🔙 Назад в меню']],
-                    resize_keyboard: true
-                }
-            }
-        );
+        return showNaturalSlopeAvailableDates(chatId);
     }
 
     // Обработка состояний
@@ -4571,7 +4538,7 @@ async function handleTextMessage(msg) {
 
                     // Сообщение для клиента
                     const clientMessage = 
-                        '✅ *Тренировка на естественном склоне успешно отменена!*\n\n' +
+                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
                         `👤 *Участник:* ${selectedSession.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
@@ -5370,19 +5337,13 @@ async function handleTextMessage(msg) {
 
         // Обработка состояний для зимних тренировок
         case 'natural_slope_individual_date': {
-            const validationResult = await validateDateWithHumor(msg.text, 'natural_slope_individual');
-            if (!validationResult.valid) {
-                return bot.sendMessage(chatId, validationResult.message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: [['🔙 Назад в меню']],
-                        resize_keyboard: true
-                    }
-                });
-            }
-
-            const selectedDate = validationResult.date;
-            
+            // Показываем календарь доступных дат вместо ручного ввода
+            await showNaturalSlopeAvailableDates(chatId);
+            return;
+        }
+        
+        case 'natural_slope_individual_date_from_calendar': {
+            const selectedDate = state.data.selected_date;
             // Проверяем, есть ли расписание на выбранную дату
             const scheduleResult = await pool.query(
                 `SELECT COUNT(*) as count 
@@ -5498,6 +5459,7 @@ async function handleTextMessage(msg) {
                 `• Длительность: 60 минут ⏱️\n` +
                 `• Дата: ${formattedDate}\n` +
                 `• Время: ${selectedTime}\n` +
+                `• Место: Кулига Парк\n` +
                 `• Стоимость: ${price.toFixed(2)} руб. 💰\n` +
                 `• Ваш баланс: ${balance.toFixed(2)} руб. 💳\n\n` +
                 `*Выберите действие:*`,
@@ -5692,11 +5654,11 @@ async function handleTextMessage(msg) {
                     
                     // Отправляем подтверждение
                     return bot.sendMessage(chatId,
-                        `✅ Тренировка *НА ЕСТЕСТВЕННОМ СКЛОНЕ* успешно забронирована!\n\n` +
+                        `✅ Тренировка *В КУЛИГА ПАРКЕ* успешно забронирована!\n\n` +
                         `👤 *Участник:* ${state.data.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate}\n` +
                         `⏰ *Время:* ${state.data.selected_time}\n` +
-                        `🏔️ *Место:* Естественный склон\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
                         `💰 *Стоимость:* ${price.toFixed(2)} руб.\n` +
                         `💳 *Остаток на балансе:* ${(balance - price).toFixed(2)} руб.\n\n` +
                         `🎿 *Удачной тренировки!*`,
@@ -5788,6 +5750,20 @@ bot.on('callback_query', async (callbackQuery) => {
     const state = userStates.get(chatId);
 
     try {
+        // Выбор даты для зимнего склона (инлайн-календарь)
+        if (data && data.startsWith('ns_date:')) {
+            const date = data.split(':')[1];
+            const st = state || { step: 'natural_slope_individual_time', data: {} };
+            st.data = st.data || {};
+            st.data.selected_date = date;
+            st.step = 'natural_slope_individual_time';
+            userStates.set(chatId, st);
+            try { await bot.answerCallbackQuery(callbackQuery.id); } catch (_) {}
+            // Удаляем сообщение с календарем
+            try { await bot.deleteMessage(chatId, callbackQuery.message.message_id); } catch (_) {}
+            // Сразу показываем доступные слоты
+            return showNaturalSlopeTimeSlots(chatId, date, st.data);
+        }
         // Обработка выбора дизайна сертификата
         if (data.startsWith('select_design_')) {
             await bot.answerCallbackQuery(callbackQuery.id, {
@@ -6273,7 +6249,7 @@ async function showMyBookings(chatId) {
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
                 message += `👨‍🏫 *С тренером*\n`;
-                message += `🏔️ *Место:* Естественный склон\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
                 message += `⏱ *Длительность:* ${session.duration} мин\n`;
                 message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                 allSessions.push({ ...session, session_type: 'individual_natural_slope' });
@@ -7837,6 +7813,40 @@ function getSportTypeDisplay(sportType) {
 }
 
 
+// Показ доступных дат (инлайн-календарь) для зимних индивидуальных
+async function showNaturalSlopeAvailableDates(chatId) {
+    // Получаем ближайшие доступные даты (со свободными слотами)
+    const res = await pool.query(
+        `SELECT DISTINCT date, date::text AS date_str
+         FROM winter_schedule
+         WHERE is_individual_training = true
+           AND is_available = true
+           AND date >= CURRENT_DATE
+         ORDER BY date
+         LIMIT 60`
+    );
+    if (res.rows.length === 0) {
+        return bot.sendMessage(chatId,
+            '❌ На ближайшее время нет доступных дат зимних тренировок. Попробуйте позже.',
+            { reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } }
+        );
+    }
+    // Строим клавиатуру по 4 даты в ряд
+    const buttons = [];
+    let row = [];
+    res.rows.forEach((r) => {
+        const iso = r.date_str || (r.date && r.date.toISOString ? r.date.toISOString().split('T')[0] : String(r.date));
+        const [yy, mm, dd] = iso.split('-');
+        const label = `${dd}.${mm}`;
+        row.push({ text: label, callback_data: `ns_date:${iso}` });
+        if (row.length === 4) { buttons.push(row); row = []; }
+    });
+    if (row.length) buttons.push(row);
+    return bot.sendMessage(chatId, '📅 Выберите доступную дату:', {
+        reply_markup: { inline_keyboard: buttons }
+    });
+}
+
 // Функция показа временных слотов для зимних тренировок
 async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
     try {
@@ -7852,8 +7862,10 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
         const availableSlots = freeSlotsRes.rows.map(r => String(r.time_slot).substring(0,5));
         
         if (availableSlots.length === 0) {
+            const d0 = new Date(selectedDate);
+            const noSlotsDate = `${d0.getDate().toString().padStart(2,'0')}.${(d0.getMonth()+1).toString().padStart(2,'0')}.${d0.getFullYear()}`;
             return bot.sendMessage(chatId,
-                `❌ *На ${selectedDate} все слоты заняты!*\n\n` +
+                `❌ *На ${noSlotsDate} все слоты заняты!*\n\n` +
                 'Выберите другую дату или попробуйте позже.',
                 {
                     parse_mode: 'Markdown',
@@ -7873,10 +7885,12 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
         const slotButtons = availableSlots.map(slot => [`⏰ ${slot}`]);
         slotButtons.push(['🔙 Назад в меню']);
         
+        const d = new Date(selectedDate);
+        const formattedDate = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
         return bot.sendMessage(chatId,
-            `⏰ *Выберите время тренировки на ${selectedDate}:*\n\n` +
+            `⏰ *Выберите время тренировки на ${formattedDate}:*\n\n` +
             `👤 *Участник:* ${data.participant_name}\n` +
-            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне\n\n` +
+            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне в Кулига Парке\n\n` +
             `📋 *Доступные слоты:*`,
             {
                 parse_mode: 'Markdown',
