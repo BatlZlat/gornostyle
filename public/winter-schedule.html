@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Управление расписанием (ЗИМА)</title>
+    <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Управление расписанием (ЗИМА)</h1>
+            <a href="admin.html" class="btn-secondary">← Назад в админку</a>
+        </header>
+
+        <main class="admin-main" style="padding:20px;">
+            <section style="margin-bottom:30px;">
+                <h2>Создать на дату</h2>
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" id="day-date" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Времена (HH:MM, через запятую)</label>
+                    <input type="text" id="day-times" class="form-control" placeholder="10:30, 12:00, 14:30" />
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-day">Создать расписание</button>
+                    <button class="btn-secondary" id="load-day">Показать слоты</button>
+                </div>
+                <div id="day-result" style="margin-top:10px;"></div>
+                <div id="day-slots" style="margin-top:10px;"></div>
+            </section>
+
+            <section>
+                <h2>Массовое создание</h2>
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="bulk-from" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="bulk-to" class="form-control" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Дни недели</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="weekday" value="0" /> Вс</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Времена (HH:MM, через запятую)</label>
+                    <input type="text" id="bulk-times" class="form-control" placeholder="10:30, 12:00, 14:30" />
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-bulk">Создать массово</button>
+                </div>
+                <div id="bulk-result" style="margin-top:10px;"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/admin.js"></script>
+    <script src="js/winter-schedule.js"></script>
+</body>
+</html>
+
+
