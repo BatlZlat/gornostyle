@@ -513,6 +513,8 @@ CREATE INDEX idx_training_sessions_template ON training_sessions(template_id);
 CREATE INDEX idx_training_sessions_slope_type ON training_sessions(slope_type);
 CREATE INDEX idx_training_sessions_simulator ON training_sessions(simulator_id);
 CREATE INDEX idx_training_sessions_group ON training_sessions(group_id);
+-- Уникальный индекс для winter_schedule: один слот на дату и время
+CREATE UNIQUE INDEX IF NOT EXISTS idx_winter_schedule_unique_date_time ON winter_schedule(date, time_slot);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
 -- Индексы для таблицы шаблонов постоянного расписания
@@ -1020,9 +1022,6 @@ CREATE TABLE winter_schedule (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- Ограничения
-    CONSTRAINT valid_time_slots CHECK (
-        time_slot IN ('10:30', '12:00', '14:30', '16:00', '17:30', '19:00')
-    ),
     CONSTRAINT valid_training_type CHECK (
         (is_group_training = true AND is_individual_training = false) OR
         (is_group_training = false AND is_individual_training = true)

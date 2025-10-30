@@ -31,6 +31,7 @@ const trainerSalaryRouter = require('./routes/trainer-salary');
 const naturalSlopeSubscriptionsRouter = require('./routes/natural-slope-subscriptions');
 const winterPricesRouter = require('./routes/winter-prices');
 const winterTrainingsRouter = require('./routes/winter-trainings');
+const winterScheduleRouter = require('./routes/winter-schedule');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
@@ -401,6 +402,7 @@ app.use('/api/trainer-salary', verifyToken, trainerSalaryRouter);
 app.use('/api/natural-slope-subscriptions', verifyToken, naturalSlopeSubscriptionsRouter);
 app.use('/api/winter-prices', verifyToken, winterPricesRouter);
 app.use('/api/winter-trainings', verifyToken, winterTrainingsRouter);
+app.use('/api/winter-schedule', verifyToken, winterScheduleRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {
