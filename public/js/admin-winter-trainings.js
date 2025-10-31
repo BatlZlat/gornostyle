@@ -474,9 +474,14 @@ async function editWinterTraining(id) {
         // Дата уже должна быть в формате YYYY-MM-DD благодаря форматированию на сервере
         const dateValue = training.session_date ? String(training.session_date).split('T')[0] : '';
         
+        const isIndividualEdit = training.training_type === false || training.winter_training_type === 'individual';
+        const editTitle = isIndividualEdit
+            ? 'Редактировать индивидуальную тренировку в Кулига Парк'
+            : `Редактировать групповую тренировку в Кулига Парк${training.group_name ? ` (${training.group_name})` : ''}`;
+
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
-                <h3>Редактировать тренировку на естественном склоне</h3>
+                <h3>${editTitle}</h3>
                 <form id="edit-winter-training-form">
                     <div class="form-group">
                         <label>Дата (только СБ и ВС)</label>
@@ -489,18 +494,15 @@ async function editWinterTraining(id) {
                         <label>Время начала</label>
                         <input type="time" name="start_time" value="${training.start_time ? training.start_time.slice(0,5) : ''}" required />
                     </div>
-                    <div class="form-group">
-                        <label>Время окончания</label>
-                        <input type="time" name="end_time" value="${training.end_time ? training.end_time.slice(0,5) : ''}" required />
-                    </div>
+                    ${!isIndividualEdit ? `
                     <div class="form-group">
                         <label>Группа</label>
-                        <select name="group_id" ${training.training_type === true ? 'required' : ''}>
-                            <option value="">Выберите группу${training.training_type !== true ? ' (только для групповых)' : ''}</option>
+                        <select name="group_id" required>
+                            <option value="">Выберите группу</option>
                             ${groupOptions}
                         </select>
-                        ${training.training_type === false ? '<small style="color: #666;">Для индивидуальных тренировок группа не требуется</small>' : ''}
                     </div>
+                    ` : ''}
                     <div class="form-group">
                         <label>Тренер</label>
                         <select name="trainer_id">
@@ -508,6 +510,7 @@ async function editWinterTraining(id) {
                             ${trainerOptions}
                         </select>
                     </div>
+                    ${!isIndividualEdit ? `
                     <div class="form-group">
                         <label>Уровень подготовки</label>
                         <select name="skill_level" required>
@@ -527,12 +530,14 @@ async function editWinterTraining(id) {
                             <option value="6" ${String(training.max_participants) === '6' ? 'selected' : ''}>6 человек</option>
                         </select>
                     </div>
+                    ` : ''}
                     <div class="form-group">
-                        <label>Цена общая (₽)</label>
+                        <label>${isIndividualEdit ? 'Цена' : 'Цена общая (₽)'}</label>
                         <input type="number" name="price" value="${training.price ? parseFloat(training.price).toFixed(2) : ''}" min="0" step="0.01" required />
+                        ${!isIndividualEdit ? `
                         <small style="color: #666; display: block; margin-top: 5px;">
                             Цена за человека будет рассчитана автоматически: ${training.max_participants > 0 && training.price ? (parseFloat(training.price) / training.max_participants).toFixed(2) : '-'} ₽
-                        </small>
+                        </small>` : ''}
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn-primary">Сохранить</button>
@@ -607,6 +612,11 @@ async function editWinterTraining(id) {
             
             const formData = new FormData(this);
             const data = Object.fromEntries(formData.entries());
+
+            // Для групповой тренировки скрыто поле end_time — подставляем его равным start_time (зимние тренировки 60 мин)
+            if (!data.end_time && data.start_time) {
+                data.end_time = data.start_time;
+            }
             
             // Преобразуем числовые поля
             data.max_participants = parseInt(data.max_participants);
