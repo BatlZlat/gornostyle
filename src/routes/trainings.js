@@ -909,7 +909,14 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
         }
 
         const training = trainingResult.rows[0];
-        const price = Number(training.price);
+        
+        // Для зимних групповых тренировок (simulator_id IS NULL) цена должна быть за одного участника
+        // Для тренировок на тренажере цена уже за человека
+        let price = Number(training.price);
+        if (!training.simulator_id && training.group_id && training.max_participants) {
+            // Зимняя групповая тренировка - делим общую цену на количество участников
+            price = price / training.max_participants;
+        }
 
         // Получаем информацию об участнике
         const participantResult = await client.query(`
@@ -988,18 +995,33 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
         const days = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
         const dayOfWeek = days[dateObj.getDay()];
         const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
+        
+        // Определяем, является ли тренировка зимней (естественный склон)
+        const isWinterTraining = !training.simulator_id;
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (!isWinterTraining) {
+            locationLine = `🎿 Тренажер: ${training.simulator_name || `Тренажер ${training.simulator_id}`}\n`;
+        }
+        
         const trainingInfo = `📅 Дата: ${dateStr}
-⏰ Время: ${startTime} - ${training.end_time ? training.end_time.slice(0, 5) : ''}
+⏰ Время: ${startTime}
 👥 Группа: ${training.group_name || '-'}
 👨‍🏫 Тренер: ${training.trainer_name || '-'}
-🎿 Тренажер: ${training.simulator_name || `Тренажер ${training.simulator_id}`}
-💰 Возврат: ${price.toFixed(2)} руб.`;
+${locationLine}💰 Возврат: ${price.toFixed(2)} руб.`;
 
         // Отправляем уведомление клиенту
         if (participant.telegram_id) {
             const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
             const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
-            const clientMessage = `❗️ Вы были удалены из тренировки администратором:
+            
+            // Заголовок зависит от типа тренировки
+            const clientHeader = isWinterTraining 
+                ? '❗️ Вы были удалены из тренировки в Кулига Парк на естественном склоне администратором:'
+                : '❗️ Вы были удалены из тренировки администратором:';
+            
+            const clientMessage = `${clientHeader}
 
 ${trainingInfo}
 
@@ -1036,7 +1058,8 @@ ${trainingInfo}
                 time: training.start_time,
                 group_name: training.group_name,
                 trainer_name: training.trainer_name,
-                simulator_name: training.simulator_name || `Тренажер ${training.simulator_id}`,
+                simulator_id: training.simulator_id,
+                simulator_name: training.simulator_name || (training.simulator_id ? `Тренажер ${training.simulator_id}` : null),
                 seats_left: seatsLeft,
                 refund: price
             });

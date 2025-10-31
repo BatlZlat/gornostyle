@@ -12,6 +12,12 @@ function formatDate(dateStr) {
     return `${day}.${month}.${year}`;
 }
 
+// Функция для форматирования времени (HH:MM)
+function formatTime(timeStr) {
+    if (!timeStr) return '';
+    return timeStr.toString().slice(0, 5);
+}
+
 // Функция для отправки уведомления о создании расписания
 async function notifyScheduleCreated(month) {
     try {
@@ -394,16 +400,32 @@ async function notifyAdminParticipantRemoved(trainingData) {
             return;
         }
 
+        // Определяем, является ли тренировка зимней (естественный склон)
+        const isWinterTraining = !trainingData.simulator_id;
+        
+        // Заголовок зависит от типа тренировки
+        const header = isWinterTraining 
+            ? '👥 *Удаление участника из тренировки на естественном склоне в Кулига Парк!*'
+            : '👥 *Удаление участника из тренировки!*';
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
+        }
+
         const message =
-            '👥 *Удаление участника из тренировки!*\n\n' +
+            `${header}\n\n` +
             `👤 *Клиент:* ${trainingData.client_name}\n` +
             (trainingData.participant_name ? `👶 *Участник:* ${trainingData.participant_name} (${trainingData.age} лет)\n` : `👤 *Возраст:* ${trainingData.age} лет\n`) +
             `📞 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
-            `⏰ *Время:* ${trainingData.time}\n` +
+            `⏰ *Время:* ${formatTime(trainingData.time)}\n` +
             `👥 *Группа:* ${trainingData.group_name}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
-            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            locationLine +
             `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
             `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
 
