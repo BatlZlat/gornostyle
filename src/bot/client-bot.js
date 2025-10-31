@@ -5432,17 +5432,13 @@ async function handleTextMessage(msg) {
             
             const price = priceResult.rows.length > 0 ? parseFloat(priceResult.rows[0].price) : 2500;
             
-            // Получаем баланс клиента
-            const clientResult = await pool.query(
-                `SELECT c.*, w.balance 
-                 FROM clients c 
-                 LEFT JOIN wallets w ON c.id = w.client_id 
-                 WHERE c.id = $1`,
+            // Получаем баланс клиента из таблицы wallets
+            const balanceResult = await pool.query(
+                `SELECT balance FROM wallets WHERE client_id = $1`,
                 [state.data.client_id]
             );
             
-            const client = clientResult.rows[0];
-            const balance = parseFloat(client.balance || 0);
+            const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
             
             // Форматируем дату для отображения
             const date = new Date(state.data.selected_date);
@@ -5479,17 +5475,13 @@ async function handleTextMessage(msg) {
 
         case 'natural_slope_individual_confirm': {
             if (msg.text === '✅ Записаться') {
-                // Проверяем баланс
-                const clientResult = await pool.query(
-                    `SELECT c.*, w.balance 
-                     FROM clients c 
-                     LEFT JOIN wallets w ON c.id = w.client_id 
-                     WHERE c.id = $1`,
+                // Проверяем баланс из таблицы wallets
+                const balanceResult = await pool.query(
+                    `SELECT balance FROM wallets WHERE client_id = $1`,
                     [state.data.client_id]
                 );
                 
-                const client = clientResult.rows[0];
-                const balance = parseFloat(client.balance || 0);
+                const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
                 
                 // Получаем цену
                 const priceResult = await pool.query(
@@ -5625,6 +5617,13 @@ async function handleTextMessage(msg) {
                     
                     await dbClient.query('COMMIT');
                     
+                    // Получаем обновленный баланс после списания
+                    const updatedBalanceResult = await pool.query(
+                        `SELECT balance FROM wallets WHERE client_id = $1`,
+                        [state.data.client_id]
+                    );
+                    const updatedBalance = parseFloat(updatedBalanceResult.rows[0]?.balance || 0);
+                    
                     // Получаем данные клиента для уведомления
                     const clientRes = await pool.query(
                         `SELECT c.*, 
@@ -5660,7 +5659,7 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${state.data.selected_time}\n` +
                         `🏔️ *Место:* Кулига Парк\n` +
                         `💰 *Стоимость:* ${price.toFixed(2)} руб.\n` +
-                        `💳 *Остаток на балансе:* ${(balance - price).toFixed(2)} руб.\n\n` +
+                        `💳 *Остаток на балансе:* ${updatedBalance.toFixed(2)} руб.\n\n` +
                         `🎿 *Удачной тренировки!*`,
                         {
                             parse_mode: 'Markdown',

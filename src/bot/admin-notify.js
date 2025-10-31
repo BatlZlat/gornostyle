@@ -365,7 +365,7 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
         }
 
         const message = 
-            '✅ *Новая запись на индивидуальную тренировку естественного склона!*\n\n' +
+            '✅ *Новая запись на индивидуальную тренировку Кулига Парк!*\n\n' +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
             `👤 *Участник:* ${trainingData.participant_name}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +

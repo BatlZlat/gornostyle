@@ -380,6 +380,33 @@ router.get('/:id', async (req, res) => {
             training.session_date = String(training.session_date).split('T')[0].split(' ')[0];
         }
         
+        // Получаем участников тренировки
+        // Для детей берем телефон родителя, для взрослых - их собственный телефон
+        const participantsResult = await pool.query(`
+            SELECT 
+                sp.id,
+                sp.client_id,
+                sp.child_id,
+                sp.is_child,
+                sp.status,
+                COALESCE(c.full_name, ch.full_name) as full_name,
+                COALESCE(c.birth_date, ch.birth_date) as birth_date,
+                CASE 
+                    WHEN sp.is_child = true THEN parent.phone
+                    ELSE c.phone
+                END as phone,
+                COALESCE(c.skill_level, ch.skill_level) as skill_level,
+                c.telegram_id
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id AND NOT sp.is_child
+            LEFT JOIN children ch ON sp.child_id = ch.id AND sp.is_child
+            LEFT JOIN clients parent ON ch.parent_id = parent.id
+            WHERE sp.session_id = $1 AND sp.status = 'confirmed'
+            ORDER BY sp.created_at ASC
+        `, [id]);
+        
+        training.participants = participantsResult.rows;
+        
         console.log('GET /api/winter-trainings/:id - возвращаемая дата:', {
             id: training.id,
             session_date: training.session_date,
@@ -543,7 +570,7 @@ router.delete('/:id', async (req, res) => {
 
         // 1) Находим тренировку
         const tsResult = await client.query(
-            `SELECT id, session_date, start_time, training_type, winter_training_type
+            `SELECT id, session_date, start_time, end_time, duration, training_type, winter_training_type, price, max_participants, trainer_id
              FROM training_sessions
              WHERE id = $1 AND slope_type = 'natural_slope'
              FOR UPDATE`,
@@ -557,26 +584,94 @@ router.delete('/:id', async (req, res) => {
 
         const training = tsResult.rows[0];
 
-        // 2) Проверяем наличие подтвержденных участников
+        // 2) Получаем подтвержденных участников (если есть)
         const participantsResult = await client.query(
-            `SELECT COUNT(*)::int AS cnt
-             FROM session_participants
-             WHERE session_id = $1 AND status = 'confirmed'`,
+            `SELECT sp.id,
+                    sp.client_id,
+                    sp.child_id,
+                    COALESCE(ch.full_name, c.full_name) as participant_name,
+                    c.telegram_id,
+                    c.phone as client_phone,
+                    w.id as wallet_id,
+                    w.balance
+             FROM session_participants sp
+             LEFT JOIN clients c ON sp.client_id = c.id
+             LEFT JOIN children ch ON sp.child_id = ch.id
+             LEFT JOIN wallets w ON c.id = w.client_id
+             WHERE sp.session_id = $1 AND sp.status = 'confirmed'`,
             [id]
         );
-        const participantsCount = participantsResult.rows[0].cnt;
+        const confirmedParticipants = participantsResult.rows || [];
 
-        if (participantsCount > 0) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({
-                error: 'Нельзя удалить тренировку: есть подтвержденные участники. Сначала отмените их записи.'
-            });
+        // 3) Возвраты и уведомления, если были подтвержденные участники
+        const dateObj = new Date(training.session_date);
+        const formattedDate = `${dateObj.getDate().toString().padStart(2,'0')}.${(dateObj.getMonth()+1).toString().padStart(2,'0')}.${dateObj.getFullYear()}`;
+        const startTime = String(training.start_time).substring(0,5);
+        const duration = 60;
+
+        if (confirmedParticipants.length > 0) {
+            for (const p of confirmedParticipants) {
+                const walletId = p.wallet_id;
+                if (!walletId) continue;
+                // Идемпотентность: проверяем, не делали ли уже возврат по этой тренировке этому участнику
+                const refundCheck = await client.query(
+                    `SELECT 1 FROM transactions 
+                     WHERE wallet_id = $1 AND description ILIKE $2`,
+                    [walletId, `%${formattedDate}%${startTime}%${p.participant_name}%`]
+                );
+                if (refundCheck.rows.length === 0) {
+                    const totalPrice = Number.parseFloat(training.price || 0) || 0;
+                    const refundAmount = training.training_type === true
+                        ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
+                        : totalPrice;
+                    await client.query(
+                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                        [walletId, refundAmount, 'amount', `Возврат: ${training.training_type ? 'Группа (Кулига Парк)' : 'Индивидуальная (Кулига Парк)'}, ${p.participant_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${training.duration || duration} мин.`]
+                    );
+                    // Обновляем баланс кошелька
+                    await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [refundAmount, walletId]);
+                }
+                // Уведомление клиенту (best-effort)
+                try {
+                    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                    if (TELEGRAM_BOT_TOKEN && p.telegram_id) {
+                        const totalPrice = Number.parseFloat(training.price || 0) || 0;
+                        const refundAmount = training.training_type === true
+                            ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
+                            : totalPrice;
+                        const text = `❗️ Тренировка в Кулига Парке отменена.\n\n📅 Дата: ${formattedDate}\n⏰ Время: ${startTime}\n👤 Участник: ${p.participant_name}\n⏱ Длительность: ${training.duration || duration} мин\n💰 Возврат: ${refundAmount.toFixed(2)} руб.`;
+                        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ chat_id: p.telegram_id, text })
+                        });
+                    }
+                } catch (_) {}
+
+                // Уведомление администратору по каждому участнику
+                try {
+                    const { notifyAdminNaturalSlopeTrainingCancellation } = require('../bot/admin-notify');
+                    const totalPrice = Number.parseFloat(training.price || 0) || 0;
+                    const refundAmount = training.training_type === true
+                        ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
+                        : totalPrice;
+                    await notifyAdminNaturalSlopeTrainingCancellation({
+                        client_name: '—',
+                        participant_name: p.participant_name,
+                        client_phone: p.client_phone || '—',
+                        date: training.session_date,
+                        time: startTime,
+                        trainer_name: null,
+                        refund: refundAmount
+                    });
+                } catch (e) { /* ignore */ }
+            }
         }
 
-        // 3) Удаляем непотвержденные/черновые участники (если есть)
+        // 4) Удаляем всех участников (и черновых и подтвержденных)
         await client.query('DELETE FROM session_participants WHERE session_id = $1', [id]);
 
-        // 4) Для групповой тренировки — освобождаем соответствующий слот в winter_schedule (возвращаем в исходное состояние)
+        // 5) Освобождаем соответствующий слот в winter_schedule
         if (training.training_type === true && training.winter_training_type === 'group') {
             const timeSlot = String(training.start_time).substring(0, 5); // ЧЧ:ММ
             await client.query(
@@ -594,14 +689,44 @@ router.delete('/:id', async (req, res) => {
                    AND time_slot = $2::time`,
                 [training.session_date, timeSlot]
             );
+        } else {
+            // Индивидуальная — просто возвращаем слот в свободное состояние
+            const timeSlot = String(training.start_time).substring(0, 5); // ЧЧ:ММ
+            await client.query(
+                `UPDATE winter_schedule 
+                 SET 
+                    is_available = true,
+                    current_participants = 0,
+                    updated_at = NOW()
+                 WHERE date = $1 
+                   AND time_slot = $2::time 
+                   AND is_individual_training = true`,
+                [training.session_date, timeSlot]
+            );
         }
 
-        // 5) Удаляем саму тренировку
+        // 6) Удаляем саму тренировку
         await client.query('DELETE FROM training_sessions WHERE id = $1', [id]);
 
         await client.query('COMMIT');
 
-        return res.json({ success: true });
+        // Уведомление администратору (best-effort) только если не было участников
+        if (confirmedParticipants.length === 0) {
+            try {
+                const { notifyAdminNaturalSlopeTrainingCancellation } = require('../bot/admin-notify');
+                await notifyAdminNaturalSlopeTrainingCancellation({
+                    client_name: '—',
+                    participant_name: '—',
+                    client_phone: '—',
+                    date: training.session_date,
+                    time: String(training.start_time).substring(0,5),
+                    trainer_name: null,
+                    refund: 0
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        return res.json({ success: true, refunds: confirmedParticipants.length });
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Ошибка при удалении зимней тренировки:', error);

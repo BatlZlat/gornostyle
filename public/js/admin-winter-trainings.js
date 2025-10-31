@@ -107,6 +107,13 @@ async function loadWinterTrainings() {
     }
 }
 
+// Функция для форматирования даты
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU');
+}
+
 // Функция для форматирования даты с днем недели
 function formatDateWithWeekday(dateString) {
     const date = new Date(dateString);
@@ -279,13 +286,128 @@ function openCreateWinterTraining() {
 }
 
 // Просмотр деталей зимней тренировки
-function viewWinterTrainingDetails(id) {
-    // Используем ту же функцию, что и для обычных тренировок, но с указанием slope_type
-    if (typeof viewScheduleDetails === 'function') {
-        // Определяем, индивидуальная ли это тренировка (нужно будет проверить)
-        viewScheduleDetails(id, false, 'natural_slope');
-    } else {
-        alert(`Просмотр тренировки #${id}\n\nФункция просмотра будет добавлена.`);
+async function viewWinterTrainingDetails(id) {
+    try {
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        const response = await fetch(`/api/winter-trainings/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const training = await response.json();
+        
+        // Определяем тип тренировки: training_type === false означает индивидуальную
+        const isIndividual = training.training_type === false || training.winter_training_type === 'individual';
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        
+        const startTime = String(training.start_time).substring(0, 5); // Только время начала
+        let trainingType = isIndividual ? 'Индивидуальная' : 'Групповая';
+        // Для групповых тренировок добавляем название группы в скобках
+        if (!isIndividual && training.group_name) {
+            trainingType += ` (${training.group_name})`;
+        }
+        const modalTitle = isIndividual ? 'Детали индивидуальной тренировки' : 'Детали групповой тренировки';
+        
+        const totalPrice = training.price != null ? parseFloat(training.price) : null;
+        const maxParticipants = training.max_participants || 1;
+        const pricePerPerson = totalPrice && maxParticipants > 0 ? (totalPrice / maxParticipants).toFixed(2) : null;
+        
+        let modalContent = `
+            <div class="modal-content">
+                <h3>${modalTitle}</h3>
+                <div class="training-details">
+                    <div class="detail-group">
+                        <h4>Основная информация</h4>
+                        <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
+                        <p><strong>Время:</strong> ${startTime}</p>
+                        <p><strong>Тип тренировки:</strong> ${trainingType}</p>
+                        <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>`;
+        
+        // Показываем уровень только для групповых тренировок
+        if (!isIndividual) {
+            modalContent += `<p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>`;
+        }
+        
+        modalContent += `${totalPrice != null ? `
+                            <p><strong>Цена общая:</strong> ${totalPrice.toFixed(2)} ₽</p>
+                            ${pricePerPerson ? `<p><strong>Цена за человека:</strong> ${pricePerPerson} ₽</p>` : ''}
+                        ` : '<p><strong>Цена:</strong> -</p>'}
+                    </div>
+                    <div class="detail-group">
+                        <h4>Участники (${training.current_participants || 0}/${training.max_participants || 0})</h4>`;
+        
+        if (training.participants && training.participants.length > 0) {
+            modalContent += `
+                        <table class="participants-table">
+                            <thead>
+                                <tr>
+                                    <th>ФИО</th>
+                                    <th>Возраст</th>
+                                    ${!isIndividual ? '<th>Уровень</th>' : ''}
+                                    <th>Контактный телефон</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+            
+            training.participants.forEach(participant => {
+                const birthDate = new Date(participant.birth_date);
+                const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+                const levelCell = !isIndividual ? `<td>${participant.skill_level || '-'}</td>` : '';
+                
+                modalContent += `
+                                <tr>
+                                    <td>${participant.full_name}</td>
+                                    <td>${age} лет</td>
+                                    ${levelCell}
+                                    <td>${participant.phone || '-'}</td>
+                                    <td>
+                                        <button 
+                                            class="btn-danger btn-small" 
+                                            onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
+                                            title="Удалить участника с возвратом средств">
+                                            ❌ Удалить
+                                        </button>
+                                    </td>
+                                </tr>`;
+            });
+            
+            modalContent += `
+                            </tbody>
+                        </table>`;
+        } else {
+            modalContent += '<p>Нет участников</p>';
+        }
+        
+        modalContent += `
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
+            </div>`;
+        
+        modal.innerHTML = modalContent;
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+        
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        alert('Не удалось загрузить детали тренировки');
     }
 }
 
