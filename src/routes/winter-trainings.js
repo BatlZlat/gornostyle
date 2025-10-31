@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
-const { notifyAdminWinterGroupTrainingCreated } = require('../bot/admin-notify');
+const { notifyAdminWinterGroupTrainingCreatedByAdmin } = require('../bot/admin-notify');
 
 /**
  * API для управления зимними тренировками (естественный склон)
@@ -151,7 +151,7 @@ router.post('/', async (req, res) => {
                         [newTraining.id]
                     );
                     if (info.rows[0]) {
-                        await notifyAdminWinterGroupTrainingCreated(info.rows[0]);
+                        await notifyAdminWinterGroupTrainingCreatedByAdmin(info.rows[0]);
                     }
                 } catch (err) {
                     console.error('Ошибка уведомления администратору о зимней групповой тренировке:', err);
@@ -568,9 +568,11 @@ router.delete('/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1) Находим тренировку
+        // 1) Находим тренировку и блокируем строку
         const tsResult = await client.query(
-            `SELECT id, session_date, start_time, end_time, duration, training_type, winter_training_type, price, max_participants, trainer_id
+            `SELECT id, session_date, start_time, end_time, duration, 
+                    training_type, winter_training_type, price, max_participants, 
+                    trainer_id, skill_level, group_id
              FROM training_sessions
              WHERE id = $1 AND slope_type = 'natural_slope'
              FOR UPDATE`,
@@ -583,6 +585,27 @@ router.delete('/:id', async (req, res) => {
         }
 
         const training = tsResult.rows[0];
+        
+        // 1.1) Получаем дополнительную информацию о тренировке
+        const infoResult = await client.query(
+            `SELECT 
+                t.full_name as trainer_name,
+                g.name as group_name,
+                COUNT(sp.id) FILTER (WHERE sp.status = 'confirmed') as current_participants
+             FROM training_sessions ts
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN session_participants sp ON ts.id = sp.session_id
+             WHERE ts.id = $1
+             GROUP BY t.full_name, g.name`,
+            [id]
+        );
+        
+        if (infoResult.rows.length > 0) {
+            training.trainer_name = infoResult.rows[0].trainer_name;
+            training.group_name = infoResult.rows[0].group_name;
+            training.current_participants = parseInt(infoResult.rows[0].current_participants) || 0;
+        }
 
         // 2) Получаем подтвержденных участников (если есть)
         const participantsResult = await client.query(
@@ -605,9 +628,11 @@ router.delete('/:id', async (req, res) => {
 
         // 3) Возвраты и уведомления, если были подтвержденные участники
         const dateObj = new Date(training.session_date);
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
         const formattedDate = `${dateObj.getDate().toString().padStart(2,'0')}.${(dateObj.getMonth()+1).toString().padStart(2,'0')}.${dateObj.getFullYear()}`;
         const startTime = String(training.start_time).substring(0,5);
-        const duration = 60;
+        const duration = training.duration || 60;
+        const adminPhone = process.env.ADMIN_PHONE || '+79123924956';
 
         if (confirmedParticipants.length > 0) {
             for (const p of confirmedParticipants) {
@@ -639,14 +664,49 @@ router.delete('/:id', async (req, res) => {
                         const refundAmount = training.training_type === true
                             ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
                             : totalPrice;
-                        const text = `❗️ Тренировка в Кулига Парке отменена.\n\n📅 Дата: ${formattedDate}\n⏰ Время: ${startTime}\n👤 Участник: ${p.participant_name}\n⏱ Длительность: ${training.duration || duration} мин\n💰 Возврат: ${refundAmount.toFixed(2)} руб.`;
+                        
+                        // Формируем сообщение согласно требованиям
+                        let text = `❗️ К сожалению, мы вынуждены отменить вашу тренировку на естественном склоне в Кулига Парк:\n\n`;
+                        text += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                        text += `⏰ *Время:* ${startTime}\n`;
+                        text += `⏱️ *Длительность:* ${duration} минут\n`;
+                        
+                        // Добавляем информацию о группе (только для групповых тренировок)
+                        if (training.training_type === true && training.group_name) {
+                            text += `👥 *Группа:* ${training.group_name}\n`;
+                        }
+                        
+                        // Добавляем информацию о тренере (если есть)
+                        if (training.trainer_name) {
+                            text += `👨‍🏫 *Тренер:* ${training.trainer_name}\n`;
+                        }
+                        
+                        // Добавляем уровень (если есть)
+                        if (training.skill_level) {
+                            text += `📊 *Уровень:* ${training.skill_level}\n`;
+                        }
+                        
+                        // Добавляем участников (только для групповых тренировок)
+                        if (training.training_type === true && training.current_participants != null && training.max_participants != null) {
+                            const currentParticipants = parseInt(training.current_participants) || 0;
+                            const maxParticipants = parseInt(training.max_participants) || 0;
+                            text += `👥 *Участников:* ${currentParticipants}/${maxParticipants}\n`;
+                        }
+                        
+                        text += `💰 *Стоимость:* ${refundAmount.toFixed(0)} руб.\n\n`;
+                        text += `Деньги в размере ${refundAmount.toFixed(0)} руб. возвращены на ваш счет.\n\n`;
+                        text += `Тренировка могла быть отменена из-за недобора группы или болезни тренера.\n\n`;
+                        text += `Подробнее вы можете уточнить у администратора: ${adminPhone}`;
+                        
                         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ chat_id: p.telegram_id, text })
+                            body: JSON.stringify({ chat_id: p.telegram_id, text, parse_mode: 'Markdown' })
                         });
                     }
-                } catch (_) {}
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомления клиенту:', error);
+                }
 
                 // Уведомление администратору по каждому участнику
                 try {

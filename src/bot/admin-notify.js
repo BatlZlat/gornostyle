@@ -205,7 +205,80 @@ ${trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n
     }
 }
 
-// Уведомление: создана зимняя групповая тренировка (естественный склон)
+// Уведомление: создана зимняя групповая тренировка администратором (естественный склон)
+async function notifyAdminWinterGroupTrainingCreatedByAdmin(data) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Получаем дату из правильного поля (date или session_date)
+        const dateValue = data.date || data.session_date;
+        let dateObj;
+        
+        if (dateValue instanceof Date) {
+            dateObj = dateValue;
+        } else if (typeof dateValue === 'string') {
+            dateObj = new Date(dateValue);
+        } else {
+            console.error('Ошибка: дата не найдена в данных', data);
+            dateObj = new Date();
+        }
+        
+        // Форматируем дату в DD.MM.YYYY
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year}`;
+        
+        // Форматируем время в ЧЧ:ММ
+        const timeFormatted = String(data.start_time || '').substring(0, 5);
+        
+        // Вычисляем цену за человека
+        const totalPrice = (data.price != null) ? Number(data.price) : null;
+        const maxParticipants = (data.max_participants != null) ? Number(data.max_participants) : null;
+        const pricePerPerson = (totalPrice != null && maxParticipants && maxParticipants > 0)
+            ? (totalPrice / maxParticipants)
+            : null;
+
+        // Формируем сообщение о создании тренировки
+        let message = '✅ *Создана зимняя групповая тренировка на естественном склоне в Кулига Парк*\n\n';
+        
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${timeFormatted}\n`;
+        
+        if (data.group_name) {
+            message += `👥 *Группа:* ${data.group_name}\n`;
+        }
+        
+        if (data.trainer_name) {
+            message += `👨‍🏫 *Тренер:* ${data.trainer_name}\n`;
+        }
+        
+        if (maxParticipants != null) {
+            message += `🧑‍🤝‍🧑 *Мест:* ${maxParticipants}\n`;
+        }
+        
+        if (pricePerPerson != null) {
+            message += `💳 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽\n`;
+        }
+        
+        if (totalPrice != null) {
+            message += `💰 *Цена (общая):* ${totalPrice.toFixed(2)} ₽`;
+        }
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании зимней групповой тренировки:', error);
+    }
+}
+
+// Уведомление: новая запись на групповую зимнюю тренировку (естественный склон)
 async function notifyAdminWinterGroupTrainingCreated(data) {
     try {
         const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
@@ -214,29 +287,71 @@ async function notifyAdminWinterGroupTrainingCreated(data) {
             return;
         }
 
-        const dateFormatted = formatDate(data.session_date);
-        const timeFormatted = String(data.start_time).substring(0,5);
+        // Получаем дату из правильного поля (date или session_date)
+        const dateValue = data.date || data.session_date;
+        let dateObj;
+        
+        if (dateValue instanceof Date) {
+            dateObj = dateValue;
+        } else if (typeof dateValue === 'string') {
+            dateObj = new Date(dateValue);
+        } else {
+            console.error('Ошибка: дата не найдена в данных', data);
+            dateObj = new Date();
+        }
+        
+        // Форматируем дату в DD.MM.YYYY
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year}`;
+        
+        // Форматируем время в ЧЧ:ММ
+        const timeFormatted = String(data.start_time || '').substring(0, 5);
+        
+        // Вычисляем цену за человека
         const totalPrice = (data.price != null) ? Number(data.price) : null;
         const maxParticipants = (data.max_participants != null) ? Number(data.max_participants) : null;
         const pricePerPerson = (totalPrice != null && maxParticipants && maxParticipants > 0)
             ? (totalPrice / maxParticipants)
             : null;
 
-        const message =
-            '✅ *Создана зимняя групповая тренировка*\n\n' +
-            `📅 *Дата:* ${dateFormatted}\n` +
-            `⏰ *Время:* ${timeFormatted}\n` +
-            `👥 *Группа:* ${data.group_name || '—'}\n` +
-            `👨‍🏫 *Тренер:* ${data.trainer_name || '—'}\n` +
-            `🧑‍🤝‍🧑 *Мест:* ${data.max_participants}` +
-            `${pricePerPerson != null ? `\n💳 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽` : ''}` +
-            `${totalPrice != null ? `\n💰 *Цена (общая):* ${totalPrice.toFixed(2)} ₽` : ''}`;
+        // Формируем сообщение согласно требованиям
+        let message = '👥 *Новая запись на групповую Зимнюю тренировку в Кулига Парк!*\n\n';
+        
+        if (data.client_name) {
+            message += `👤 *Клиент:* ${data.client_name}\n`;
+        }
+        
+        if (data.child_name) {
+            message += `👶 *Ребенок:* ${data.child_name}\n`;
+        }
+        
+        if (data.client_phone) {
+            message += `📱 *Телефон:* ${data.client_phone}\n`;
+        }
+        
+        if (data.group_name) {
+            message += `👥 *Группа:* ${data.group_name}\n`;
+        }
+        
+        if (pricePerPerson != null) {
+            message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} руб.\n`;
+        }
+        
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${timeFormatted}\n`;
+        
+        if (data.current_participants != null && data.max_participants != null) {
+            message += `👥 *Участников:* ${data.current_participants}/${data.max_participants}`;
+        }
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
         }
     } catch (error) {
-        console.error('Ошибка при отправке уведомления о создании зимней групповой тренировки:', error);
+        console.error('Ошибка при отправке уведомления о записи на зимнюю групповую тренировку:', error);
     }
 }
 
@@ -1145,6 +1260,7 @@ module.exports = {
     notifyTrainerBookingCancelled,
     notifyAdminIndividualTrainingDeleted,
     notifyAdminNaturalSlopeTrainingCancellation,
-    notifyAdminNaturalSlopeTrainingBooking
-    ,notifyAdminWinterGroupTrainingCreated
+    notifyAdminNaturalSlopeTrainingBooking,
+    notifyAdminWinterGroupTrainingCreated,
+    notifyAdminWinterGroupTrainingCreatedByAdmin
 }; 
