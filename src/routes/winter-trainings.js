@@ -612,15 +612,19 @@ router.delete('/:id', async (req, res) => {
             `SELECT sp.id,
                     sp.client_id,
                     sp.child_id,
+                    sp.is_child,
                     COALESCE(ch.full_name, c.full_name) as participant_name,
-                    c.telegram_id,
+                    COALESCE(parent.telegram_id, c.telegram_id) as telegram_id,
                     c.phone as client_phone,
+                    COALESCE(parent.full_name, c.full_name) as parent_name,
+                    COALESCE(parent.phone, c.phone) as parent_phone,
                     w.id as wallet_id,
                     w.balance
              FROM session_participants sp
-             LEFT JOIN clients c ON sp.client_id = c.id
-             LEFT JOIN children ch ON sp.child_id = ch.id
-             LEFT JOIN wallets w ON c.id = w.client_id
+             LEFT JOIN clients c ON sp.client_id = c.id AND NOT sp.is_child
+             LEFT JOIN children ch ON sp.child_id = ch.id AND sp.is_child
+             LEFT JOIN clients parent ON ch.parent_id = parent.id AND sp.is_child
+             LEFT JOIN wallets w ON COALESCE(parent.id, c.id) = w.client_id
              WHERE sp.session_id = $1 AND sp.status = 'confirmed'`,
             [id]
         );
@@ -715,13 +719,19 @@ router.delete('/:id', async (req, res) => {
                     const refundAmount = training.training_type === true
                         ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
                         : totalPrice;
+                    
+                    // parent_name уже содержит имя родителя (для детей) или клиента (для взрослых) благодаря COALESCE
+                    // parent_phone аналогично содержит телефон родителя (для детей) или клиента (для взрослых)
+                    const clientName = p.parent_name || '—';
+                    const clientPhone = p.is_child ? (p.parent_phone || '—') : (p.client_phone || '—');
+                    
                     await notifyAdminNaturalSlopeTrainingCancellation({
-                        client_name: '—',
+                        client_name: clientName,
                         participant_name: p.participant_name,
-                        client_phone: p.client_phone || '—',
+                        client_phone: clientPhone,
                         date: training.session_date,
                         time: startTime,
-                        trainer_name: null,
+                        trainer_name: training.trainer_name || null,
                         refund: refundAmount
                     });
                 } catch (e) { /* ignore */ }

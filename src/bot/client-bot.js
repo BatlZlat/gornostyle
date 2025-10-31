@@ -1092,6 +1092,17 @@ async function handleTextMessage(msg) {
         return showAvailableGroupTrainings(chatId, client.id);
     }
 
+    // Обработка кнопки "🏔️ Выбрать другую тренировку" (естественный склон)
+    if (msg.text === '🏔️ Выбрать другую тренировку') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем доступные групповые тренировки на естественном склоне
+        return showAvailableGroupTrainings(chatId, client.id);
+    }
+
     // Обработка выбора участника для индивидуальной тренировки (естественный склон)
     if (msg.text && msg.text.startsWith('👶 ')) {
         const childName = msg.text.replace('👶 ', '');
@@ -8676,7 +8687,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
         }
         
         // Формируем сообщение с доступными тренировками
-        let message = '👥 *Доступные групповые тренировки на ближайшую неделю:*\n\n';
+        let message = '👥 *Доступные групповые тренировки на естественном склоне в Кулига Парк:*\n\n';
         
         result.rows.forEach((training, index) => {
             const date = new Date(training.date);
@@ -8687,7 +8698,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                 ? (parseFloat(training.price) / training.max_participants).toFixed(2) 
                 : '—';
             
-            message += `${index + 1}. *${training.group_name || 'Групповая тренировка'}*\n`;
+            message += `${index + 1}. ${training.group_name || 'Групповая тренировка'}\n`;
             message += `   📅 ${dateStr} (${dayName})\n`;
             message += `   ⏰ ${timeStr}\n`;
             message += `   👥 Мест: ${training.current_participants || 0}/${training.max_participants} (уровень ${training.skill_level || '-'})\n`;
@@ -8697,7 +8708,11 @@ async function showAvailableGroupTrainings(chatId, clientId) {
             message += `   💰 Цена за человека: ${pricePerPerson} ₽\n\n`;
         });
         
-        message += 'Выберите номер тренировки для записи:';
+        message += 'Чтобы выбрать тренировку, введите её номер в чат.\n';
+        message += 'Например: *1* - для выбора первой тренировки\n\n';
+        message += '⚠️ *При записи на тренировку убедитесь, что:*\n';
+        message += '• ваш баланс пополнен\n';
+        message += '• ваш уровень подготовки соответствует или выше указанного уровня тренировки';
         
         // Сохраняем список тренировок в состояние пользователя
         const state = userStates.get(chatId) || {};
