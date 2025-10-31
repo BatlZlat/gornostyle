@@ -4762,7 +4762,7 @@ async function handleTextMessage(msg) {
         case 'main_menu': {
             if (msg.text === '📋 Мои записи') {
                 try {
-                    // Получаем групповые тренировки
+                    // Получаем групповые тренировки на тренажере
                     const groupResult = await pool.query(
                         `SELECT 
                                 sp.id,
@@ -4780,7 +4780,8 @@ async function handleTextMessage(msg) {
                                 ts.price,
                                 ts.max_participants,
                                 (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                                'group' as session_type
+                                'group' as session_type,
+                                'simulator' as slope_type
                             FROM session_participants sp
                             JOIN training_sessions ts ON sp.session_id = ts.id
                             JOIN simulators s ON ts.simulator_id = s.id
@@ -4791,9 +4792,48 @@ async function handleTextMessage(msg) {
                             WHERE sp.client_id = $1
                             AND ts.status = 'scheduled'
                             AND sp.status = 'confirmed'
+                            AND ts.simulator_id IS NOT NULL
                             AND (
                               (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                             )
+                        ORDER BY ts.session_date, ts.start_time`,
+                        [state.data.client_id]
+                    );
+                    
+                    // Получаем групповые тренировки на естественном склоне
+                    const winterGroupResult = await pool.query(
+                        `SELECT 
+                            sp.id,
+                            sp.session_id,
+                            sp.child_id,
+                            COALESCE(c.full_name, cl.full_name) as participant_name,
+                            ts.session_date,
+                            ts.start_time,
+                            ts.duration,
+                            ts.equipment_type,
+                            NULL as simulator_name,
+                            g.name as group_name,
+                            t.full_name as trainer_name,
+                            ts.skill_level,
+                            ts.price,
+                            ts.max_participants,
+                            (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                            'group_winter' as session_type,
+                            'natural_slope' as slope_type
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        LEFT JOIN groups g ON ts.group_id = g.id
+                        LEFT JOIN trainers t ON ts.trainer_id = t.id
+                        LEFT JOIN children c ON sp.child_id = c.id
+                        JOIN clients cl ON sp.client_id = cl.id
+                        WHERE sp.client_id = $1
+                        AND ts.status = 'scheduled'
+                        AND sp.status = 'confirmed'
+                        AND ts.simulator_id IS NULL
+                        AND ts.group_id IS NOT NULL
+                        AND (
+                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                        )
                         ORDER BY ts.session_date, ts.start_time`,
                         [state.data.client_id]
                     );
@@ -4829,10 +4869,51 @@ async function handleTextMessage(msg) {
                         [state.data.client_id]
                     );
 
-                    const groupSessions = groupResult.rows;
-                    const individualSessions = individualResult.rows;
+                    // Получаем индивидуальные тренировки естественного склона
+                    const naturalSlopeIndividualResult = await pool.query(
+                        `SELECT 
+                            sp.id,
+                            sp.session_id,
+                            sp.child_id,
+                            COALESCE(c.full_name, cl.full_name) as participant_name,
+                            ts.session_date,
+                            ts.start_time,
+                            ts.end_time,
+                            ts.duration,
+                            ts.equipment_type,
+                            NULL as simulator_name,
+                            NULL as group_name,
+                            t.full_name as trainer_name,
+                            NULL as skill_level,
+                            ts.price,
+                            1 as max_participants,
+                            1 as current_participants,
+                            'individual_natural_slope' as session_type,
+                            ts.with_trainer,
+                            'natural_slope' as slope_type
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        LEFT JOIN trainers t ON ts.trainer_id = t.id
+                        LEFT JOIN children c ON sp.child_id = c.id
+                        JOIN clients cl ON sp.client_id = cl.id
+                        WHERE sp.client_id = $1
+                        AND ts.status = 'scheduled'
+                        AND sp.status = 'confirmed'
+                        AND ts.training_type = FALSE
+                        AND ts.slope_type = 'natural_slope'
+                        AND (
+                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                        )
+                        ORDER BY ts.session_date, ts.start_time`,
+                        [state.data.client_id]
+                    );
 
-                    if (groupSessions.length === 0 && individualSessions.length === 0) {
+                    const groupSessions = groupResult.rows;
+                    const winterGroupSessions = winterGroupResult.rows;
+                    const individualSessions = individualResult.rows;
+                    const naturalSlopeIndividualSessions = naturalSlopeIndividualResult.rows;
+
+                    if (groupSessions.length === 0 && winterGroupSessions.length === 0 && individualSessions.length === 0 && naturalSlopeIndividualSessions.length === 0) {
                         return bot.sendMessage(chatId,
                             'У вас пока нет записей на тренировки.',
                             {
@@ -4849,7 +4930,7 @@ async function handleTextMessage(msg) {
                     let allSessions = [];
                     let counter = 1;
                     if (groupSessions.length > 0) {
-                        message += '\n👥 *Групповые тренировки:*\n';
+                        message += '\n👥 *Групповые тренировки (тренажер):*\n';
                         groupSessions.forEach(session => {
                             const date = new Date(session.session_date);
                             const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -4868,8 +4949,29 @@ async function handleTextMessage(msg) {
                             counter++;
                         });
                     }
+                    if (winterGroupSessions.length > 0) {
+                        message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+                        winterGroupSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
+                            message += `👥 *Группа:* ${session.group_name}\n`;
+                            if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                            if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            message += `💰 *Стоимость:* ${pricePerPerson} руб.\n`;
+                            allSessions.push({ ...session, session_type: 'group_winter' });
+                            counter++;
+                        });
+                    }
                     if (individualSessions.length > 0) {
-                        message += '\n👤 *Индивидуальные тренировки:*\n';
+                        message += '\n👤 *Индивидуальные тренировки (тренажер):*\n';
                         individualSessions.forEach(session => {
                             const date = new Date(session.session_date);
                             const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -4884,7 +4986,27 @@ async function handleTextMessage(msg) {
                             message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
                             message += `⏱ *Длительность:* ${session.duration} мин\n`;
                             message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
-                            allSessions.push({ ...session, session_type: 'individual' });
+                            allSessions.push({ ...session, session_type: 'individual_simulator' });
+                            counter++;
+                        });
+                    }
+                    if (naturalSlopeIndividualSessions.length > 0) {
+                        message += '\n🏔️ *Индивидуальные тренировки (Кулига Парк):*\n';
+                        naturalSlopeIndividualSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
+                            message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
+                            message += `👨‍🏫 *С тренером*\n`;
+                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            message += `⏱ *Длительность:* ${session.duration} мин\n`;
+                            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
+                            allSessions.push({ ...session, session_type: 'individual_natural_slope' });
                             counter++;
                         });
                     }
@@ -5178,6 +5300,139 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${formattedTime}\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else if (selectedSession.session_type === 'group_winter') {
+                    // --- отмена зимней групповой тренировки ---
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+
+                    // Получаем информацию о тренировке
+                    const groupInfoRes = await pool.query(
+                        `SELECT ts.*, g.name as group_name, t.full_name as trainer_name
+                         FROM training_sessions ts
+                         LEFT JOIN groups g ON ts.group_id = g.id
+                         LEFT JOIN trainers t ON ts.trainer_id = t.id
+                         WHERE ts.id = $1`,
+                        [selectedSession.session_id]
+                    );
+                    const groupInfo = groupInfoRes.rows[0];
+
+                    // Получаем информацию об участнике
+                    const participantRes = await pool.query(
+                        `SELECT sp.*, 
+                            COALESCE(ch.full_name, c.full_name) as participant_name,
+                            c.full_name as client_name,
+                            c.phone as client_phone,
+                            ch.id as child_id,
+                            ch.full_name as child_name
+                         FROM session_participants sp
+                         JOIN clients c ON sp.client_id = c.id
+                         LEFT JOIN children ch ON sp.child_id = ch.id
+                         WHERE sp.id = $1`,
+                        [selectedSession.id]
+                    );
+                    const participant = participantRes.rows[0];
+
+                    // Рассчитываем цену за одного участника
+                    const pricePerPerson = groupInfo.max_participants 
+                        ? (Number(groupInfo.price) / groupInfo.max_participants)
+                        : Number(groupInfo.price);
+
+                    // Подсчитываем оставшихся участников
+                    const seatsRes = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
+                    );
+                    const currentParticipants = parseInt(seatsRes.rows[0].count) - 1;
+                    const maxParticipants = groupInfo.max_participants;
+                    const seatsLeft = `${currentParticipants}/${maxParticipants}`;
+
+                    // Формируем participant_name только если есть child_id
+                    const participantName = participant.child_id ? participant.child_name : null;
+
+                    // Уведомляем админа
+                    await notifyAdminNaturalSlopeTrainingCancellation({
+                        client_name: participant.client_name,
+                        participant_name: participantName,
+                        client_phone: participant.client_phone,
+                        date: groupInfo.session_date,
+                        time: groupInfo.start_time,
+                        trainer_name: groupInfo.trainer_name,
+                        refund: pricePerPerson
+                    });
+
+                    // Вместо удаления меняем статус на 'cancelled'
+                    await pool.query('UPDATE session_participants SET status = $1 WHERE id = $2', ['cancelled', selectedSession.id]);
+
+                    // Освобождаем слот в winter_schedule если все участники отменили
+                    const remainingCheck = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
+                    );
+                    if (parseInt(remainingCheck.rows[0].count) === 0) {
+                        await pool.query(
+                            `UPDATE winter_schedule 
+                             SET is_available = true, 
+                                 current_participants = 0,
+                                 is_group_training = false,
+                                 group_id = NULL,
+                                 trainer_id = NULL,
+                                 max_participants = 1
+                             WHERE date = $1 
+                             AND time_slot = $2`,
+                            [selectedSession.session_date, selectedSession.start_time]
+                        );
+                    }
+
+                    // Возвращаем средства
+                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [pricePerPerson, state.data.client_id]);
+
+                    // Получаем id кошелька
+                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    if (walletId) {
+                        // Форматируем дату и время для описания
+                        const date = new Date(selectedSession.session_date);
+                        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                        const [hours, minutes] = selectedSession.start_time.split(':');
+                        const formattedTime = `${hours}:${minutes}`;
+                        
+                        // Создаем запись о возврате
+                        await pool.query(
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [
+                                walletId,
+                                pricePerPerson,
+                                'amount',
+                                `Возврат: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                            ]
+                        );
+                    }
+
+                    // Сообщение для клиента
+                    const clientMessage = 
+                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `👥 *Группа:* ${groupInfo.group_name}\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
+                        `💰 *Возвращено:* ${pricePerPerson.toFixed(2)} руб.\n\n` +
+                        'Средства возвращены на ваш баланс.';
+
                     userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
                         parse_mode: 'Markdown',
@@ -6776,7 +7031,7 @@ async function showMyBookings(chatId) {
             return;
         }
 
-        // --- Групповые тренировки ---
+        // --- Групповые тренировки на тренажере ---
         const groupResult = await pool.query(
             `WITH client_sessions AS (
                 SELECT 
@@ -6795,7 +7050,8 @@ async function showMyBookings(chatId) {
                     ts.price,
                     ts.max_participants,
                     (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                    'group' as session_type
+                    'group' as session_type,
+                    'simulator' as slope_type
                 FROM session_participants sp
                 JOIN training_sessions ts ON sp.session_id = ts.id
                 JOIN simulators s ON ts.simulator_id = s.id
@@ -6806,12 +7062,51 @@ async function showMyBookings(chatId) {
                 WHERE sp.client_id = $1
                 AND ts.status = 'scheduled'
                 AND sp.status = 'confirmed'
+                AND ts.simulator_id IS NOT NULL
                 AND (
                   (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                 )
             )
             SELECT * FROM client_sessions
             ORDER BY session_date, start_time`,
+            [client.id]
+        );
+
+        // --- Групповые тренировки на естественном склоне ---
+        const winterGroupResult = await pool.query(
+            `SELECT 
+                sp.id,
+                sp.session_id,
+                sp.child_id,
+                COALESCE(c.full_name, cl.full_name) as participant_name,
+                ts.session_date,
+                ts.start_time,
+                ts.duration,
+                ts.equipment_type,
+                NULL as simulator_name,
+                g.name as group_name,
+                t.full_name as trainer_name,
+                ts.skill_level,
+                ts.price,
+                ts.max_participants,
+                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                'group_winter' as session_type,
+                'natural_slope' as slope_type
+            FROM session_participants sp
+            JOIN training_sessions ts ON sp.session_id = ts.id
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN children c ON sp.child_id = c.id
+            JOIN clients cl ON sp.client_id = cl.id
+            WHERE sp.client_id = $1
+            AND ts.status = 'scheduled'
+            AND sp.status = 'confirmed'
+            AND ts.simulator_id IS NULL
+            AND ts.group_id IS NOT NULL
+            AND (
+              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+            )
+            ORDER BY ts.session_date, ts.start_time`,
             [client.id]
         );
 
@@ -6888,10 +7183,11 @@ async function showMyBookings(chatId) {
 
         // --- Формируем общий список ---
         const groupSessions = groupResult.rows;
+        const winterGroupSessions = winterGroupResult.rows;
         const individualSessions = individualResult.rows;
         const naturalSlopeIndividualSessions = naturalSlopeIndividualResult.rows;
         
-        if (groupSessions.length === 0 && individualSessions.length === 0 && naturalSlopeIndividualSessions.length === 0) {
+        if (groupSessions.length === 0 && winterGroupSessions.length === 0 && individualSessions.length === 0 && naturalSlopeIndividualSessions.length === 0) {
             await bot.sendMessage(chatId, 'У вас пока нет записей на тренировки.', {
                 reply_markup: {
                     keyboard: [['🔙 В главное меню']],
@@ -6906,7 +7202,7 @@ async function showMyBookings(chatId) {
         let counter = 1;
         
         if (groupSessions.length > 0) {
-            message += '\n👥 *Групповые тренировки:*\n';
+            message += '\n👥 *Групповые тренировки (тренажер):*\n';
             groupSessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -6922,6 +7218,28 @@ async function showMyBookings(chatId) {
                 if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
                 message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                 allSessions.push({ ...session, session_type: 'group' });
+                counter++;
+            });
+        }
+        
+        if (winterGroupSessions.length > 0) {
+            message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+            winterGroupSessions.forEach(session => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
+                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `👥 *Группа:* ${session.group_name}\n`;
+                if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
+                message += `💰 *Стоимость:* ${pricePerPerson} руб.\n`;
+                allSessions.push({ ...session, session_type: 'group_winter' });
                 counter++;
             });
         }

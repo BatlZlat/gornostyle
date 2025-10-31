@@ -63,7 +63,7 @@ class NotificationService {
 
                 UNION ALL
 
-                -- Индивидуальные тренировки
+                -- Индивидуальные тренировки на тренажере
                 SELECT 
                     its.id as training_id,
                     'individual' as training_type,
@@ -92,12 +92,107 @@ class NotificationService {
                     CASE 
                         WHEN its.child_id IS NOT NULL THEN ch.full_name
                         ELSE c.full_name
-                    END as display_name
+                    END as display_name,
+                    'simulator' as slope_type
                 FROM individual_training_sessions its
                 JOIN clients c ON its.client_id = c.id
                 LEFT JOIN children ch ON its.child_id = ch.id
                 LEFT JOIN simulators s ON its.simulator_id = s.id
                 WHERE its.preferred_date = $1
+                    AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Групповые тренировки на естественном склоне (зимние)
+                SELECT 
+                    ts.id as training_id,
+                    'group' as training_type,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    ts.equipment_type,
+                    ts.skill_level,
+                    ts.price,
+                    ts.with_trainer,
+                    ts.max_participants,
+                    (SELECT COUNT(*) FROM session_participants 
+                     WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                    NULL as simulator_name,
+                    g.name as group_name,
+                    t.full_name as trainer_name,
+                    sp.client_id,
+                    sp.child_id,
+                    sp.is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    CASE 
+                        WHEN sp.is_child = true THEN ch.full_name
+                        ELSE c.full_name
+                    END as participant_name,
+                    CASE 
+                        WHEN sp.is_child = true THEN ch.full_name
+                        ELSE c.full_name
+                    END as display_name,
+                    'natural_slope' as slope_type
+                FROM training_sessions ts
+                JOIN session_participants sp ON ts.id = sp.session_id
+                JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                WHERE ts.session_date = $1
+                    AND ts.status = 'scheduled'
+                    AND sp.status = 'confirmed'
+                    AND ts.simulator_id IS NULL
+                    AND ts.group_id IS NOT NULL
+                    AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Индивидуальные тренировки на естественном склоне (зимние)
+                SELECT 
+                    ts.id as training_id,
+                    'individual' as training_type,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    ts.equipment_type,
+                    NULL as skill_level,
+                    ts.price,
+                    ts.with_trainer,
+                    1 as max_participants,
+                    1 as current_participants,
+                    NULL as simulator_name,
+                    NULL as group_name,
+                    t.full_name as trainer_name,
+                    sp.client_id,
+                    sp.child_id,
+                    sp.is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    CASE 
+                        WHEN sp.is_child = true THEN ch.full_name
+                        ELSE c.full_name
+                    END as participant_name,
+                    CASE 
+                        WHEN sp.is_child = true THEN ch.full_name
+                        ELSE c.full_name
+                    END as display_name,
+                    'natural_slope' as slope_type
+                FROM training_sessions ts
+                JOIN session_participants sp ON ts.id = sp.session_id
+                JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                WHERE ts.session_date = $1
+                    AND ts.status = 'scheduled'
+                    AND sp.status = 'confirmed'
+                    AND ts.simulator_id IS NULL
+                    AND ts.group_id IS NULL
+                    AND ts.training_type = FALSE
+                    AND ts.slope_type = 'natural_slope'
                     AND c.telegram_id IS NOT NULL
             )
             SELECT * FROM trainings_on_date
@@ -201,8 +296,10 @@ class NotificationService {
                 message += `⛷ Снаряжение: ${equipment}\n`;
             }
 
-            // Тренажер
-            if (training.simulator_name) {
+            // Тренажер или место
+            if (training.slope_type === 'natural_slope') {
+                message += `🏔 Место: Кулига Парк\n`;
+            } else if (training.simulator_name) {
                 message += `🏔 Тренажер: ${training.simulator_name}\n`;
             }
 
