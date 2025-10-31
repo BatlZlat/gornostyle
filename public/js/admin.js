@@ -1584,14 +1584,26 @@ function displayClients() {
                         childBirthdayText = `<span class="birthday-text birthday-cake-blink">🎂<span class='birthday-date-red'>${formatBirthdayShort(childBirthDate)}</span></span>`;
                     }
                     
+                    // Форматируем счетчики тренировок для клиента
+                    const clientIndividualCount = client.client_individual_count || 0;
+                    const clientGroupCount = client.client_group_count || 0;
+                    const clientTrainingCount = `${client.full_name} (${clientIndividualCount} и./${clientGroupCount} г.)`;
+                    
+                    // Форматируем счетчики тренировок для ребенка
+                    const childIndividualCount = client.child_individual_count || 0;
+                    const childGroupCount = client.child_group_count || 0;
+                    const childTrainingCount = client.child_name 
+                        ? `${client.child_name} (${childIndividualCount} и./${childGroupCount} г.)`
+                        : '-';
+                    
                     return `
                         <tr class="${clientBirthdayClass || childBirthdayClass}">
                             <td>${index + 1}</td>
-                            <td>${client.full_name} ${clientBirthdayText}</td>
+                            <td>${clientTrainingCount} ${clientBirthdayText}</td>
                             <td>${clientAge} лет</td>
                             <td>${client.phone}</td>
                             <td>${client.skill_level || '-'}</td>
-                            <td>${client.child_name ? client.child_name + childBirthdayText : '-'}</td>
+                            <td>${childTrainingCount} ${childBirthdayText}</td>
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>

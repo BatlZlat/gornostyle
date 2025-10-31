@@ -27,7 +27,73 @@ router.get('/', async (req, res) => {
                 ch.full_name as child_name,
                 ch.birth_date as child_birth_date,
                 ch.skill_level as child_skill_level,
-                w.balance
+                w.balance,
+                -- Подсчет индивидуальных тренировок клиента
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM individual_training_sessions its
+                    WHERE its.client_id = c.id
+                ), 0) +
+                COALESCE((
+                    SELECT COUNT(DISTINCT ts.id)
+                    FROM training_sessions ts
+                    JOIN session_participants sp ON ts.id = sp.session_id
+                    WHERE sp.client_id = c.id
+                        AND sp.child_id IS NULL
+                        AND sp.status IN ('confirmed', 'completed')
+                        AND (
+                            ts.training_type = FALSE OR 
+                            ts.group_id IS NULL
+                        )
+                ), 0) as client_individual_count,
+                -- Подсчет групповых тренировок клиента
+                COALESCE((
+                    SELECT COUNT(DISTINCT ts.id)
+                    FROM training_sessions ts
+                    JOIN session_participants sp ON ts.id = sp.session_id
+                    WHERE sp.client_id = c.id
+                        AND sp.child_id IS NULL
+                        AND sp.status IN ('confirmed', 'completed')
+                        AND (
+                            ts.training_type = TRUE OR 
+                            ts.group_id IS NOT NULL
+                        )
+                ), 0) as client_group_count,
+                -- Подсчет индивидуальных тренировок ребенка
+                CASE 
+                    WHEN ch.id IS NULL THEN 0
+                    ELSE COALESCE((
+                        SELECT COUNT(*) 
+                        FROM individual_training_sessions its
+                        WHERE its.child_id = ch.id
+                    ), 0) +
+                    COALESCE((
+                        SELECT COUNT(DISTINCT ts.id)
+                        FROM training_sessions ts
+                        JOIN session_participants sp ON ts.id = sp.session_id
+                        WHERE sp.child_id = ch.id
+                            AND sp.status IN ('confirmed', 'completed')
+                            AND (
+                                ts.training_type = FALSE OR 
+                                ts.group_id IS NULL
+                            )
+                    ), 0)
+                END as child_individual_count,
+                -- Подсчет групповых тренировок ребенка
+                CASE 
+                    WHEN ch.id IS NULL THEN 0
+                    ELSE COALESCE((
+                        SELECT COUNT(DISTINCT ts.id)
+                        FROM training_sessions ts
+                        JOIN session_participants sp ON ts.id = sp.session_id
+                        WHERE sp.child_id = ch.id
+                            AND sp.status IN ('confirmed', 'completed')
+                            AND (
+                                ts.training_type = TRUE OR 
+                                ts.group_id IS NOT NULL
+                            )
+                    ), 0)
+                END as child_group_count
             FROM clients c
             LEFT JOIN children ch ON c.id = ch.parent_id
             LEFT JOIN wallets w ON c.id = w.client_id
