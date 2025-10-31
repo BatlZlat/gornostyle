@@ -848,10 +848,25 @@ async function notifyTomorrowTrainings(trainings) {
                 const participantsStr = training.participants_list || 'Нет участников';
                 const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
                 
+                // Определяем место проведения
+                const locationStr = training.simulator_name 
+                    ? `🎿 Тренажер: ${training.simulator_name}` 
+                    : `🏔️ Место: Кулига Парк`;
+                
+                // Для зимних групповых тренировок показываем цену за человека
+                let priceStr = training.price;
+                if (!training.simulator_name && training.max_participants) {
+                    const pricePerPerson = (Number(training.price) / training.max_participants).toFixed(2);
+                    priceStr = `${pricePerPerson} руб. (за человека, общая: ${Number(training.price).toFixed(2)} руб.)`;
+                } else {
+                    priceStr = `${Number(training.price).toFixed(2)} руб.`;
+                }
+                
                 message += `• ${timeStr} - ${training.group_name || 'Группа'} (${equipmentStr})\n`;
+                message += `  ${locationStr}\n`;
                 message += `  👨‍🏫 Тренер: ${trainerStr}\n`;
                 message += `  👥 Участники: ${participantsStr}\n`;
-                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+                message += `  💰 Стоимость: ${priceStr}\n\n`;
             });
         }
 
@@ -864,9 +879,15 @@ async function notifyTomorrowTrainings(trainings) {
                 const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
                 const participantStr = training.participants_list || 'Участник не указан';
                 
+                // Определяем место проведения
+                const locationStr = training.simulator_name 
+                    ? `🎿 Тренажер: ${training.simulator_name}` 
+                    : `🏔️ Место: Кулига Парк`;
+                
                 message += `• ${timeStr} - ${participantStr} (${equipmentStr})\n`;
+                message += `  ${locationStr}\n`;
                 message += `  ⏱ Длительность: ${durationStr}\n`;
-                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+                message += `  💰 Стоимость: ${Number(training.price).toFixed(2)} руб.\n\n`;
             });
         }
 

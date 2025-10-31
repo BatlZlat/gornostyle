@@ -9,7 +9,7 @@ async function getTomorrowTrainings() {
     try {
         const query = `
             WITH tomorrow_trainings AS (
-                -- Групповые тренировки на завтра
+                -- Групповые тренировки на тренажере на завтра
                 SELECT 
                     ts.id,
                     ts.session_date as date,
@@ -46,13 +46,58 @@ async function getTomorrowTrainings() {
                 LEFT JOIN children ch ON sp.child_id = ch.id
                 WHERE ts.session_date = CURRENT_DATE + INTERVAL '1 day'
                     AND ts.status = 'scheduled'
+                    AND ts.simulator_id IS NOT NULL
                 GROUP BY ts.id, t.full_name, s.name, g.name, ts.session_date, ts.start_time, ts.end_time, 
                          ts.duration, ts.trainer_id, ts.simulator_id, ts.max_participants, ts.skill_level, 
                          ts.price, ts.equipment_type, ts.with_trainer
 
                 UNION ALL
 
-                -- Индивидуальные тренировки на завтра
+                -- Групповые тренировки на естественном склоне (зимние) на завтра
+                SELECT 
+                    ts.id,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    FALSE as is_individual,
+                    ts.trainer_id,
+                    t.full_name as trainer_name,
+                    NULL as simulator_id,
+                    NULL as simulator_name,
+                    ts.max_participants,
+                    ts.skill_level,
+                    ts.price,
+                    ts.equipment_type,
+                    ts.with_trainer,
+                    g.name as group_name,
+                    COUNT(sp.id) as current_participants,
+                    -- Получаем список участников
+                    STRING_AGG(
+                        CASE 
+                            WHEN sp.is_child = true THEN ch.full_name
+                            ELSE c.full_name
+                        END, 
+                        ', '
+                    ) as participants_list
+                FROM training_sessions ts
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
+                LEFT JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                WHERE ts.session_date = CURRENT_DATE + INTERVAL '1 day'
+                    AND ts.status = 'scheduled'
+                    AND ts.simulator_id IS NULL
+                    AND ts.group_id IS NOT NULL
+                GROUP BY ts.id, t.full_name, g.name, ts.session_date, ts.start_time, ts.end_time, 
+                         ts.duration, ts.trainer_id, ts.max_participants, ts.skill_level, 
+                         ts.price, ts.equipment_type, ts.with_trainer
+
+                UNION ALL
+
+                -- Индивидуальные тренировки на тренажере на завтра
                 SELECT 
                     its.id,
                     its.preferred_date as date,
@@ -81,6 +126,48 @@ async function getTomorrowTrainings() {
                 LEFT JOIN clients c ON its.client_id = c.id
                 LEFT JOIN children ch ON its.child_id = ch.id
                 WHERE its.preferred_date = CURRENT_DATE + INTERVAL '1 day'
+
+                UNION ALL
+
+                -- Индивидуальные тренировки на естественном склоне (зимние) на завтра
+                SELECT 
+                    ts.id,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    TRUE as is_individual,
+                    ts.trainer_id,
+                    t.full_name as trainer_name,
+                    NULL as simulator_id,
+                    NULL as simulator_name,
+                    1 as max_participants,
+                    NULL as skill_level,
+                    ts.price,
+                    ts.equipment_type,
+                    ts.with_trainer,
+                    NULL as group_name,
+                    1 as current_participants,
+                    -- Получаем имя участника
+                    CASE 
+                        WHEN sp.is_child = true THEN ch.full_name
+                        ELSE c.full_name
+                    END as participants_list
+                FROM training_sessions ts
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
+                LEFT JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                WHERE ts.session_date = CURRENT_DATE + INTERVAL '1 day'
+                    AND ts.status = 'scheduled'
+                    AND ts.simulator_id IS NULL
+                    AND ts.group_id IS NULL
+                    AND ts.training_type = FALSE
+                    AND ts.slope_type = 'natural_slope'
+                GROUP BY ts.id, t.full_name, ts.session_date, ts.start_time, ts.end_time, 
+                         ts.duration, ts.trainer_id, ts.price, ts.equipment_type, ts.with_trainer,
+                         sp.is_child, ch.full_name, c.full_name
             )
             SELECT *
             FROM tomorrow_trainings
