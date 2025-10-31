@@ -954,9 +954,14 @@ async function renderScheduleSection(data, slopeType) {
                                     <td>${formatNaturalSlopePricePerPerson(training)} ₽</td>`
                                 }
                                 <td class="training-actions">
-                                    <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual}, '${slopeType}')">
-                                        Подробнее
-                                    </button>
+                                    ${slopeType === 'natural_slope' ? 
+                                        `<button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
+                                            Подробнее
+                                        </button>` :
+                                        `<button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual}, '${slopeType}')">
+                                            Подробнее
+                                        </button>`
+                                    }
                                 </td>
                             </tr>
                         `).join('')}

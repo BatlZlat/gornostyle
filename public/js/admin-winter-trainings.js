@@ -314,7 +314,7 @@ async function viewWinterTrainingDetails(id) {
         if (!isIndividual && training.group_name) {
             trainingType += ` (${training.group_name})`;
         }
-        const modalTitle = isIndividual ? 'Детали индивидуальной тренировки' : 'Детали групповой тренировки';
+        const modalTitle = isIndividual ? 'Детали индивидуальной тренировки в Кулига Парк' : 'Детали групповой тренировки в Кулига Парк';
         
         const totalPrice = training.price != null ? parseFloat(training.price) : null;
         const maxParticipants = training.max_participants || 1;
@@ -336,15 +336,27 @@ async function viewWinterTrainingDetails(id) {
             modalContent += `<p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>`;
         }
         
-        modalContent += `${totalPrice != null ? `
+        // Для индивидуальных тренировок показываем просто "Цена", для групповых - "Цена общая" и "Цена за человека"
+        if (isIndividual) {
+            modalContent += `${totalPrice != null ? 
+                            `<p><strong>Цена:</strong> ${totalPrice.toFixed(2)} ₽</p>` : 
+                            '<p><strong>Цена:</strong> -</p>'
+                        }`;
+        } else {
+            modalContent += `${totalPrice != null ? `
                             <p><strong>Цена общая:</strong> ${totalPrice.toFixed(2)} ₽</p>
                             ${pricePerPerson ? `<p><strong>Цена за человека:</strong> ${pricePerPerson} ₽</p>` : ''}
-                        ` : '<p><strong>Цена:</strong> -</p>'}
+                        ` : '<p><strong>Цена:</strong> -</p>'
+                    }`;
+        }
+        
+        modalContent += `
                     </div>
                     <div class="detail-group">
                         <h4>Участники (${training.current_participants || 0}/${training.max_participants || 0})</h4>`;
         
         if (training.participants && training.participants.length > 0) {
+            // Для индивидуальных тренировок убираем колонку "Действия"
             modalContent += `
                         <table class="participants-table">
                             <thead>
@@ -353,7 +365,7 @@ async function viewWinterTrainingDetails(id) {
                                     <th>Возраст</th>
                                     ${!isIndividual ? '<th>Уровень</th>' : ''}
                                     <th>Контактный телефон</th>
-                                    <th>Действия</th>
+                                    ${!isIndividual ? '<th>Действия</th>' : ''}
                                 </tr>
                             </thead>
                             <tbody>`;
@@ -362,13 +374,8 @@ async function viewWinterTrainingDetails(id) {
                 const birthDate = new Date(participant.birth_date);
                 const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
                 const levelCell = !isIndividual ? `<td>${participant.skill_level || '-'}</td>` : '';
-                
-                modalContent += `
-                                <tr>
-                                    <td>${participant.full_name}</td>
-                                    <td>${age} лет</td>
-                                    ${levelCell}
-                                    <td>${participant.phone || '-'}</td>
+                // Для индивидуальных тренировок убираем кнопку удаления
+                const actionsCell = !isIndividual ? `
                                     <td>
                                         <button 
                                             class="btn-danger btn-small" 
@@ -376,7 +383,15 @@ async function viewWinterTrainingDetails(id) {
                                             title="Удалить участника с возвратом средств">
                                             ❌ Удалить
                                         </button>
-                                    </td>
+                                    </td>` : '';
+                
+                modalContent += `
+                                <tr>
+                                    <td>${participant.full_name}</td>
+                                    <td>${age} лет</td>
+                                    ${levelCell}
+                                    <td>${participant.phone || '-'}</td>
+                                    ${actionsCell}
                                 </tr>`;
             });
             

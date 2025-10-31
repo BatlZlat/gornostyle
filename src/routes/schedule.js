@@ -125,19 +125,26 @@ router.get('/admin', async (req, res) => {
                 ts.slope_type,
                 ts.winter_training_type,
                 ts.status,
-                COUNT(sp.id) as current_participants
+                COUNT(sp.id) as current_participants,
+                STRING_AGG(
+                    DISTINCT COALESCE(c.full_name, ch.full_name), 
+                    ', ' 
+                    ORDER BY COALESCE(c.full_name, ch.full_name)
+                ) FILTER (WHERE sp.status = 'confirmed') as participant_names
             FROM training_sessions ts
             LEFT JOIN trainers t ON ts.trainer_id = t.id
             LEFT JOIN simulators s ON ts.simulator_id = s.id
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN session_participants sp ON ts.id = sp.session_id 
                 AND sp.status = 'confirmed'
+            LEFT JOIN clients c ON sp.client_id = c.id AND NOT sp.is_child
+            LEFT JOIN children ch ON sp.child_id = ch.id AND sp.is_child
             WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
                 AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
                 AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))
                 AND ts.training_type = FALSE
                 AND ts.slope_type = 'natural_slope'
-            GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
+            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, ts.trainer_id, ts.simulator_id, ts.max_participants, ts.skill_level, ts.price, ts.equipment_type, ts.with_trainer, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
         `;
         
         console.log('📊 Выполняем запросы...');
