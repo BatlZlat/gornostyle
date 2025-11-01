@@ -127,7 +127,7 @@ router.get('/client-subscriptions', async (req, res) => {
  */
 router.post('/types', async (req, res) => {
     try {
-        const { name, description, sessions_count, discount_percentage, price, validity_days, is_active } = req.body;
+        const { name, description, sessions_count, discount_percentage, price, price_per_session, validity_days, is_active } = req.body;
 
         // Валидация
         if (!name || !sessions_count || discount_percentage === undefined || !price || !validity_days) {
@@ -142,9 +142,12 @@ router.post('/types', async (req, res) => {
             return res.status(400).json({ error: 'Скидка должна быть от 0 до 100%' });
         }
 
-        // Рассчитываем цену за занятие с учетом скидки
-        const basePrice = 1700; // Базовая цена за час
-        const price_per_session = basePrice * (1 - discount_percentage / 100);
+        // Используем переданную price_per_session, если она есть, иначе рассчитываем
+        let finalPricePerSession = price_per_session;
+        if (!finalPricePerSession) {
+            // Если не передана, рассчитываем на основе общей цены и количества занятий
+            finalPricePerSession = price / sessions_count;
+        }
 
         const result = await pool.query(`
             INSERT INTO natural_slope_subscription_types (
@@ -159,7 +162,7 @@ router.post('/types', async (req, res) => {
             sessions_count, 
             discount_percentage, 
             price, 
-            price_per_session, 
+            finalPricePerSession, 
             validity_days, 
             is_active !== false
         ]);
@@ -168,7 +171,7 @@ router.post('/types', async (req, res) => {
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при создании типа абонемента:', error);
-        res.status(500).json({ error: 'Ошибка при создании типа абонемента' });
+        res.status(500).json({ error: 'Ошибка при создании типа абонемента: ' + error.message });
     }
 });
 
@@ -179,16 +182,19 @@ router.post('/types', async (req, res) => {
 router.put('/types/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, sessions_count, discount_percentage, price, validity_days, is_active } = req.body;
+        const { name, description, sessions_count, discount_percentage, price, price_per_session, validity_days, is_active } = req.body;
 
         // Валидация
         if (!name || !sessions_count || discount_percentage === undefined || !price || !validity_days) {
             return res.status(400).json({ error: 'Все обязательные поля должны быть заполнены' });
         }
 
-        // Рассчитываем цену за занятие
-        const basePrice = 1700;
-        const price_per_session = basePrice * (1 - discount_percentage / 100);
+        // Используем переданную price_per_session, если она есть, иначе рассчитываем
+        let finalPricePerSession = price_per_session;
+        if (!finalPricePerSession) {
+            // Если не передана, рассчитываем на основе общей цены и количества занятий
+            finalPricePerSession = price / sessions_count;
+        }
 
         const result = await pool.query(`
             UPDATE natural_slope_subscription_types 
@@ -209,7 +215,7 @@ router.put('/types/:id', async (req, res) => {
             sessions_count, 
             discount_percentage, 
             price, 
-            price_per_session,
+            finalPricePerSession,
             validity_days, 
             is_active !== false, 
             id
@@ -223,7 +229,7 @@ router.put('/types/:id', async (req, res) => {
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при обновлении типа абонемента:', error);
-        res.status(500).json({ error: 'Ошибка при обновлении типа абонемента' });
+        res.status(500).json({ error: 'Ошибка при обновлении типа абонемента: ' + error.message });
     }
 });
 

@@ -615,9 +615,17 @@
     <!-- Модальное окно для создания/редактирования абонемента -->
     <div id="subscription-modal" class="modal" style="display:none;">
         <div class="modal-content" style="max-width:600px;">
-            <h3 id="subscription-modal-title">Создать абонемент</h3>
+            <div class="modal-header">
+                <h3 id="subscription-modal-title">Создать абонемент</h3>
+                <button class="close-btn" onclick="closeSubscriptionModal()">×</button>
+            </div>
             <form id="subscription-form">
                 <input type="hidden" id="subscription-id">
+                <input type="hidden" id="subscription-discount">
+                <input type="hidden" id="subscription-price-id">
+                <input type="hidden" id="subscription-price-per-person">
+                <input type="hidden" id="subscription-price-per-session">
+                <input type="hidden" id="subscription-participants">
                 
                 <div class="form-group">
                     <label for="subscription-name">Название абонемента *</label>
@@ -625,25 +633,110 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="subscription-description">Описание</label>
-                    <textarea id="subscription-description" class="form-control" rows="3" placeholder="Краткое описание абонемента"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="subscription-sessions">Количество занятий *</label>
-                    <input type="number" id="subscription-sessions" class="form-control" min="1" step="1" required placeholder="Например: 10">
-                </div>
-
-                <div class="form-group">
-                    <label for="subscription-discount">Скидка (%) *</label>
-                    <input type="number" id="subscription-discount" class="form-control" min="0" max="100" step="0.01" required placeholder="Например: 15">
-                    <small style="color: #666;">Процент скидки от стоимости занятия</small>
+                    <label for="subscription-description">Описание абонемента</label>
+                    <textarea id="subscription-description" class="form-control" rows="3" placeholder="Краткое описание абонемента (опционально)"></textarea>
+                    <small style="color: #666;">Дополнительная информация об абонементе</small>
                 </div>
 
                 <div class="form-group">
                     <label for="subscription-validity">Срок действия (дней) *</label>
                     <input type="number" id="subscription-validity" class="form-control" min="1" step="1" required placeholder="Например: 30">
                     <small style="color: #666;">Количество дней с момента покупки</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-price-select">Цена за групповое занятие *</label>
+                    <select id="subscription-price-select" class="form-control" required>
+                        <option value="">Выберите цену из прайса</option>
+                        <!-- Опции будут загружены динамически -->
+                    </select>
+                    <small style="color: #666;">Выберите цену для расчета абонемента</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-sessions">Количество занятий *</label>
+                    <select id="subscription-sessions" class="form-control" required disabled>
+                        <option value="">Сначала выберите цену из прайса</option>
+                        <option value="3">3 занятия</option>
+                        <option value="5">5 занятий</option>
+                        <option value="7">7 занятий</option>
+                        <option value="10">10 занятий</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="subscription-discount-controls" style="display:none;">
+                    <label>Настройка процентов скидки *</label>
+                    <div style="background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>3 занятия:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-3" class="form-control" min="0" max="100" step="0.01" value="5" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>5 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-5" class="form-control" min="0" max="100" step="0.01" value="10" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>7 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-7" class="form-control" min="0" max="100" step="0.01" value="15" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center;">
+                            <span>10 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-10" class="form-control" min="0" max="100" step="0.01" value="20" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <small style="color: #666; margin-top: 8px; display: block;">Вы можете изменить процент скидки для каждого номинала</small>
+                    </div>
+                </div>
+
+                <div class="form-group" id="subscription-discount-info" style="display:none;">
+                    <label>Текущий процент скидки</label>
+                    <div style="background: #f3f4f6; padding: 12px; border-radius: 8px;">
+                        <p style="margin: 0; font-size: 16px; font-weight: bold; color: #10b981;">
+                            <span id="subscription-discount-display">0</span>%
+                        </p>
+                        <small style="color: #666;">Применяется для выбранного количества занятий</small>
+                    </div>
+                </div>
+
+                <div class="form-group" id="subscription-price-info" style="display:none;">
+                    <label>Цена абонемента</label>
+                    <div style="background: #f3f4f6; padding: 12px; border-radius: 8px;">
+                        <div style="margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <span style="color: #666; font-size: 14px;">Цена за одного человека без скидки:</span>
+                                <span style="text-decoration: line-through; color: #9ca3af; font-size: 16px;">
+                                    <span id="subscription-price-per-person-without">0</span> ₽
+                                </span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <span style="text-decoration: line-through; color: #9ca3af; font-size: 18px;">
+                                <span id="subscription-price-without">0</span> ₽
+                            </span>
+                            <span style="font-size: 24px; font-weight: bold; color: #10b981;">
+                                <span id="subscription-price-with">0</span> ₽
+                            </span>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <small style="color: #666;">Экономия: <span id="subscription-savings">0</span> ₽</small>
+                        </div>
+                        <div style="border-top: 1px solid #d1d5db; padding-top: 8px; margin-top: 8px;">
+                            <strong style="color: #059669; font-size: 16px;">
+                                💰 Цена за одно занятие: <span id="subscription-price-per-session-final">0</span> ₽
+                            </strong>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -655,7 +748,7 @@
 
                 <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
                     <button type="button" class="btn-secondary" onclick="closeSubscriptionModal()">Отмена</button>
-                    <button type="submit" class="btn-primary">Сохранить</button>
+                    <button type="submit" class="btn-primary" id="subscription-submit-btn">Создать абонемент</button>
                 </div>
             </form>
         </div>
