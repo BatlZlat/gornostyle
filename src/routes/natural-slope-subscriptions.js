@@ -127,11 +127,17 @@ router.get('/client-subscriptions', async (req, res) => {
  */
 router.post('/types', async (req, res) => {
     try {
-        const { name, description, sessions_count, discount_percentage, price, price_per_session, validity_days, is_active } = req.body;
+        const { name, description, sessions_count, discount_percentage, price, price_per_session, expires_at, is_active } = req.body;
 
         // Валидация
-        if (!name || !sessions_count || discount_percentage === undefined || !price || !validity_days) {
+        if (!name || !sessions_count || discount_percentage === undefined || !price || !expires_at) {
             return res.status(400).json({ error: 'Все обязательные поля должны быть заполнены' });
+        }
+        
+        // Валидация даты
+        const expiresDate = new Date(expires_at);
+        if (isNaN(expiresDate.getTime())) {
+            return res.status(400).json({ error: 'Некорректная дата окончания действия' });
         }
 
         if (sessions_count < 1) {
@@ -152,7 +158,7 @@ router.post('/types', async (req, res) => {
         const result = await pool.query(`
             INSERT INTO natural_slope_subscription_types (
                 name, description, sessions_count, discount_percentage, 
-                price, price_per_session, validity_days, is_active
+                price, price_per_session, expires_at, is_active
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
@@ -163,7 +169,7 @@ router.post('/types', async (req, res) => {
             discount_percentage, 
             price, 
             finalPricePerSession, 
-            validity_days, 
+            expires_at, 
             is_active !== false
         ]);
 
@@ -183,11 +189,17 @@ router.post('/types', async (req, res) => {
 router.put('/types/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, sessions_count, discount_percentage, price, price_per_session, validity_days, is_active } = req.body;
+        const { name, description, sessions_count, discount_percentage, price, price_per_session, expires_at, is_active } = req.body;
 
         // Валидация
-        if (!name || !sessions_count || discount_percentage === undefined || !price || !validity_days) {
+        if (!name || !sessions_count || discount_percentage === undefined || !price || !expires_at) {
             return res.status(400).json({ error: 'Все обязательные поля должны быть заполнены' });
+        }
+        
+        // Валидация даты
+        const expiresDate = new Date(expires_at);
+        if (isNaN(expiresDate.getTime())) {
+            return res.status(400).json({ error: 'Некорректная дата окончания действия' });
         }
 
         // Используем переданную price_per_session, если она есть, иначе рассчитываем
@@ -205,7 +217,7 @@ router.put('/types/:id', async (req, res) => {
                 discount_percentage = $4, 
                 price = $5, 
                 price_per_session = $6,
-                validity_days = $7, 
+                expires_at = $7, 
                 is_active = $8,
                 updated_at = NOW()
             WHERE id = $9
@@ -217,7 +229,7 @@ router.put('/types/:id', async (req, res) => {
             discount_percentage, 
             price, 
             finalPricePerSession,
-            validity_days, 
+            expires_at, 
             is_active !== false, 
             id
         ]);

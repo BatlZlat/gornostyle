@@ -1107,7 +1107,8 @@ CREATE TABLE natural_slope_subscription_types (
     discount_percentage DECIMAL(5,2) NOT NULL,    -- Процент скидки (10 или 20)
     price DECIMAL(10,2) NOT NULL,                 -- Цена абонемента
     price_per_session DECIMAL(10,2) NOT NULL,     -- Цена за занятие после скидки
-    validity_days INTEGER NOT NULL,               -- Срок действия
+    expires_at DATE NOT NULL,                     -- Дата окончания действия абонемента (включительно)
+    validity_days INTEGER,                         -- Срок действия в днях (оставлено для обратной совместимости)
     applicable_to VARCHAR(50) DEFAULT 'sport_group' CHECK (applicable_to IN ('sport_group', 'any')),
     
     is_active BOOLEAN DEFAULT TRUE,
@@ -1116,8 +1117,7 @@ CREATE TABLE natural_slope_subscription_types (
     
     CONSTRAINT valid_discount CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
     CONSTRAINT valid_sessions CHECK (sessions_count > 0),
-    CONSTRAINT valid_price CHECK (price > 0),
-    CONSTRAINT valid_validity CHECK (validity_days > 0)
+    CONSTRAINT valid_price CHECK (price > 0)
 );
 
 -- Подписки клиентов на естественный склон

@@ -5153,8 +5153,8 @@ function displaySubscriptionTypes(subscriptionTypes) {
                         <strong style="font-size: 16px;">${parseFloat(sub.price_per_session).toLocaleString('ru-RU')} ₽</strong>
                     </div>
                     <div>
-                        <small style="color: #666; display: block; margin-bottom: 4px;">Срок действия</small>
-                        <strong style="font-size: 16px;">${sub.validity_days} дн.</strong>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Действует до</small>
+                        <strong style="font-size: 16px;">${sub.expires_at ? new Date(sub.expires_at).toLocaleDateString('ru-RU') : (sub.validity_days ? `${sub.validity_days} дн.` : 'Не указано')}</strong>
                     </div>
                     <div>
                         <small style="color: #666; display: block; margin-bottom: 4px;">Активных абонементов</small>
@@ -5236,7 +5236,18 @@ async function editSubscriptionType(id) {
         document.getElementById('subscription-modal-title').textContent = 'Редактировать абонемент';
         document.getElementById('subscription-name').value = subscription.name;
         document.getElementById('subscription-description').value = subscription.description || '';
-        document.getElementById('subscription-validity').value = subscription.validity_days;
+        // Преобразовать validity_days в дату окончания действия
+        // Если у абонемента есть expires_at, использовать его, иначе вычислить из validity_days
+        let expiresDate = null;
+        if (subscription.expires_at) {
+            expiresDate = new Date(subscription.expires_at).toISOString().split('T')[0];
+        } else if (subscription.validity_days) {
+            // Вычислить дату окончания: сегодня + validity_days дней
+            const today = new Date();
+            today.setDate(today.getDate() + subscription.validity_days);
+            expiresDate = today.toISOString().split('T')[0];
+        }
+        document.getElementById('subscription-validity').value = expiresDate || '';
         document.getElementById('subscription-is-active').checked = subscription.is_active;
         
         // Установить количество занятий и скидку ПЕРЕД загрузкой цен
@@ -5448,7 +5459,7 @@ async function handleSubscriptionSubmit(event) {
     // Собрать данные из формы
     const name = document.getElementById('subscription-name').value.trim();
     const description = document.getElementById('subscription-description').value.trim();
-    const validityDays = parseInt(document.getElementById('subscription-validity').value);
+    const expiresAt = document.getElementById('subscription-validity').value;
     const sessionsCount = parseInt(document.getElementById('subscription-sessions').value);
     const discountPercentage = parseFloat(document.getElementById('subscription-discount').value);
     const priceId = document.getElementById('subscription-price-id').value;
@@ -5461,8 +5472,17 @@ async function handleSubscriptionSubmit(event) {
         return;
     }
     
-    if (!validityDays || validityDays <= 0) {
-        showError('Укажите срок действия абонемента');
+    if (!expiresAt) {
+        showError('Укажите дату окончания действия абонемента');
+        return;
+    }
+    
+    // Проверка, что дата не в прошлом
+    const selectedDate = new Date(expiresAt);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedDate < today) {
+        showError('Дата окончания действия не может быть в прошлом');
         return;
     }
     
@@ -5502,7 +5522,7 @@ async function handleSubscriptionSubmit(event) {
         discount_percentage: discountPercentage,
         price: Math.round(priceWithDiscount),
         price_per_session: Math.round(pricePerSessionAfterDiscount),
-        validity_days: validityDays,
+        expires_at: expiresAt,
         is_active: isActive
     };
     
