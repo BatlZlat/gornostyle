@@ -2606,11 +2606,51 @@ function showError(message) {
 }
 
 function showSuccess(message) {
+    // Попробовать найти .admin-content, если не найден - использовать body
+    const container = document.querySelector('.admin-content') || document.body;
+    
     const successDiv = document.createElement('div');
     successDiv.className = 'alert alert-success';
-    successDiv.textContent = message;
-    document.querySelector('.admin-content').insertBefore(successDiv, document.querySelector('.admin-content').firstChild);
-    setTimeout(() => successDiv.remove(), 3000);
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        min-width: 300px;
+        max-width: 500px;
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    `;
+    successDiv.textContent = '✅ ' + message;
+    
+    // Добавить на страницу
+    document.body.appendChild(successDiv);
+    
+    // Анимация появления
+    setTimeout(() => {
+        successDiv.style.opacity = '1';
+        successDiv.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Автоматическое удаление через 5 секунд
+    setTimeout(() => {
+        successDiv.style.opacity = '0';
+        successDiv.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.remove();
+            }
+        }, 300);
+    }, 5000);
+    
+    console.log('Сообщение об успехе отображено:', message);
 }
 
 // Закрытие модальных окон при клике вне их области
@@ -4773,27 +4813,53 @@ async function openSubscriptionModal() {
         subscriptionSessions.value = '';
     }
     
-    // Загрузить и заполнить список цен
+    // Добавить обработчик submit формы (удаляем старый и добавляем новый каждый раз, чтобы избежать конфликтов)
+    const subscriptionForm = document.getElementById('subscription-form');
+    if (subscriptionForm) {
+        // Удалить старые обработчики (клонируем форму без обработчиков)
+        const newForm = subscriptionForm.cloneNode(true);
+        subscriptionForm.parentNode.replaceChild(newForm, subscriptionForm);
+        
+        // Добавить обработчик на новую форму
+        const form = document.getElementById('subscription-form');
+        if (form) {
+            form.addEventListener('submit', handleSubscriptionSubmit);
+        }
+    }
+    
+    // Загрузить и заполнить список цен (после клонирования формы!)
     await populatePriceSelect();
     
-    // Добавить обработчик изменения выбранной цены (если еще не добавлен)
-    const priceSelect = document.getElementById('subscription-price-select');
-    if (priceSelect && !priceSelect.dataset.listenerAdded) {
-        priceSelect.addEventListener('change', handlePriceSelection);
-        priceSelect.dataset.listenerAdded = 'true';
-    }
+    // Добавить обработчик изменения выбранной цены (после клонирования формы!)
+    // Используем setTimeout, чтобы убедиться, что DOM обновлен после populatePriceSelect
+    setTimeout(() => {
+        const priceSelect = document.getElementById('subscription-price-select');
+        if (priceSelect) {
+            // Удалить старый обработчик, если есть, через клонирование
+            const newPriceSelect = priceSelect.cloneNode(true);
+            priceSelect.parentNode.replaceChild(newPriceSelect, priceSelect);
+            
+            // Добавить обработчик на новый элемент
+            const newSelect = document.getElementById('subscription-price-select');
+            if (newSelect) {
+                newSelect.addEventListener('change', handlePriceSelection);
+                console.log('Обработчик изменения цены добавлен на селект');
+            }
+        }
+    }, 150);
     
-    // Добавить обработчик изменения количества занятий (если еще не добавлен)
-    if (subscriptionSessions && !subscriptionSessions.dataset.listenerAdded) {
-        subscriptionSessions.addEventListener('change', calculateSubscriptionPrice);
-        subscriptionSessions.dataset.listenerAdded = 'true';
-    }
-    
-    // Добавить обработчик submit формы (если еще не добавлен)
-    const subscriptionForm = document.getElementById('subscription-form');
-    if (subscriptionForm && !subscriptionForm.dataset.listenerAdded) {
-        subscriptionForm.addEventListener('submit', handleSubscriptionSubmit);
-        subscriptionForm.dataset.listenerAdded = 'true';
+    // Добавить обработчик изменения количества занятий (после клонирования формы!)
+    const subscriptionSessionsNew = document.getElementById('subscription-sessions');
+    if (subscriptionSessionsNew) {
+        // Удалить старый обработчик, если есть
+        const newSessions = subscriptionSessionsNew.cloneNode(true);
+        subscriptionSessionsNew.parentNode.replaceChild(newSessions, subscriptionSessionsNew);
+        
+        // Добавить обработчик на новый элемент
+        const newSessionsEl = document.getElementById('subscription-sessions');
+        if (newSessionsEl) {
+            newSessionsEl.addEventListener('change', calculateSubscriptionPrice);
+        }
     }
     
     // Обработчик закрытия при клике вне модального окна
@@ -4854,28 +4920,69 @@ function handlePriceSelection() {
     const subscriptionSessions = document.getElementById('subscription-sessions');
     if (subscriptionSessions) {
         subscriptionSessions.disabled = false;
-        subscriptionSessions.querySelector('option:first-child').textContent = 'Выберите количество занятий';
+        const firstOption = subscriptionSessions.querySelector('option:first-child');
+        if (firstOption) {
+            firstOption.textContent = 'Выберите количество занятий';
+        }
+        
+        // Сохранить выбранное значение количества занятий, если оно уже выбрано (при редактировании)
+        const currentSessionsValue = subscriptionSessions.value;
+        
+        // Убедиться, что обработчик события добавлен
+        const currentSessions = document.getElementById('subscription-sessions');
+        if (currentSessions) {
+            // Удалить старый обработчик через клонирование
+            const newSessionsEl = currentSessions.cloneNode(true);
+            currentSessions.parentNode.replaceChild(newSessionsEl, currentSessions);
+            // Добавить обработчик на новый элемент
+            const newEl = document.getElementById('subscription-sessions');
+            if (newEl) {
+                // Восстановить выбранное значение, если оно было
+                if (currentSessionsValue && currentSessionsValue !== '') {
+                    newEl.value = currentSessionsValue;
+                }
+                if (!newEl.dataset.listenerAdded) {
+                    newEl.addEventListener('change', calculateSubscriptionPrice);
+                    newEl.dataset.listenerAdded = 'true';
+                }
+            }
+        }
     }
     
     // Показать блок настройки процентов скидки
     document.getElementById('subscription-discount-controls').style.display = 'block';
     
-    // Скрыть блоки с информацией до выбора количества занятий
-    document.getElementById('subscription-discount-info').style.display = 'none';
-    document.getElementById('subscription-price-info').style.display = 'none';
+    // Если количество занятий уже выбрано, показать блоки с информацией
+    const sessionsValue = document.getElementById('subscription-sessions')?.value;
+    if (sessionsValue && sessionsValue !== '') {
+        // Если количество занятий уже выбрано, пересчитать цену
+        calculateSubscriptionPrice();
+    } else {
+        // Скрыть блоки с информацией до выбора количества занятий
+        document.getElementById('subscription-discount-info').style.display = 'none';
+        document.getElementById('subscription-price-info').style.display = 'none';
+    }
     
-    // Добавить обработчики изменения процентов скидки (если еще не добавлены)
+    // Добавить обработчики изменения процентов скидки
     const discountInputs = ['discount-3', 'discount-5', 'discount-7', 'discount-10'];
-    discountInputs.forEach(id => {
-        const input = document.getElementById(id);
-        if (input && !input.dataset.listenerAdded) {
-            input.addEventListener('input', () => {
-                // Если количество занятий уже выбрано, пересчитать цену
-                if (subscriptionSessions && subscriptionSessions.value) {
-                    calculateSubscriptionPrice();
-                }
-            });
-            input.dataset.listenerAdded = 'true';
+    discountInputs.forEach(discountId => {
+        const discountInput = document.getElementById(discountId);
+        if (discountInput) {
+            // Удалить старый обработчик через клонирование
+            const newInput = discountInput.cloneNode(true);
+            discountInput.parentNode.replaceChild(newInput, discountInput);
+            
+            // Добавить обработчик на новый элемент
+            const newInputEl = document.getElementById(discountId);
+            if (newInputEl) {
+                newInputEl.addEventListener('input', () => {
+                    // Если количество занятий уже выбрано, пересчитать цену
+                    const sessionsEl = document.getElementById('subscription-sessions');
+                    if (sessionsEl && sessionsEl.value) {
+                        calculateSubscriptionPrice();
+                    }
+                });
+            }
         }
     });
     
@@ -5125,34 +5232,32 @@ async function editSubscriptionType(id) {
         if (!modal) return;
         
         // Заполнить форму данными
-        document.getElementById('subscription-id').value = subscription.id;
+        document.getElementById('subscription-id').value = subscription.id.toString();
         document.getElementById('subscription-modal-title').textContent = 'Редактировать абонемент';
         document.getElementById('subscription-name').value = subscription.name;
         document.getElementById('subscription-description').value = subscription.description || '';
         document.getElementById('subscription-validity').value = subscription.validity_days;
         document.getElementById('subscription-is-active').checked = subscription.is_active;
         
-        // Загрузить цены и выбрать нужную
-        await populatePriceSelect();
-        
-        // Установить процент скидки в зависимости от количества занятий
+        // Установить количество занятий и скидку ПЕРЕД загрузкой цен
         const sessionsCount = subscription.sessions_count;
         const discountPercentage = parseFloat(subscription.discount_percentage);
         
-        document.getElementById('subscription-sessions').value = sessionsCount;
-        document.getElementById(`discount-${sessionsCount}`).value = discountPercentage.toFixed(0);
-        document.getElementById('subscription-discount').value = discountPercentage;
+        // Сохранить эти значения в глобальной переменной для использования в handlePriceSelection
+        window._editSubscriptionData = {
+            sessionsCount: sessionsCount,
+            discountPercentage: discountPercentage
+        };
         
-        // Показать блоки настроек
-        document.getElementById('subscription-discount-controls').style.display = 'block';
+        // Загрузить цены
+        await populatePriceSelect();
         
         // Найти цену из прайса, соответствующую цене абонемента
         // Цена за занятие после скидки = price_per_session
         // Обратная расчет: цена за человека без скидки = price_per_session / (1 - discount_percentage / 100)
         const pricePerPersonWithoutDiscount = subscription.price_per_session / (1 - discountPercentage / 100);
         
-        // Загрузить цены и найти соответствующую
-        await populatePriceSelect();
+        // Получить список цен и найти соответствующую
         const prices = await loadGroupPricesForSubscription();
         
         // Попробовать найти подходящую цену из прайса
@@ -5166,6 +5271,14 @@ async function editSubscriptionType(id) {
             }
         }
         
+        // Установить количество занятий
+        document.getElementById('subscription-sessions').value = sessionsCount;
+        document.getElementById(`discount-${sessionsCount}`).value = discountPercentage.toFixed(0);
+        document.getElementById('subscription-discount').value = discountPercentage.toFixed(2);
+        
+        // Показать блоки настроек
+        document.getElementById('subscription-discount-controls').style.display = 'block';
+        
         if (foundPrice) {
             // Найти опцию в селекте и выбрать её
             const priceSelect = document.getElementById('subscription-price-select');
@@ -5175,23 +5288,123 @@ async function editSubscriptionType(id) {
                     break;
                 }
             }
-            // Запустить обработчик выбора цены
-            handlePriceSelection();
-        } else {
-            // Если не нашли подходящую цену, просто включить выбор
-            document.getElementById('subscription-sessions').disabled = false;
-            document.getElementById('subscription-discount-controls').style.display = 'block';
             
-            // Сохранить вычисленные значения
+            // Установить значения в скрытые поля ПЕРЕД вызовом handlePriceSelection
+            const totalPrice = foundPrice.price;
+            const participants = foundPrice.participants || 1;
+            const pricePerPerson = totalPrice / participants;
+            
+            document.getElementById('subscription-price-id').value = foundPrice.id;
+            document.getElementById('subscription-price-per-person').value = pricePerPerson;
+            document.getElementById('subscription-price-per-session').value = totalPrice;
+            document.getElementById('subscription-participants').value = participants;
+            
+            // Включить выбор количества занятий и сохранить выбранное значение
+            document.getElementById('subscription-sessions').disabled = false;
+            
+            // Вызвать расчет цены (а не handlePriceSelection, чтобы не перезаписать выбранные значения)
+            calculateSubscriptionPrice();
+        } else {
+            // Если не нашли подходящую цену, просто включить выбор и установить значения вручную
+            document.getElementById('subscription-sessions').disabled = false;
+            
+            // Сохранить вычисленные значения для последующего использования
             document.getElementById('subscription-price-per-person').value = pricePerPersonWithoutDiscount;
-            document.getElementById('subscription-price-per-session').value = foundPrice ? foundPrice.price : (pricePerPersonWithoutDiscount * (subscription.participants || 1));
             
             // Рассчитать и показать цену
-            calculateSubscriptionPrice();
+            setTimeout(() => {
+                calculateSubscriptionPrice();
+            }, 100);
         }
         
         // Обновить текст кнопки
         document.getElementById('subscription-submit-btn').textContent = 'Сохранить изменения';
+        
+        // КРИТИЧЕСКИ ВАЖНО: Добавить обработчик submit формы (как в openSubscriptionModal)
+        const subscriptionForm = document.getElementById('subscription-form');
+        if (subscriptionForm) {
+            // Удалить старые обработчики (клонируем форму без обработчиков)
+            const newForm = subscriptionForm.cloneNode(true);
+            subscriptionForm.parentNode.replaceChild(newForm, subscriptionForm);
+            
+            // Добавить обработчик на новую форму
+            const form = document.getElementById('subscription-form');
+            if (form) {
+                form.addEventListener('submit', handleSubscriptionSubmit);
+                console.log('Обработчик submit формы добавлен для редактирования');
+            } else {
+                console.error('Форма subscription-form не найдена после клонирования');
+            }
+        } else {
+            console.error('Форма subscription-form не найдена');
+        }
+        
+        // Добавить обработчик изменения выбранной цены
+        setTimeout(() => {
+            const priceSelect = document.getElementById('subscription-price-select');
+            if (priceSelect) {
+                // Удалить старый обработчик, если есть, через клонирование
+                const newPriceSelect = priceSelect.cloneNode(true);
+                priceSelect.parentNode.replaceChild(newPriceSelect, priceSelect);
+                
+                // Добавить обработчик на новый элемент
+                const newSelect = document.getElementById('subscription-price-select');
+                if (newSelect) {
+                    newSelect.addEventListener('change', handlePriceSelection);
+                    console.log('Обработчик изменения цены добавлен для редактирования');
+                }
+            }
+        }, 150);
+        
+        // Добавить обработчик изменения количества занятий
+        const subscriptionSessionsEl = document.getElementById('subscription-sessions');
+        if (subscriptionSessionsEl) {
+            // Удалить старый обработчик через клонирование
+            const newSessions = subscriptionSessionsEl.cloneNode(true);
+            subscriptionSessionsEl.parentNode.replaceChild(newSessions, subscriptionSessionsEl);
+            
+            // Добавить обработчик на новый элемент
+            const newSessionsEl = document.getElementById('subscription-sessions');
+            if (newSessionsEl) {
+                newSessionsEl.addEventListener('change', calculateSubscriptionPrice);
+                console.log('Обработчик изменения количества занятий добавлен для редактирования');
+            }
+        }
+        
+        // Добавить обработчики изменения процентов скидки
+        const discountInputs = ['discount-3', 'discount-5', 'discount-7', 'discount-10'];
+        discountInputs.forEach(discountId => {
+            const discountInput = document.getElementById(discountId);
+            if (discountInput) {
+                // Удалить старый обработчик через клонирование
+                const newInput = discountInput.cloneNode(true);
+                discountInput.parentNode.replaceChild(newInput, discountInput);
+                
+                // Добавить обработчик на новый элемент
+                const newInputEl = document.getElementById(discountId);
+                if (newInputEl) {
+                    newInputEl.addEventListener('input', () => {
+                        console.log(`Изменен процент скидки для ${discountId}:`, newInputEl.value);
+                        const sessionsEl = document.getElementById('subscription-sessions');
+                        const sessionsCount = sessionsEl?.value;
+                        
+                        // Если количество занятий выбрано, обновить скрытое поле discount и пересчитать цену
+                        if (sessionsCount) {
+                            const discountValue = parseFloat(newInputEl.value) || 0;
+                            
+                            // Если это поле скидки соответствует выбранному количеству занятий, обновить скрытое поле
+                            if (sessionsCount === discountId.replace('discount-', '')) {
+                                document.getElementById('subscription-discount').value = discountValue.toFixed(2);
+                            }
+                            
+                            // Всегда пересчитать цену, если количество занятий выбрано
+                            calculateSubscriptionPrice();
+                        }
+                    });
+                    console.log(`Обработчик процента скидки добавлен для ${discountId}`);
+                }
+            }
+        });
         
         // Открыть модальное окно
         modal.style.display = 'block';
@@ -5230,6 +5443,7 @@ async function deleteSubscriptionType(id) {
 // Обработчик отправки формы создания абонемента
 async function handleSubscriptionSubmit(event) {
     event.preventDefault();
+    event.stopPropagation();
     
     // Собрать данные из формы
     const name = document.getElementById('subscription-name').value.trim();
@@ -5276,7 +5490,9 @@ async function handleSubscriptionSubmit(event) {
     
     // Проверить, это редактирование или создание
     const subscriptionId = document.getElementById('subscription-id').value;
-    const isEdit = !!subscriptionId;
+    const isEdit = subscriptionId && subscriptionId !== '' && subscriptionId !== '0';
+    
+    console.log('Режим:', isEdit ? 'Редактирование' : 'Создание', 'ID:', subscriptionId);
     
     // Данные для отправки
     const subscriptionData = {
@@ -5290,9 +5506,20 @@ async function handleSubscriptionSubmit(event) {
         is_active: isActive
     };
     
+    console.log('Данные для отправки на сервер:', JSON.stringify(subscriptionData, null, 2));
+    
     try {
         // Показать загрузку
-        const submitButton = event.target.querySelector('button[type="submit"]');
+        const submitButton = document.getElementById('subscription-submit-btn') || 
+                            (event.target?.querySelector ? event.target.querySelector('button[type="submit"]') : null) ||
+                            document.querySelector('#subscription-form button[type="submit"]');
+        
+        if (!submitButton) {
+            console.error('Кнопка submit не найдена');
+            showError('Ошибка: кнопка отправки не найдена');
+            return;
+        }
+        
         const originalButtonText = submitButton.textContent;
         submitButton.disabled = true;
         submitButton.textContent = isEdit ? 'Сохранение...' : 'Создание...';
@@ -5302,6 +5529,8 @@ async function handleSubscriptionSubmit(event) {
             ? `/api/natural-slope-subscriptions/types/${subscriptionId}`
             : '/api/natural-slope-subscriptions/types';
         const method = isEdit ? 'PUT' : 'POST';
+        
+        console.log('Отправка запроса:', method, url, subscriptionData);
         
         const response = await fetch(url, {
             method: method,
@@ -5313,31 +5542,49 @@ async function handleSubscriptionSubmit(event) {
         
         if (!response.ok) {
             const error = await response.json();
+            console.error('Ошибка ответа сервера:', error);
             throw new Error(error.error || 'Ошибка при сохранении абонемента');
         }
         
         const savedSubscription = await response.json();
+        console.log('Абонемент сохранен:', savedSubscription);
         
-        // Показать успех
-        showSuccess(isEdit ? 'Абонемент успешно обновлен!' : 'Абонемент успешно создан!');
+        // Показать успех с детальной информацией
+        const successMessage = isEdit 
+            ? 'Изменения абонемента успешно сохранены!' 
+            : 'Абонемент успешно создан!';
+        showSuccess(successMessage);
+        console.log('Показываем сообщение об успехе:', successMessage);
         
         // Закрыть модальное окно
         closeSubscriptionModal();
         
-        // Перезагрузить список абонементов, если страница уже открыта
+        // Перезагрузить список абонементов и убедиться, что остаемся на странице абонементов
+        // Сначала переключаемся на страницу абонементов (если не на ней)
+        const subscriptionsPage = document.getElementById('subscriptions-page');
+        if (subscriptionsPage && subscriptionsPage.style.display === 'none') {
+            switchPage('subscriptions');
+        }
+        
+        // Затем перезагружаем данные (НО НЕ перезагружаем DOM, чтобы не потерять обработчики формы)
         if (typeof loadSubscriptionsPage === 'function') {
             await loadSubscriptionsPage();
         }
+        
+        // ВАЖНО: После перезагрузки страницы нужно переустановить обработчик формы, если модальное окно все еще открыто
+        // Но так как мы закрыли модальное окно, это не нужно. Однако если нужно будет работать с формой снова,
+        // обработчик будет установлен при следующем открытии модального окна.
         
     } catch (error) {
         console.error('Ошибка при сохранении абонемента:', error);
         showError(error.message || 'Не удалось сохранить абонемент');
         
         // Восстановить кнопку
-        const submitButton = event.target.querySelector('button[type="submit"]');
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.textContent = originalButtonText || 'Создать абонемент';
+        const submitBtn = document.getElementById('subscription-submit-btn') || 
+                          document.querySelector('#subscription-form button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = isEdit ? 'Сохранить изменения' : 'Создать абонемент';
         }
     }
 }

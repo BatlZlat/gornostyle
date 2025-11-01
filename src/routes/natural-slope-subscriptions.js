@@ -168,6 +168,7 @@ router.post('/types', async (req, res) => {
         ]);
 
         console.log(`✅ Создан новый тип абонемента: ${name}`);
+        console.log('Сохраненные данные:', JSON.stringify(result.rows[0], null, 2));
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при создании типа абонемента:', error);
@@ -226,6 +227,7 @@ router.put('/types/:id', async (req, res) => {
         }
 
         console.log(`✅ Обновлен тип абонемента ID ${id}: ${name}`);
+        console.log('Обновленные данные:', JSON.stringify(result.rows[0], null, 2));
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка при обновлении типа абонемента:', error);
