@@ -4622,7 +4622,7 @@ async function handleTextMessage(msg) {
                     if (useSubscription) {
                         message += `🎫 *Оплата:* По абонементу "${subscriptionInfo.subscription_name}"\n` +
                             `📊 *Занятий осталось:* ${remainingAfter}/${totalSessions}\n` +
-                            `💳 *Баланс:* ${balance.toFixed(2)} ₽ (не изменился)\n\n` +
+                            `💳 *Баланс:* ${balance.toFixed(2)} ₽\n\n` +
                             '🎿 Удачной тренировки!';
                     } else {
                         message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} ₽\n` +
@@ -5538,23 +5538,37 @@ async function handleTextMessage(msg) {
                     await pool.query('UPDATE session_participants SET status = $1 WHERE id = $2', ['cancelled', selectedSession.id]);
 
                     // Освобождаем слот в winter_schedule если все участники отменили
+                    // Проверяем, есть ли запись в winter_schedule для этой тренировки
                     const remainingCheck = await pool.query(
                         'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
                         [selectedSession.session_id, 'confirmed']
                     );
                     if (parseInt(remainingCheck.rows[0].count) === 0) {
-                        await pool.query(
-                            `UPDATE winter_schedule 
-                             SET is_available = true, 
-                                 current_participants = 0,
-                                 is_group_training = false,
-                                 group_id = NULL,
-                                 trainer_id = NULL,
-                                 max_participants = 1
-                             WHERE date = $1 
-                             AND time_slot = $2`,
-                            [selectedSession.session_date, selectedSession.start_time]
+                        // Проверяем, есть ли запись в winter_schedule для этого времени
+                        const timeSlot = String(selectedSession.start_time).substring(0, 5);
+                        const slotCheck = await pool.query(
+                            `SELECT id, is_group_training FROM winter_schedule 
+                             WHERE date = $1 AND time_slot = $2::time LIMIT 1`,
+                            [selectedSession.session_date, timeSlot]
                         );
+                        
+                        // Если есть запись в winter_schedule и это групповая тренировка
+                        if (slotCheck.rows.length > 0 && slotCheck.rows[0].is_group_training) {
+                            // Правильно обновляем: при is_group_training = false должно быть is_individual_training = true
+                            await pool.query(
+                                `UPDATE winter_schedule 
+                                 SET is_available = true, 
+                                     current_participants = 0,
+                                     is_group_training = false,
+                                     is_individual_training = true,
+                                     group_id = NULL,
+                                     trainer_id = NULL,
+                                     max_participants = 1,
+                                     updated_at = NOW()
+                                 WHERE id = $1`,
+                                [slotCheck.rows[0].id]
+                            );
+                        }
                     }
 
                     // Проверяем, использовался ли абонемент для этой тренировки
