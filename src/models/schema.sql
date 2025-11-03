@@ -1153,6 +1153,7 @@ CREATE TABLE natural_slope_subscription_usage (
     id SERIAL PRIMARY KEY,
     subscription_id INTEGER NOT NULL REFERENCES natural_slope_subscriptions(id) ON DELETE CASCADE,
     training_session_id INTEGER NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
+    session_participant_id INTEGER REFERENCES session_participants(id) ON DELETE CASCADE,
     
     used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
@@ -1224,4 +1225,5 @@ CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_status ON natural_slo
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_slope_subscriptions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 

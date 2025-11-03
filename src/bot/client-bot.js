@@ -4530,16 +4530,17 @@ async function handleTextMessage(msg) {
                             [subscriptionInfo.id]
                         );
 
-                        // Записываем использование абонемента
+                        // Записываем использование абонемента с привязкой к участнику
                         await client.query(
                             `INSERT INTO natural_slope_subscription_usage (
-                                subscription_id, training_session_id, original_price, 
-                                subscription_price, savings, used_at
+                                subscription_id, training_session_id, session_participant_id,
+                                original_price, subscription_price, savings, used_at
                             )
-                            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+                            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
                             [
                                 subscriptionInfo.id,
                                 selectedTraining.id,
+                                participantResult.rows[0].id,
                                 pricePerPerson,
                                 subscriptionInfo.price_per_session || 0,
                                 pricePerPerson - (subscriptionInfo.price_per_session || 0)
@@ -4992,74 +4993,19 @@ async function handleTextMessage(msg) {
                             (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                             'group_winter' as session_type,
                             'natural_slope' as slope_type,
-                            CASE WHEN EXISTS (
-                                SELECT 1 FROM transactions t
-                                JOIN wallets w ON t.wallet_id = w.id
-                                WHERE w.client_id = cl.id
-                                AND t.type = 'subscription_usage'
-                                AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                                AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                                AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                            ) THEN true ELSE false END as used_subscription,
-                            (SELECT st.name 
-                             FROM natural_slope_subscription_usage nsu
-                             JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                             JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
-                             WHERE nsu.training_session_id = ts.id 
-                             AND ns.client_id = cl.id
-                             AND EXISTS (
-                                 SELECT 1 FROM transactions t
-                                 JOIN wallets w ON t.wallet_id = w.id
-                                 WHERE w.client_id = cl.id
-                                 AND t.type = 'subscription_usage'
-                                 AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                                 AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                                 AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                                 AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                             )
-                             ORDER BY nsu.used_at DESC
-                             LIMIT 1) as subscription_name,
-                            (SELECT ns.remaining_sessions 
-                             FROM natural_slope_subscription_usage nsu
-                             JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                             WHERE nsu.training_session_id = ts.id 
-                             AND ns.client_id = cl.id
-                             AND EXISTS (
-                                 SELECT 1 FROM transactions t
-                                 JOIN wallets w ON t.wallet_id = w.id
-                                 WHERE w.client_id = cl.id
-                                 AND t.type = 'subscription_usage'
-                                 AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                                 AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                                 AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                                 AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                             )
-                             ORDER BY nsu.used_at DESC
-                             LIMIT 1) as subscription_remaining_sessions,
-                            (SELECT st.sessions_count 
-                             FROM natural_slope_subscription_usage nsu
-                             JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                             JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
-                             WHERE nsu.training_session_id = ts.id 
-                             AND ns.client_id = cl.id
-                             AND EXISTS (
-                                 SELECT 1 FROM transactions t
-                                 JOIN wallets w ON t.wallet_id = w.id
-                                 WHERE w.client_id = cl.id
-                                 AND t.type = 'subscription_usage'
-                                 AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                                 AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                                 AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                                 AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                             )
-                             ORDER BY nsu.used_at DESC
-                             LIMIT 1) as subscription_total_sessions
+                            CASE WHEN nsu.id IS NOT NULL THEN true ELSE false END as used_subscription,
+                            st.name as subscription_name,
+                            ns.remaining_sessions as subscription_remaining_sessions,
+                            st.sessions_count as subscription_total_sessions
                         FROM session_participants sp
                         JOIN training_sessions ts ON sp.session_id = ts.id
                         LEFT JOIN groups g ON ts.group_id = g.id
                         LEFT JOIN trainers t ON ts.trainer_id = t.id
                         LEFT JOIN children c ON sp.child_id = c.id
                         JOIN clients cl ON sp.client_id = cl.id
+                        LEFT JOIN natural_slope_subscription_usage nsu ON nsu.session_participant_id = sp.id
+                        LEFT JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                        LEFT JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
                         WHERE sp.client_id = $1
                         AND ts.status = 'scheduled'
                         AND sp.status = 'confirmed'
@@ -5673,7 +5619,7 @@ async function handleTextMessage(msg) {
                         }
                     }
 
-                    // Проверяем, использовался ли абонемент для этой тренировки
+                    // Проверяем, использовался ли абонемент для этого конкретного участника
                     const subscriptionUsageCheck = await pool.query(
                         `SELECT 
                             nsu.*,
@@ -5684,8 +5630,9 @@ async function handleTextMessage(msg) {
                          FROM natural_slope_subscription_usage nsu
                          JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
                          JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
-                         WHERE nsu.training_session_id = $1`,
-                        [selectedSession.session_id]
+                         WHERE nsu.session_participant_id = $1
+                         AND ns.client_id = $2`,
+                        [selectedSession.id, state.data.client_id]
                     );
 
                     let refundMessage = '';
@@ -5727,12 +5674,6 @@ async function handleTextMessage(msg) {
                         const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
                         const walletId = walletRes.rows[0]?.id;
                         if (walletId) {
-                            // Форматируем дату и время для описания
-                            const date = new Date(selectedSession.session_date);
-                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                            const [hours, minutes] = selectedSession.start_time.split(':');
-                            const formattedTime = `${hours}:${minutes}`;
-                            
                             // Создаем запись о возврате занятия в абонемент
                             await pool.query(
                                 'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
@@ -5754,12 +5695,6 @@ async function handleTextMessage(msg) {
                         const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
                         const walletId = walletRes.rows[0]?.id;
                         if (walletId) {
-                            // Форматируем дату и время для описания
-                            const date = new Date(selectedSession.session_date);
-                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                            const [hours, minutes] = selectedSession.start_time.split(':');
-                            const formattedTime = `${hours}:${minutes}`;
-                            
                             // Создаем запись о возврате
                             await pool.query(
                                 'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
@@ -7445,74 +7380,19 @@ async function showMyBookings(chatId) {
                 (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
                 'group_winter' as session_type,
                 'natural_slope' as slope_type,
-                CASE WHEN EXISTS (
-                    SELECT 1 FROM transactions t
-                    JOIN wallets w ON t.wallet_id = w.id
-                    WHERE w.client_id = cl.id
-                    AND t.type = 'subscription_usage'
-                    AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                    AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                    AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                ) THEN true ELSE false END as used_subscription,
-                (SELECT st.name 
-                 FROM natural_slope_subscription_usage nsu
-                 JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                 JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
-                 WHERE nsu.training_session_id = ts.id 
-                 AND ns.client_id = cl.id
-                 AND EXISTS (
-                     SELECT 1 FROM transactions t
-                     JOIN wallets w ON t.wallet_id = w.id
-                     WHERE w.client_id = cl.id
-                     AND t.type = 'subscription_usage'
-                     AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                     AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                     AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                     AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                 )
-                 ORDER BY nsu.used_at DESC
-                 LIMIT 1) as subscription_name,
-                (SELECT ns.remaining_sessions 
-                 FROM natural_slope_subscription_usage nsu
-                 JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                 WHERE nsu.training_session_id = ts.id 
-                 AND ns.client_id = cl.id
-                 AND EXISTS (
-                     SELECT 1 FROM transactions t
-                     JOIN wallets w ON t.wallet_id = w.id
-                     WHERE w.client_id = cl.id
-                     AND t.type = 'subscription_usage'
-                     AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                     AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                     AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                     AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                 )
-                 ORDER BY nsu.used_at DESC
-                 LIMIT 1) as subscription_remaining_sessions,
-                (SELECT st.sessions_count 
-                 FROM natural_slope_subscription_usage nsu
-                 JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
-                 JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
-                 WHERE nsu.training_session_id = ts.id 
-                 AND ns.client_id = cl.id
-                 AND EXISTS (
-                     SELECT 1 FROM transactions t
-                     JOIN wallets w ON t.wallet_id = w.id
-                     WHERE w.client_id = cl.id
-                     AND t.type = 'subscription_usage'
-                     AND t.description LIKE '%' || REPLACE(COALESCE(c.full_name, cl.full_name), ' ', '%') || '%'
-                     AND t.description LIKE '%' || TO_CHAR(ts.session_date, 'DD.MM.YYYY') || '%'
-                     AND t.description LIKE '%' || SUBSTRING(ts.start_time::text, 1, 5) || '%'
-                     AND ABS(EXTRACT(EPOCH FROM (t.created_at - nsu.used_at))) < 5
-                 )
-                 ORDER BY nsu.used_at DESC
-                 LIMIT 1) as subscription_total_sessions
+                CASE WHEN nsu.id IS NOT NULL THEN true ELSE false END as used_subscription,
+                st.name as subscription_name,
+                ns.remaining_sessions as subscription_remaining_sessions,
+                st.sessions_count as subscription_total_sessions
             FROM session_participants sp
             JOIN training_sessions ts ON sp.session_id = ts.id
             LEFT JOIN groups g ON ts.group_id = g.id
             LEFT JOIN trainers t ON ts.trainer_id = t.id
             LEFT JOIN children c ON sp.child_id = c.id
             JOIN clients cl ON sp.client_id = cl.id
+            LEFT JOIN natural_slope_subscription_usage nsu ON nsu.session_participant_id = sp.id
+            LEFT JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+            LEFT JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
             WHERE sp.client_id = $1
             AND ts.status = 'scheduled'
             AND sp.status = 'confirmed'
