@@ -642,35 +642,96 @@ router.delete('/:id', async (req, res) => {
             for (const p of confirmedParticipants) {
                 const walletId = p.wallet_id;
                 if (!walletId) continue;
-                // Идемпотентность: проверяем, не делали ли уже возврат по этой тренировке этому участнику
-                const refundCheck = await client.query(
-                    `SELECT 1 FROM transactions 
-                     WHERE wallet_id = $1 AND description ILIKE $2`,
-                    [walletId, `%${formattedDate}%${startTime}%${p.participant_name}%`]
+                
+                // Проверяем, использовался ли абонемент для этого участника
+                const subscriptionUsageCheck = await client.query(
+                    `SELECT 
+                        nsu.*,
+                        ns.remaining_sessions,
+                        ns.status as subscription_status,
+                        st.name as subscription_name,
+                        st.sessions_count as total_sessions
+                     FROM natural_slope_subscription_usage nsu
+                     JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                     JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                     WHERE nsu.session_participant_id = $1
+                     AND ns.client_id = $2`,
+                    [p.id, p.client_id]
                 );
-                if (refundCheck.rows.length === 0) {
-                    const totalPrice = Number.parseFloat(training.price || 0) || 0;
-                    const refundAmount = training.training_type === true
-                        ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
-                        : totalPrice;
+                
+                let usedSubscription = false;
+                let subscriptionInfo = null;
+                let refundAmount = 0;
+                let refundType = 'refund';
+                let refundDescription = '';
+                
+                if (subscriptionUsageCheck.rows.length > 0) {
+                    // Использовался абонемент - возвращаем занятие
+                    usedSubscription = true;
+                    subscriptionInfo = subscriptionUsageCheck.rows[0];
+                    
+                    // Возвращаем занятие в абонемент
+                    await client.query(
+                        `UPDATE natural_slope_subscriptions 
+                         SET remaining_sessions = remaining_sessions + 1,
+                             status = CASE 
+                                WHEN expires_at >= CURRENT_DATE THEN 'active'
+                                ELSE status
+                             END
+                         WHERE id = $1`,
+                        [subscriptionInfo.subscription_id]
+                    );
+                    
+                    // Удаляем запись использования
+                    await client.query(
+                        `DELETE FROM natural_slope_subscription_usage 
+                         WHERE id = $1`,
+                        [subscriptionInfo.id]
+                    );
+                    
+                    const remainingSessions = subscriptionInfo.remaining_sessions + 1;
+                    refundType = 'subscription_return';
+                    refundAmount = 0;
+                    refundDescription = `Возврат занятия в абонемент: ${training.training_type ? 'Группа (Кулига Парк)' : 'Индивидуальная (Кулига Парк)'}, ${p.participant_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${training.duration || duration} мин. Занятий осталось: ${remainingSessions}/${subscriptionInfo.total_sessions}`;
+                    
+                    // Создаем транзакцию для отчетности
                     await client.query(
                         'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                        [walletId, refundAmount, 'amount', `Возврат: ${training.training_type ? 'Группа (Кулига Парк)' : 'Индивидуальная (Кулига Парк)'}, ${p.participant_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${training.duration || duration} мин.`]
+                        [walletId, refundAmount, refundType, refundDescription]
                     );
-                    // Обновляем баланс кошелька
-                    await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [refundAmount, walletId]);
+                    
+                    console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionInfo.subscription_id} для участника ${p.id}`);
+                } else {
+                    // Не использовался абонемент - возвращаем деньги
+                    // Идемпотентность: проверяем, не делали ли уже возврат по этой тренировке этому участнику
+                    const refundCheck = await client.query(
+                        `SELECT 1 FROM transactions 
+                         WHERE wallet_id = $1 AND description ILIKE $2`,
+                        [walletId, `%${formattedDate}%${startTime}%${p.participant_name}%`]
+                    );
+                    if (refundCheck.rows.length === 0) {
+                        const totalPrice = Number.parseFloat(training.price || 0) || 0;
+                        refundAmount = training.training_type === true
+                            ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
+                            : totalPrice;
+                        refundType = 'refund';
+                        refundDescription = `Возврат: ${training.training_type ? 'Группа (Кулига Парк)' : 'Индивидуальная (Кулига Парк)'}, ${p.participant_name}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${training.duration || duration} мин.`;
+                        
+                        await client.query(
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [walletId, refundAmount, refundType, refundDescription]
+                        );
+                        // Обновляем баланс кошелька
+                        await client.query('UPDATE wallets SET balance = balance + $1 WHERE id = $2', [refundAmount, walletId]);
+                    }
                 }
                 // Уведомление клиенту (best-effort)
                 try {
                     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
                     if (TELEGRAM_BOT_TOKEN && p.telegram_id) {
-                        const totalPrice = Number.parseFloat(training.price || 0) || 0;
-                        const refundAmount = training.training_type === true
-                            ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
-                            : totalPrice;
-                        
                         // Формируем сообщение согласно требованиям
                         let text = `❗️ К сожалению, мы вынуждены отменить вашу тренировку на естественном склоне в Кулига Парк:\n\n`;
+                        text += `👤 *Участник:* ${p.participant_name}\n`;
                         text += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                         text += `⏰ *Время:* ${startTime}\n`;
                         text += `⏱️ *Длительность:* ${duration} минут\n`;
@@ -690,15 +751,16 @@ router.delete('/:id', async (req, res) => {
                             text += `📊 *Уровень:* ${training.skill_level}\n`;
                         }
                         
-                        // Добавляем участников (только для групповых тренировок)
-                        if (training.training_type === true && training.current_participants != null && training.max_participants != null) {
-                            const currentParticipants = parseInt(training.current_participants) || 0;
-                            const maxParticipants = parseInt(training.max_participants) || 0;
-                            text += `👥 *Участников:* ${currentParticipants}/${maxParticipants}\n`;
+                        // Добавляем информацию о возврате
+                        if (usedSubscription) {
+                            text += `🎫 *Абонемент:* Занятие возвращено в "${subscriptionInfo.subscription_name}"\n`;
+                            text += `📊 *Занятий осталось:* ${subscriptionInfo.remaining_sessions + 1}/${subscriptionInfo.total_sessions}\n\n`;
+                            text += `Занятие возвращено в абонемент.\n\n`;
+                        } else {
+                            text += `💰 *Возвращено:* ${refundAmount.toFixed(0)} руб.\n\n`;
+                            text += `Деньги в размере ${refundAmount.toFixed(0)} руб. возвращены на ваш счет.\n\n`;
                         }
                         
-                        text += `💰 *Стоимость:* ${refundAmount.toFixed(0)} руб.\n\n`;
-                        text += `Деньги в размере ${refundAmount.toFixed(0)} руб. возвращены на ваш счет.\n\n`;
                         text += `Тренировка могла быть отменена из-за недобора группы или болезни тренера.\n\n`;
                         text += `Подробнее вы можете уточнить у администратора: ${adminPhone}`;
                         
@@ -715,10 +777,6 @@ router.delete('/:id', async (req, res) => {
                 // Уведомление администратору по каждому участнику
                 try {
                     const { notifyAdminNaturalSlopeTrainingCancellation } = require('../bot/admin-notify');
-                    const totalPrice = Number.parseFloat(training.price || 0) || 0;
-                    const refundAmount = training.training_type === true
-                        ? (training.max_participants ? totalPrice / training.max_participants : totalPrice)
-                        : totalPrice;
                     
                     // parent_name уже содержит имя родителя (для детей) или клиента (для взрослых) благодаря COALESCE
                     // parent_phone аналогично содержит телефон родителя (для детей) или клиента (для взрослых)
@@ -732,9 +790,16 @@ router.delete('/:id', async (req, res) => {
                         date: training.session_date,
                         time: startTime,
                         trainer_name: training.trainer_name || null,
-                        refund: refundAmount
+                        group_name: training.group_name || null,
+                        refund: usedSubscription ? null : refundAmount,
+                        used_subscription: usedSubscription,
+                        subscription_name: usedSubscription ? subscriptionInfo.subscription_name : null,
+                        subscription_remaining_sessions: usedSubscription ? (subscriptionInfo.remaining_sessions + 1) : null,
+                        subscription_total_sessions: usedSubscription ? subscriptionInfo.total_sessions : null
                     });
-                } catch (e) { /* ignore */ }
+                } catch (e) { 
+                    console.error('Ошибка при отправке уведомления администратору:', e);
+                }
             }
         }
 

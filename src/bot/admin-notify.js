@@ -513,22 +513,46 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             return;
         }
 
+        // Определяем заголовок в зависимости от типа тренировки
+        const isGroupTraining = trainingData.trainer_name && trainingData.trainer_name !== 'Не указан';
+        const header = isGroupTraining 
+            ? '❌ *Отмена групповой зимней тренировки!*\n\n'
+            : '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n';
+
+        // Формируем строку с информацией о возврате
         let refundLine = '';
         if (trainingData.used_subscription) {
             refundLine = '💰 *Возврат занятия на абонемент*';
+            if (trainingData.subscription_name) {
+                refundLine += `\n🎫 *Абонемент:* ${trainingData.subscription_name}`;
+            }
+            if (trainingData.subscription_remaining_sessions != null && trainingData.subscription_total_sessions != null) {
+                refundLine += `\n📊 *Занятий осталось:* ${trainingData.subscription_remaining_sessions}/${trainingData.subscription_total_sessions}`;
+            }
         } else {
-            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund || 0).toFixed(2)} руб.`;
         }
 
-        const message = 
-            '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n' +
-            `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
-            `👤 *Участник:* ${trainingData.participant_name}\n` +
-            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+        let message = header +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n`;
+        
+        if (trainingData.participant_name && trainingData.participant_name !== '—') {
+            message += `👤 *Участник:* ${trainingData.participant_name}\n`;
+        }
+        
+        message += `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
-            `⏰ *Время:* ${trainingData.time}\n` +
-            `👨‍🏫 *Тренер:* ${trainingData.trainer_name || 'Не указан'}\n` +
-            `🏔️ *Место:* Кулига Парк\n` +
+            `⏰ *Время:* ${trainingData.time}\n`;
+        
+        if (isGroupTraining && trainingData.group_name) {
+            message += `👥 *Группа:* ${trainingData.group_name}\n`;
+        }
+        
+        if (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан') {
+            message += `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n`;
+        }
+        
+        message += `🏔️ *Место:* Кулига Парк\n` +
             refundLine;
 
         for (const adminId of adminIds) {
