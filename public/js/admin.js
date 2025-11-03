@@ -3322,6 +3322,8 @@ function getTransactionTypeRu(type) {
         case 'payment': return 'Оплата';
         case 'refill': return 'Пополнение';
         case 'amount': return 'Возврат';
+        case 'subscription_purchase': return 'Покупка абонемента';
+        case 'subscription_usage': return 'Запись по абонементу';
         default: return type;
     }
 } 

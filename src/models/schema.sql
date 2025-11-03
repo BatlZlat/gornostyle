@@ -228,7 +228,7 @@ CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
     wallet_id INTEGER REFERENCES wallets(id) ON DELETE CASCADE,
     amount DECIMAL(10,2) NOT NULL,
-    type VARCHAR(20) NOT NULL, -- payment, refill, amount
+    type VARCHAR(50) NOT NULL, -- payment, refill, amount, subscription_purchase
     description TEXT,
     card_number VARCHAR(20), -- последние 4 цифры карты
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

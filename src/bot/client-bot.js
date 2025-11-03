@@ -5,6 +5,8 @@ const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupT
 const { Booking } = require('../models/Booking');
 const jwt = require('jsonwebtoken');
 const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
+const axios = require('axios');
+const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscriptionUsage } = require('../services/subscription-helper');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -69,6 +71,7 @@ async function showMainMenu(chatId, telegramId = null) {
                 ['📝 Записаться на тренировку'],
                 ['📋 Мои записи', '👤 Личный кабинет'],
                 ['🎁 Сертификаты', '💰 Кошелек'],
+                ['🎫 Абонементы'],
                 ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
             ],
             resize_keyboard: true,
@@ -827,6 +830,57 @@ async function handleTextMessage(msg) {
     // Глобальная обработка сообщений
     if (msg.text === '🎁 Сертификаты') {
         return showCertificatesMenu(chatId);
+    }
+
+    // Обработка кнопки "Абонементы"
+    if (msg.text === '🎫 Абонементы') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showSubscriptionsMenu(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Купить абонемент"
+    if (msg.text === '🛒 Купить абонемент') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showAvailableSubscriptions(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Мои абонементы"
+    if (msg.text === '📋 Мои абонементы') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showMySubscriptions(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка выбора абонемента для покупки
+    if (state && state.step === 'subscription_purchase_selection') {
+        const selectedIndex = parseInt(msg.text) - 1;
+        const subscriptions = state.data?.available_subscriptions || [];
+
+        if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= subscriptions.length) {
+            return bot.sendMessage(chatId,
+                '❌ Неверный номер абонемента. Пожалуйста, выберите номер из списка.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        const selectedType = subscriptions[selectedIndex];
+        return purchaseSubscription(chatId, state.data.client_id, selectedType.id);
     }
 
     // Обработка кнопки "Подарить еще сертификат"
@@ -4344,18 +4398,46 @@ async function handleTextMessage(msg) {
                         ? (parseFloat(selectedTraining.price) / selectedTraining.max_participants) 
                         : 0;
 
-                    // Проверяем баланс
-                    if (balance < pricePerPerson) {
+                    // Проверяем наличие активного абонемента для групповых зимних тренировок
+                    let useSubscription = false;
+                    let subscriptionInfo = null;
+                    
+                    const subscriptionsCheck = await client.query(
+                        `SELECT 
+                            ns.*,
+                            st.name as subscription_name,
+                            st.sessions_count as total_sessions,
+                            st.price_per_session
+                         FROM natural_slope_subscriptions ns
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE ns.client_id = $1
+                            AND ns.status = 'active'
+                            AND ns.remaining_sessions > 0
+                            AND ns.expires_at >= CURRENT_DATE
+                         ORDER BY ns.expires_at ASC, ns.purchased_at ASC
+                         LIMIT 1`,
+                        [state.data.client_id]
+                    );
+
+                    if (subscriptionsCheck.rows.length > 0) {
+                        useSubscription = true;
+                        subscriptionInfo = subscriptionsCheck.rows[0];
+                        console.log(`✅ Используется абонемент ID ${subscriptionInfo.id} для клиента ${state.data.client_id}`);
+                    }
+
+                    // Проверяем баланс только если нет абонемента
+                    if (!useSubscription && balance < pricePerPerson) {
                         await client.query('ROLLBACK');
                         return bot.sendMessage(chatId,
                             `❌ Недостаточно средств на балансе.\n\n` +
                             `Требуется: ${pricePerPerson.toFixed(2)} руб.\n` +
                             `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                            `Пожалуйста, пополните баланс и попробуйте записаться снова.`,
+                            `Пожалуйста, пополните баланс или используйте абонемент.`,
                             {
                                 reply_markup: {
                                     keyboard: [
                                         ['💳 Пополнить баланс'],
+                                        ['🎫 Абонементы'],
                                         ['🔙 Назад в меню']
                                     ],
                                     resize_keyboard: true
@@ -4415,31 +4497,8 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    // Списываем средства
-                    await client.query(
-                        'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
-                        [pricePerPerson, state.data.client_id]
-                    );
-
-                    // Получаем id кошелька для создания транзакции
-                    const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
-                    const walletId = walletRes.rows[0]?.id;
-                    
-                    if (walletId) {
-                        // Формируем дату и время для описания
-                        const date = new Date(selectedTraining.date);
-                        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                        const timeStr = String(selectedTraining.start_time).substring(0, 5);
-                        
-                        // Создаем запись в транзакциях (используем уже объявленную participantName)
-                        await client.query(
-                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                            [walletId, pricePerPerson, 'payment', `Запись: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин.`]
-                        );
-                    }
-
-                    // Записываем на тренировку (клиента или ребенка)
-                    await client.query(
+                    // Записываем на тренировку (клиента или ребенка) - сначала создаем запись
+                    const participantResult = await client.query(
                         `INSERT INTO session_participants 
                         (session_id, client_id, child_id, is_child, status) 
                         VALUES ($1, $2, $3, $4, $5) 
@@ -4453,6 +4512,95 @@ async function handleTextMessage(msg) {
                         ]
                     );
 
+                    let amountCharged = 0;
+                    let usedSubscriptionId = null;
+                    let remainingAfter = null;
+                    let totalSessions = null;
+
+                    if (useSubscription) {
+                        // Списываем занятие из абонемента
+                        await client.query(
+                            `UPDATE natural_slope_subscriptions 
+                             SET remaining_sessions = remaining_sessions - 1,
+                                 status = CASE 
+                                    WHEN remaining_sessions - 1 = 0 THEN 'used'
+                                    ELSE 'active'
+                                 END
+                             WHERE id = $1`,
+                            [subscriptionInfo.id]
+                        );
+
+                        // Записываем использование абонемента
+                        await client.query(
+                            `INSERT INTO natural_slope_subscription_usage (
+                                subscription_id, training_session_id, original_price, 
+                                subscription_price, savings, used_at
+                            )
+                            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+                            [
+                                subscriptionInfo.id,
+                                selectedTraining.id,
+                                pricePerPerson,
+                                subscriptionInfo.price_per_session || 0,
+                                pricePerPerson - (subscriptionInfo.price_per_session || 0)
+                            ]
+                        );
+
+                        usedSubscriptionId = subscriptionInfo.id;
+                        remainingAfter = subscriptionInfo.remaining_sessions - 1;
+                        totalSessions = subscriptionInfo.total_sessions;
+                        amountCharged = 0;
+
+                        // Получаем id кошелька для создания транзакции
+                        const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        
+                        if (walletId) {
+                            // Формируем дату и время для описания
+                            const date = new Date(selectedTraining.date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                            
+                            // Создаем запись в транзакциях с типом subscription_usage
+                            await client.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId, 
+                                    0, 
+                                    'subscription_usage', 
+                                    `Запись по абонементу: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин. Занятий осталось: ${remainingAfter}/${totalSessions}`
+                                ]
+                            );
+                        }
+
+                        console.log(`✅ Использован абонемент ${subscriptionInfo.subscription_name}. Осталось занятий: ${remainingAfter}/${totalSessions}`);
+                    } else {
+                        // Списываем средства с баланса
+                        await client.query(
+                            'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
+                            [pricePerPerson, state.data.client_id]
+                        );
+
+                        amountCharged = pricePerPerson;
+
+                        // Получаем id кошелька для создания транзакции
+                        const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        
+                        if (walletId) {
+                            // Формируем дату и время для описания
+                            const date = new Date(selectedTraining.date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                            
+                            // Создаем запись в транзакциях (используем уже объявленную participantName)
+                            await client.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [walletId, pricePerPerson, 'payment', `Запись: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин.`]
+                            );
+                        }
+                    }
+
                     await client.query('COMMIT');
 
                     // Отправляем сообщение об успешной записи
@@ -4460,24 +4608,36 @@ async function handleTextMessage(msg) {
                     const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                     const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                     const timeStr = String(selectedTraining.start_time).substring(0, 5);
-                    const newBalance = balance - pricePerPerson;
+                    const newBalance = balance - amountCharged;
 
-                    // Используем уже объявленную participantName
-                    const message = '✅ *Тренировка В КУЛИГА ПАРКЕ успешно забронирована!*\n\n' +
+                    // Формируем сообщение в зависимости от способа оплаты
+                    let message = '✅ *Тренировка В КУЛИГА ПАРКЕ успешно забронирована!*\n\n' +
                         `👤 *Участник:* ${participantName}\n` +
                         `📅 *Дата:* ${dateStr} (${dayName})\n` +
                         `⏰ *Время:* ${timeStr}\n` +
                         `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n` +
                         `👥 *Мест:* ${parseInt(participantsResult.rows[0].count) + 1}/${selectedTraining.max_participants}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
-                        `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} ₽\n` +
-                        `💳 *Остаток на балансе:* ${newBalance.toFixed(2)} ₽\n\n` +
-                        '🎿 Удачной тренировки!';
+                        `🏔️ *Место:* Кулига Парк\n`;
+                    
+                    if (useSubscription) {
+                        message += `🎫 *Оплата:* По абонементу "${subscriptionInfo.subscription_name}"\n` +
+                            `📊 *Занятий осталось:* ${remainingAfter}/${totalSessions}\n` +
+                            `💳 *Баланс:* ${balance.toFixed(2)} ₽ (не изменился)\n\n` +
+                            '🎿 Удачной тренировки!';
+                    } else {
+                        message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} ₽\n` +
+                            `💳 *Остаток на балансе:* ${newBalance.toFixed(2)} ₽\n\n` +
+                            '🎿 Удачной тренировки!';
+                    }
 
                     // Отправляем уведомление администратору
                     try {
                         const { notifyAdminWinterGroupTrainingCreated } = require('./admin-notify');
                         await notifyAdminWinterGroupTrainingCreated({
+                            used_subscription: useSubscription,
+                            subscription_name: useSubscription ? subscriptionInfo.subscription_name : null,
+                            remaining_sessions: useSubscription ? remainingAfter : null,
+                            total_sessions: useSubscription ? totalSessions : null,
                             ...selectedTraining,
                             client_name: clientData.full_name,
                             client_phone: clientData.phone,
@@ -5397,29 +5557,84 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    // Возвращаем средства
-                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [pricePerPerson, state.data.client_id]);
+                    // Проверяем, использовался ли абонемент для этой тренировки
+                    const subscriptionUsageCheck = await pool.query(
+                        `SELECT 
+                            nsu.*,
+                            ns.remaining_sessions,
+                            ns.status as subscription_status,
+                            st.name as subscription_name,
+                            st.sessions_count as total_sessions
+                         FROM natural_slope_subscription_usage nsu
+                         JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE nsu.training_session_id = $1`,
+                        [selectedSession.session_id]
+                    );
 
-                    // Получаем id кошелька
-                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
-                    const walletId = walletRes.rows[0]?.id;
-                    if (walletId) {
-                        // Форматируем дату и время для описания
-                        const date = new Date(selectedSession.session_date);
-                        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                        const [hours, minutes] = selectedSession.start_time.split(':');
-                        const formattedTime = `${hours}:${minutes}`;
+                    let refundMessage = '';
+                    let returnedSubscription = null;
+
+                    if (subscriptionUsageCheck.rows.length > 0) {
+                        // Использовался абонемент - возвращаем занятие
+                        const subscriptionUsage = subscriptionUsageCheck.rows[0];
                         
-                        // Создаем запись о возврате
+                        // Возвращаем занятие в абонемент
                         await pool.query(
-                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                            [
-                                walletId,
-                                pricePerPerson,
-                                'amount',
-                                `Возврат: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
-                            ]
+                            `UPDATE natural_slope_subscriptions 
+                             SET remaining_sessions = remaining_sessions + 1,
+                                 status = CASE 
+                                    WHEN expires_at >= CURRENT_DATE THEN 'active'
+                                    ELSE status
+                                 END
+                             WHERE id = $1`,
+                            [subscriptionUsage.subscription_id]
                         );
+
+                        // Удаляем запись использования
+                        await pool.query(
+                            `DELETE FROM natural_slope_subscription_usage 
+                             WHERE id = $1`,
+                            [subscriptionUsage.id]
+                        );
+
+                        returnedSubscription = {
+                            name: subscriptionUsage.subscription_name,
+                            remaining: subscriptionUsage.remaining_sessions + 1,
+                            total: subscriptionUsage.total_sessions
+                        };
+
+                        refundMessage = `🎫 *Абонемент:* Занятие возвращено в "${returnedSubscription.name}"\n` +
+                            `📊 *Занятий осталось:* ${returnedSubscription.remaining}/${returnedSubscription.total}\n`;
+                        
+                        console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionUsage.subscription_id} для клиента ${state.data.client_id}`);
+                    } else {
+                        // Не использовался абонемент - возвращаем деньги
+                        await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [pricePerPerson, state.data.client_id]);
+
+                        // Получаем id кошелька
+                        const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        if (walletId) {
+                            // Форматируем дату и время для описания
+                            const date = new Date(selectedSession.session_date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = selectedSession.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            
+                            // Создаем запись о возврате
+                            await pool.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId,
+                                    pricePerPerson,
+                                    'amount',
+                                    `Возврат: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                ]
+                            );
+                        }
+
+                        refundMessage = `💰 *Возвращено:* ${pricePerPerson.toFixed(2)} руб.\n`;
                     }
 
                     // Сообщение для клиента
@@ -5430,8 +5645,8 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${formattedTime}\n` +
                         `👥 *Группа:* ${groupInfo.group_name}\n` +
                         `🏔️ *Место:* Кулига Парк\n` +
-                        `💰 *Возвращено:* ${pricePerPerson.toFixed(2)} руб.\n\n` +
-                        'Средства возвращены на ваш баланс.';
+                        refundMessage +
+                        '\n' + (returnedSubscription ? 'Занятие возвращено в абонемент.' : 'Средства возвращены на ваш баланс.');
 
                     userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
@@ -9056,6 +9271,412 @@ async function showAvailableGroupTrainings(chatId, clientId) {
         console.error('Ошибка при показе групповых тренировок:', error);
         return bot.sendMessage(chatId,
             '❌ Произошла ошибка при загрузке групповых тренировок. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// ============= ФУНКЦИИ ДЛЯ РАБОТЫ С АБОНЕМЕНТАМИ =============
+
+/**
+ * Показ меню абонементов
+ */
+async function showSubscriptionsMenu(chatId, clientId) {
+    try {
+        // Получаем активные абонементы клиента
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/client/${clientId}`;
+        
+        console.log('Запрос абонементов клиента:', url);
+        
+        let activeSubscriptions = [];
+        try {
+            const subscriptionsResponse = await axios.get(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const subscriptions = subscriptionsResponse.data;
+            console.log('Получено абонементов клиента:', subscriptions?.length || 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            activeSubscriptions = subscriptions.filter(sub => {
+                const expiresAt = new Date(sub.expires_at);
+                return sub.remaining_sessions > 0 && expiresAt >= today && sub.status === 'active';
+            });
+            console.log('Активных абонементов:', activeSubscriptions.length);
+        } catch (error) {
+            console.error('Ошибка при получении абонементов клиента:', error.response?.status, error.response?.data || error.message);
+        }
+
+        let message = '🎫 *Абонементы*\n\n';
+        
+        if (activeSubscriptions.length > 0) {
+            message += '✅ *Ваши активные абонементы:*\n\n';
+            activeSubscriptions.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий: ${sub.remaining_sessions} из ${sub.total_sessions}\n`;
+                message += `   📅 Действует до: ${expiresStr}\n`;
+                message += `   💰 Цена за занятие: ${parseFloat(sub.total_paid / sub.total_sessions).toFixed(2)} ₽\n\n`;
+            });
+        } else {
+            message += 'У вас пока нет активных абонементов.\n\n';
+        }
+
+        message += 'Выберите действие:';
+
+        const buttons = [];
+        if (activeSubscriptions.length > 0) {
+            buttons.push(['📋 Мои абонементы']);
+        }
+        buttons.push(['🛒 Купить абонемент']);
+        buttons.push(['🔙 Назад в меню']);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: buttons,
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе меню абонементов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+/**
+ * Показ доступных абонементов для покупки
+ */
+async function showAvailableSubscriptions(chatId, clientId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/types?is_active=true`;
+        
+        console.log('Запрос абонементов:', url);
+        
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Статус ответа:', response.status);
+
+        const subscriptionTypes = response.data;
+        console.log('Получено типов абонементов:', subscriptionTypes?.length || 0);
+
+        if (subscriptionTypes.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *В данный момент нет доступных абонементов для покупки.*\n\n' +
+                'Попробуйте позже или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        // Фильтруем только те, у которых дата окончания еще не прошла
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const availableTypes = subscriptionTypes.filter(type => {
+            const expiresDate = new Date(type.expires_at);
+            return expiresDate >= today;
+        });
+
+        if (availableTypes.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *Все доступные абонементы истекли.*\n\n' +
+                'Попробуйте позже или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        let message = '🛒 *Доступные абонементы для покупки:*\n\n';
+
+        availableTypes.forEach((type, index) => {
+            const expiresDate = new Date(type.expires_at);
+            const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+            
+            message += `${index + 1}. *${type.name}*\n`;
+            if (type.description) {
+                message += `   ${type.description}\n`;
+            }
+            message += `   🎯 Количество занятий: ${type.sessions_count}\n`;
+            message += `   💰 Скидка: ${type.discount_percentage}%\n`;
+            message += `   💵 Цена абонемента: ${parseFloat(type.price).toFixed(2)} ₽\n`;
+            message += `   💰 Цена за занятие: ${parseFloat(type.price_per_session).toFixed(2)} ₽\n`;
+            message += `   📅 Действует до: ${expiresStr}\n\n`;
+        });
+
+        message += 'Введите номер абонемента для покупки.\n';
+        message += 'Например: *1* - для покупки первого абонемента';
+
+        // Сохраняем список в состояние
+        const state = userStates.get(chatId) || {};
+        state.data = state.data || {};
+        state.data.available_subscriptions = availableTypes;
+        state.data.client_id = clientId;
+        state.step = 'subscription_purchase_selection';
+        userStates.set(chatId, state);
+
+        // Создаем кнопки для выбора
+        const buttons = availableTypes.map((_, index) => [`${index + 1}`]);
+        buttons.push(['🔙 Назад в меню']);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: buttons,
+                resize_keyboard: true
+            }
+        });
+        } catch (error) {
+            console.error('Ошибка при показе доступных абонементов:', error);
+            const errorMessage = error.response 
+                ? `Ошибка ${error.response.status}: ${error.response.data?.error || error.response.statusText}`
+                : error.message;
+            console.error('Детали ошибки:', errorMessage);
+            
+            return bot.sendMessage(chatId,
+                '❌ Произошла ошибка при загрузке абонементов. Попробуйте позже.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+}
+
+/**
+ * Показ моих абонементов
+ */
+async function showMySubscriptions(chatId, clientId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/client/${clientId}`;
+        
+        console.log('Запрос моих абонементов:', url);
+        
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const subscriptions = response.data;
+        console.log('Получено абонементов:', subscriptions?.length || 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Разделяем на активные и неактивные
+        const active = subscriptions.filter(sub => {
+            const expiresAt = new Date(sub.expires_at);
+            return sub.remaining_sessions > 0 && expiresAt >= today && sub.status === 'active';
+        });
+
+        const expired = subscriptions.filter(sub => {
+            const expiresAt = new Date(sub.expires_at);
+            return expiresAt < today || sub.status === 'expired';
+        });
+
+        const used = subscriptions.filter(sub => sub.remaining_sessions === 0 || sub.status === 'used');
+
+        let message = '📋 *Мои абонементы*\n\n';
+
+        if (active.length > 0) {
+            message += '✅ *Активные абонементы:*\n\n';
+            active.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий: ${sub.remaining_sessions} из ${sub.total_sessions}\n`;
+                message += `   📅 Действует до: ${expiresStr}\n`;
+                message += `   💰 Цена за занятие: ${parseFloat(sub.total_paid / sub.total_sessions).toFixed(2)} ₽\n\n`;
+            });
+        }
+
+        if (used.length > 0) {
+            message += '✅ *Использованные абонементы:*\n\n';
+            used.forEach((sub, index) => {
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий использовано: ${sub.total_sessions}\n\n`;
+            });
+        }
+
+        if (expired.length > 0) {
+            message += '⏰ *Истекшие абонементы:*\n\n';
+            expired.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   📅 Истёк: ${expiresStr}\n`;
+                message += `   🎯 Осталось занятий: ${sub.remaining_sessions}\n\n`;
+            });
+        }
+
+        if (active.length === 0 && used.length === 0 && expired.length === 0) {
+            message += 'У вас пока нет абонементов.';
+        }
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе моих абонементов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+/**
+ * Покупка абонемента
+ */
+async function purchaseSubscription(chatId, clientId, subscriptionTypeId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/purchase`;
+        const response = await axios.post(url, {
+            client_id: clientId,
+            subscription_type_id: subscriptionTypeId
+        }, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = response.data;
+
+        if (result.error) {
+            let errorMessage = '❌ Ошибка при покупке абонемента: ';
+            
+            if (result.error) {
+                if (result.error.includes('Недостаточно средств')) {
+                    errorMessage += `Недостаточно средств на балансе.\n\n`;
+                    errorMessage += `Требуется: ${result.required?.toFixed(2) || 'N/A'} ₽\n`;
+                    errorMessage += `Доступно: ${result.available?.toFixed(2) || 'N/A'} ₽\n\n`;
+                    errorMessage += `Пожалуйста, пополните баланс и попробуйте снова.`;
+                    
+                    return bot.sendMessage(chatId, errorMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['💳 Пополнить баланс'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else {
+                    errorMessage += result.error;
+                }
+            } else {
+                errorMessage += 'Неизвестная ошибка';
+            }
+
+            return bot.sendMessage(chatId, errorMessage, {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        // Успешная покупка
+        const subscription = result;
+        const expiresDate = new Date(subscription.expires_at);
+        const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+
+        let message = '✅ *Абонемент успешно приобретен!*\n\n';
+        message += `🎫 *${subscription.subscription_name}*\n`;
+        message += `🎯 Количество занятий: ${subscription.remaining_sessions} из ${subscription.total_sessions}\n`;
+        message += `📅 Действует до: ${expiresStr}\n`;
+        message += `💰 Цена за занятие: ${parseFloat(subscription.total_paid / subscription.total_sessions).toFixed(2)} ₽\n\n`;
+        message += `Спасибо за покупку! Теперь вы можете использовать абонемент при записи на групповые тренировки на естественном склоне.`;
+
+        // Уведомление администратора
+        try {
+            const { notifyAdminSubscriptionPurchase } = require('./admin-notify');
+            const clientData = await pool.query('SELECT full_name FROM clients WHERE id = $1', [clientId]);
+            const clientName = clientData.rows[0]?.full_name || 'Неизвестно';
+            
+            await notifyAdminSubscriptionPurchase({
+                client_name: clientName,
+                client_id: clientId,
+                subscription_name: subscription.subscription_name,
+                price: subscription.total_paid,
+                sessions_count: subscription.total_sessions
+            });
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления админу о покупке абонемента:', notifyError);
+        }
+
+        // Очищаем состояние
+        userStates.set(chatId, { step: 'main_menu', data: { client_id: clientId } });
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при покупке абонемента:', error);
+        const errorMessage = error.response 
+            ? `Ошибка ${error.response.status}: ${JSON.stringify(error.response.data)}`
+            : error.message;
+        console.error('Детали ошибки покупки:', errorMessage);
+        
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при покупке абонемента. Попробуйте позже.',
             {
                 reply_markup: {
                     keyboard: [['🔙 Назад в меню']],

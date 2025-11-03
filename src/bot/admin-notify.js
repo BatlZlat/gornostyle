@@ -342,7 +342,10 @@ async function notifyAdminWinterGroupTrainingCreated(data) {
             message += `👥 *Группа:* ${data.group_name}\n`;
         }
         
-        if (pricePerPerson != null) {
+        if (data.used_subscription) {
+            message += `🎫 *Оплата:* По абонементу "${data.subscription_name}"\n`;
+            message += `📊 *Занятий осталось:* ${data.remaining_sessions}/${data.total_sessions}\n`;
+        } else if (pricePerPerson != null) {
             message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} руб.\n`;
         }
         
@@ -1305,5 +1308,32 @@ module.exports = {
     notifyAdminNaturalSlopeTrainingCancellation,
     notifyAdminNaturalSlopeTrainingBooking,
     notifyAdminWinterGroupTrainingCreated,
-    notifyAdminWinterGroupTrainingCreatedByAdmin
-}; 
+    notifyAdminWinterGroupTrainingCreatedByAdmin,
+    notifyAdminSubscriptionPurchase
+};
+
+// Функция для отправки уведомления о покупке абонемента
+async function notifyAdminSubscriptionPurchase({ client_name, client_id, subscription_name, price, sessions_count }) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            '🎫 *Новая покупка абонемента!*\n\n' +
+            `👨‍💼 *Клиент:* ${client_name}\n` +
+            `🆔 *ID клиента:* ${client_id}\n` +
+            `🎫 *Абонемент:* ${subscription_name}\n` +
+            `🎯 *Количество занятий:* ${sessions_count}\n` +
+            `💰 *Стоимость:* ${Number(price).toFixed(2)} руб.\n` +
+            `💵 *Цена за занятие:* ${Number(price / sessions_count).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о покупке абонемента:', error);
+    }
+} 
