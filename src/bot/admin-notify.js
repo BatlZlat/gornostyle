@@ -345,6 +345,10 @@ async function notifyAdminWinterGroupTrainingCreated(data) {
         if (data.used_subscription) {
             message += `🎫 *Оплата:* По абонементу "${data.subscription_name}"\n`;
             message += `📊 *Занятий осталось:* ${data.remaining_sessions}/${data.total_sessions}\n`;
+            // Показываем стоимость занятия по абонементу (цена абонемента / количество занятий)
+            if (data.subscription_price_per_session != null) {
+                message += `💵 *Стоимость занятия по абонементу:* ${Number(data.subscription_price_per_session).toFixed(2)} руб.\n`;
+            }
         } else if (pricePerPerson != null) {
             message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} руб.\n`;
         }
@@ -476,6 +480,13 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             return;
         }
 
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент';
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+        }
+
         const message = 
             '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n' +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
@@ -485,7 +496,7 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             `⏰ *Время:* ${trainingData.time}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name || 'Не указан'}\n` +
             `🏔️ *Место:* Кулига Парк\n` +
-            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });

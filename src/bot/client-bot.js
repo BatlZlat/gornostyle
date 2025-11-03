@@ -4633,11 +4633,23 @@ async function handleTextMessage(msg) {
                     // Отправляем уведомление администратору
                     try {
                         const { notifyAdminWinterGroupTrainingCreated } = require('./admin-notify');
+                        // Рассчитываем стоимость занятия по абонементу
+                        // Используем price_per_session из типа абонемента, если он есть, иначе вычисляем: цена абонемента / количество занятий
+                        let subscriptionPricePerSession = null;
+                        if (useSubscription) {
+                            if (subscriptionInfo.price_per_session) {
+                                subscriptionPricePerSession = parseFloat(subscriptionInfo.price_per_session);
+                            } else if (subscriptionInfo.total_paid && subscriptionInfo.total_sessions) {
+                                subscriptionPricePerSession = parseFloat(subscriptionInfo.total_paid) / parseInt(subscriptionInfo.total_sessions);
+                            }
+                        }
+                        
                         await notifyAdminWinterGroupTrainingCreated({
                             used_subscription: useSubscription,
                             subscription_name: useSubscription ? subscriptionInfo.subscription_name : null,
                             remaining_sessions: useSubscription ? remainingAfter : null,
                             total_sessions: useSubscription ? totalSessions : null,
+                            subscription_price_per_session: subscriptionPricePerSession,
                             ...selectedTraining,
                             client_name: clientData.full_name,
                             client_phone: clientData.phone,
@@ -5523,6 +5535,18 @@ async function handleTextMessage(msg) {
                     // Формируем participant_name только если есть child_id
                     const participantName = participant.child_id ? participant.child_name : null;
 
+                    // Проверяем, использовался ли абонемент (нужно до уведомления админу)
+                    const subscriptionUsageCheckBefore = await pool.query(
+                        `SELECT 
+                            nsu.*,
+                            st.name as subscription_name
+                         FROM natural_slope_subscription_usage nsu
+                         JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE nsu.training_session_id = $1`,
+                        [selectedSession.session_id]
+                    );
+
                     // Уведомляем админа
                     await notifyAdminNaturalSlopeTrainingCancellation({
                         client_name: participant.client_name,
@@ -5531,7 +5555,8 @@ async function handleTextMessage(msg) {
                         date: groupInfo.session_date,
                         time: groupInfo.start_time,
                         trainer_name: groupInfo.trainer_name,
-                        refund: pricePerPerson
+                        refund: pricePerPerson,
+                        used_subscription: subscriptionUsageCheckBefore.rows.length > 0
                     });
 
                     // Вместо удаления меняем статус на 'cancelled'
@@ -5620,6 +5645,28 @@ async function handleTextMessage(msg) {
 
                         refundMessage = `🎫 *Абонемент:* Занятие возвращено в "${returnedSubscription.name}"\n` +
                             `📊 *Занятий осталось:* ${returnedSubscription.remaining}/${returnedSubscription.total}\n`;
+                        
+                        // Создаем транзакцию для отчетности при возврате занятия в абонемент
+                        const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        if (walletId) {
+                            // Форматируем дату и время для описания
+                            const date = new Date(selectedSession.session_date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = selectedSession.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            
+                            // Создаем запись о возврате занятия в абонемент
+                            await pool.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId,
+                                    0,
+                                    'subscription_return',
+                                    `Возврат занятия в абонемент: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин. Занятий осталось: ${returnedSubscription.remaining}/${returnedSubscription.total}`
+                                ]
+                            );
+                        }
                         
                         console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionUsage.subscription_id} для клиента ${state.data.client_id}`);
                     } else {
