@@ -947,41 +947,107 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
             ['cancelled', participantId]
         );
 
-        // Возвращаем средства на счет клиента
-        const walletResult = await client.query(
-            'SELECT id, balance FROM wallets WHERE client_id = $1',
-            [participant.client_id]
+        // Проверяем, использовался ли абонемент для этой тренировки
+        const subscriptionUsageCheck = await client.query(
+            `SELECT 
+                nsu.*,
+                ns.remaining_sessions,
+                ns.status as subscription_status,
+                st.name as subscription_name,
+                st.sessions_count as total_sessions
+             FROM natural_slope_subscription_usage nsu
+             JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+             JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+             WHERE nsu.training_session_id = $1`,
+            [trainingId]
         );
 
-        if (walletResult.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'Кошелек клиента не найден' });
-        }
-
-        const wallet = walletResult.rows[0];
-        const newBalance = Number(wallet.balance) + price;
-
-        await client.query(
-            'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
-            [newBalance, wallet.id]
-        );
-
-        // Создаем запись о возврате в транзакциях
         const dateObj = new Date(training.session_date);
         const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
         const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
         const duration = training.duration || 60;
         const participantName = participant.is_child ? participant.child_full_name : participant.full_name;
 
-        await client.query(
-            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-            [
-                wallet.id,
-                price,
-                'refund',
-                `Возврат: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`
-            ]
-        );
+        let usedSubscription = false;
+        let subscriptionInfo = null;
+        let refundAmount = 0;
+        let refundType = 'refund';
+        let refundDescription = '';
+
+        if (subscriptionUsageCheck.rows.length > 0) {
+            // Использовался абонемент - возвращаем занятие
+            usedSubscription = true;
+            subscriptionInfo = subscriptionUsageCheck.rows[0];
+            
+            // Возвращаем занятие в абонемент
+            await client.query(
+                `UPDATE natural_slope_subscriptions 
+                 SET remaining_sessions = remaining_sessions + 1,
+                     status = CASE 
+                        WHEN expires_at >= CURRENT_DATE THEN 'active'
+                        ELSE status
+                     END
+                 WHERE id = $1`,
+                [subscriptionInfo.subscription_id]
+            );
+
+            // Удаляем запись использования
+            await client.query(
+                `DELETE FROM natural_slope_subscription_usage 
+                 WHERE id = $1`,
+                [subscriptionInfo.id]
+            );
+
+            const remainingSessions = subscriptionInfo.remaining_sessions + 1;
+            
+            // Получаем кошелек для создания транзакции
+            const walletResult = await client.query(
+                'SELECT id FROM wallets WHERE client_id = $1',
+                [participant.client_id]
+            );
+
+            if (walletResult.rows.length > 0) {
+                const wallet = walletResult.rows[0];
+                refundType = 'subscription_return';
+                refundAmount = 0;
+                refundDescription = `Возврат занятия в абонемент: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин. Занятий осталось: ${remainingSessions}/${subscriptionInfo.total_sessions}`;
+
+                await client.query(
+                    'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                    [wallet.id, refundAmount, refundType, refundDescription]
+                );
+            }
+
+            console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionInfo.subscription_id} для клиента ${participant.client_id}`);
+        } else {
+            // Не использовался абонемент - возвращаем деньги
+            const walletResult = await client.query(
+                'SELECT id, balance FROM wallets WHERE client_id = $1',
+                [participant.client_id]
+            );
+
+            if (walletResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Кошелек клиента не найден' });
+            }
+
+            const wallet = walletResult.rows[0];
+            const newBalance = Number(wallet.balance) + price;
+
+            await client.query(
+                'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
+                [newBalance, wallet.id]
+            );
+
+            refundAmount = price;
+            refundType = 'refund';
+            refundDescription = `Возврат: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`;
+
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [wallet.id, refundAmount, refundType, refundDescription]
+            );
+        }
 
         // Подсчитываем оставшихся участников
         const remainingParticipantsResult = await client.query(
@@ -1001,15 +1067,26 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
         
         // Формируем строку с информацией о тренажере/месте
         let locationLine = '';
-        if (!isWinterTraining) {
-            locationLine = `🎿 Тренажер: ${training.simulator_name || `Тренажер ${training.simulator_id}`}\n`;
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${training.simulator_name || `Тренажер ${training.simulator_id}`}\n`;
         }
         
-        const trainingInfo = `📅 Дата: ${dateStr}
-⏰ Время: ${startTime}
-👥 Группа: ${training.group_name || '-'}
-👨‍🏫 Тренер: ${training.trainer_name || '-'}
-${locationLine}💰 Возврат: ${price.toFixed(2)} руб.`;
+        // Формируем информацию о тренировке для уведомления
+        let refundInfo = '';
+        if (usedSubscription) {
+            refundInfo = `🎫 *Абонемент:* Занятие возвращено в "${subscriptionInfo.subscription_name}"\n` +
+                `📊 *Занятий осталось:* ${subscriptionInfo.remaining_sessions + 1}/${subscriptionInfo.total_sessions}\n`;
+        } else {
+            refundInfo = `💰 *Возврат:* ${price.toFixed(2)} руб.`;
+        }
+
+        const trainingInfo = `📅 *Дата:* ${dateStr}
+⏰ *Время:* ${startTime}
+👥 *Группа:* ${training.group_name || '-'}
+👨‍🏫 *Тренер:* ${training.trainer_name || '-'}
+${locationLine}${refundInfo}`;
 
         // Отправляем уведомление клиенту
         if (participant.telegram_id) {
@@ -1021,11 +1098,17 @@ ${locationLine}💰 Возврат: ${price.toFixed(2)} руб.`;
                 ? '❗️ Вы были удалены из тренировки в Кулига Парк на естественном склоне администратором:'
                 : '❗️ Вы были удалены из тренировки администратором:';
             
+            let refundMessage = '';
+            if (usedSubscription) {
+                refundMessage = '\nЗанятие возвращено в абонемент.';
+            } else {
+                refundMessage = `\nДеньги в размере ${price.toFixed(2)} руб. возвращены на ваш счет.`;
+            }
+            
             const clientMessage = `${clientHeader}
 
 ${trainingInfo}
-
-Деньги в размере ${price.toFixed(2)} руб. возвращены на ваш счет.
+${refundMessage}
 По всем вопросам обращайтесь к администратору: ${ADMIN_PHONE}`;
 
             try {
@@ -1034,7 +1117,8 @@ ${trainingInfo}
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         chat_id: participant.telegram_id,
-                        text: clientMessage
+                        text: clientMessage,
+                        parse_mode: 'Markdown'
                     })
                 });
             } catch (notificationError) {
@@ -1061,7 +1145,11 @@ ${trainingInfo}
                 simulator_id: training.simulator_id,
                 simulator_name: training.simulator_name || (training.simulator_id ? `Тренажер ${training.simulator_id}` : null),
                 seats_left: seatsLeft,
-                refund: price
+                refund: usedSubscription ? 0 : price,
+                used_subscription: usedSubscription,
+                subscription_name: usedSubscription ? subscriptionInfo.subscription_name : null,
+                remaining_sessions: usedSubscription ? subscriptionInfo.remaining_sessions + 1 : null,
+                total_sessions: usedSubscription ? subscriptionInfo.total_sessions : null
             });
         } catch (notificationError) {
             console.error('Ошибка при отправке уведомления администратору:', notificationError);
@@ -1070,8 +1158,9 @@ ${trainingInfo}
         await client.query('COMMIT');
         res.json({
             message: 'Участник успешно удален из тренировки',
-            refund: price,
-            remaining_participants: remainingCount
+            refund: refundAmount,
+            remaining_participants: remainingCount,
+            used_subscription: usedSubscription
         });
     } catch (error) {
         await client.query('ROLLBACK');

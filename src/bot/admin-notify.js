@@ -442,6 +442,20 @@ async function notifyAdminParticipantRemoved(trainingData) {
             locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
         }
 
+        // Формируем строку с информацией о возврате
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент*\n';
+            if (trainingData.subscription_name) {
+                refundLine += `🎫 *Абонемент:* ${trainingData.subscription_name}\n`;
+            }
+            if (trainingData.remaining_sessions != null && trainingData.total_sessions != null) {
+                refundLine += `📊 *Занятий осталось:* ${trainingData.remaining_sessions}/${trainingData.total_sessions}`;
+            }
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+        }
+
         const message =
             `${header}\n\n` +
             `👤 *Клиент:* ${trainingData.client_name}\n` +
@@ -453,7 +467,7 @@ async function notifyAdminParticipantRemoved(trainingData) {
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
             locationLine +
             `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
-            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
