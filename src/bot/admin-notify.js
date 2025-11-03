@@ -377,8 +377,27 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
             return;
         }
 
+        // Определяем, является ли это зимней тренировкой (если нет тренажера)
+        const isWinterTraining = !trainingData.simulator_name;
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
+        }
+
+        // Формируем строку с информацией о возврате
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент*';
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+        }
+
         const message =
-            '❌ *Отмена групповой тренировки!*\n\n' +
+            (isWinterTraining ? '❌ *Отмена групповой зимней тренировки!*\n\n' : '❌ *Отмена групповой тренировки!*\n\n') +
             `👤 *Клиент:* ${trainingData.client_name}\n` +
             (trainingData.participant_name ? `👤 *Участник:* ${trainingData.participant_name}\n` : '') +
             `📞 *Телефон:* ${trainingData.client_phone}\n` +
@@ -386,9 +405,9 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
             `⏰ *Время:* ${trainingData.time}\n` +
             `👥 *Группа:* ${trainingData.group_name}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
-            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            locationLine +
             `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
-            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
@@ -482,7 +501,7 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
 
         let refundLine = '';
         if (trainingData.used_subscription) {
-            refundLine = '💰 *Возврат занятия на абонемент';
+            refundLine = '💰 *Возврат занятия на абонемент*';
         } else {
             refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
         }

@@ -5547,17 +5547,25 @@ async function handleTextMessage(msg) {
                         [selectedSession.session_id]
                     );
 
-                    // Уведомляем админа
-                    await notifyAdminNaturalSlopeTrainingCancellation({
-                        client_name: participant.client_name,
-                        participant_name: participantName,
-                        client_phone: participant.client_phone,
-                        date: groupInfo.session_date,
-                        time: groupInfo.start_time,
-                        trainer_name: groupInfo.trainer_name,
-                        refund: pricePerPerson,
-                        used_subscription: subscriptionUsageCheckBefore.rows.length > 0
-                    });
+                    // Уведомляем админа об отмене групповой зимней тренировки
+                    try {
+                        const { notifyAdminGroupTrainingCancellation } = require('./admin-notify');
+                        await notifyAdminGroupTrainingCancellation({
+                            client_name: participant.client_name,
+                            participant_name: participantName,
+                            client_phone: participant.client_phone,
+                            date: groupInfo.session_date,
+                            time: groupInfo.start_time,
+                            group_name: groupInfo.group_name,
+                            trainer_name: groupInfo.trainer_name,
+                            simulator_name: null, // Групповые зимние тренировки не на тренажере
+                            seats_left: seatsLeft,
+                            refund: pricePerPerson,
+                            used_subscription: subscriptionUsageCheckBefore.rows.length > 0
+                        });
+                    } catch (error) {
+                        console.error('Ошибка при отправке уведомления администратору об отмене групповой зимней тренировки:', error);
+                    }
 
                     // Вместо удаления меняем статус на 'cancelled'
                     await pool.query('UPDATE session_participants SET status = $1 WHERE id = $2', ['cancelled', selectedSession.id]);
