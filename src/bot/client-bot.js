@@ -7930,6 +7930,15 @@ async function showPersonalCabinet(chatId) {
 
         const clientStats = clientStatsResult.rows[0];
 
+        // Получаем количество рефералов
+        const referralCountResult = await pool.query(
+            `SELECT COUNT(*) as referral_count
+             FROM referral_transactions
+             WHERE referrer_id = $1`,
+            [client.id]
+        );
+        const referralCount = parseInt(referralCountResult.rows[0].referral_count) || 0;
+
         // Получаем информацию о детях
         const childrenResult = await pool.query(
             `SELECT c.*, 
@@ -7980,7 +7989,8 @@ async function showPersonalCabinet(chatId) {
         message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n`;
         message += `📊 *Статистика тренировок:*\n`;
         message += `   • Индивидуальных: ${clientStats.individual_count || 0}\n`;
-        message += `   • Групповых: ${clientStats.group_count || 0}\n\n`;
+        message += `   • Групповых: ${clientStats.group_count || 0}\n`;
+        message += `\n👥 *Рефералы:* ${referralCount} чел.\n\n`;
 
         // Информация о детях
         if (childrenResult.rows.length > 0) {
