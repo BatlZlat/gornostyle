@@ -1090,8 +1090,8 @@ async function handleTextMessage(msg) {
         return showMainMenu(chatId);
     }
 
-    // Глобальная обработка "Добавить ребенка"
-    if (msg.text === '➕ Добавить ребенка') {
+    // Глобальная обработка "Добавить человека"
+    if (msg.text === '➕ Добавить человека') {
         let clientId;
         if (state && state.data && state.data.client_id) {
             clientId = state.data.client_id;
@@ -1103,7 +1103,7 @@ async function handleTextMessage(msg) {
             clientId = client.id;
         }
         userStates.set(chatId, { step: 'add_child_name', data: { client_id: clientId } });
-        return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+        return bot.sendMessage(chatId, '👤 Введите ФИО человека:', {
             reply_markup: {
                 keyboard: [['🔙 Отмена']],
                 resize_keyboard: true
@@ -1558,8 +1558,8 @@ async function handleTextMessage(msg) {
 
                 if (childrenResult.rows.length === 0) {
                     return bot.sendMessage(chatId,
-                        '❌ У вас нет добавленных детей в профиле.\n\n' +
-                        'Пожалуйста, сначала добавьте ребенка через меню "Личный кабинет" -> "➕ Добавить ребенка"',
+                        '❌ У вас нет добавленных людей в профиле.\n\n' +
+                        'Пожалуйста, сначала добавьте человека через меню "Личный кабинет" -> "➕ Добавить человека"',
                         {
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
@@ -1569,7 +1569,7 @@ async function handleTextMessage(msg) {
                     );
                 }
 
-                let message = '👶 *Выберите ребенка:*\n\n';
+                let message = '👤 *Выберите человека:*\n\n';
                 // Убираем пункт "Для себя" при выборе "для себя и ребенка"
                 if (trainingFor === 'both') {
                     childrenResult.rows.forEach((child, index) => {
@@ -1958,7 +1958,7 @@ async function handleTextMessage(msg) {
                 if (!state.data.children || state.data.children.length === 0) {
                     state.step = 'add_child_name';
                     userStates.set(chatId, state);
-                    return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+                    return bot.sendMessage(chatId, '👤 Введите ФИО человека:', {
                         reply_markup: {
                             keyboard: [['🔙 Отмена']],
                             resize_keyboard: true
@@ -1973,7 +1973,7 @@ async function handleTextMessage(msg) {
                     state.step = 'select_child';
                     userStates.set(chatId, state);
                     return bot.sendMessage(chatId,
-                        '👶 *Выберите ребенка из списка:*\n\n' + childrenList,
+                        '👤 *Выберите человека из списка:*\n\n' + childrenList,
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -3613,12 +3613,12 @@ async function handleTextMessage(msg) {
                                 'У вас нет детей младше 18 лет или вы не добавили их в профиль.\n\n' +
                                 'Вы можете:\n' +
                                 '• Выбрать другую тренировку\n' +
-                                '• Добавить ребенка в профиль',
+                                '• Добавить человека в профиль',
                                 {
                                     reply_markup: {
                                         keyboard: [
                                             ['🎿 Выбрать другую тренировку'],
-                                            ['👤 Добавить ребенка'],
+                                            ['👤 Добавить человека'],
                                             ['🔙 Назад в меню']
                                         ],
                                         resize_keyboard: true
@@ -3634,7 +3634,7 @@ async function handleTextMessage(msg) {
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level} уровень)\n`;
                         });
@@ -3683,7 +3683,7 @@ async function handleTextMessage(msg) {
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
                         });
@@ -4077,12 +4077,12 @@ async function handleTextMessage(msg) {
                                 'У вас нет детей младше 18 лет или вы не добавили их в профиль.\n\n' +
                                 'Вы можете:\n' +
                                 '• Выбрать другую тренировку\n' +
-                                '• Добавить ребенка в профиль',
+                                '• Добавить человека в профиль',
                                 {
                                     reply_markup: {
                                         keyboard: [
                                             ['🏔️ Выбрать другую тренировку'],
-                                            ['👤 Добавить ребенка'],
+                                            ['👤 Добавить человека'],
                                             ['🔙 Назад в меню']
                                         ],
                                         resize_keyboard: true
@@ -4098,7 +4098,7 @@ async function handleTextMessage(msg) {
                         state.step = 'select_child_for_natural_slope_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level || '-'} уровень)\n`;
                         });
@@ -4147,7 +4147,7 @@ async function handleTextMessage(msg) {
                         state.step = 'select_child_for_natural_slope_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
                         });
@@ -6013,7 +6013,7 @@ async function handleTextMessage(msg) {
             });
 
             return bot.sendMessage(chatId,
-                '📅 *Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:*\n\n' +
+                '📅 *Введите дату рождения в формате ДД.ММ.ГГГГ:*\n\n' +
                 'Например: 01.01.2015',
                 {
                     parse_mode: 'Markdown',
@@ -6066,7 +6066,7 @@ async function handleTextMessage(msg) {
 
                 userStates.delete(chatId);
                 await bot.sendMessage(chatId,
-                    '✅ *Ребенок успешно добавлен!*',
+                    '✅ *Человек успешно добавлен!*',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -6077,9 +6077,9 @@ async function handleTextMessage(msg) {
                 );
                 return showPersonalCabinet(chatId);
             } catch (error) {
-                console.error('Ошибка при добавлении ребенка:', error);
+                console.error('Ошибка при добавлении человека:', error);
                 return bot.sendMessage(chatId,
-                    '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже.',
+                    '❌ Произошла ошибка при добавлении человека. Пожалуйста, попробуйте позже.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 В главное меню']],
@@ -8048,16 +8048,16 @@ async function showPersonalCabinet(chatId) {
         message += `   • Групповых: ${clientStats.group_count || 0}\n`;
         message += `\n👥 *Рефералы:* ${referralCount} чел.\n\n`;
 
-        // Информация о детях
+        // Информация о добавленных людях
         if (childrenResult.rows.length > 0) {
-            message += `*Информация о детях:*\n`;
+            message += `*Информация о добавленных людях:*\n`;
             childrenResult.rows.forEach((child, index) => {
                 const childAge = calculateAge(child.birth_date);
                 const childBirthDate = formatBirthDate(child.birth_date);
                 const stats = childStats[child.id] || { individual_count: 0, group_count: 0 };
                 
-                message += `\n*Ребенок ${index + 1}:*\n`;
-                message += `👶 *ФИО:* ${child.full_name}\n`;
+                message += `\n*Человек ${index + 1}:*\n`;
+                message += `👤 *ФИО:* ${child.full_name}\n`;
                 message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
                 message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
                 message += `📊 *Статистика тренировок:*\n`;
@@ -8070,7 +8070,7 @@ async function showPersonalCabinet(chatId) {
 
         // Кнопки действий
         const keyboard = [
-            ['➕ Добавить ребенка'],
+            ['➕ Добавить человека'],
             ['🔙 Назад в меню']
         ];
 
