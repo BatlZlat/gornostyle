@@ -114,81 +114,95 @@ async function updateReferralStatusOnTraining(clientId) {
 }
 
 /**
- * Начисление реферальных бонусов обоим пользователям
+ * Начисление реферального бонуса пригласившему после первой тренировки приглашенного
+ * Приглашенный уже получил бонус при регистрации, поэтому здесь начисляем только пригласившему
  * @param {Object} referral - Объект реферальной транзакции
  * @param {Object} dbClient - Клиент подключения к БД (для транзакции)
  */
 async function awardReferralBonuses(referral, dbClient) {
     try {
-        console.log('💰 Начинаем начисление реферальных бонусов...');
+        console.log('💰 Начинаем начисление реферального бонуса пригласившему...');
         
-        // Получаем кошельки обоих пользователей
+        // Получаем кошелек пригласившего
         const referrerWalletResult = await dbClient.query(
             'SELECT id, balance FROM wallets WHERE client_id = $1',
             [referral.referrer_id]
         );
         
-        const refereeWalletResult = await dbClient.query(
-            'SELECT id, balance FROM wallets WHERE client_id = $1',
-            [referral.referee_id]
-        );
-        
-        if (referrerWalletResult.rows.length === 0 || refereeWalletResult.rows.length === 0) {
-            throw new Error('Кошелек не найден для одного из пользователей');
+        if (referrerWalletResult.rows.length === 0) {
+            throw new Error('Кошелек не найден для пригласившего');
         }
         
         const referrerWallet = referrerWalletResult.rows[0];
-        const refereeWallet = refereeWalletResult.rows[0];
         
-        // Начисляем бонус пригласившему
+        // Получаем сумму бонуса из настроек или используем дефолтную
+        const bonusSettingsResult = await dbClient.query(
+            `SELECT bonus_amount FROM bonus_settings 
+             WHERE bonus_type = 'referral' AND is_active = TRUE 
+             ORDER BY created_at DESC LIMIT 1`
+        );
+        
+        const referrerBonus = bonusSettingsResult.rows.length > 0 
+            ? bonusSettingsResult.rows[0].bonus_amount 
+            : (referral.referrer_bonus || 500.00);
+        
+        // Начисляем бонус только пригласившему
         await dbClient.query(`
             UPDATE wallets 
             SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
             WHERE id = $2
-        `, [referral.referrer_bonus, referrerWallet.id]);
+        `, [referrerBonus, referrerWallet.id]);
         
         await dbClient.query(`
             INSERT INTO transactions (wallet_id, amount, type, description)
             VALUES ($1, $2, 'bonus', $3)
         `, [
             referrerWallet.id, 
-            referral.referrer_bonus, 
+            referrerBonus, 
             `Реферальный бонус за приглашение друга (${referral.referee_name})`
         ]);
         
-        console.log(`   ✅ Начислено ${referral.referrer_bonus}₽ пригласившему: ${referral.referrer_name}`);
+        console.log(`   ✅ Начислено ${referrerBonus}₽ пригласившему: ${referral.referrer_name}`);
+        console.log(`   ℹ️ Приглашенный уже получил бонус при регистрации`);
         
-        // Начисляем бонус приглашенному
-        await dbClient.query(`
-            UPDATE wallets 
-            SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
-            WHERE id = $2
-        `, [referral.referee_bonus, refereeWallet.id]);
-        
-        await dbClient.query(`
-            INSERT INTO transactions (wallet_id, amount, type, description)
-            VALUES ($1, $2, 'bonus', $3)
-        `, [
-            refereeWallet.id, 
-            referral.referee_bonus, 
-            `Реферальный бонус за регистрацию по ссылке (от ${referral.referrer_name})`
-        ]);
-        
-        console.log(`   ✅ Начислено ${referral.referee_bonus}₽ приглашенному: ${referral.referee_name}`);
-        
-        // Обновляем статус транзакции на 'completed' и отмечаем что бонусы выплачены
+        // Обновляем статус транзакции на 'completed' и отмечаем что бонус пригласившему выплачен
         await dbClient.query(`
             UPDATE referral_transactions 
             SET status = 'completed',
                 referrer_bonus_paid = TRUE,
-                referee_bonus_paid = TRUE,
+                referrer_bonus = $1,
                 completed_at = CURRENT_TIMESTAMP
-            WHERE id = $1
-        `, [referral.id]);
+            WHERE id = $2
+        `, [referrerBonus, referral.id]);
         
         console.log(`   ✅ Реферальная транзакция завершена успешно!`);
         
-        // Создаем записи в bonus_transactions для отслеживания
+        // Отправляем уведомление пригласившему о начислении бонуса
+        try {
+            if (referral.referrer_telegram_id) {
+                const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                if (TELEGRAM_BOT_TOKEN) {
+                    const bonusAmount = Math.round(referrerBonus);
+                    const message = `🎉 *Отличные новости!*\n\nВаш реферал *${referral.referee_name}* прошел первую тренировку!\n\n✅ Вам начислено *${bonusAmount}₽* на баланс.\n\nСпасибо за приглашение! Приглашайте больше друзей и получайте больше бонусов. 🎁`;
+                    
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: referral.referrer_telegram_id,
+                            text: message,
+                            parse_mode: 'Markdown'
+                        })
+                    });
+                    console.log(`   ✅ Отправлено уведомление пригласившему (ID: ${referral.referrer_id}) о начислении бонуса`);
+                }
+            }
+        } catch (notificationError) {
+            console.error('   ⚠️ Ошибка при отправке уведомления пригласившему о бонусе:', notificationError);
+            // Не прерываем процесс, если уведомление не отправилось
+        }
+        
+        // Создаем запись в bonus_transactions для отслеживания
         const bonusSettingResult = await dbClient.query(
             `SELECT id FROM bonus_settings WHERE bonus_type = 'referral' AND is_active = TRUE LIMIT 1`
         );
@@ -196,26 +210,15 @@ async function awardReferralBonuses(referral, dbClient) {
         if (bonusSettingResult.rows.length > 0) {
             const bonusSettingId = bonusSettingResult.rows[0].id;
             
-            // Запись для пригласившего
+            // Запись только для пригласившего (приглашенный уже получил бонус при регистрации)
             await dbClient.query(`
                 INSERT INTO bonus_transactions (client_id, bonus_setting_id, amount, description, status, approved_at)
                 VALUES ($1, $2, $3, $4, 'approved', CURRENT_TIMESTAMP)
             `, [
                 referral.referrer_id,
                 bonusSettingId,
-                referral.referrer_bonus,
+                referrerBonus,
                 `Реферальный бонус за приглашение ${referral.referee_name}`
-            ]);
-            
-            // Запись для приглашенного
-            await dbClient.query(`
-                INSERT INTO bonus_transactions (client_id, bonus_setting_id, amount, description, status, approved_at)
-                VALUES ($1, $2, $3, $4, 'approved', CURRENT_TIMESTAMP)
-            `, [
-                referral.referee_id,
-                bonusSettingId,
-                referral.referee_bonus,
-                `Реферальный бонус за регистрацию по реферальной ссылке`
             ]);
         }
         
@@ -225,17 +228,17 @@ async function awardReferralBonuses(referral, dbClient) {
                 id: referral.referrer_id,
                 name: referral.referrer_name,
                 telegram_id: referral.referrer_telegram_id,
-                bonus: referral.referrer_bonus
+                bonus: referrerBonus
             },
             referee: {
                 id: referral.referee_id,
                 name: referral.referee_name,
                 telegram_id: referral.referee_telegram_id,
-                bonus: referral.referee_bonus
+                bonus: 0 // Приглашенный уже получил бонус при регистрации
             }
         };
     } catch (error) {
-        console.error('❌ Ошибка при начислении реферальных бонусов:', error);
+        console.error('❌ Ошибка при начислении реферального бонуса пригласившему:', error);
         throw error;
     }
 }

@@ -272,20 +272,119 @@ async function registerClient(data) {
         // Создаем кошелек
         const walletNumber = await generateUniqueWalletNumber();
         console.log('Создание кошелька:', walletNumber);
-        await dbClient.query(
+        const walletResult = await dbClient.query(
             `INSERT INTO wallets (client_id, wallet_number, balance) 
-             VALUES ($1, $2, 0)`,
+             VALUES ($1, $2, 0) RETURNING id`,
             [clientId, walletNumber]
         );
+        const walletId = walletResult.rows[0].id;
         
-        // Если есть пригласивший, создаем запись в referral_transactions
+        // Если есть пригласивший, создаем запись в referral_transactions и начисляем бонус приглашенному
         if (referrerId) {
-            await dbClient.query(
-                `INSERT INTO referral_transactions (referrer_id, referee_id, status) 
-                 VALUES ($1, $2, 'registered')`,
-                [referrerId, clientId]
+            // Получаем сумму бонуса из настроек
+            const bonusSettingsResult = await dbClient.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const refereeBonus = bonusSettingsResult.rows.length > 0 
+                ? bonusSettingsResult.rows[0].bonus_amount 
+                : 500.00;
+            
+            // Создаем запись в referral_transactions
+            const referralResult = await dbClient.query(
+                `INSERT INTO referral_transactions (referrer_id, referee_id, status, referee_bonus, referee_bonus_paid) 
+                 VALUES ($1, $2, 'registered', $3, TRUE) RETURNING id`,
+                [referrerId, clientId, refereeBonus]
             );
             console.log('Создана реферальная транзакция: referrer_id =', referrerId, ', referee_id =', clientId);
+            
+            // Начисляем бонус приглашенному сразу после регистрации
+            await dbClient.query(
+                `UPDATE wallets 
+                 SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                 WHERE id = $2`,
+                [refereeBonus, walletId]
+            );
+            
+            await dbClient.query(
+                `INSERT INTO transactions (wallet_id, amount, type, description)
+                 VALUES ($1, $2, 'bonus', $3)`,
+                [
+                    walletId,
+                    refereeBonus,
+                    `Реферальный бонус за регистрацию по ссылке`
+                ]
+            );
+            
+            // Создаем запись в bonus_transactions
+            const bonusSettingIdResult = await dbClient.query(
+                `SELECT id FROM bonus_settings WHERE bonus_type = 'referral' AND is_active = TRUE LIMIT 1`
+            );
+            
+            if (bonusSettingIdResult.rows.length > 0) {
+                const bonusSettingId = bonusSettingIdResult.rows[0].id;
+                await dbClient.query(
+                    `INSERT INTO bonus_transactions (client_id, bonus_setting_id, amount, description, status, approved_at)
+                     VALUES ($1, $2, $3, $4, 'approved', CURRENT_TIMESTAMP)`,
+                    [
+                        clientId,
+                        bonusSettingId,
+                        refereeBonus,
+                        `Реферальный бонус за регистрацию по реферальной ссылке`
+                    ]
+                );
+            }
+            
+            console.log(`✅ Начислено ${refereeBonus}₽ приглашенному (ID: ${clientId}) сразу после регистрации`);
+            
+            // Отправляем уведомление приглашенному о получении бонуса
+            try {
+                const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                if (TELEGRAM_BOT_TOKEN && data.telegram_id) {
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: data.telegram_id,
+                            text: `🎉 *Поздравляем!*\n\nВам начислено *${Math.round(refereeBonus)}₽* на баланс за регистрацию по реферальной ссылке!\n\n💡 Эта сумма поможет оплатить первую тренировку со скидкой.\n\nСпасибо, что присоединились к нам! 🎁`,
+                            parse_mode: 'Markdown'
+                        })
+                    });
+                }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления приглашенному о бонусе:', notificationError);
+            }
+            
+            // Отправляем уведомление пригласившему о регистрации реферала
+            try {
+                const referrerResult = await dbClient.query(
+                    'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+                    [referrerId]
+                );
+                
+                if (referrerResult.rows.length > 0 && referrerResult.rows[0].telegram_id) {
+                    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                    const refereeName = data.full_name;
+                    const bonusAmount = Math.round(refereeBonus);
+                    
+                    if (TELEGRAM_BOT_TOKEN) {
+                        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: referrerResult.rows[0].telegram_id,
+                                text: `🎉 *Поздравляем!*\n\nВаш реферал *${refereeName}* зарегистрировался в боте.\n\nПосле первой тренировки ${refereeName} вы получите ${bonusAmount}₽.\n\nСпасибо, что помогаете нам развиваться! Приглашайте больше друзей и получайте больше бонусов. 🎁`,
+                                parse_mode: 'Markdown'
+                            })
+                        });
+                        console.log(`✅ Отправлено уведомление пригласившему (ID: ${referrerId}) о регистрации реферала`);
+                    }
+                }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления пригласившему о регистрации реферала:', notificationError);
+            }
         }
         
         // Если есть данные о ребенке, создаем запись
@@ -369,7 +468,9 @@ async function finishRegistration(chatId, data) {
             if (isReferralActive) {
                 const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
                 registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
-                    `После пополнения баланса и первой тренировки вы и ваш друг получите по *${bonusAmount}₽* на баланс!\n\n`;
+                    `✅ Вам уже начислено *${bonusAmount}₽* на баланс!\n` +
+                    `💡 Эта сумма поможет оплатить первую тренировку со скидкой.\n\n` +
+                    `💰 Ваш друг получит *${bonusAmount}₽* после того, как вы пополните баланс и пройдете первую тренировку.\n\n`;
             } else {
                 registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
                     'Спасибо, что присоединились к нам!\n\n';
@@ -8834,9 +8935,10 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
                         const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
                         welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
                             `Пригласил вас: ${referrer.full_name}\n\n` +
-                            `💰 После регистрации, пополнения баланса и первой тренировки:\n` +
-                            `• Вы получите <b>${bonusAmount}₽</b> на баланс\n` +
-                            `• Ваш друг получит <b>${bonusAmount}₽</b> на баланс\n\n`;
+                            `💰 После регистрации:\n` +
+                            `• Вы получите <b>${bonusAmount}₽</b> на баланс сразу!\n` +
+                            `• Эта сумма поможет оплатить первую тренировку со скидкой\n\n` +
+                            `💰 Ваш друг получит <b>${bonusAmount}₽</b> после того, как вы пополните баланс и пройдете первую тренировку.\n\n`;
                     } else {
                         // Реферальная программа неактивна, но ссылка все равно работает
                         welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
@@ -9030,9 +9132,9 @@ ${referralLink}
 ${referralLink}
 
 🎁 Реферальная программа:
-• Вы получите ${bonusAmount}₽ на баланс
-• Ваш друг тоже получит ${bonusAmount}₽
-• Бонус начисляется после того, как друг пополнит баланс и пройдет первую тренировку.`;
+• Ваш друг получит ${bonusAmount}₽ на баланс сразу после регистрации
+• Эта сумма поможет ему оплатить первую тренировку со скидкой
+• Вы получите ${bonusAmount}₽ на баланс после того, как друг пополнит баланс и пройдет первую тренировку.`;
         } else {
             // Реферальная программа неактивна - показываем обычное сообщение
             message = `🎿 Поделитесь нашим ботом с друзьями!
