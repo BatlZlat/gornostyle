@@ -293,11 +293,45 @@ async function registerClient(data) {
                 : 500.00;
             
             // Создаем запись в referral_transactions
-            const referralResult = await dbClient.query(
-                `INSERT INTO referral_transactions (referrer_id, referee_id, status, referee_bonus, referee_bonus_paid) 
-                 VALUES ($1, $2, 'registered', $3, TRUE) RETURNING id`,
-                [referrerId, clientId, refereeBonus]
+            // Проверяем наличие колонок в таблице для совместимости
+            const columnsCheck = await dbClient.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'referral_transactions' 
+                AND column_name IN ('referee_bonus_paid', 'referral_code')
+            `);
+            
+            const hasRefereeBonusPaid = columnsCheck.rows.some(r => r.column_name === 'referee_bonus_paid');
+            const hasReferralCode = columnsCheck.rows.some(r => r.column_name === 'referral_code');
+            
+            // Получаем реферальный код пригласившего
+            const referrerCodeResult = await dbClient.query(
+                'SELECT referral_code FROM clients WHERE id = $1',
+                [referrerId]
             );
+            const referrerCode = referrerCodeResult.rows[0]?.referral_code || 'UNKNOWN';
+            
+            let referralInsertQuery;
+            let referralParams;
+            
+            if (hasRefereeBonusPaid && hasReferralCode) {
+                // Новая структура с referee_bonus_paid и referral_code
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, referral_code, status, referee_bonus, referee_bonus_paid, registration_date) 
+                                     VALUES ($1, $2, $3, 'registered', $4, TRUE, CURRENT_TIMESTAMP) RETURNING id`;
+                referralParams = [referrerId, clientId, referrerCode, refereeBonus];
+            } else if (hasReferralCode) {
+                // Структура с referral_code, но без referee_bonus_paid
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, referral_code, status, referee_bonus, registration_date) 
+                                     VALUES ($1, $2, $3, 'registered', $4, CURRENT_TIMESTAMP) RETURNING id`;
+                referralParams = [referrerId, clientId, referrerCode, refereeBonus];
+            } else {
+                // Старая структура без referral_code и referee_bonus_paid
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, status, referee_bonus) 
+                                     VALUES ($1, $2, 'registered', $3) RETURNING id`;
+                referralParams = [referrerId, clientId, refereeBonus];
+            }
+            
+            const referralResult = await dbClient.query(referralInsertQuery, referralParams);
             console.log('Создана реферальная транзакция: referrer_id =', referrerId, ', referee_id =', clientId);
             
             // Начисляем бонус приглашенному сразу после регистрации

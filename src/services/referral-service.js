@@ -165,15 +165,48 @@ async function awardReferralBonuses(referral, dbClient) {
         console.log(`   ✅ Начислено ${referrerBonus}₽ пригласившему: ${referral.referrer_name}`);
         console.log(`   ℹ️ Приглашенный уже получил бонус при регистрации`);
         
-        // Обновляем статус транзакции на 'completed' и отмечаем что бонус пригласившему выплачен
-        await dbClient.query(`
-            UPDATE referral_transactions 
-            SET status = 'completed',
-                referrer_bonus_paid = TRUE,
-                referrer_bonus = $1,
-                completed_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-        `, [referrerBonus, referral.id]);
+        // Обновляем статус транзакции на 'completed'
+        // Проверяем наличие колонок в таблице для совместимости
+        const columnsCheck = await dbClient.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'referral_transactions' 
+            AND column_name IN ('referrer_bonus_paid', 'completed_at')
+        `);
+        
+        const hasReferrerBonusPaid = columnsCheck.rows.some(r => r.column_name === 'referrer_bonus_paid');
+        const hasCompletedAt = columnsCheck.rows.some(r => r.column_name === 'completed_at');
+        
+        let updateQuery;
+        let updateParams;
+        
+        if (hasReferrerBonusPaid && hasCompletedAt) {
+            // Новая структура с referrer_bonus_paid и completed_at
+            updateQuery = `UPDATE referral_transactions 
+                          SET status = 'completed',
+                              referrer_bonus_paid = TRUE,
+                              referrer_bonus = $1,
+                              completed_at = CURRENT_TIMESTAMP
+                          WHERE id = $2`;
+            updateParams = [referrerBonus, referral.id];
+        } else if (hasCompletedAt) {
+            // Структура с completed_at, но без referrer_bonus_paid
+            updateQuery = `UPDATE referral_transactions 
+                          SET status = 'completed',
+                              referrer_bonus = $1,
+                              completed_at = CURRENT_TIMESTAMP
+                          WHERE id = $2`;
+            updateParams = [referrerBonus, referral.id];
+        } else {
+            // Старая структура без referrer_bonus_paid и completed_at
+            updateQuery = `UPDATE referral_transactions 
+                          SET status = 'completed',
+                              referrer_bonus = $1
+                          WHERE id = $2`;
+            updateParams = [referrerBonus, referral.id];
+        }
+        
+        await dbClient.query(updateQuery, updateParams);
         
         console.log(`   ✅ Реферальная транзакция завершена успешно!`);
         
