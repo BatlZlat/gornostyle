@@ -1,3 +1,25 @@
+-- ============================================================================
+-- СХЕМА БАЗЫ ДАННЫХ
+-- ============================================================================
+-- Последнее обновление: 4 ноября 2025
+-- Версия: 2.1.0+
+--
+-- СТРУКТУРА ФАЙЛА:
+-- 1. ТАБЛИЦЫ (CREATE TABLE)
+-- 2. ТРИГГЕРЫ И ФУНКЦИИ (CREATE TRIGGER, CREATE FUNCTION)
+-- 3. ИНДЕКСЫ (CREATE INDEX)
+-- 4. КОММЕНТАРИИ (COMMENT ON)
+--
+-- МИГРАЦИИ АБОНЕМЕНТОВ:
+-- 021: Добавлено поле expires_at в natural_slope_subscription_types
+-- 022: Увеличена длина поля type в transactions (VARCHAR(20) -> VARCHAR(50))
+-- 023: Добавлено поле session_participant_id в natural_slope_subscription_usage
+-- ============================================================================
+
+-- ============================================================================
+-- ТАБЛИЦЫ
+-- ============================================================================
+
 -- Таблица клиентов
 CREATE TABLE clients (
     id SERIAL PRIMARY KEY,
@@ -224,11 +246,13 @@ CREATE TABLE wallets (
 );
 
 -- Таблица транзакций
+-- МИГРАЦИЯ 022: Увеличена длина поля type с VARCHAR(20) до VARCHAR(50) для поддержки типов:
+--   subscription_purchase, subscription_usage, subscription_return и других
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
     wallet_id INTEGER REFERENCES wallets(id) ON DELETE CASCADE,
     amount DECIMAL(10,2) NOT NULL,
-    type VARCHAR(50) NOT NULL, -- payment, refill, amount, subscription_purchase
+    type VARCHAR(50) NOT NULL, -- payment, refill, amount, subscription_purchase, subscription_usage, subscription_return
     description TEXT,
     card_number VARCHAR(20), -- последние 4 цифры карты
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -495,7 +519,34 @@ CREATE TABLE certificate_stats (
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Создание индексов
+-- ============================================================================
+-- МИГРАЦИИ БАЗЫ ДАННЫХ
+-- ============================================================================
+-- Все миграции находятся в папке src/db/migrations/
+-- 
+-- МИГРАЦИИ ПО АБОНЕМЕНТАМ (2025-11-01 - 2025-11-04):
+-- 021_add_expires_at_to_subscription_types.sql
+--    - Добавлено поле expires_at (DATE) в natural_slope_subscription_types
+--    - Поле validity_days сделано опциональным
+-- 
+-- 022_increase_transaction_type_length.sql
+--    - Увеличена длина поля type в transactions с VARCHAR(20) до VARCHAR(50)
+--    - Необходимо для поддержки типов: subscription_purchase, subscription_usage, subscription_return
+-- 
+-- 023_add_session_participant_to_subscription_usage.sql
+--    - Добавлено поле session_participant_id в natural_slope_subscription_usage
+--    - Создан индекс idx_subscription_usage_participant
+--    - Позволяет точно определять, какой участник использовал абонемент
+-- ============================================================================
+
+-- ============================================================================
+-- ТРИГГЕРЫ И ФУНКЦИИ
+-- ============================================================================
+
+-- ============================================================================
+-- ИНДЕКСЫ
+-- ============================================================================
+
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
 CREATE INDEX idx_clients_email ON clients(email);
@@ -1091,10 +1142,11 @@ CREATE TABLE referral_transactions (
     completed_at TIMESTAMP
 );
 
--- Таблица типов абонементов
--- ================================================
+-- ============================================================================
 -- АБОНЕМЕНТЫ ДЛЯ ЕСТЕСТВЕННОГО СКЛОНА
--- ================================================
+-- ============================================================================
+-- МИГРАЦИЯ 021: Добавлено поле expires_at (DATE) для указания даты окончания действия абонемента
+--   Поле validity_days оставлено для обратной совместимости (опциональное)
 
 -- Типы абонементов для естественного склона
 CREATE TABLE natural_slope_subscription_types (
@@ -1103,12 +1155,12 @@ CREATE TABLE natural_slope_subscription_types (
     description TEXT,
     
     -- Параметры
-    sessions_count INTEGER NOT NULL,              -- Количество занятий (5 или 10)
-    discount_percentage DECIMAL(5,2) NOT NULL,    -- Процент скидки (10 или 20)
+    sessions_count INTEGER NOT NULL,              -- Количество занятий (3, 5, 7, 10)
+    discount_percentage DECIMAL(5,2) NOT NULL,    -- Процент скидки (настраиваемый)
     price DECIMAL(10,2) NOT NULL,                 -- Цена абонемента
     price_per_session DECIMAL(10,2) NOT NULL,     -- Цена за занятие после скидки
-    expires_at DATE NOT NULL,                     -- Дата окончания действия абонемента (включительно)
-    validity_days INTEGER,                         -- Срок действия в днях (оставлено для обратной совместимости)
+    expires_at DATE NOT NULL,                     -- МИГРАЦИЯ 021: Дата окончания действия абонемента (включительно)
+    validity_days INTEGER,                         -- Срок действия в днях (опционально, для обратной совместимости)
     applicable_to VARCHAR(50) DEFAULT 'sport_group' CHECK (applicable_to IN ('sport_group', 'any')),
     
     is_active BOOLEAN DEFAULT TRUE,
@@ -1149,11 +1201,12 @@ CREATE TABLE natural_slope_subscriptions (
 );
 
 -- История использования абонементов
+-- МИГРАЦИЯ 023: Добавлено поле session_participant_id для точной привязки использования абонемента к конкретному участнику тренировки
 CREATE TABLE natural_slope_subscription_usage (
     id SERIAL PRIMARY KEY,
     subscription_id INTEGER NOT NULL REFERENCES natural_slope_subscriptions(id) ON DELETE CASCADE,
     training_session_id INTEGER NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
-    session_participant_id INTEGER REFERENCES session_participants(id) ON DELETE CASCADE,
+    session_participant_id INTEGER REFERENCES session_participants(id) ON DELETE CASCADE, -- МИГРАЦИЯ 023: добавлено для точной привязки
     
     used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
@@ -1225,5 +1278,5 @@ CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_status ON natural_slo
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_slope_subscriptions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
-CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id); -- МИГРАЦИЯ 023
 CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 
