@@ -4705,6 +4705,28 @@ async function handleTextMessage(msg) {
 
                     await client.query('COMMIT');
 
+                    // Проверяем и обновляем реферальный статус после записи на тренировку (включая запись по абонементу)
+                    try {
+                        const { updateReferralStatusOnTraining, isFirstTraining } = require('../services/referral-service');
+                        const isFirst = await isFirstTraining(state.data.client_id);
+                        if (isFirst) {
+                            console.log(`🎁 Это первая тренировка клиента ${state.data.client_id}, проверяем реферальный бонус...`);
+                            await updateReferralStatusOnTraining(state.data.client_id);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке реферального бонуса:', error);
+                        // Не прерываем основной процесс
+                    }
+
+                    // Проверяем milestone бонусы (посещение N тренировок)
+                    try {
+                        const { checkMilestoneBonuses } = require('../services/bonus-system');
+                        await checkMilestoneBonuses(state.data.client_id);
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке milestone бонусов:', error);
+                        // Не прерываем основной процесс
+                    }
+
                     // Отправляем сообщение об успешной записи
                     const date = new Date(selectedTraining.date);
                     const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];

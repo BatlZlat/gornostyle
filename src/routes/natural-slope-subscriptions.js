@@ -526,6 +526,16 @@ router.post('/purchase', async (req, res) => {
 
         console.log(`✅ Клиент ID ${client_id} приобрел абонемент "${subscriptionType.name}" за ${price} руб.`);
 
+        // Обновляем реферальный статус после покупки абонемента
+        // Покупка абонемента - это расход средств, который должен обновить статус на 'deposited'
+        try {
+            const { updateReferralStatusOnDeposit } = require('../services/referral-service');
+            await updateReferralStatusOnDeposit(client_id, price);
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении реферального статуса после покупки абонемента:', error);
+            // Не прерываем основной процесс
+        }
+
         // Получаем полную информацию об абонементе для ответа
         const fullSubscriptionResult = await pool.query(
             `SELECT 

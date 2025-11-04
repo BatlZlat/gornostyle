@@ -14,6 +14,7 @@
 -- 021: Добавлено поле expires_at в natural_slope_subscription_types
 -- 022: Увеличена длина поля type в transactions (VARCHAR(20) -> VARCHAR(50))
 -- 023: Добавлено поле session_participant_id в natural_slope_subscription_usage
+-- 024: Добавлено каскадное удаление для внешних ключей referral_transactions
 -- ============================================================================
 
 -- ============================================================================
@@ -537,6 +538,11 @@ CREATE TABLE certificate_stats (
 --    - Добавлено поле session_participant_id в natural_slope_subscription_usage
 --    - Создан индекс idx_subscription_usage_participant
 --    - Позволяет точно определять, какой участник использовал абонемент
+-- 
+-- 024_add_cascade_delete_to_referral_transactions.sql
+--    - Добавлено каскадное удаление (ON DELETE CASCADE) для внешних ключей referral_transactions
+--    - Позволяет удалять клиентов без ошибок нарушения внешнего ключа
+--    - При удалении клиента автоматически удаляются все связанные реферальные транзакции
 -- ============================================================================
 
 -- ============================================================================
@@ -1129,6 +1135,8 @@ CREATE TABLE user_agreements (
 );
 
 -- Таблица реферальных транзакций
+-- МИГРАЦИЯ 024: Добавлено каскадное удаление (ON DELETE CASCADE) для referrer_id и referee_id
+-- Это позволяет удалять клиентов без ошибок нарушения внешнего ключа
 CREATE TABLE referral_transactions (
     id SERIAL PRIMARY KEY,
     referrer_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
