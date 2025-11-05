@@ -3,7 +3,44 @@ const router = express.Router();
 const { pool } = require('../db/index');
 const fetch = require('node-fetch');
 const { notifyAdminGroupTrainingCancellationByAdmin, calculateAge } = require('../bot/admin-notify');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
+
+// Настройка multer для загрузки медиа
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../../uploads/messages');
+        // Создаем директорию, если её нет
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'media-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi|webm/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Неподдерживаемый тип файла'));
+        }
+    }
+});
 
 // Создание новой тренировки
 router.post('/', async (req, res) => {
@@ -1450,37 +1487,83 @@ router.post('/notify-group/:id', async (req, res) => {
     }
 });
 
-// Рассылка сообщения всем клиентам с telegram_id
-router.post('/notify-clients', async (req, res) => {
-    const { message } = req.body;
+// Рассылка сообщения всем клиентам с telegram_id (с поддержкой медиа и форматирования)
+router.post('/notify-clients', upload.single('media'), async (req, res) => {
+    const message = req.body.message || (req.body.message === '' ? '' : req.body.message);
+    const parseMode = req.body.parse_mode || 'HTML';
+    const mediaFile = req.file;
+    
     if (!message) return res.status(400).json({ error: 'Нет текста сообщения' });
 
     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     try {
         const result = await pool.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
-
         const clients = result.rows;
 
         let sent = 0;
+        let errors = 0;
+
         for (const client of clients) {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: client.telegram_id, text: message })
-            });
-            sent++;
+            try {
+                if (mediaFile) {
+                    const FormData = require('form-data');
+                    const form = new FormData();
+                    form.append('chat_id', client.telegram_id);
+                    form.append('caption', message);
+                    form.append('parse_mode', parseMode);
+                    
+                    const isVideo = mediaFile.mimetype.startsWith('video/');
+                    const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+                    const fieldName = isVideo ? 'video' : 'photo';
+                    
+                    form.append(fieldName, fs.createReadStream(mediaFile.path));
+
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+                        method: 'POST',
+                        body: form
+                    });
+                } else {
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            chat_id: client.telegram_id, 
+                            text: message,
+                            parse_mode: parseMode
+                        })
+                    });
+                }
+                sent++;
+            } catch (clientError) {
+                console.error(`Ошибка отправки клиенту ${client.telegram_id}:`, clientError);
+                errors++;
+            }
         }
-        res.json({ message: `Сообщение отправлено ${sent} клиентам` });
+
+        // Удаляем файл после отправки всем
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
+
+        res.json({ 
+            message: `Сообщение отправлено ${sent} клиентам${errors > 0 ? `, ${errors} ошибок` : ''}` 
+        });
     } catch (error) {
         console.error('Ошибка при рассылке:', error);
+        // Удаляем файл в случае ошибки
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
         res.status(500).json({ error: 'Ошибка при рассылке' });
     }
 });
 
-// Отправка сообщения конкретному клиенту
-router.post('/notify-client/:id', async (req, res) => {
+// Отправка сообщения конкретному клиенту (с поддержкой медиа и форматирования)
+router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
     const { id: clientId } = req.params;
-    const { message } = req.body;
+    const message = req.body.message || (req.body.message === '' ? '' : req.body.message);
+    const parseMode = req.body.parse_mode || 'HTML';
+    const mediaFile = req.file;
     
     if (!message) {
         return res.status(400).json({ error: 'Нет текста сообщения' });
@@ -1503,16 +1586,40 @@ router.post('/notify-client/:id', async (req, res) => {
             return res.status(400).json({ error: 'У клиента не указан Telegram ID' });
         }
 
-        // Отправляем сообщение
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                chat_id: client.telegram_id, 
-                text: message,
-                parse_mode: 'Markdown'
-            })
-        });
+        // Отправляем сообщение с медиа или без
+        if (mediaFile) {
+            const FormData = require('form-data');
+            const form = new FormData();
+            form.append('chat_id', client.telegram_id);
+            form.append('caption', message);
+            form.append('parse_mode', parseMode);
+            
+            // Определяем тип медиа по MIME
+            const isVideo = mediaFile.mimetype.startsWith('video/');
+            const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+            const fieldName = isVideo ? 'video' : 'photo';
+            
+            form.append(fieldName, fs.createReadStream(mediaFile.path));
+
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+                method: 'POST',
+                body: form
+            });
+
+            // Удаляем файл после отправки
+            fs.unlinkSync(mediaFile.path);
+        } else {
+            // Отправляем только текст
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chat_id: client.telegram_id, 
+                    text: message,
+                    parse_mode: parseMode
+                })
+            });
+        }
 
         // Уведомляем администратора
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
@@ -1537,6 +1644,10 @@ router.post('/notify-client/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка при отправке сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
         res.status(500).json({ error: 'Ошибка при отправке сообщения' });
     }
 });

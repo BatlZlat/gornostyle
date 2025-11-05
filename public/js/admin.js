@@ -294,8 +294,8 @@ function initializeEventListeners() {
             
             // Обновляем HTML модального окна
             notifyModal.innerHTML = `
-                <div class="modal-content">
-                    <h3>Отправка сообщения</h3>
+                <div class="modal-content" style="max-width: 700px;">
+                    <h3>📝 Отправка сообщения клиентам</h3>
                     <form id="notify-clients-form">
                         <div class="form-group">
                             <label for="recipient-type">Тип получателей:</label>
@@ -322,63 +322,149 @@ function initializeEventListeners() {
 
                         <div class="form-group">
                             <label for="notify-message">Сообщение:</label>
-                            <textarea id="notify-message" class="form-control" rows="4" placeholder="Введите сообщение..."></textarea>
-                            <div id="emoji-panel" class="emoji-panel">
-                                <!-- Существующие смайлики -->
-                                <button type="button" class="emoji-btn">👋</button>
-                                <button type="button" class="emoji-btn">🎿</button>
-                                <button type="button" class="emoji-btn">⛷️</button>
-                                <button type="button" class="emoji-btn">❄️</button>
-                                <button type="button" class="emoji-btn">🎯</button>
-                                <button type="button" class="emoji-btn">✅</button>
-                                <button type="button" class="emoji-btn">❌</button>
-                                <button type="button" class="emoji-btn">💰</button>
-                                <button type="button" class="emoji-btn">📅</button>
-                                <button type="button" class="emoji-btn">⏰</button>
-                                
-                                <!-- Новые эмоции -->
-                                <button type="button" class="emoji-btn">😊</button>
-                                <button type="button" class="emoji-btn">😄</button>
-                                <button type="button" class="emoji-btn">👍</button>
-                                <button type="button" class="emoji-btn">👎</button>
-                                <button type="button" class="emoji-btn">😍</button>
-                                <button type="button" class="emoji-btn">😢</button>
-                                <button type="button" class="emoji-btn">😤</button>
-                                <button type="button" class="emoji-btn">🤔</button>
-                                
-                                <!-- Спортивные -->
-                                <button type="button" class="emoji-btn">🏂</button>
-                                <button type="button" class="emoji-btn">🏆</button>
-                                <button type="button" class="emoji-btn">🥇</button>
-                                <button type="button" class="emoji-btn">💪</button>
-                                <button type="button" class="emoji-btn">🔥</button>
-                                
-                                <!-- Рукопожатия и жесты -->
-                                <button type="button" class="emoji-btn">🤝</button>
-                                <button type="button" class="emoji-btn">🙏</button>
-                                <button type="button" class="emoji-btn">✋</button>
-                                <button type="button" class="emoji-btn">👌</button>
-                                <button type="button" class="emoji-btn">🤙</button>
-                                
-                                <!-- Погода -->
-                                <button type="button" class="emoji-btn">🌞</button>
-                                <button type="button" class="emoji-btn">🌨️</button>
-                                <button type="button" class="emoji-btn">🌪️</button>
-                                
-                                <!-- Уведомления -->
-                                <button type="button" class="emoji-btn">🔔</button>
-                                <button type="button" class="emoji-btn">📢</button>
-                                <button type="button" class="emoji-btn">⚠️</button>
+                            
+                            <!-- Панель инструментов форматирования -->
+                            <div class="formatting-toolbar" style="margin-bottom: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
+                                <button type="button" class="format-btn" data-format="bold" title="Жирный (Ctrl+B)" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-weight: bold;">B</button>
+                                <button type="button" class="format-btn" data-format="italic" title="Курсив (Ctrl+I)" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-style: italic;">I</button>
+                                <button type="button" class="format-btn" data-format="strikethrough" title="Зачеркнутый" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; text-decoration: line-through;">S</button>
+                                <button type="button" class="format-btn" data-format="code" title="Моноширинный" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-family: monospace;">&lt;/&gt;</button>
+                                <button type="button" class="format-btn" data-format="underline" title="Подчеркнутый" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; text-decoration: underline;">U</button>
+                            </div>
+                            
+                            <textarea id="notify-message" class="form-control" rows="6" placeholder="Введите сообщение... Используйте кнопки форматирования выше или Markdown: *жирный*, _курсив_, ~зачеркнутый~, \`моноширинный\`" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; white-space: pre-wrap;"></textarea>
+                            
+                            <!-- Расширенная панель эмодзи с категориями -->
+                            <div style="margin-top: 8px;">
+                                <div class="emoji-categories" style="display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
+                                    <button type="button" class="emoji-category-btn active" data-category="all" style="padding: 4px 8px; border: none; background: #e3f2fd; border-radius: 3px; cursor: pointer; font-size: 12px;">Все</button>
+                                    <button type="button" class="emoji-category-btn" data-category="celebration" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">🎉 Праздники</button>
+                                    <button type="button" class="emoji-category-btn" data-category="emotions" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">😊 Эмоции</button>
+                                    <button type="button" class="emoji-category-btn" data-category="warnings" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">⚠️ Предупреждения</button>
+                                    <button type="button" class="emoji-category-btn" data-category="sport" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">🎿 Спорт</button>
+                                </div>
+                                <div id="emoji-panel" class="emoji-panel" style="max-height: 120px; overflow-y: auto; padding: 4px; background: #fafafa; border-radius: 4px;">
+                                    <!-- Праздники и поздравления -->
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎉</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎊</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎈</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎁</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎂</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🍰</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎄</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎅</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🌟</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">✨</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">💫</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🍾</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🥂</button>
+                                    
+                                    <!-- Эмоции позитивные -->
+                                    <button type="button" class="emoji-btn" data-category="emotions">😊</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😄</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😀</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😃</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😁</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😍</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🥰</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😎</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤗</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👍</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👌</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤙</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">✌️</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤝</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🙏</button>
+                                    
+                                    <!-- Эмоции негативные/печальные -->
+                                    <button type="button" class="emoji-btn" data-category="emotions">😢</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😔</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😞</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😟</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😕</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🙁</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😤</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😠</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👎</button>
+                                    
+                                    <!-- Предупреждения и восклицательные -->
+                                    <button type="button" class="emoji-btn" data-category="warnings">⚠️</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🚨</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">⛔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🔔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">📢</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">📣</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❗</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">‼️</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❓</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">💥</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">⚡</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🔥</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">✅</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❌</button>
+                                    
+                                    <!-- Спорт -->
+                                    <button type="button" class="emoji-btn" data-category="sport">🎿</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">⛷️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏂</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏆</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥇</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥈</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥉</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">💪</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🎯</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏔️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">❄️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">⛄</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🌨️</button>
+                                    
+                                    <!-- Общие -->
+                                    <button type="button" class="emoji-btn" data-category="common">👋</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💰</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💳</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💵</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📅</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📆</button>
+                                    <button type="button" class="emoji-btn" data-category="common">⏰</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🕐</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👥</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👤</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👨‍🏫</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📱</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📞</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📍</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🌈</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🌞</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🎁</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Загрузка медиа -->
+                        <div class="form-group">
+                            <label>Медиа (фото/видео):</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="file" id="media-upload" accept="image/*,video/*" style="display: none;">
+                                <button type="button" id="upload-photo-btn" class="btn-secondary" style="padding: 8px 12px;">📷 Добавить фото</button>
+                                <button type="button" id="upload-video-btn" class="btn-secondary" style="padding: 8px 12px;">🎥 Добавить видео</button>
+                            </div>
+                            <div id="media-preview" style="margin-top: 8px; display: none;">
+                                <div style="position: relative; display: inline-block;">
+                                    <img id="media-preview-img" style="max-width: 200px; max-height: 200px; display: none; border-radius: 4px; border: 1px solid #ddd;">
+                                    <video id="media-preview-video" controls style="max-width: 200px; max-height: 200px; display: none; border-radius: 4px; border: 1px solid #ddd;"></video>
+                                    <button type="button" id="remove-media-btn" style="position: absolute; top: 4px; right: 4px; background: red; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: none;">✕</button>
+                                </div>
                             </div>
                         </div>
                         
                         <div class="form-group">
                             <label>Предпросмотр:</label>
-                            <div id="notify-preview" class="preview-box"></div>
+                            <div id="notify-preview" class="preview-box" style="white-space: pre-wrap; padding: 12px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; min-height: 60px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"></div>
                         </div>
                         
                         <div class="modal-actions">
-                            <button type="submit" class="btn-primary">Отправить</button>
+                            <button type="submit" class="btn-primary">📤 Отправить</button>
                             <button type="button" class="btn-secondary" id="close-notify-modal">Отмена</button>
                         </div>
                     </form>
@@ -405,11 +491,24 @@ function initializeEventListeners() {
         const previewBox = modal.querySelector('#notify-preview');
         const emojiPanel = modal.querySelector('#emoji-panel');
         const closeButton = modal.querySelector('#close-notify-modal');
+        const formatButtons = modal.querySelectorAll('.format-btn');
+        const emojiCategoryButtons = modal.querySelectorAll('.emoji-category-btn');
+        const mediaUploadInput = modal.querySelector('#media-upload');
+        const uploadPhotoBtn = modal.querySelector('#upload-photo-btn');
+        const uploadVideoBtn = modal.querySelector('#upload-video-btn');
+        const mediaPreviewContainer = modal.querySelector('#media-preview');
+        const mediaPreviewImg = modal.querySelector('#media-preview-img');
+        const mediaPreviewVideo = modal.querySelector('#media-preview-video');
+        const removeMediaBtn = modal.querySelector('#remove-media-btn');
 
         if (!form || !recipientTypeSelect || !messageInput || !previewBox || !emojiPanel) {
             console.error('Не найдены необходимые элементы формы');
             return;
         }
+
+        // Переменная для хранения загруженного медиа
+        let uploadedMediaFile = null;
+        let uploadedMediaType = null;
 
         // Обработчик изменения типа получателей
         recipientTypeSelect.addEventListener('change', () => {
@@ -429,22 +528,99 @@ function initializeEventListeners() {
             }
         });
 
-        // Обработчик отправки формы
-        form.addEventListener('submit', handleNotifyFormSubmit);
-
-        // Обработчик закрытия модального окна
-        if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                modal.style.display = 'none';
-                form.reset();
-                if (previewBox) previewBox.textContent = '';
+        // Обработчики кнопок форматирования
+        formatButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const format = btn.dataset.format;
+                applyFormatting(format);
             });
+        });
+
+        // Функция применения форматирования
+        function applyFormatting(format) {
+            const start = messageInput.selectionStart;
+            const end = messageInput.selectionEnd;
+            const selectedText = messageInput.value.substring(start, end);
+            const textBefore = messageInput.value.substring(0, start);
+            const textAfter = messageInput.value.substring(end);
+            
+            let formattedText = '';
+            switch(format) {
+                case 'bold':
+                    formattedText = `*${selectedText || 'текст'}*`;
+                    break;
+                case 'italic':
+                    formattedText = `_${selectedText || 'текст'}_`;
+                    break;
+                case 'strikethrough':
+                    formattedText = `~${selectedText || 'текст'}~`;
+                    break;
+                case 'code':
+                    formattedText = `\`${selectedText || 'текст'}\``;
+                    break;
+                case 'underline':
+                    formattedText = `<u>${selectedText || 'текст'}</u>`;
+                    break;
+            }
+            
+            messageInput.value = textBefore + formattedText + textAfter;
+            messageInput.focus();
+            
+            // Позиционируем курсор после вставленного текста
+            const newPos = start + formattedText.length;
+            messageInput.setSelectionRange(newPos, newPos);
+            
+            // Обновляем предпросмотр
+            updatePreview();
         }
 
-        // Обработчик ввода текста сообщения
-        messageInput.addEventListener('input', () => {
-            previewBox.textContent = messageInput.value;
+        // Обработчики категорий эмодзи
+        emojiCategoryButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Убираем активный класс со всех кнопок
+                emojiCategoryButtons.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'transparent';
+                });
+                
+                // Добавляем активный класс к нажатой кнопке
+                btn.classList.add('active');
+                btn.style.background = '#e3f2fd';
+                
+                // Фильтруем эмодзи по категории
+                const category = btn.dataset.category;
+                const allEmojiBtns = emojiPanel.querySelectorAll('.emoji-btn');
+                
+                allEmojiBtns.forEach(emojiBtn => {
+                    if (category === 'all') {
+                        emojiBtn.style.display = 'inline-block';
+                    } else {
+                        const emojiCategory = emojiBtn.dataset.category;
+                        emojiBtn.style.display = emojiCategory === category ? 'inline-block' : 'none';
+                    }
+                });
+            });
         });
+
+        // Обработчик ввода текста сообщения
+        messageInput.addEventListener('input', updatePreview);
+
+        // Функция обновления предпросмотра
+        function updatePreview() {
+            let text = messageInput.value;
+            // Преобразуем Markdown в простой текст для предпросмотра
+            // Жирный: *текст* -> <b>текст</b>
+            text = text.replace(/\*([^\*]+)\*/g, '<b>$1</b>');
+            // Курсив: _текст_ -> <i>текст</i>
+            text = text.replace(/_([^_]+)_/g, '<i>$1</i>');
+            // Зачеркнутый: ~текст~ -> <s>текст</s>
+            text = text.replace(/~([^~]+)~/g, '<s>$1</s>');
+            // Моноширинный: `текст` -> <code>текст</code>
+            text = text.replace(/`([^`]+)`/g, '<code style="background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>');
+            // Подчеркнутый уже в формате HTML
+            
+            previewBox.innerHTML = text;
+        }
 
         // Обработчики эмодзи
         emojiPanel.addEventListener('click', (event) => {
@@ -455,16 +631,84 @@ function initializeEventListeners() {
                 messageInput.value = text.slice(0, cursorPos) + emoji + text.slice(cursorPos);
                 messageInput.focus();
                 messageInput.setSelectionRange(cursorPos + emoji.length, cursorPos + emoji.length);
-                previewBox.textContent = messageInput.value;
+                updatePreview();
             }
         });
+
+        // Обработчики загрузки медиа
+        uploadPhotoBtn.addEventListener('click', () => {
+            mediaUploadInput.accept = 'image/*';
+            mediaUploadInput.click();
+        });
+
+        uploadVideoBtn.addEventListener('click', () => {
+            mediaUploadInput.accept = 'video/*';
+            mediaUploadInput.click();
+        });
+
+        mediaUploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            uploadedMediaFile = file;
+            uploadedMediaType = file.type.startsWith('image/') ? 'photo' : 'video';
+
+            // Показываем превью
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (uploadedMediaType === 'photo') {
+                    mediaPreviewImg.src = e.target.result;
+                    mediaPreviewImg.style.display = 'block';
+                    mediaPreviewVideo.style.display = 'none';
+                } else {
+                    mediaPreviewVideo.src = e.target.result;
+                    mediaPreviewVideo.style.display = 'block';
+                    mediaPreviewImg.style.display = 'none';
+                }
+                mediaPreviewContainer.style.display = 'block';
+                removeMediaBtn.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Удаление медиа
+        removeMediaBtn.addEventListener('click', () => {
+            uploadedMediaFile = null;
+            uploadedMediaType = null;
+            mediaUploadInput.value = '';
+            mediaPreviewImg.src = '';
+            mediaPreviewVideo.src = '';
+            mediaPreviewImg.style.display = 'none';
+            mediaPreviewVideo.style.display = 'none';
+            mediaPreviewContainer.style.display = 'none';
+            removeMediaBtn.style.display = 'none';
+        });
+
+        // Обработчик отправки формы (модифицированный для поддержки медиа)
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleNotifyFormSubmitWithMedia(e, uploadedMediaFile, uploadedMediaType);
+        });
+
+        // Обработчик закрытия модального окна
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
+                modal.style.display = 'none';
+                form.reset();
+                if (previewBox) previewBox.innerHTML = '';
+                // Очищаем медиа
+                if (removeMediaBtn) removeMediaBtn.click();
+            });
+        }
 
         // Закрытие по клику вне окна
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 modal.style.display = 'none';
                 form.reset();
-                if (previewBox) previewBox.textContent = '';
+                if (previewBox) previewBox.innerHTML = '';
+                // Очищаем медиа
+                if (removeMediaBtn) removeMediaBtn.click();
             }
         });
     }
@@ -3495,6 +3739,115 @@ function daysToNextBirthday(birthDate) {
     return diff;
 }
 
+// Новая функция для отправки сообщений с поддержкой медиа и форматирования
+async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
+    event.preventDefault();
+    const form = event.target;
+    const message = form.querySelector('#notify-message').value.trim();
+    const recipientType = form.querySelector('#recipient-type').value;
+    const clientSelect = form.querySelector('#client-select');
+    const groupSelect = form.querySelector('#group-select');
+
+    if (!message) {
+        showError('Введите текст сообщения');
+        return;
+    }
+
+    let endpoint;
+    let recipientId = null;
+
+    switch (recipientType) {
+        case 'all':
+            endpoint = '/api/trainings/notify-clients';
+            break;
+        case 'client':
+            if (!clientSelect || !clientSelect.value) {
+                showError('Выберите клиента');
+                return;
+            }
+            recipientId = clientSelect.value;
+            endpoint = `/api/trainings/notify-client/${recipientId}`;
+            break;
+        case 'group':
+            if (!groupSelect || !groupSelect.value) {
+                showError('Выберите групповую тренировку');
+                return;
+            }
+            recipientId = groupSelect.value;
+            endpoint = `/api/trainings/notify-group/${recipientId}`;
+            break;
+        default:
+            showError('Неверный тип получателей');
+            return;
+    }
+
+    try {
+        showLoading('Отправка сообщения...');
+
+        // Если есть медиа, используем FormData
+        if (mediaFile) {
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('media', mediaFile);
+            formData.append('mediaType', mediaType);
+            formData.append('parse_mode', 'HTML'); // Используем HTML для поддержки <u>
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                body: formData
+                // НЕ устанавливаем Content-Type, браузер автоматически установит multipart/form-data
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при отправке сообщения');
+            }
+
+            showSuccess(result.message || 'Сообщение успешно отправлено');
+        } else {
+            // Если медиа нет, отправляем JSON с форматированием
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    message, 
+                    parse_mode: 'HTML' // Используем HTML для поддержки всех тегов
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при отправке сообщения');
+            }
+
+            showSuccess(result.message || 'Сообщение успешно отправлено');
+        }
+
+        // Закрываем модальное окно и очищаем форму
+        document.getElementById('notify-clients-modal').style.display = 'none';
+        form.reset();
+        if (form.querySelector('#notify-preview')) {
+            form.querySelector('#notify-preview').innerHTML = '';
+        }
+        
+        // Очищаем медиа
+        const removeMediaBtn = form.querySelector('#remove-media-btn');
+        if (removeMediaBtn) {
+            removeMediaBtn.click();
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке сообщения:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Старая функция (оставляем для совместимости, если где-то используется)
 async function handleNotifyFormSubmit(event) {
     event.preventDefault();
     const form = event.target;
