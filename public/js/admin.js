@@ -3737,19 +3737,28 @@ function markdownToHtml(text) {
     let html = text;
     
     // Сначала сохраняем уже существующие HTML-теги (например, <u>текст</u>)
-    // Используем более надежный способ - сохраняем все HTML теги отдельно
+    // Используем уникальный плейсхолдер с невидимыми символами, который не конфликтует с Markdown
     const htmlPlaceholders = [];
     let htmlIdx = 0;
     
     // Сохраняем все HTML теги с их содержимым (не жадный режим)
-    // Используем более надежный способ поиска HTML тегов
-    const htmlTagPattern = /<(\/?)(u|b|i|s|code|a|pre)(\s[^>]*)?>(.*?)<\/\2>/gi;
+    const htmlTagPattern = /<(u|b|i|s|code|a|pre)(\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
     let match;
+    const matches = [];
     while ((match = htmlTagPattern.exec(html)) !== null) {
-        const fullMatch = match[0];
-        const placeholder = `__HTMLTAG${htmlIdx}__`;
-        htmlPlaceholders[htmlIdx] = fullMatch;
-        html = html.replace(fullMatch, placeholder);
+        matches.push({
+            full: match[0],
+            start: match.index,
+            end: match.index + match[0].length
+        });
+    }
+    
+    // Заменяем с конца, чтобы не сбить индексы
+    // Используем плейсхолдер с невидимыми символами, чтобы избежать конфликтов
+    for (let i = matches.length - 1; i >= 0; i--) {
+        const placeholder = `\u0001HTML${htmlIdx}\u0001`;
+        htmlPlaceholders[htmlIdx] = matches[i].full;
+        html = html.substring(0, matches[i].start) + placeholder + html.substring(matches[i].end);
         htmlIdx++;
     }
     
@@ -3772,17 +3781,17 @@ function markdownToHtml(text) {
     // Обрабатываем только одиночные звездочки
     html = html.replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
     
-    // Восстанавливаем сохраненные HTML-теги
-    htmlPlaceholders.forEach((tag, index) => {
-        html = html.replace(`__HTMLTAG${index}__`, tag);
-    });
+    // Восстанавливаем сохраненные HTML-теги (в обратном порядке, чтобы индексы совпали)
+    for (let i = htmlPlaceholders.length - 1; i >= 0; i--) {
+        html = html.replace(`\u0001HTML${i}\u0001`, htmlPlaceholders[i]);
+    }
     
     // Экранируем специальные символы HTML, но сохраняем теги форматирования
     const formatPlaceholders = [];
     let fmtIdx = 0;
     
     html = html.replace(/<(b|i|u|s|code|a|pre)(\s[^>]*)?>|<\/(b|i|u|s|code|a|pre)>/gi, (match) => {
-        const placeholder = `__FMT${fmtIdx}__`;
+        const placeholder = `\u0002FMT${fmtIdx}\u0002`;
         formatPlaceholders[fmtIdx] = match;
         fmtIdx++;
         return placeholder;
@@ -3794,7 +3803,7 @@ function markdownToHtml(text) {
     
     // Восстанавливаем теги форматирования
     formatPlaceholders.forEach((tag, index) => {
-        html = html.replace(`__FMT${index}__`, tag);
+        html = html.replace(`\u0002FMT${index}\u0002`, tag);
     });
     
     return html;
