@@ -217,7 +217,7 @@ async function editScheduledMessage(id) {
             const recipientType = form.querySelector('#recipient-type');
             const scheduleCheckbox = form.querySelector('#schedule-message');
             const scheduleDatetime = form.querySelector('#schedule-datetime');
-            const clientSelect = form.querySelector('#client-select');
+            const clientSelect = form.querySelector('#notify-client-select');
             
             if (messageInput) {
                 // Убираем HTML теги для отображения (можно улучшить)
@@ -245,13 +245,20 @@ async function editScheduledMessage(id) {
                 scheduleDatetime.value = localDate.toISOString().slice(0, 16);
             }
             
-            // Добавляем обработчик для сохранения изменений
-            const originalHandler = form.onsubmit;
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                await updateScheduledMessage(id, form);
-                form.onsubmit = originalHandler;
-            };
+            // Сохраняем ID редактируемого сообщения в форме
+            form.dataset.editingMessageId = id;
+            
+            // Если используется поиск клиентов, устанавливаем значение
+            const clientSearchInput = form.querySelector('#notify-client-search-input');
+            const clientSelectHidden = form.querySelector('#notify-client-select');
+            if (message.recipient_type === 'client') {
+                if (clientSearchInput && message.recipient_name) {
+                    clientSearchInput.value = message.recipient_name;
+                }
+                if (clientSelectHidden && message.recipient_id) {
+                    clientSelectHidden.value = message.recipient_id;
+                }
+            }
             
         }, 500);
     } else {
@@ -267,7 +274,7 @@ async function updateScheduledMessage(id, form) {
         const rawMessage = form.querySelector('#notify-message').value.trim();
         const recipientType = form.querySelector('#recipient-type').value;
         const scheduleDatetime = form.querySelector('#schedule-datetime');
-        const clientSelect = form.querySelector('#client-select');
+        const clientSelect = form.querySelector('#notify-client-select');
         
         if (!rawMessage) {
             showError('Введите текст сообщения');
@@ -284,8 +291,14 @@ async function updateScheduledMessage(id, form) {
         formData.append('recipient_type', recipientType);
         formData.append('parse_mode', 'HTML');
         
-        if (recipientType === 'client' && clientSelect && clientSelect.value) {
-            formData.append('recipient_id', clientSelect.value);
+        if (recipientType === 'client') {
+            const clientId = clientSelect ? clientSelect.value : null;
+            if (!clientId) {
+                showError('Выберите клиента');
+                hideLoading();
+                return;
+            }
+            formData.append('recipient_id', clientId);
         }
         
         if (scheduleDatetime && scheduleDatetime.value) {
@@ -305,10 +318,26 @@ async function updateScheduledMessage(id, form) {
         }
         
         showSuccess('Отложенное сообщение обновлено');
+        hideLoading();
+        
+        // Удаляем флаг редактирования
+        delete form.dataset.editingMessageId;
         
         // Закрываем модальное окно
         document.getElementById('notify-clients-modal').style.display = 'none';
         form.reset();
+        
+        // Очищаем поиск клиентов
+        const clientSearchInput = form.querySelector('#notify-client-search-input');
+        const clientSelectHidden = form.querySelector('#notify-client-select');
+        if (clientSearchInput) clientSearchInput.value = '';
+        if (clientSelectHidden) clientSelectHidden.value = '';
+        
+        // Скрываем контейнер отложенной отправки
+        const scheduleCheckbox = form.querySelector('#schedule-message');
+        const scheduleContainer = form.querySelector('#schedule-datetime-container');
+        if (scheduleCheckbox) scheduleCheckbox.checked = false;
+        if (scheduleContainer) scheduleContainer.style.display = 'none';
         
         // Обновляем список
         loadScheduledMessages();

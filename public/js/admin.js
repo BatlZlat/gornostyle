@@ -307,10 +307,12 @@ function initializeEventListeners() {
                         </div>
                         
                         <div id="client-select-container" class="form-group" style="display: none;">
-                            <label for="client-select">Выберите пользователя:</label>
-                            <select id="client-select" class="form-control">
-                                <option value="">Загрузка...</option>
-                            </select>
+                            <label for="notify-client-search-input">Выберите пользователя:</label>
+                            <div id="notify-client-search-wrapper" style="position: relative !important; z-index: 1000;">
+                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите имя для поиска..." autocomplete="off">
+                                <input type="hidden" id="notify-client-select" name="client_id">
+                                <div id="notify-client-search-results" class="search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; width: 100%; background: white; border: 1px solid #ccc; border-top: none; max-height: 200px; overflow-y: auto; z-index: 10001 !important; border-radius: 0 0 4px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 0; padding: 0;"></div>
+                            </div>
                         </div>
                         
                         <div id="group-select-container" class="form-group" style="display: none;">
@@ -329,7 +331,7 @@ function initializeEventListeners() {
 
                         <div id="schedule-datetime-container" class="form-group" style="display: none;">
                             <label for="schedule-datetime">Дата и время отправки (Азия/Екатеринбург):</label>
-                            <input type="datetime-local" id="schedule-datetime" class="form-control" required>
+                            <input type="datetime-local" id="schedule-datetime" class="form-control">
                             <small style="color: #666; font-size: 12px;">Сообщение будет отправлено в указанное время</small>
                         </div>
 
@@ -521,7 +523,6 @@ function initializeEventListeners() {
         const recipientTypeSelect = modal.querySelector('#recipient-type');
         const clientSelectContainer = modal.querySelector('#client-select-container');
         const groupSelectContainer = modal.querySelector('#group-select-container');
-        const clientSelect = modal.querySelector('#client-select');
         const groupSelect = modal.querySelector('#group-select');
         const messageInput = modal.querySelector('#notify-message');
         const previewBox = modal.querySelector('#notify-preview');
@@ -557,8 +558,11 @@ function initializeEventListeners() {
             }
 
             // Загружаем списки при первом выборе
-            if (type === 'client' && clientSelect && clientSelect.options.length <= 1) {
-                loadClientsForSelect();
+            if (type === 'client') {
+                // Инициализируем поиск клиентов (с задержкой, чтобы элементы успели отрендериться)
+                setTimeout(() => {
+                    initClientSearch();
+                }, 150);
             } else if (type === 'group' && groupSelect && groupSelect.options.length <= 1) {
                 loadGroupsForSelect();
             }
@@ -580,14 +584,14 @@ function initializeEventListeners() {
             scheduleCheckbox.addEventListener('change', () => {
                 if (scheduleCheckbox.checked) {
                     scheduleContainer.style.display = 'block';
-                    scheduleDatetime.required = true;
+                    scheduleDatetime.setAttribute('required', 'required');
                     // Устанавливаем значение по умолчанию (через час)
                     const oneHourLater = new Date(now.getTime() + 60 * 60000);
                     const oneHourLaterISO = new Date(oneHourLater.getTime() - timezoneOffset).toISOString().slice(0, 16);
                     scheduleDatetime.value = oneHourLaterISO;
                 } else {
                     scheduleContainer.style.display = 'none';
-                    scheduleDatetime.required = false;
+                    scheduleDatetime.removeAttribute('required');
                     scheduleDatetime.value = '';
                 }
             });
@@ -781,28 +785,152 @@ function initializeEventListeners() {
         }, true); // capture phase
     }
 
-    // Функция загрузки списка клиентов для выпадающего списка
-    async function loadClientsForSelect() {
+    // Глобальная переменная для хранения всех клиентов (кэшируем)
+    let allClientsForNotify = [];
+    let allClientsLoadedForNotify = false;
+    
+    // Инициализация поиска клиентов (вызывается каждый раз при открытии модального окна)
+    function initClientSearch() {
+        const clientSearchInput = document.getElementById('notify-client-search-input');
+        const clientSearchResults = document.getElementById('notify-client-search-results');
+        const clientSelect = document.getElementById('notify-client-select');
+        
+        if (!clientSearchInput || !clientSearchResults || !clientSelect) {
+            return;
+        }
+        
+        // Загружаем клиентов, если еще не загружены
+        if (!allClientsLoadedForNotify) {
+            loadAllClientsForNotify();
+        }
+        
+        // Обработчик ввода текста (добавляем каждый раз, так как элементы пересоздаются)
+        clientSearchInput.addEventListener('input', function handleClientSearchInput(e) {
+            const searchTerm = e.target.value.trim().toLowerCase();
+            
+            if (searchTerm.length < 1) {
+                clientSearchResults.style.display = 'none';
+                clientSelect.value = '';
+                return;
+            }
+            
+            // Фильтруем клиентов
+            const filteredClients = allClientsForNotify.filter(client => {
+                const name = client.full_name ? client.full_name.toLowerCase() : '';
+                const phone = client.phone ? client.phone.toLowerCase() : '';
+                return name.includes(searchTerm) || phone.includes(searchTerm);
+            }).slice(0, 10); // Ограничиваем до 10 результатов
+            
+            if (filteredClients.length === 0) {
+                clientSearchResults.innerHTML = '<div style="padding: 10px; color: #666;">Клиенты не найдены</div>';
+                clientSearchResults.style.display = 'block';
+                return;
+            }
+            
+            // Отображаем результаты (используем onclick для надежности, как в рабочей версии)
+            const resultsHTML = filteredClients.map(client => {
+                const escapedName = client.full_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                return `
+                    <div class="client-search-result-item search-result-item" 
+                         data-client-id="${client.id}" 
+                         data-client-name="${escapedName}"
+                         onclick="selectNotifyClient(${client.id}, '${escapedName}')"
+                         style="padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #eee; transition: background-color 0.2s; min-height: 40px; display: block; line-height: 1.4;"
+                         onmouseover="this.style.backgroundColor='#f0f0f0'"
+                         onmouseout="this.style.backgroundColor='white'">
+                        <div style="font-weight: 500; display: block;">${client.full_name}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            clientSearchResults.innerHTML = resultsHTML;
+            
+            // Убеждаемся, что родительский контейнер имеет position: relative
+            const wrapper = clientSearchResults.parentElement;
+            if (wrapper) {
+                wrapper.style.position = 'relative';
+                wrapper.style.zIndex = '1000';
+            }
+            
+            // Устанавливаем стили для отображения
+            clientSearchResults.style.display = 'block';
+            clientSearchResults.style.position = 'absolute';
+            clientSearchResults.style.top = '100%';
+            clientSearchResults.style.left = '0';
+            clientSearchResults.style.right = '0';
+            clientSearchResults.style.width = '100%';
+            clientSearchResults.style.background = 'white';
+            clientSearchResults.style.border = '1px solid #ccc';
+            clientSearchResults.style.borderTop = 'none';
+            clientSearchResults.style.maxHeight = '200px';
+            clientSearchResults.style.overflowY = 'auto';
+            clientSearchResults.style.zIndex = '10001';
+            clientSearchResults.style.borderRadius = '0 0 4px 4px';
+            clientSearchResults.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+            clientSearchResults.style.visibility = 'visible';
+            clientSearchResults.style.opacity = '1';
+        });
+        
+        // Скрываем результаты при клике вне области
+        const handleDocumentClick = (e) => {
+            const wrapper = document.getElementById('notify-client-search-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                const results = document.getElementById('notify-client-search-results');
+                if (results) results.style.display = 'none';
+            }
+        };
+        // Удаляем старый обработчик и добавляем новый
+        document.removeEventListener('click', handleDocumentClick);
+        document.addEventListener('click', handleDocumentClick);
+        
+        // Очищаем при потере фокуса, если ничего не выбрано
+        clientSearchInput.addEventListener('blur', function handleClientSearchBlur() {
+            setTimeout(() => {
+                if (clientSelect && !clientSelect.value && clientSearchInput.value) {
+                    clientSearchInput.value = '';
+                }
+            }, 200);
+        });
+    }
+    
+    // Глобальная функция выбора клиента (как в рабочей версии)
+    window.selectNotifyClient = function(clientId, clientName) {
+        const clientSearchInput = document.getElementById('notify-client-search-input');
+        const clientSelect = document.getElementById('notify-client-select');
+        const clientSearchResults = document.getElementById('notify-client-search-results');
+        
+        if (clientSearchInput) clientSearchInput.value = clientName;
+        if (clientSelect) clientSelect.value = clientId;
+        if (clientSearchResults) clientSearchResults.style.display = 'none';
+    };
+    
+    // Загрузка всех клиентов для поиска
+    async function loadAllClientsForNotify() {
+        if (allClientsLoadedForNotify) {
+            return; // Уже загружены
+        }
+        
         try {
             const response = await fetch('/api/clients');
             const clients = await response.json();
-            const clientSelect = document.getElementById('client-select');
             // Фильтруем только уникальных клиентов без parent_id
-            const filteredClients = [];
             const seenIds = new Set();
-            for (const client of clients) {
+            allClientsForNotify = clients.filter(client => {
                 if (!client.parent_id && !seenIds.has(client.id)) {
-                    filteredClients.push(client);
                     seenIds.add(client.id);
+                    return true;
                 }
-            }
-            clientSelect.innerHTML = filteredClients.map(client =>
-                `<option value="${client.id}">${client.full_name} (${client.phone})</option>`
-            ).join('');
+                return false;
+            });
+            allClientsLoadedForNotify = true;
         } catch (error) {
             console.error('Ошибка при загрузке списка клиентов:', error);
-            showError('Не удалось загрузить список клиентов');
         }
+    }
+    
+    // Старая функция для обратной совместимости (если используется где-то еще)
+    async function loadClientsForSelect() {
+        await loadAllClientsForNotify();
     }
 
     // Функция загрузки списка групповых тренировок для выпадающего списка
@@ -3868,7 +3996,7 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
     const form = event.target;
     const rawMessage = form.querySelector('#notify-message').value.trim();
     const recipientType = form.querySelector('#recipient-type').value;
-    const clientSelect = form.querySelector('#client-select');
+    const clientSelect = form.querySelector('#notify-client-select');
     const groupSelect = form.querySelector('#group-select');
     const scheduleCheckbox = form.querySelector('#schedule-message');
     const scheduleDatetime = form.querySelector('#schedule-datetime');
@@ -3881,6 +4009,16 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
     // Конвертируем Markdown в HTML перед отправкой
     const message = markdownToHtml(rawMessage);
 
+    // Проверяем, редактируется ли существующее сообщение
+    const editingMessageId = form.dataset.editingMessageId;
+    if (editingMessageId) {
+        // Если редактируем существующее сообщение, используем функцию обновления
+        if (typeof updateScheduledMessage === 'function') {
+            await updateScheduledMessage(editingMessageId, form);
+            return;
+        }
+    }
+    
     // Проверяем, отложенное ли это сообщение
     const isScheduled = scheduleCheckbox && scheduleCheckbox.checked;
     if (isScheduled) {
@@ -3898,8 +4036,14 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             formData.append('recipient_type', recipientType);
             formData.append('parse_mode', 'HTML');
             
-            if (recipientType === 'client' && clientSelect && clientSelect.value) {
-                formData.append('recipient_id', clientSelect.value);
+            if (recipientType === 'client') {
+                const clientId = clientSelect ? clientSelect.value : null;
+                if (!clientId) {
+                    showError('Выберите клиента');
+                    hideLoading();
+                    return;
+                }
+                formData.append('recipient_id', clientId);
             }
             
             // Конвертируем локальное время в ISO строку для отправки на сервер
@@ -3935,12 +4079,23 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             showSuccess(`Отложенное сообщение создано. Будет отправлено: ${formattedDate}`);
             hideLoading();
             
+            // Удаляем флаг редактирования, если был
+            delete form.dataset.editingMessageId;
+            
             // Закрываем модальное окно и очищаем форму
             document.getElementById('notify-clients-modal').style.display = 'none';
             form.reset();
             if (form.querySelector('#notify-preview')) {
                 form.querySelector('#notify-preview').innerHTML = '';
             }
+            
+            // Очищаем поиск клиентов
+            const clientSearchInput = form.querySelector('#notify-client-search-input');
+            const clientSelectHidden = form.querySelector('#notify-client-select');
+            if (clientSearchInput) clientSearchInput.value = '';
+            if (clientSelectHidden) clientSelectHidden.value = '';
+            const clientSearchResults = form.querySelector('#notify-client-search-results');
+            if (clientSearchResults) clientSearchResults.style.display = 'none';
             
             // Очищаем медиа
             const removeMediaBtn = form.querySelector('#remove-media-btn');
@@ -3975,11 +4130,12 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             endpoint = '/api/trainings/notify-clients';
             break;
         case 'client':
-            if (!clientSelect || !clientSelect.value) {
+            const clientId = clientSelect ? clientSelect.value : null;
+            if (!clientId) {
                 showError('Выберите клиента');
                 return;
             }
-            recipientId = clientSelect.value;
+            recipientId = clientId;
             endpoint = `/api/trainings/notify-client/${recipientId}`;
             break;
         case 'group':
@@ -4067,7 +4223,7 @@ async function handleNotifyFormSubmit(event) {
     const form = event.target;
     const message = form.querySelector('#notify-message').value.trim();
     const recipientType = form.querySelector('#recipient-type').value;
-    const clientSelect = form.querySelector('#client-select');
+    const clientSelect = form.querySelector('#notify-client-select');
     const groupSelect = form.querySelector('#group-select');
 
     if (!message) {
