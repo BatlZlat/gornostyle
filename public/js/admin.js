@@ -473,6 +473,29 @@ function initializeEventListeners() {
 
             // Инициализируем обработчики после обновления HTML
             initializeNotifyModalHandlers();
+            
+            // Явно блокируем закрытие модального окна при клике вне его
+            // Это предотвращает случайное закрытие во время отправки сообщений с медиа
+            // Используем capture phase для перехвата события раньше других обработчиков
+            notifyModal.addEventListener('click', function blockModalClose(e) {
+                // Предотвращаем закрытие при клике на фон модального окна
+                if (e.target === notifyModal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return false;
+                }
+            }, true); // capture phase - перехватываем до других обработчиков
+            
+            // Также блокируем на уровне bubbling
+            notifyModal.addEventListener('click', function blockModalCloseBubble(e) {
+                if (e.target === notifyModal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return false;
+                }
+            }, false); // bubbling phase
         });
     }
 
@@ -690,7 +713,7 @@ function initializeEventListeners() {
             await handleNotifyFormSubmitWithMedia(e, uploadedMediaFile, uploadedMediaType);
         });
 
-        // Обработчик закрытия модального окна
+        // Обработчик закрытия модального окна (только по кнопке "Отмена")
         if (closeButton) {
             closeButton.addEventListener('click', () => {
                 modal.style.display = 'none';
@@ -701,16 +724,19 @@ function initializeEventListeners() {
             });
         }
 
-        // Закрытие по клику вне окна
-        modal.addEventListener('click', (e) => {
+        // УБРАНО: Закрытие по клику вне окна
+        // Модальное окно теперь закрывается только по кнопке "Отмена",
+        // чтобы избежать случайного закрытия во время отправки сообщений с медиа
+        
+        // Дополнительная защита: блокируем закрытие при клике на фон
+        modal.addEventListener('click', function(e) {
             if (e.target === modal) {
-                modal.style.display = 'none';
-                form.reset();
-                if (previewBox) previewBox.innerHTML = '';
-                // Очищаем медиа
-                if (removeMediaBtn) removeMediaBtn.click();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                return false;
             }
-        });
+        }, true); // capture phase
     }
 
     // Функция загрузки списка клиентов для выпадающего списка
@@ -799,45 +825,9 @@ function initializeEventListeners() {
         }
     }
 
-    if (closeNotifyModal && notifyModal) {
-        closeNotifyModal.addEventListener('click', () => {
-            notifyModal.style.display = 'none';
-        });
-    }
-    if (notifyMessage && notifyPreview) {
-        notifyMessage.addEventListener('input', () => {
-            notifyPreview.textContent = notifyMessage.value;
-        });
-    }
-    if (notifyForm) {
-        notifyForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = notifyMessage.value.trim();
-            if (!text) return;
-            try {
-                const resp = await fetch('/api/trainings/notify-clients', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await resp.json();
-                if (resp.ok) {
-                    alert(data.message || 'Сообщение отправлено!');
-                    notifyModal.style.display = 'none';
-                } else {
-                    alert(data.error || 'Ошибка при отправке сообщения');
-                }
-            } catch (err) {
-                alert('Ошибка при отправке сообщения');
-            }
-        });
-    }
-    // Закрытие по клику вне окна
-    if (notifyModal) {
-        notifyModal.onclick = (e) => {
-            if (e.target === notifyModal) notifyModal.style.display = 'none';
-        };
-    }
+    // УБРАНО: Старые обработчики для модального окна отправки сообщений
+    // Все обработчики теперь устанавливаются в функции initializeNotifyModalHandlers()
+    // после перезаписи innerHTML модального окна
 
     // Обработчики для страницы заявок
     const archiveApplicationsBtn = document.getElementById('archive-applications');
@@ -2906,7 +2896,8 @@ window.onclick = function(event) {
 
 // Закрытие модальных окон при клике вне их области
 window.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
+    // Исключаем модальное окно отправки сообщений - оно закрывается только по кнопке "Отмена"
+    if (e.target.classList.contains('modal') && e.target.id !== 'notify-clients-modal') {
         e.target.style.display = 'none';
     }
 });
@@ -3739,19 +3730,92 @@ function daysToNextBirthday(birthDate) {
     return diff;
 }
 
+// Функция конвертации Markdown в HTML для Telegram
+function markdownToHtml(text) {
+    if (!text) return '';
+    
+    let html = text;
+    
+    // Сначала сохраняем уже существующие HTML-теги (например, <u>текст</u>)
+    // Используем более надежный способ - сохраняем все HTML теги отдельно
+    const htmlPlaceholders = [];
+    let htmlIdx = 0;
+    
+    // Сохраняем все HTML теги с их содержимым (не жадный режим)
+    // Используем более надежный способ поиска HTML тегов
+    const htmlTagPattern = /<(\/?)(u|b|i|s|code|a|pre)(\s[^>]*)?>(.*?)<\/\2>/gi;
+    let match;
+    while ((match = htmlTagPattern.exec(html)) !== null) {
+        const fullMatch = match[0];
+        const placeholder = `__HTMLTAG${htmlIdx}__`;
+        htmlPlaceholders[htmlIdx] = fullMatch;
+        html = html.replace(fullMatch, placeholder);
+        htmlIdx++;
+    }
+    
+    // Конвертируем Markdown в HTML (обрабатываем в правильном порядке)
+    
+    // Моноширинный: `текст` -> <code>текст</code>
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Зачеркнутый: ~текст~ -> <s>текст</s>
+    html = html.replace(/~([^~]+)~/g, '<s>$1</s>');
+    
+    // Жирный: **текст** -> <b>текст</b> (двойные звездочки обрабатываем первыми)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    
+    // Курсив: _текст_ -> <i>текст</i>
+    // Обрабатываем все случаи _текст_ (не внутри звездочек и других символов)
+    html = html.replace(/_([^_\n]+)_/g, '<i>$1</i>');
+    
+    // Жирный: *текст* -> <b>текст</b> (одиночные звездочки)
+    // Обрабатываем только одиночные звездочки
+    html = html.replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
+    
+    // Восстанавливаем сохраненные HTML-теги
+    htmlPlaceholders.forEach((tag, index) => {
+        html = html.replace(`__HTMLTAG${index}__`, tag);
+    });
+    
+    // Экранируем специальные символы HTML, но сохраняем теги форматирования
+    const formatPlaceholders = [];
+    let fmtIdx = 0;
+    
+    html = html.replace(/<(b|i|u|s|code|a|pre)(\s[^>]*)?>|<\/(b|i|u|s|code|a|pre)>/gi, (match) => {
+        const placeholder = `__FMT${fmtIdx}__`;
+        formatPlaceholders[fmtIdx] = match;
+        fmtIdx++;
+        return placeholder;
+    });
+    
+    // Экранируем остальные символы
+    html = html.replace(/&/g, '&amp;');
+    html = html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Восстанавливаем теги форматирования
+    formatPlaceholders.forEach((tag, index) => {
+        html = html.replace(`__FMT${index}__`, tag);
+    });
+    
+    return html;
+}
+
 // Новая функция для отправки сообщений с поддержкой медиа и форматирования
 async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
     event.preventDefault();
     const form = event.target;
-    const message = form.querySelector('#notify-message').value.trim();
+    const rawMessage = form.querySelector('#notify-message').value.trim();
     const recipientType = form.querySelector('#recipient-type').value;
     const clientSelect = form.querySelector('#client-select');
     const groupSelect = form.querySelector('#group-select');
 
-    if (!message) {
+    if (!rawMessage) {
         showError('Введите текст сообщения');
         return;
     }
+
+    // Конвертируем Markdown в HTML перед отправкой
+    const message = markdownToHtml(rawMessage);
 
     let endpoint;
     let recipientId = null;

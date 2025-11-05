@@ -30,14 +30,29 @@ const upload = multer({
         fileSize: 50 * 1024 * 1024 // 50MB
     },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi|webm/;
+        const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi|webm|quicktime/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
+        // Расширяем проверку MIME типов для .mov файлов
+        const allowedMimeTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+            'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm',
+            'video/mov' // Добавляем поддержку .mov
+        ];
+        const mimetype = allowedMimeTypes.includes(file.mimetype) || 
+                        file.mimetype.startsWith('video/') || 
+                        file.mimetype.startsWith('image/');
+        
+        // Специальная обработка для .mov файлов
+        const isMovFile = path.extname(file.originalname).toLowerCase() === '.mov';
+        if (isMovFile) {
+            // .mov файлы могут иметь разные MIME типы
+            return cb(null, true);
+        }
         
         if (mimetype && extname) {
             return cb(null, true);
         } else {
-            cb(new Error('Неподдерживаемый тип файла'));
+            cb(new Error('Неподдерживаемый тип файла: ' + file.mimetype));
         }
     }
 });
@@ -1512,16 +1527,25 @@ router.post('/notify-clients', upload.single('media'), async (req, res) => {
                     form.append('caption', message);
                     form.append('parse_mode', parseMode);
                     
-                    const isVideo = mediaFile.mimetype.startsWith('video/');
+                    // Определяем тип медиа по MIME или расширению файла
+                    const fileExt = path.extname(mediaFile.originalname).toLowerCase();
+                    const isVideo = mediaFile.mimetype.startsWith('video/') || 
+                                  ['.mp4', '.mov', '.avi', '.webm'].includes(fileExt);
                     const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
                     const fieldName = isVideo ? 'video' : 'photo';
                     
                     form.append(fieldName, fs.createReadStream(mediaFile.path));
 
-                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+                    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
                         method: 'POST',
                         body: form
                     });
+
+                    const responseData = await response.json();
+                    if (!response.ok || !responseData.ok) {
+                        console.error(`Ошибка отправки ${endpoint} клиенту ${client.telegram_id}:`, responseData);
+                        throw new Error(`Ошибка отправки: ${responseData.description || 'Неизвестная ошибка'}`);
+                    }
                 } else {
                     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                         method: 'POST',
@@ -1594,17 +1618,34 @@ router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
             form.append('caption', message);
             form.append('parse_mode', parseMode);
             
-            // Определяем тип медиа по MIME
-            const isVideo = mediaFile.mimetype.startsWith('video/');
+            // Определяем тип медиа по MIME или расширению файла
+            const fileExt = path.extname(mediaFile.originalname).toLowerCase();
+            const isVideo = mediaFile.mimetype.startsWith('video/') || 
+                          ['.mp4', '.mov', '.avi', '.webm'].includes(fileExt);
             const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
             const fieldName = isVideo ? 'video' : 'photo';
             
+            console.log(`Отправка ${endpoint} для клиента ${client.telegram_id}:`, {
+                filename: mediaFile.originalname,
+                mimetype: mediaFile.mimetype,
+                size: mediaFile.size,
+                path: mediaFile.path
+            });
+            
             form.append(fieldName, fs.createReadStream(mediaFile.path));
 
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+            const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
                 method: 'POST',
                 body: form
             });
+
+            const responseData = await response.json();
+            if (!response.ok || !responseData.ok) {
+                console.error(`Ошибка отправки ${endpoint}:`, responseData);
+                throw new Error(`Ошибка отправки: ${responseData.description || 'Неизвестная ошибка'}`);
+            }
+
+            console.log(`Успешно отправлено ${endpoint} клиенту ${client.telegram_id}`);
 
             // Удаляем файл после отправки
             fs.unlinkSync(mediaFile.path);
