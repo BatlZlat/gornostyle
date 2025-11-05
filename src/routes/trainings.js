@@ -1693,4 +1693,242 @@ router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
     }
 });
 
+// Создание отложенного сообщения
+router.post('/scheduled-messages', upload.single('media'), async (req, res) => {
+    try {
+        const { message, recipient_type, recipient_id, scheduled_at, parse_mode = 'HTML', media_type } = req.body;
+        const mediaFile = req.file;
+        
+        if (!message) {
+            return res.status(400).json({ error: 'Нет текста сообщения' });
+        }
+        
+        if (!scheduled_at) {
+            return res.status(400).json({ error: 'Не указана дата и время отправки' });
+        }
+        
+        if (recipient_type === 'client' && !recipient_id) {
+            return res.status(400).json({ error: 'Не указан получатель' });
+        }
+        
+        // Проверяем, что дата в будущем
+        const scheduledDate = new Date(scheduled_at);
+        if (scheduledDate <= new Date()) {
+            return res.status(400).json({ error: 'Дата и время отправки должны быть в будущем' });
+        }
+        
+        // Сохраняем путь к медиа файлу, если он есть
+        let mediaFilePath = null;
+        if (mediaFile) {
+            mediaFilePath = mediaFile.path;
+        }
+        
+        // Получаем ID администратора из сессии (если есть) или используем 1 по умолчанию
+        const createdBy = req.session?.adminId || 1;
+        
+        const result = await pool.query(
+            `INSERT INTO scheduled_messages 
+            (message, parse_mode, media_file_path, media_type, recipient_type, recipient_id, scheduled_at, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, scheduled_at`,
+            [message, parse_mode, mediaFilePath, media_type || null, recipient_type, recipient_id || null, scheduled_at, createdBy]
+        );
+        
+        const scheduledMessage = result.rows[0];
+        
+        // Уведомляем администратора
+        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
+        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
+            const scheduledDateFormatted = new Date(scheduled_at).toLocaleString('ru-RU', {
+                timeZone: 'Asia/Yekaterinburg',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            const recipientText = recipient_type === 'client' 
+                ? `👤 Конкретный клиент (ID: ${recipient_id})`
+                : '👥 Все пользователи';
+            
+            const adminText = `📅 <b>Создано отложенное сообщение</b>\n\n${recipientText}\n\n📝 <b>Текст:</b>\n${message}\n\n⏰ <b>Будет отправлено:</b> ${scheduledDateFormatted}`;
+            
+            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chat_id: ADMIN_TELEGRAM_ID, 
+                    text: adminText,
+                    parse_mode: 'HTML'
+                })
+            });
+        }
+        
+        res.json({ 
+            message: 'Отложенное сообщение создано',
+            id: scheduledMessage.id,
+            scheduled_at: scheduledMessage.scheduled_at
+        });
+    } catch (error) {
+        console.error('Ошибка при создании отложенного сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Ошибка при создании отложенного сообщения' });
+    }
+});
+
+// Получение списка отложенных сообщений
+router.get('/scheduled-messages', async (req, res) => {
+    try {
+        const { status = 'pending' } = req.query;
+        
+        let query = `
+            SELECT sm.*, c.full_name as recipient_name, a.username as created_by_name
+            FROM scheduled_messages sm
+            LEFT JOIN clients c ON sm.recipient_id = c.id
+            LEFT JOIN administrators a ON sm.created_by = a.id
+            WHERE sm.status = $1
+            ORDER BY sm.scheduled_at ASC
+        `;
+        
+        const result = await pool.query(query, [status]);
+        
+        res.json({ messages: result.rows });
+    } catch (error) {
+        console.error('Ошибка при получении отложенных сообщений:', error);
+        res.status(500).json({ error: 'Ошибка при получении отложенных сообщений' });
+    }
+});
+
+// Редактирование отложенного сообщения
+router.put('/scheduled-messages/:id', upload.single('media'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message, recipient_type, recipient_id, scheduled_at, parse_mode = 'HTML', media_type } = req.body;
+        const mediaFile = req.file;
+        
+        // Проверяем, что сообщение существует и еще не отправлено
+        const checkResult = await pool.query(
+            'SELECT * FROM scheduled_messages WHERE id = $1',
+            [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Отложенное сообщение не найдено' });
+        }
+        
+        const existingMessage = checkResult.rows[0];
+        
+        if (existingMessage.status === 'sent') {
+            return res.status(400).json({ error: 'Нельзя редактировать уже отправленное сообщение' });
+        }
+        
+        // Обновляем данные
+        let updateFields = [];
+        let values = [];
+        let paramIndex = 1;
+        
+        if (message) {
+            updateFields.push(`message = $${paramIndex++}`);
+            values.push(message);
+        }
+        
+        if (scheduled_at) {
+            const scheduledDate = new Date(scheduled_at);
+            if (scheduledDate <= new Date()) {
+                return res.status(400).json({ error: 'Дата и время отправки должны быть в будущем' });
+            }
+            updateFields.push(`scheduled_at = $${paramIndex++}`);
+            values.push(scheduled_at);
+        }
+        
+        if (recipient_type) {
+            updateFields.push(`recipient_type = $${paramIndex++}`);
+            values.push(recipient_type);
+        }
+        
+        if (recipient_id !== undefined) {
+            updateFields.push(`recipient_id = $${paramIndex++}`);
+            values.push(recipient_id || null);
+        }
+        
+        if (mediaFile) {
+            // Удаляем старый файл, если он есть
+            if (existingMessage.media_file_path && fs.existsSync(existingMessage.media_file_path)) {
+                fs.unlinkSync(existingMessage.media_file_path);
+            }
+            updateFields.push(`media_file_path = $${paramIndex++}`);
+            values.push(mediaFile.path);
+            if (media_type) {
+                updateFields.push(`media_type = $${paramIndex++}`);
+                values.push(media_type);
+            }
+        }
+        
+        updateFields.push(`updated_at = NOW()`);
+        values.push(id);
+        
+        const updateQuery = `
+            UPDATE scheduled_messages 
+            SET ${updateFields.join(', ')}
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `;
+        
+        const result = await pool.query(updateQuery, values);
+        
+        res.json({ 
+            message: 'Отложенное сообщение обновлено',
+            scheduled_message: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка при обновлении отложенного сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Ошибка при обновлении отложенного сообщения' });
+    }
+});
+
+// Удаление отложенного сообщения
+router.delete('/scheduled-messages/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Проверяем, что сообщение существует
+        const checkResult = await pool.query(
+            'SELECT * FROM scheduled_messages WHERE id = $1',
+            [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Отложенное сообщение не найдено' });
+        }
+        
+        const message = checkResult.rows[0];
+        
+        if (message.status === 'sent') {
+            return res.status(400).json({ error: 'Нельзя удалить уже отправленное сообщение' });
+        }
+        
+        // Удаляем файл, если он есть
+        if (message.media_file_path && fs.existsSync(message.media_file_path)) {
+            fs.unlinkSync(message.media_file_path);
+        }
+        
+        // Удаляем сообщение из БД
+        await pool.query('DELETE FROM scheduled_messages WHERE id = $1', [id]);
+        
+        res.json({ message: 'Отложенное сообщение удалено' });
+    } catch (error) {
+        console.error('Ошибка при удалении отложенного сообщения:', error);
+        res.status(500).json({ error: 'Ошибка при удалении отложенного сообщения' });
+    }
+});
+
 module.exports = router;

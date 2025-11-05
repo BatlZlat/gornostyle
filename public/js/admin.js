@@ -321,6 +321,19 @@ function initializeEventListeners() {
                         </div>
 
                         <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="schedule-message" style="margin-right: 8px;">
+                                ⏰ Отложенная отправка
+                            </label>
+                        </div>
+
+                        <div id="schedule-datetime-container" class="form-group" style="display: none;">
+                            <label for="schedule-datetime">Дата и время отправки (Азия/Екатеринбург):</label>
+                            <input type="datetime-local" id="schedule-datetime" class="form-control" required>
+                            <small style="color: #666; font-size: 12px;">Сообщение будет отправлено в указанное время</small>
+                        </div>
+
+                        <div class="form-group">
                             <label for="notify-message">Сообщение:</label>
                             
                             <!-- Панель инструментов форматирования -->
@@ -550,6 +563,35 @@ function initializeEventListeners() {
                 loadGroupsForSelect();
             }
         });
+
+        // Обработчик для отложенной отправки
+        const scheduleCheckbox = modal.querySelector('#schedule-message');
+        const scheduleContainer = modal.querySelector('#schedule-datetime-container');
+        const scheduleDatetime = modal.querySelector('#schedule-datetime');
+        
+        if (scheduleCheckbox && scheduleContainer && scheduleDatetime) {
+            // Устанавливаем минимальное значение (текущее время)
+            const now = new Date();
+            const timezoneOffset = now.getTimezoneOffset() * 60000; // в миллисекундах
+            const localTime = new Date(now.getTime() - timezoneOffset);
+            const localISOTime = localTime.toISOString().slice(0, 16);
+            scheduleDatetime.min = localISOTime;
+            
+            scheduleCheckbox.addEventListener('change', () => {
+                if (scheduleCheckbox.checked) {
+                    scheduleContainer.style.display = 'block';
+                    scheduleDatetime.required = true;
+                    // Устанавливаем значение по умолчанию (через час)
+                    const oneHourLater = new Date(now.getTime() + 60 * 60000);
+                    const oneHourLaterISO = new Date(oneHourLater.getTime() - timezoneOffset).toISOString().slice(0, 16);
+                    scheduleDatetime.value = oneHourLaterISO;
+                } else {
+                    scheduleContainer.style.display = 'none';
+                    scheduleDatetime.required = false;
+                    scheduleDatetime.value = '';
+                }
+            });
+        }
 
         // Обработчики кнопок форматирования
         formatButtons.forEach(btn => {
@@ -3817,6 +3859,8 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
     const recipientType = form.querySelector('#recipient-type').value;
     const clientSelect = form.querySelector('#client-select');
     const groupSelect = form.querySelector('#group-select');
+    const scheduleCheckbox = form.querySelector('#schedule-message');
+    const scheduleDatetime = form.querySelector('#schedule-datetime');
 
     if (!rawMessage) {
         showError('Введите текст сообщения');
@@ -3825,6 +3869,86 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
 
     // Конвертируем Markdown в HTML перед отправкой
     const message = markdownToHtml(rawMessage);
+
+    // Проверяем, отложенное ли это сообщение
+    const isScheduled = scheduleCheckbox && scheduleCheckbox.checked;
+    if (isScheduled) {
+        if (!scheduleDatetime || !scheduleDatetime.value) {
+            showError('Укажите дату и время отправки');
+            return;
+        }
+        
+        // Отправляем как отложенное сообщение
+        try {
+            showLoading('Создание отложенного сообщения...');
+            
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('recipient_type', recipientType);
+            formData.append('parse_mode', 'HTML');
+            
+            if (recipientType === 'client' && clientSelect && clientSelect.value) {
+                formData.append('recipient_id', clientSelect.value);
+            }
+            
+            // Конвертируем локальное время в ISO строку для отправки на сервер
+            const scheduledDateTime = new Date(scheduleDatetime.value);
+            formData.append('scheduled_at', scheduledDateTime.toISOString());
+            
+            if (mediaFile) {
+                formData.append('media', mediaFile);
+                formData.append('media_type', mediaType);
+            }
+            
+            const response = await fetch('/api/trainings/scheduled-messages', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при создании отложенного сообщения');
+            }
+            
+            const scheduledDate = new Date(scheduleDatetime.value);
+            const formattedDate = scheduledDate.toLocaleString('ru-RU', {
+                timeZone: 'Asia/Yekaterinburg',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            showSuccess(`Отложенное сообщение создано. Будет отправлено: ${formattedDate}`);
+            
+            // Закрываем модальное окно и очищаем форму
+            document.getElementById('notify-clients-modal').style.display = 'none';
+            form.reset();
+            if (form.querySelector('#notify-preview')) {
+                form.querySelector('#notify-preview').innerHTML = '';
+            }
+            
+            // Очищаем медиа
+            const removeMediaBtn = form.querySelector('#remove-media-btn');
+            if (removeMediaBtn) {
+                removeMediaBtn.click();
+            }
+            
+            // Скрываем контейнер отложенной отправки
+            const scheduleContainer = form.querySelector('#schedule-datetime-container');
+            if (scheduleContainer) {
+                scheduleContainer.style.display = 'none';
+            }
+            
+            return;
+        } catch (error) {
+            console.error('Ошибка при создании отложенного сообщения:', error);
+            showError(error.message);
+            return;
+        }
+    }
 
     let endpoint;
     let recipientId = null;

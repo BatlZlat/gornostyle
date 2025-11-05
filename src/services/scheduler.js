@@ -6,6 +6,7 @@
 const cron = require('node-cron');
 const notificationService = require('./notification-service');
 const reviewNotificationService = require('./review-notification-service');
+const scheduledMessagesService = require('./scheduled-messages-service');
 
 class Scheduler {
     constructor() {
@@ -26,6 +27,9 @@ class Scheduler {
         
         // Запускаем задачу обновления статусов тренировок
         this.scheduleStatusUpdates();
+        
+        // Запускаем задачу отправки отложенных сообщений
+        this.scheduleScheduledMessages();
         
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
@@ -153,6 +157,39 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Обновление статусов" настроена на каждые 30 минут');
+    }
+
+    /**
+     * Настраивает задачу отправки отложенных сообщений
+     * Запускается каждые 5 минут для проверки и отправки отложенных сообщений
+     */
+    scheduleScheduledMessages() {
+        const task = cron.schedule('*/5 * * * *', async () => {
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: отправка отложенных сообщений`);
+                
+                const stats = await scheduledMessagesService.sendScheduledMessages();
+                
+                if (stats.sent > 0 || stats.errors > 0) {
+                    console.log(`[${new Date().toISOString()}] Задача завершена. Отправлено: ${stats.sent}, Ошибок: ${stats.errors}`);
+                }
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при выполнении задачи отправки отложенных сообщений:`, error);
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'scheduled_messages',
+            description: 'Отправка отложенных сообщений',
+            schedule: '*/5 * * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Отправка отложенных сообщений" настроена на каждые 5 минут');
     }
 
     /**
