@@ -1248,27 +1248,31 @@ body {
 #notify-clients-modal .modal-content {
     max-width: 600px;
     width: 90%;
-    overflow: visible !important; /* Разрешаем выпадающему списку выходить за границы */
+    max-height: 90vh;
+    overflow-y: auto; /* Восстанавливаем прокрутку для модального окна */
+    overflow-x: visible; /* Разрешаем выпадающему списку выходить за границы по горизонтали */
 }
 
-#notify-clients-modal .form-group {
-    overflow: visible !important; /* Разрешаем выпадающему списку выходить за границы */
-}
-
+/* Контейнер для поиска клиентов - разрешаем выпадающему списку выходить за границы */
 #notify-client-search-wrapper {
-    overflow: visible !important; /* Разрешаем выпадающему списку выходить за границы */
+    overflow: visible !important;
     position: relative !important;
     z-index: 1000 !important;
 }
 
+/* Выпадающий список результатов поиска */
 #notify-client-search-results {
     z-index: 10001 !important;
     position: absolute !important;
 }
 
+/* Контейнер выбора клиента - разрешаем выпадающему списку выходить за границы */
+#client-select-container {
+    overflow: visible !important;
+}
+
 #notify-clients-modal .form-group {
     margin-bottom: 1rem;
-    overflow: visible !important; /* Разрешаем выпадающему списку выходить за границы */
 }
 
 #notify-clients-modal label {
