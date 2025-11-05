@@ -1666,7 +1666,7 @@ router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
         const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
         if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            const adminText = `📨 *Отправлено сообщение клиенту*\n\n👤 *Клиент:* ${client.full_name}\n\n📝 *Текст:*\n${message}`;
+            const adminText = `📨 <b>Отправлено сообщение клиенту</b>\n\n👤 <b>Клиент:</b> ${client.full_name}\n\n📝 <b>Текст:</b>\n${message}`;
 
             await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
@@ -1674,7 +1674,7 @@ router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
                 body: JSON.stringify({ 
                     chat_id: ADMIN_TELEGRAM_ID, 
                     text: adminText,
-                    parse_mode: 'Markdown'
+                    parse_mode: 'HTML'
                 })
             });
         }
