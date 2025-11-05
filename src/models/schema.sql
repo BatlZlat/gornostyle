@@ -1,3 +1,26 @@
+-- ============================================================================
+-- СХЕМА БАЗЫ ДАННЫХ
+-- ============================================================================
+-- Последнее обновление: 4 ноября 2025
+-- Версия: 2.1.0+
+--
+-- СТРУКТУРА ФАЙЛА:
+-- 1. ТАБЛИЦЫ (CREATE TABLE)
+-- 2. ТРИГГЕРЫ И ФУНКЦИИ (CREATE TRIGGER, CREATE FUNCTION)
+-- 3. ИНДЕКСЫ (CREATE INDEX)
+-- 4. КОММЕНТАРИИ (COMMENT ON)
+--
+-- МИГРАЦИИ АБОНЕМЕНТОВ:
+-- 021: Добавлено поле expires_at в natural_slope_subscription_types
+-- 022: Увеличена длина поля type в transactions (VARCHAR(20) -> VARCHAR(50))
+-- 023: Добавлено поле session_participant_id в natural_slope_subscription_usage
+-- 024: Добавлено каскадное удаление для внешних ключей referral_transactions
+-- ============================================================================
+
+-- ============================================================================
+-- ТАБЛИЦЫ
+-- ============================================================================
+
 -- Таблица клиентов
 CREATE TABLE clients (
     id SERIAL PRIMARY KEY,
@@ -10,6 +33,9 @@ CREATE TABLE clients (
     nickname VARCHAR(100),
     email VARCHAR(255),
     silent_notifications BOOLEAN DEFAULT FALSE,
+    is_athlete BOOLEAN DEFAULT FALSE,
+    referral_code VARCHAR(20) UNIQUE,
+    referred_by INTEGER REFERENCES clients(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -41,7 +67,10 @@ CREATE TABLE trainers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     photo_url VARCHAR(255),
     username VARCHAR(100) UNIQUE,
-    password VARCHAR(255)
+    password VARCHAR(255),
+    default_payment_type VARCHAR(20) DEFAULT 'percentage' CHECK (default_payment_type IN ('percentage', 'fixed')),
+    default_percentage DECIMAL(5,2) DEFAULT 50.00,
+    default_fixed_amount DECIMAL(10,2)
 );
 
 -- Таблица администраторов
@@ -150,6 +179,8 @@ CREATE TABLE training_sessions (
     status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, completed, cancelled
     equipment_type VARCHAR(20), -- ski, snowboard
     with_trainer BOOLEAN NOT NULL DEFAULT false,
+    slope_type VARCHAR(20) DEFAULT 'simulator' CHECK (slope_type IN ('simulator', 'natural_slope')),
+    winter_training_type VARCHAR(20) CHECK (winter_training_type IN ('individual', 'sport_group', 'group') OR winter_training_type IS NULL),
     template_id INTEGER REFERENCES recurring_training_templates(id) ON DELETE SET NULL, -- Связь с шаблоном постоянного расписания
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -216,11 +247,13 @@ CREATE TABLE wallets (
 );
 
 -- Таблица транзакций
+-- МИГРАЦИЯ 022: Увеличена длина поля type с VARCHAR(20) до VARCHAR(50) для поддержки типов:
+--   subscription_purchase, subscription_usage, subscription_return и других
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
     wallet_id INTEGER REFERENCES wallets(id) ON DELETE CASCADE,
     amount DECIMAL(10,2) NOT NULL,
-    type VARCHAR(20) NOT NULL, -- payment, refill, amount
+    type VARCHAR(50) NOT NULL, -- payment, refill, amount, subscription_purchase, subscription_usage, subscription_return
     description TEXT,
     card_number VARCHAR(20), -- последние 4 цифры карты
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -235,6 +268,7 @@ CREATE TABLE schedule (
     end_time TIME NOT NULL,
     is_holiday BOOLEAN DEFAULT FALSE,
     is_booked BOOLEAN DEFAULT FALSE,
+    trainer_id INTEGER REFERENCES trainers(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -249,6 +283,26 @@ CREATE TABLE prices (
     price DECIMAL(10,2) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица цен для зимнего направления (естественный склон)
+CREATE TABLE winter_prices (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('individual', 'sport_group', 'group')),
+    duration INTEGER NOT NULL,
+    participants INTEGER,
+    price DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_price CHECK (price > 0),
+    CONSTRAINT valid_duration CHECK (duration > 0),
+    CONSTRAINT valid_participants CHECK (
+        (type = 'individual' AND participants IS NULL) OR
+        (type IN ('sport_group', 'group') AND participants > 0)
+    )
 );
 
 -- Таблица заявок на тренировки
@@ -281,6 +335,7 @@ CREATE TABLE individual_training_sessions (
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
     simulator_id INTEGER REFERENCES simulators(id),
+    trainer_id INTEGER REFERENCES trainers(id), -- ID назначенного тренера
     price DECIMAL(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -380,6 +435,24 @@ CREATE TABLE message_recipients (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица отложенных сообщений
+-- МИГРАЦИЯ 025: Создание таблицы для отложенных сообщений
+CREATE TABLE scheduled_messages (
+    id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL,
+    parse_mode VARCHAR(10) DEFAULT 'HTML',
+    media_file_path VARCHAR(500),
+    media_type VARCHAR(20), -- 'photo' или 'video'
+    recipient_type VARCHAR(20) NOT NULL, -- 'all' или 'client'
+    recipient_id INTEGER REFERENCES clients(id), -- заполняется если recipient_type = 'client'
+    scheduled_at TIMESTAMP NOT NULL, -- дата и время отправки (по часовому поясу Asia/Yekaterinburg)
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'sent', 'cancelled'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP, -- когда было отправлено
+    created_by INTEGER REFERENCES administrators(id) -- кто создал отложенное сообщение
+);
+
 -- Таблица настроек группировки
 CREATE TABLE grouping_settings (
     id SERIAL PRIMARY KEY,
@@ -465,11 +538,50 @@ CREATE TABLE certificate_stats (
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Создание индексов
+-- ============================================================================
+-- МИГРАЦИИ БАЗЫ ДАННЫХ
+-- ============================================================================
+-- Все миграции находятся в папке src/db/migrations/
+-- 
+-- МИГРАЦИИ ПО АБОНЕМЕНТАМ (2025-11-01 - 2025-11-04):
+-- 021_add_expires_at_to_subscription_types.sql
+--    - Добавлено поле expires_at (DATE) в natural_slope_subscription_types
+--    - Поле validity_days сделано опциональным
+--
+-- 025_create_scheduled_messages.sql
+--    - Создана таблица scheduled_messages для отложенных сообщений
+--    - Добавлены индексы для быстрого поиска сообщений, которые нужно отправить
+--    - Позволяет создавать сообщения, которые будут отправлены в указанное время
+-- 
+-- 022_increase_transaction_type_length.sql
+--    - Увеличена длина поля type в transactions с VARCHAR(20) до VARCHAR(50)
+--    - Необходимо для поддержки типов: subscription_purchase, subscription_usage, subscription_return
+-- 
+-- 023_add_session_participant_to_subscription_usage.sql
+--    - Добавлено поле session_participant_id в natural_slope_subscription_usage
+--    - Создан индекс idx_subscription_usage_participant
+--    - Позволяет точно определять, какой участник использовал абонемент
+-- 
+-- 024_add_cascade_delete_to_referral_transactions.sql
+--    - Добавлено каскадное удаление (ON DELETE CASCADE) для внешних ключей referral_transactions
+--    - Позволяет удалять клиентов без ошибок нарушения внешнего ключа
+--    - При удалении клиента автоматически удаляются все связанные реферальные транзакции
+-- ============================================================================
+
+-- ============================================================================
+-- ТРИГГЕРЫ И ФУНКЦИИ
+-- ============================================================================
+
+-- ============================================================================
+-- ИНДЕКСЫ
+-- ============================================================================
+
 CREATE INDEX idx_clients_telegram_id ON clients(telegram_id);
 CREATE INDEX idx_clients_phone ON clients(phone);
 CREATE INDEX idx_clients_email ON clients(email);
 CREATE INDEX idx_clients_silent_notifications ON clients(silent_notifications);
+CREATE INDEX idx_clients_referral_code ON clients(referral_code);
+CREATE INDEX idx_clients_referred_by ON clients(referred_by);
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_trainers_is_active ON trainers(is_active);
 CREATE INDEX idx_trainers_sport_type ON trainers(sport_type);
@@ -478,6 +590,11 @@ CREATE INDEX idx_administrators_username ON administrators(username);
 CREATE INDEX idx_training_sessions_date ON training_sessions(session_date);
 CREATE INDEX idx_training_sessions_trainer ON training_sessions(trainer_id);
 CREATE INDEX idx_training_sessions_template ON training_sessions(template_id);
+CREATE INDEX idx_training_sessions_slope_type ON training_sessions(slope_type);
+CREATE INDEX idx_training_sessions_simulator ON training_sessions(simulator_id);
+CREATE INDEX idx_training_sessions_group ON training_sessions(group_id);
+-- Уникальный индекс для winter_schedule: один слот на дату и время
+CREATE UNIQUE INDEX IF NOT EXISTS idx_winter_schedule_unique_date_time ON winter_schedule(date, time_slot);
 CREATE INDEX idx_session_participants_session ON session_participants(session_id);
 CREATE INDEX idx_session_participants_client ON session_participants(client_id);
 -- Индексы для таблицы шаблонов постоянного расписания
@@ -524,12 +641,14 @@ CREATE INDEX idx_wallets_client ON wallets(client_id);
 CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
 CREATE INDEX idx_schedule_date ON schedule(date);
 CREATE INDEX idx_schedule_simulator ON schedule(simulator_id);
+CREATE INDEX idx_schedule_trainer_id ON schedule(trainer_id);
 CREATE INDEX idx_training_requests_client ON training_requests(client_id);
 CREATE INDEX idx_training_requests_status ON training_requests(status);
 CREATE INDEX idx_individual_training_client ON individual_training_sessions(client_id);
 CREATE INDEX idx_individual_training_child ON individual_training_sessions(child_id);
 CREATE INDEX idx_individual_training_date ON individual_training_sessions(preferred_date);
 CREATE INDEX idx_individual_training_simulator ON individual_training_sessions(simulator_id);
+CREATE INDEX idx_individual_training_trainer ON individual_training_sessions(trainer_id);
 CREATE INDEX idx_failed_payments_wallet ON failed_payments(wallet_number);
 CREATE INDEX idx_failed_payments_processed ON failed_payments(processed);
 CREATE INDEX idx_failed_payments_created ON failed_payments(created_at);
@@ -555,6 +674,10 @@ CREATE INDEX idx_messages_created_by ON messages(created_by);
 CREATE INDEX idx_message_recipients_message ON message_recipients(message_id);
 CREATE INDEX idx_message_recipients_recipient ON message_recipients(recipient_id);
 CREATE INDEX idx_message_recipients_status ON message_recipients(status);
+CREATE INDEX idx_scheduled_messages_pending ON scheduled_messages(scheduled_at, status) WHERE status = 'pending';
+CREATE INDEX idx_scheduled_messages_created_at ON scheduled_messages(created_at DESC);
+CREATE INDEX idx_scheduled_messages_status ON scheduled_messages(status);
+CREATE INDEX idx_scheduled_messages_scheduled_at ON scheduled_messages(scheduled_at);
 CREATE INDEX idx_grouping_settings_active ON grouping_settings(is_active);
 
 -- Создание триггеров для обновления updated_at
@@ -639,6 +762,11 @@ CREATE TRIGGER update_messages_updated_at
 
 CREATE TRIGGER update_message_recipients_updated_at
     BEFORE UPDATE ON message_recipients
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_scheduled_messages_updated_at
+    BEFORE UPDATE ON scheduled_messages
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -921,4 +1049,274 @@ COMMENT ON COLUMN notification_logs.training_date IS 'Дата трениров�
 COMMENT ON COLUMN notification_logs.message IS 'Текст отправленного сообщения';
 COMMENT ON COLUMN notification_logs.status IS 'Статус отправки (sent - успешно, failed - ошибка)';
 COMMENT ON COLUMN notification_logs.error_message IS 'Текст ошибки, если отправка не удалась';
-COMMENT ON COLUMN notification_logs.sent_at IS 'Дата и время отправки уведомления'; 
+COMMENT ON COLUMN notification_logs.sent_at IS 'Дата и время отправки уведомления';
+
+-- ============================================================================
+-- НОВЫЕ ТАБЛИЦЫ (Миграции 009, 010, 011)
+-- ============================================================================
+
+-- Таблица настроек бонусов
+CREATE TABLE bonus_settings (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    slope_type VARCHAR(20) NOT NULL CHECK (slope_type IN ('simulator', 'natural_slope', 'both')),
+    bonus_type VARCHAR(50) NOT NULL CHECK (bonus_type IN ('registration', 'booking', 'referral', 'group_booking', 'individual_booking', 'attendance_milestone', 'subscription_purchase', 'early_booking', 'review', 'birthday', 'morning_training', 'evening_training')),
+    bonus_amount DECIMAL(10,2) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    min_amount DECIMAL(10,2) DEFAULT 0,
+    max_bonus_per_user DECIMAL(10,2),
+    valid_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    valid_until TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица транзакций бонусов
+CREATE TABLE bonus_transactions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    bonus_setting_id INTEGER REFERENCES bonus_settings(id),
+    amount DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    booking_id INTEGER,
+    booking_type VARCHAR(20),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'cancelled')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    approved_by INTEGER REFERENCES administrators(id)
+);
+
+-- Таблица расписания для зимнего сезона (естественный склон)
+CREATE TABLE winter_schedule (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    time_slot TIME NOT NULL,
+    
+    -- Тип тренировки
+    is_group_training BOOLEAN DEFAULT FALSE,
+    is_individual_training BOOLEAN DEFAULT FALSE,
+    
+    -- Связи
+    group_id INTEGER REFERENCES groups(id),
+    trainer_id INTEGER REFERENCES trainers(id),
+    
+    -- Статус
+    is_available BOOLEAN DEFAULT TRUE,
+    max_participants INTEGER DEFAULT 1,
+    current_participants INTEGER DEFAULT 0,
+    
+    -- Метаданные
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Ограничения
+    CONSTRAINT valid_training_type CHECK (
+        (is_group_training = true AND is_individual_training = false) OR
+        (is_group_training = false AND is_individual_training = true)
+    ),
+    CONSTRAINT valid_participants CHECK (
+        current_participants >= 0 AND 
+        current_participants <= max_participants
+    )
+);
+
+-- Таблица выплат тренерам
+CREATE TABLE trainer_payments (
+    id SERIAL PRIMARY KEY,
+    trainer_id INTEGER REFERENCES trainers(id) ON DELETE CASCADE,
+    training_session_id INTEGER REFERENCES training_sessions(id) ON DELETE CASCADE,
+    individual_training_id INTEGER REFERENCES individual_training_sessions(id) ON DELETE CASCADE,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_type VARCHAR(20) NOT NULL CHECK (payment_type IN ('group_training', 'individual_training')),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+    payment_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица правил отмены
+CREATE TABLE cancellation_rules (
+    id SERIAL PRIMARY KEY,
+    hours_before INTEGER NOT NULL,
+    refund_percentage DECIMAL(5,2) NOT NULL CHECK (refund_percentage >= 0 AND refund_percentage <= 100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица договоров-оферт
+CREATE TABLE terms_of_service (
+    id SERIAL PRIMARY KEY,
+    version VARCHAR(20) NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    effective_date TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица согласий пользователей
+CREATE TABLE user_agreements (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    terms_id INTEGER REFERENCES terms_of_service(id),
+    agreed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45),
+    user_agent TEXT
+);
+
+-- Таблица реферальных транзакций
+-- МИГРАЦИЯ 024: Добавлено каскадное удаление (ON DELETE CASCADE) для referrer_id и referee_id
+-- Это позволяет удалять клиентов без ошибок нарушения внешнего ключа
+CREATE TABLE referral_transactions (
+    id SERIAL PRIMARY KEY,
+    referrer_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    referee_id INTEGER UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'registered', 'deposited', 'trained', 'completed', 'cancelled')),
+    referrer_bonus DECIMAL(10,2) DEFAULT 500.00,
+    referee_bonus DECIMAL(10,2) DEFAULT 500.00,
+    referrer_bonus_paid BOOLEAN DEFAULT FALSE,
+    referee_bonus_paid BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- ============================================================================
+-- АБОНЕМЕНТЫ ДЛЯ ЕСТЕСТВЕННОГО СКЛОНА
+-- ============================================================================
+-- МИГРАЦИЯ 021: Добавлено поле expires_at (DATE) для указания даты окончания действия абонемента
+--   Поле validity_days оставлено для обратной совместимости (опциональное)
+
+-- Типы абонементов для естественного склона
+CREATE TABLE natural_slope_subscription_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    
+    -- Параметры
+    sessions_count INTEGER NOT NULL,              -- Количество занятий (3, 5, 7, 10)
+    discount_percentage DECIMAL(5,2) NOT NULL,    -- Процент скидки (настраиваемый)
+    price DECIMAL(10,2) NOT NULL,                 -- Цена абонемента
+    price_per_session DECIMAL(10,2) NOT NULL,     -- Цена за занятие после скидки
+    expires_at DATE NOT NULL,                     -- МИГРАЦИЯ 021: Дата окончания действия абонемента (включительно)
+    validity_days INTEGER,                         -- Срок действия в днях (опционально, для обратной совместимости)
+    applicable_to VARCHAR(50) DEFAULT 'sport_group' CHECK (applicable_to IN ('sport_group', 'any')),
+    
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_discount CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
+    CONSTRAINT valid_sessions CHECK (sessions_count > 0),
+    CONSTRAINT valid_price CHECK (price > 0)
+);
+
+-- Подписки клиентов на естественный склон
+CREATE TABLE natural_slope_subscriptions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscription_type_id INTEGER NOT NULL REFERENCES natural_slope_subscription_types(id),
+    
+    -- Остатки
+    remaining_sessions INTEGER NOT NULL,
+    
+    -- Статус
+    status VARCHAR(20) DEFAULT 'active' 
+        CHECK (status IN ('active', 'expired', 'used')),
+    
+    -- Даты
+    expires_at TIMESTAMP NOT NULL,
+    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Финансы
+    total_paid DECIMAL(10,2) NOT NULL,
+    
+    -- Метаданные для записи через админа
+    skill_level VARCHAR(50),                      -- Уровень катания
+    age_group VARCHAR(50),                        -- Возрастная группа
+    notes TEXT,                                   -- Заметки админа
+    
+    CONSTRAINT valid_remaining CHECK (remaining_sessions >= 0)
+);
+
+-- История использования абонементов
+-- МИГРАЦИЯ 023: Добавлено поле session_participant_id для точной привязки использования абонемента к конкретному участнику тренировки
+CREATE TABLE natural_slope_subscription_usage (
+    id SERIAL PRIMARY KEY,
+    subscription_id INTEGER NOT NULL REFERENCES natural_slope_subscriptions(id) ON DELETE CASCADE,
+    training_session_id INTEGER NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
+    session_participant_id INTEGER REFERENCES session_participants(id) ON DELETE CASCADE, -- МИГРАЦИЯ 023: добавлено для точной привязки
+    
+    used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Финансы
+    original_price DECIMAL(10,2) NOT NULL,        -- Обычная цена (1700₽)
+    subscription_price DECIMAL(10,2) NOT NULL,    -- Цена по абонементу (1530₽ или 1360₽)
+    savings DECIMAL(10,2) NOT NULL                -- Сэкономлено
+);
+
+-- Таблица достижений клиентов
+CREATE TABLE client_achievements (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    achievement_type VARCHAR(50) NOT NULL,
+    achieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    bonus_awarded BOOLEAN DEFAULT FALSE,
+    bonus_amount DECIMAL(10,2)
+);
+
+-- Таблица отзывов (обновленная)
+CREATE TABLE IF NOT EXISTS reviews (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id),
+    training_session_id INTEGER REFERENCES training_sessions(id),
+    individual_training_id INTEGER REFERENCES individual_training_sessions(id),
+    rating INTEGER CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    review_type VARCHAR(20) CHECK (review_type IN ('2gis', 'yandex', 'both')),
+    bonus_awarded BOOLEAN DEFAULT FALSE,
+    review_notification_log_id INTEGER REFERENCES review_notification_logs(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT review_training_check CHECK (
+        (training_session_id IS NOT NULL AND individual_training_id IS NULL) OR
+        (training_session_id IS NULL AND individual_training_id IS NOT NULL)
+    )
+);
+
+-- Таблица логов запросов на отзывы (уже существует, но для справки)
+CREATE TABLE IF NOT EXISTS review_notification_logs (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    telegram_id VARCHAR(255) NOT NULL,
+    training_count INTEGER NOT NULL,
+    participant_type VARCHAR(20) NOT NULL,
+    participant_details JSONB,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    review_2gis_requested BOOLEAN DEFAULT TRUE,
+    review_yandex_requested BOOLEAN DEFAULT TRUE,
+    notification_text TEXT
+);
+
+COMMENT ON TABLE bonus_settings IS 'Настройки бонусов для различных действий';
+COMMENT ON TABLE bonus_transactions IS 'История начисления бонусов';
+COMMENT ON TABLE winter_schedule IS 'Расписание тренеров для тренировок на естественном склоне';
+COMMENT ON TABLE trainer_payments IS 'Выплаты тренерам за проведенные тренировки';
+COMMENT ON TABLE cancellation_rules IS 'Правила отмены тренировок и возврата средств';
+COMMENT ON TABLE terms_of_service IS 'Договоры-оферты и пользовательские соглашения';
+COMMENT ON TABLE user_agreements IS 'Согласия пользователей с договорами-офертами';
+COMMENT ON TABLE referral_transactions IS 'Реферальные транзакции и бонусы';
+COMMENT ON TABLE natural_slope_subscription_types IS 'Типы абонементов для тренировок на естественном склоне';
+COMMENT ON TABLE natural_slope_subscriptions IS 'Купленные абонементы клиентов на естественный склон';
+COMMENT ON TABLE natural_slope_subscription_usage IS 'История использования абонементов на естественном склоне';
+COMMENT ON TABLE client_achievements IS 'Достижения клиентов';
+COMMENT ON TABLE reviews IS 'Отзывы клиентов (интегрировано с существующей системой)';
+
+-- Индексы для абонементов естественного склона
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_client ON natural_slope_subscriptions(client_id);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_status ON natural_slope_subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_slope_subscriptions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id); -- МИГРАЦИЯ 023
+CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 

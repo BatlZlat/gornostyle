@@ -441,6 +441,25 @@ router.post('/process', async (req, res) => {
             await client.query('COMMIT');
             console.log(`💰 Транзакция пополнения завершена для кошелька ${walletNumber} на сумму ${amount}₽`);
 
+            // Получаем client_id для обновления реферального статуса
+            const clientIdResult = await pool.query(
+                'SELECT client_id FROM wallets WHERE wallet_number = $1',
+                [walletNumber]
+            );
+            
+            if (clientIdResult.rows.length > 0) {
+                const clientId = clientIdResult.rows[0].client_id;
+                
+                // Обновляем реферальный статус при пополнении
+                try {
+                    const { updateReferralStatusOnDeposit } = require('../services/referral-service');
+                    await updateReferralStatusOnDeposit(clientId, amount);
+                } catch (error) {
+                    console.error('❌ Ошибка при обновлении реферального статуса:', error);
+                    // Не прерываем основной процесс при ошибке в реферальной системе
+                }
+            }
+
             // Проверяем, есть ли ожидающий сертификат для этого кошелька
             // Используем новое соединение для изоляции транзакций
             console.log(`🔍 ПОПЫТКА ВЫЗОВА processPendingCertificate для кошелька ${walletNumber} на сумму ${amount}₽`);

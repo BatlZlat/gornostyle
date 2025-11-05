@@ -294,8 +294,8 @@ function initializeEventListeners() {
             
             // Обновляем HTML модального окна
             notifyModal.innerHTML = `
-                <div class="modal-content">
-                    <h3>Отправка сообщения</h3>
+                <div class="modal-content" style="max-width: 700px;">
+                    <h3>📝 Отправка сообщения клиентам</h3>
                     <form id="notify-clients-form">
                         <div class="form-group">
                             <label for="recipient-type">Тип получателей:</label>
@@ -307,10 +307,12 @@ function initializeEventListeners() {
                         </div>
                         
                         <div id="client-select-container" class="form-group" style="display: none;">
-                            <label for="client-select">Выберите пользователя:</label>
-                            <select id="client-select" class="form-control">
-                                <option value="">Загрузка...</option>
-                            </select>
+                            <label for="notify-client-search-input">Выберите пользователя:</label>
+                            <div id="notify-client-search-wrapper" style="position: relative !important; z-index: 1000;">
+                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите имя для поиска..." autocomplete="off">
+                                <input type="hidden" id="notify-client-select" name="client_id">
+                                <div id="notify-client-search-results" class="search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; width: 100%; background: white; border: 1px solid #ccc; border-top: none; max-height: 200px; overflow-y: auto; z-index: 10001 !important; border-radius: 0 0 4px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 0; padding: 0;"></div>
+                            </div>
                         </div>
                         
                         <div id="group-select-container" class="form-group" style="display: none;">
@@ -321,64 +323,163 @@ function initializeEventListeners() {
                         </div>
 
                         <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="schedule-message" style="margin-right: 8px;">
+                                ⏰ Отложенная отправка
+                            </label>
+                        </div>
+
+                        <div id="schedule-datetime-container" class="form-group" style="display: none;">
+                            <label for="schedule-datetime">Дата и время отправки (Азия/Екатеринбург):</label>
+                            <input type="datetime-local" id="schedule-datetime" class="form-control">
+                            <small style="color: #666; font-size: 12px;">Сообщение будет отправлено в указанное время</small>
+                        </div>
+
+                        <div class="form-group">
                             <label for="notify-message">Сообщение:</label>
-                            <textarea id="notify-message" class="form-control" rows="4" placeholder="Введите сообщение..."></textarea>
-                            <div id="emoji-panel" class="emoji-panel">
-                                <!-- Существующие смайлики -->
-                                <button type="button" class="emoji-btn">👋</button>
-                                <button type="button" class="emoji-btn">🎿</button>
-                                <button type="button" class="emoji-btn">⛷️</button>
-                                <button type="button" class="emoji-btn">❄️</button>
-                                <button type="button" class="emoji-btn">🎯</button>
-                                <button type="button" class="emoji-btn">✅</button>
-                                <button type="button" class="emoji-btn">❌</button>
-                                <button type="button" class="emoji-btn">💰</button>
-                                <button type="button" class="emoji-btn">📅</button>
-                                <button type="button" class="emoji-btn">⏰</button>
-                                
-                                <!-- Новые эмоции -->
-                                <button type="button" class="emoji-btn">😊</button>
-                                <button type="button" class="emoji-btn">😄</button>
-                                <button type="button" class="emoji-btn">👍</button>
-                                <button type="button" class="emoji-btn">👎</button>
-                                <button type="button" class="emoji-btn">😍</button>
-                                <button type="button" class="emoji-btn">😢</button>
-                                <button type="button" class="emoji-btn">😤</button>
-                                <button type="button" class="emoji-btn">🤔</button>
-                                
-                                <!-- Спортивные -->
-                                <button type="button" class="emoji-btn">🏂</button>
-                                <button type="button" class="emoji-btn">🏆</button>
-                                <button type="button" class="emoji-btn">🥇</button>
-                                <button type="button" class="emoji-btn">💪</button>
-                                <button type="button" class="emoji-btn">🔥</button>
-                                
-                                <!-- Рукопожатия и жесты -->
-                                <button type="button" class="emoji-btn">🤝</button>
-                                <button type="button" class="emoji-btn">🙏</button>
-                                <button type="button" class="emoji-btn">✋</button>
-                                <button type="button" class="emoji-btn">👌</button>
-                                <button type="button" class="emoji-btn">🤙</button>
-                                
-                                <!-- Погода -->
-                                <button type="button" class="emoji-btn">🌞</button>
-                                <button type="button" class="emoji-btn">🌨️</button>
-                                <button type="button" class="emoji-btn">🌪️</button>
-                                
-                                <!-- Уведомления -->
-                                <button type="button" class="emoji-btn">🔔</button>
-                                <button type="button" class="emoji-btn">📢</button>
-                                <button type="button" class="emoji-btn">⚠️</button>
+                            
+                            <!-- Панель инструментов форматирования -->
+                            <div class="formatting-toolbar" style="margin-bottom: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
+                                <button type="button" class="format-btn" data-format="bold" title="Жирный (Ctrl+B)" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-weight: bold;">B</button>
+                                <button type="button" class="format-btn" data-format="italic" title="Курсив (Ctrl+I)" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-style: italic;">I</button>
+                                <button type="button" class="format-btn" data-format="strikethrough" title="Зачеркнутый" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; text-decoration: line-through;">S</button>
+                                <button type="button" class="format-btn" data-format="code" title="Моноширинный" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; font-family: monospace;">&lt;/&gt;</button>
+                                <button type="button" class="format-btn" data-format="underline" title="Подчеркнутый" style="padding: 6px 10px; border: 1px solid #ccc; background: white; border-radius: 3px; cursor: pointer; text-decoration: underline;">U</button>
+                            </div>
+                            
+                            <textarea id="notify-message" class="form-control" rows="6" placeholder="Введите сообщение... Используйте кнопки форматирования выше или Markdown: *жирный*, _курсив_, ~зачеркнутый~, \`моноширинный\`" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; white-space: pre-wrap;"></textarea>
+                            
+                            <!-- Расширенная панель эмодзи с категориями -->
+                            <div style="margin-top: 8px;">
+                                <div class="emoji-categories" style="display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
+                                    <button type="button" class="emoji-category-btn active" data-category="all" style="padding: 4px 8px; border: none; background: #e3f2fd; border-radius: 3px; cursor: pointer; font-size: 12px;">Все</button>
+                                    <button type="button" class="emoji-category-btn" data-category="celebration" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">🎉 Праздники</button>
+                                    <button type="button" class="emoji-category-btn" data-category="emotions" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">😊 Эмоции</button>
+                                    <button type="button" class="emoji-category-btn" data-category="warnings" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">⚠️ Предупреждения</button>
+                                    <button type="button" class="emoji-category-btn" data-category="sport" style="padding: 4px 8px; border: none; background: transparent; border-radius: 3px; cursor: pointer; font-size: 12px;">🎿 Спорт</button>
+                                </div>
+                                <div id="emoji-panel" class="emoji-panel" style="max-height: 120px; overflow-y: auto; padding: 4px; background: #fafafa; border-radius: 4px;">
+                                    <!-- Праздники и поздравления -->
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎉</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎊</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎈</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎁</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎂</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🍰</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎄</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🎅</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🌟</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">✨</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">💫</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🍾</button>
+                                    <button type="button" class="emoji-btn" data-category="celebration">🥂</button>
+                                    
+                                    <!-- Эмоции позитивные -->
+                                    <button type="button" class="emoji-btn" data-category="emotions">😊</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😄</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😀</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😃</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😁</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😍</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🥰</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😎</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤗</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👍</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👌</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤙</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">✌️</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🤝</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🙏</button>
+                                    
+                                    <!-- Эмоции негативные/печальные -->
+                                    <button type="button" class="emoji-btn" data-category="emotions">😢</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😔</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😞</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😟</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😕</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">🙁</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😤</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">😠</button>
+                                    <button type="button" class="emoji-btn" data-category="emotions">👎</button>
+                                    
+                                    <!-- Предупреждения и восклицательные -->
+                                    <button type="button" class="emoji-btn" data-category="warnings">⚠️</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🚨</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">⛔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🔔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">📢</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">📣</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❗</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">‼️</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❓</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❔</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">💥</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">⚡</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">🔥</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">✅</button>
+                                    <button type="button" class="emoji-btn" data-category="warnings">❌</button>
+                                    
+                                    <!-- Спорт -->
+                                    <button type="button" class="emoji-btn" data-category="sport">🎿</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">⛷️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏂</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏆</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥇</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥈</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🥉</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">💪</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🎯</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🏔️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">❄️</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">⛄</button>
+                                    <button type="button" class="emoji-btn" data-category="sport">🌨️</button>
+                                    
+                                    <!-- Общие -->
+                                    <button type="button" class="emoji-btn" data-category="common">👋</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💰</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💳</button>
+                                    <button type="button" class="emoji-btn" data-category="common">💵</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📅</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📆</button>
+                                    <button type="button" class="emoji-btn" data-category="common">⏰</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🕐</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👥</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👤</button>
+                                    <button type="button" class="emoji-btn" data-category="common">👨‍🏫</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📱</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📞</button>
+                                    <button type="button" class="emoji-btn" data-category="common">📍</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🌈</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🌞</button>
+                                    <button type="button" class="emoji-btn" data-category="common">🎁</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Загрузка медиа -->
+                        <div class="form-group">
+                            <label>Медиа (фото/видео):</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="file" id="media-upload" accept="image/*,video/*" style="display: none;">
+                                <button type="button" id="upload-photo-btn" class="btn-secondary" style="padding: 8px 12px;">📷 Добавить фото</button>
+                                <button type="button" id="upload-video-btn" class="btn-secondary" style="padding: 8px 12px;">🎥 Добавить видео</button>
+                            </div>
+                            <div id="media-preview" style="margin-top: 8px; display: none;">
+                                <div style="position: relative; display: inline-block;">
+                                    <img id="media-preview-img" style="max-width: 200px; max-height: 200px; display: none; border-radius: 4px; border: 1px solid #ddd;">
+                                    <video id="media-preview-video" controls style="max-width: 200px; max-height: 200px; display: none; border-radius: 4px; border: 1px solid #ddd;"></video>
+                                    <button type="button" id="remove-media-btn" style="position: absolute; top: 4px; right: 4px; background: red; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: none;">✕</button>
+                                </div>
                             </div>
                         </div>
                         
                         <div class="form-group">
                             <label>Предпросмотр:</label>
-                            <div id="notify-preview" class="preview-box"></div>
+                            <div id="notify-preview" class="preview-box" style="white-space: pre-wrap; padding: 12px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; min-height: 60px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"></div>
                         </div>
                         
                         <div class="modal-actions">
-                            <button type="submit" class="btn-primary">Отправить</button>
+                            <button type="submit" class="btn-primary">📤 Отправить</button>
                             <button type="button" class="btn-secondary" id="close-notify-modal">Отмена</button>
                         </div>
                     </form>
@@ -387,6 +488,29 @@ function initializeEventListeners() {
 
             // Инициализируем обработчики после обновления HTML
             initializeNotifyModalHandlers();
+            
+            // Явно блокируем закрытие модального окна при клике вне его
+            // Это предотвращает случайное закрытие во время отправки сообщений с медиа
+            // Используем capture phase для перехвата события раньше других обработчиков
+            notifyModal.addEventListener('click', function blockModalClose(e) {
+                // Предотвращаем закрытие при клике на фон модального окна
+                if (e.target === notifyModal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return false;
+                }
+            }, true); // capture phase - перехватываем до других обработчиков
+            
+            // Также блокируем на уровне bubbling
+            notifyModal.addEventListener('click', function blockModalCloseBubble(e) {
+                if (e.target === notifyModal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return false;
+                }
+            }, false); // bubbling phase
         });
     }
 
@@ -399,17 +523,29 @@ function initializeEventListeners() {
         const recipientTypeSelect = modal.querySelector('#recipient-type');
         const clientSelectContainer = modal.querySelector('#client-select-container');
         const groupSelectContainer = modal.querySelector('#group-select-container');
-        const clientSelect = modal.querySelector('#client-select');
         const groupSelect = modal.querySelector('#group-select');
         const messageInput = modal.querySelector('#notify-message');
         const previewBox = modal.querySelector('#notify-preview');
         const emojiPanel = modal.querySelector('#emoji-panel');
         const closeButton = modal.querySelector('#close-notify-modal');
+        const formatButtons = modal.querySelectorAll('.format-btn');
+        const emojiCategoryButtons = modal.querySelectorAll('.emoji-category-btn');
+        const mediaUploadInput = modal.querySelector('#media-upload');
+        const uploadPhotoBtn = modal.querySelector('#upload-photo-btn');
+        const uploadVideoBtn = modal.querySelector('#upload-video-btn');
+        const mediaPreviewContainer = modal.querySelector('#media-preview');
+        const mediaPreviewImg = modal.querySelector('#media-preview-img');
+        const mediaPreviewVideo = modal.querySelector('#media-preview-video');
+        const removeMediaBtn = modal.querySelector('#remove-media-btn');
 
         if (!form || !recipientTypeSelect || !messageInput || !previewBox || !emojiPanel) {
             console.error('Не найдены необходимые элементы формы');
             return;
         }
+
+        // Переменная для хранения загруженного медиа
+        let uploadedMediaFile = null;
+        let uploadedMediaType = null;
 
         // Обработчик изменения типа получателей
         recipientTypeSelect.addEventListener('change', () => {
@@ -422,29 +558,138 @@ function initializeEventListeners() {
             }
 
             // Загружаем списки при первом выборе
-            if (type === 'client' && clientSelect && clientSelect.options.length <= 1) {
-                loadClientsForSelect();
+            if (type === 'client') {
+                // Инициализируем поиск клиентов (с задержкой, чтобы элементы успели отрендериться)
+                setTimeout(() => {
+                    initClientSearch();
+                }, 150);
             } else if (type === 'group' && groupSelect && groupSelect.options.length <= 1) {
                 loadGroupsForSelect();
             }
         });
 
-        // Обработчик отправки формы
-        form.addEventListener('submit', handleNotifyFormSubmit);
-
-        // Обработчик закрытия модального окна
-        if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                modal.style.display = 'none';
-                form.reset();
-                if (previewBox) previewBox.textContent = '';
+        // Обработчик для отложенной отправки
+        const scheduleCheckbox = modal.querySelector('#schedule-message');
+        const scheduleContainer = modal.querySelector('#schedule-datetime-container');
+        const scheduleDatetime = modal.querySelector('#schedule-datetime');
+        
+        if (scheduleCheckbox && scheduleContainer && scheduleDatetime) {
+            // Устанавливаем минимальное значение (текущее время)
+            const now = new Date();
+            const timezoneOffset = now.getTimezoneOffset() * 60000; // в миллисекундах
+            const localTime = new Date(now.getTime() - timezoneOffset);
+            const localISOTime = localTime.toISOString().slice(0, 16);
+            scheduleDatetime.min = localISOTime;
+            
+            scheduleCheckbox.addEventListener('change', () => {
+                if (scheduleCheckbox.checked) {
+                    scheduleContainer.style.display = 'block';
+                    scheduleDatetime.setAttribute('required', 'required');
+                    // Устанавливаем значение по умолчанию (через час)
+                    const oneHourLater = new Date(now.getTime() + 60 * 60000);
+                    const oneHourLaterISO = new Date(oneHourLater.getTime() - timezoneOffset).toISOString().slice(0, 16);
+                    scheduleDatetime.value = oneHourLaterISO;
+                } else {
+                    scheduleContainer.style.display = 'none';
+                    scheduleDatetime.removeAttribute('required');
+                    scheduleDatetime.value = '';
+                }
             });
         }
 
-        // Обработчик ввода текста сообщения
-        messageInput.addEventListener('input', () => {
-            previewBox.textContent = messageInput.value;
+        // Обработчики кнопок форматирования
+        formatButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const format = btn.dataset.format;
+                applyFormatting(format);
+            });
         });
+
+        // Функция применения форматирования
+        function applyFormatting(format) {
+            const start = messageInput.selectionStart;
+            const end = messageInput.selectionEnd;
+            const selectedText = messageInput.value.substring(start, end);
+            const textBefore = messageInput.value.substring(0, start);
+            const textAfter = messageInput.value.substring(end);
+            
+            let formattedText = '';
+            switch(format) {
+                case 'bold':
+                    formattedText = `*${selectedText || 'текст'}*`;
+                    break;
+                case 'italic':
+                    formattedText = `_${selectedText || 'текст'}_`;
+                    break;
+                case 'strikethrough':
+                    formattedText = `~${selectedText || 'текст'}~`;
+                    break;
+                case 'code':
+                    formattedText = `\`${selectedText || 'текст'}\``;
+                    break;
+                case 'underline':
+                    formattedText = `<u>${selectedText || 'текст'}</u>`;
+                    break;
+            }
+            
+            messageInput.value = textBefore + formattedText + textAfter;
+            messageInput.focus();
+            
+            // Позиционируем курсор после вставленного текста
+            const newPos = start + formattedText.length;
+            messageInput.setSelectionRange(newPos, newPos);
+            
+            // Обновляем предпросмотр
+            updatePreview();
+        }
+
+        // Обработчики категорий эмодзи
+        emojiCategoryButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Убираем активный класс со всех кнопок
+                emojiCategoryButtons.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'transparent';
+                });
+                
+                // Добавляем активный класс к нажатой кнопке
+                btn.classList.add('active');
+                btn.style.background = '#e3f2fd';
+                
+                // Фильтруем эмодзи по категории
+                const category = btn.dataset.category;
+                const allEmojiBtns = emojiPanel.querySelectorAll('.emoji-btn');
+                
+                allEmojiBtns.forEach(emojiBtn => {
+                    if (category === 'all') {
+                        emojiBtn.style.display = 'inline-block';
+                    } else {
+                        const emojiCategory = emojiBtn.dataset.category;
+                        emojiBtn.style.display = emojiCategory === category ? 'inline-block' : 'none';
+                    }
+                });
+            });
+        });
+
+        // Обработчик ввода текста сообщения
+        messageInput.addEventListener('input', updatePreview);
+
+        // Функция обновления предпросмотра
+        function updatePreview() {
+            let text = messageInput.value;
+            // Преобразуем Markdown в простой текст для предпросмотра
+            // Жирный: *текст* -> <b>текст</b>
+            text = text.replace(/\*([^\*]+)\*/g, '<b>$1</b>');
+            // Курсив: _текст_ -> <i>текст</i>
+            text = text.replace(/_([^_]+)_/g, '<i>$1</i>');
+            // Зачеркнутый: ~текст~ -> <s>текст</s>
+            text = text.replace(/~([^~]+)~/g, '<s>$1</s>');
+            // Моноширинный: `текст` -> <code>текст</code>
+            text = text.replace(/`([^`]+)`/g, '<code style="background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>');
+            // Подчеркнутый уже в формате HTML
+            
+            previewBox.innerHTML = text;
+        }
 
         // Обработчики эмодзи
         emojiPanel.addEventListener('click', (event) => {
@@ -455,42 +700,237 @@ function initializeEventListeners() {
                 messageInput.value = text.slice(0, cursorPos) + emoji + text.slice(cursorPos);
                 messageInput.focus();
                 messageInput.setSelectionRange(cursorPos + emoji.length, cursorPos + emoji.length);
-                previewBox.textContent = messageInput.value;
+                updatePreview();
             }
         });
 
-        // Закрытие по клику вне окна
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
+        // Обработчики загрузки медиа
+        uploadPhotoBtn.addEventListener('click', () => {
+            mediaUploadInput.accept = 'image/*';
+            mediaUploadInput.click();
+        });
+
+        uploadVideoBtn.addEventListener('click', () => {
+            mediaUploadInput.accept = 'video/*';
+            mediaUploadInput.click();
+        });
+
+        mediaUploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            uploadedMediaFile = file;
+            uploadedMediaType = file.type.startsWith('image/') ? 'photo' : 'video';
+
+            // Показываем превью
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (uploadedMediaType === 'photo') {
+                    mediaPreviewImg.src = e.target.result;
+                    mediaPreviewImg.style.display = 'block';
+                    mediaPreviewVideo.style.display = 'none';
+                } else {
+                    mediaPreviewVideo.src = e.target.result;
+                    mediaPreviewVideo.style.display = 'block';
+                    mediaPreviewImg.style.display = 'none';
+                }
+                mediaPreviewContainer.style.display = 'block';
+                removeMediaBtn.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Удаление медиа
+        removeMediaBtn.addEventListener('click', () => {
+            uploadedMediaFile = null;
+            uploadedMediaType = null;
+            mediaUploadInput.value = '';
+            mediaPreviewImg.src = '';
+            mediaPreviewVideo.src = '';
+            mediaPreviewImg.style.display = 'none';
+            mediaPreviewVideo.style.display = 'none';
+            mediaPreviewContainer.style.display = 'none';
+            removeMediaBtn.style.display = 'none';
+        });
+
+        // Обработчик отправки формы (модифицированный для поддержки медиа)
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleNotifyFormSubmitWithMedia(e, uploadedMediaFile, uploadedMediaType);
+        });
+
+        // Обработчик закрытия модального окна (только по кнопке "Отмена")
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
                 modal.style.display = 'none';
                 form.reset();
-                if (previewBox) previewBox.textContent = '';
+                if (previewBox) previewBox.innerHTML = '';
+                // Очищаем медиа
+                if (removeMediaBtn) removeMediaBtn.click();
+            });
+        }
+
+        // УБРАНО: Закрытие по клику вне окна
+        // Модальное окно теперь закрывается только по кнопке "Отмена",
+        // чтобы избежать случайного закрытия во время отправки сообщений с медиа
+        
+        // Дополнительная защита: блокируем закрытие при клике на фон
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                return false;
             }
-        });
+        }, true); // capture phase
     }
 
-    // Функция загрузки списка клиентов для выпадающего списка
-    async function loadClientsForSelect() {
+    // Глобальная переменная для хранения всех клиентов (кэшируем)
+    let allClientsForNotify = [];
+    let allClientsLoadedForNotify = false;
+    
+    // Инициализация поиска клиентов (вызывается каждый раз при открытии модального окна)
+    function initClientSearch() {
+        const clientSearchInput = document.getElementById('notify-client-search-input');
+        const clientSearchResults = document.getElementById('notify-client-search-results');
+        const clientSelect = document.getElementById('notify-client-select');
+        
+        if (!clientSearchInput || !clientSearchResults || !clientSelect) {
+            return;
+        }
+        
+        // Загружаем клиентов, если еще не загружены
+        if (!allClientsLoadedForNotify) {
+            loadAllClientsForNotify();
+        }
+        
+        // Обработчик ввода текста (добавляем каждый раз, так как элементы пересоздаются)
+        clientSearchInput.addEventListener('input', function handleClientSearchInput(e) {
+            const searchTerm = e.target.value.trim().toLowerCase();
+            
+            if (searchTerm.length < 1) {
+                clientSearchResults.style.display = 'none';
+                clientSelect.value = '';
+                return;
+            }
+            
+            // Фильтруем клиентов
+            const filteredClients = allClientsForNotify.filter(client => {
+                const name = client.full_name ? client.full_name.toLowerCase() : '';
+                const phone = client.phone ? client.phone.toLowerCase() : '';
+                return name.includes(searchTerm) || phone.includes(searchTerm);
+            }).slice(0, 10); // Ограничиваем до 10 результатов
+            
+            if (filteredClients.length === 0) {
+                clientSearchResults.innerHTML = '<div style="padding: 10px; color: #666;">Клиенты не найдены</div>';
+                clientSearchResults.style.display = 'block';
+                return;
+            }
+            
+            // Отображаем результаты (используем onclick для надежности, как в рабочей версии)
+            const resultsHTML = filteredClients.map(client => {
+                const escapedName = client.full_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                return `
+                    <div class="client-search-result-item search-result-item" 
+                         data-client-id="${client.id}" 
+                         data-client-name="${escapedName}"
+                         onclick="selectNotifyClient(${client.id}, '${escapedName}')"
+                         style="padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #eee; transition: background-color 0.2s; min-height: 40px; display: block; line-height: 1.4;"
+                         onmouseover="this.style.backgroundColor='#f0f0f0'"
+                         onmouseout="this.style.backgroundColor='white'">
+                        <div style="font-weight: 500; display: block;">${client.full_name}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            clientSearchResults.innerHTML = resultsHTML;
+            
+            // Убеждаемся, что родительский контейнер имеет position: relative
+            const wrapper = clientSearchResults.parentElement;
+            if (wrapper) {
+                wrapper.style.position = 'relative';
+                wrapper.style.zIndex = '1000';
+            }
+            
+            // Устанавливаем стили для отображения
+            clientSearchResults.style.display = 'block';
+            clientSearchResults.style.position = 'absolute';
+            clientSearchResults.style.top = '100%';
+            clientSearchResults.style.left = '0';
+            clientSearchResults.style.right = '0';
+            clientSearchResults.style.width = '100%';
+            clientSearchResults.style.background = 'white';
+            clientSearchResults.style.border = '1px solid #ccc';
+            clientSearchResults.style.borderTop = 'none';
+            clientSearchResults.style.maxHeight = '200px';
+            clientSearchResults.style.overflowY = 'auto';
+            clientSearchResults.style.zIndex = '10001';
+            clientSearchResults.style.borderRadius = '0 0 4px 4px';
+            clientSearchResults.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+            clientSearchResults.style.visibility = 'visible';
+            clientSearchResults.style.opacity = '1';
+        });
+        
+        // Скрываем результаты при клике вне области
+        const handleDocumentClick = (e) => {
+            const wrapper = document.getElementById('notify-client-search-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                const results = document.getElementById('notify-client-search-results');
+                if (results) results.style.display = 'none';
+            }
+        };
+        // Удаляем старый обработчик и добавляем новый
+        document.removeEventListener('click', handleDocumentClick);
+        document.addEventListener('click', handleDocumentClick);
+        
+        // Очищаем при потере фокуса, если ничего не выбрано
+        clientSearchInput.addEventListener('blur', function handleClientSearchBlur() {
+            setTimeout(() => {
+                if (clientSelect && !clientSelect.value && clientSearchInput.value) {
+                    clientSearchInput.value = '';
+                }
+            }, 200);
+        });
+    }
+    
+    // Глобальная функция выбора клиента (как в рабочей версии)
+    window.selectNotifyClient = function(clientId, clientName) {
+        const clientSearchInput = document.getElementById('notify-client-search-input');
+        const clientSelect = document.getElementById('notify-client-select');
+        const clientSearchResults = document.getElementById('notify-client-search-results');
+        
+        if (clientSearchInput) clientSearchInput.value = clientName;
+        if (clientSelect) clientSelect.value = clientId;
+        if (clientSearchResults) clientSearchResults.style.display = 'none';
+    };
+    
+    // Загрузка всех клиентов для поиска
+    async function loadAllClientsForNotify() {
+        if (allClientsLoadedForNotify) {
+            return; // Уже загружены
+        }
+        
         try {
             const response = await fetch('/api/clients');
             const clients = await response.json();
-            const clientSelect = document.getElementById('client-select');
             // Фильтруем только уникальных клиентов без parent_id
-            const filteredClients = [];
             const seenIds = new Set();
-            for (const client of clients) {
+            allClientsForNotify = clients.filter(client => {
                 if (!client.parent_id && !seenIds.has(client.id)) {
-                    filteredClients.push(client);
                     seenIds.add(client.id);
+                    return true;
                 }
-            }
-            clientSelect.innerHTML = filteredClients.map(client =>
-                `<option value="${client.id}">${client.full_name} (${client.phone})</option>`
-            ).join('');
+                return false;
+            });
+            allClientsLoadedForNotify = true;
         } catch (error) {
             console.error('Ошибка при загрузке списка клиентов:', error);
-            showError('Не удалось загрузить список клиентов');
         }
+    }
+    
+    // Старая функция для обратной совместимости (если используется где-то еще)
+    async function loadClientsForSelect() {
+        await loadAllClientsForNotify();
     }
 
     // Функция загрузки списка групповых тренировок для выпадающего списка
@@ -555,45 +995,9 @@ function initializeEventListeners() {
         }
     }
 
-    if (closeNotifyModal && notifyModal) {
-        closeNotifyModal.addEventListener('click', () => {
-            notifyModal.style.display = 'none';
-        });
-    }
-    if (notifyMessage && notifyPreview) {
-        notifyMessage.addEventListener('input', () => {
-            notifyPreview.textContent = notifyMessage.value;
-        });
-    }
-    if (notifyForm) {
-        notifyForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = notifyMessage.value.trim();
-            if (!text) return;
-            try {
-                const resp = await fetch('/api/trainings/notify-clients', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await resp.json();
-                if (resp.ok) {
-                    alert(data.message || 'Сообщение отправлено!');
-                    notifyModal.style.display = 'none';
-                } else {
-                    alert(data.error || 'Ошибка при отправке сообщения');
-                }
-            } catch (err) {
-                alert('Ошибка при отправке сообщения');
-            }
-        });
-    }
-    // Закрытие по клику вне окна
-    if (notifyModal) {
-        notifyModal.onclick = (e) => {
-            if (e.target === notifyModal) notifyModal.style.display = 'none';
-        };
-    }
+    // УБРАНО: Старые обработчики для модального окна отправки сообщений
+    // Все обработчики теперь устанавливаются в функции initializeNotifyModalHandlers()
+    // после перезаписи innerHTML модального окна
 
     // Обработчики для страницы заявок
     const archiveApplicationsBtn = document.getElementById('archive-applications');
@@ -634,6 +1038,14 @@ function initializeEventListeners() {
             displayApplications();
         });
     }
+
+    // Обработчик для кнопки "Создать абонемент"
+    const createSubscriptionBtn = document.getElementById('create-subscription-btn');
+    if (createSubscriptionBtn) {
+        createSubscriptionBtn.addEventListener('click', () => {
+            openSubscriptionModal();
+        });
+    }
 }
 
 // Переключение страниц
@@ -658,6 +1070,10 @@ function switchPage(page) {
     });
     
     currentPage = page;
+    
+    // Отправляем событие для других скриптов
+    document.dispatchEvent(new CustomEvent('pageChanged', { detail: { page } }));
+    
     loadPageContent(page);
 }
 
@@ -691,6 +1107,28 @@ async function loadPageContent(page) {
         case 'finances':
             await loadFinances();
             break;
+        case 'promotions':
+            if (typeof loadPromotionsPage === 'function') {
+                await loadPromotionsPage();
+            }
+            break;
+        case 'subscriptions':
+            if (typeof loadSubscriptionsPage === 'function') {
+                await loadSubscriptionsPage();
+            }
+            break;
+        case 'scheduled-messages':
+            if (typeof loadScheduledMessagesPage === 'function') {
+                await loadScheduledMessagesPage();
+            } else if (typeof loadScheduledMessages === 'function') {
+                await loadScheduledMessages();
+            }
+            break;
+        case 'winter-trainings':
+            if (typeof initWinterTrainingsPage === 'function') {
+                initWinterTrainingsPage();
+            }
+            break;
     }
     
     if (page === 'finances') {
@@ -717,13 +1155,16 @@ async function loadTrainings() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
+        let data = await response.json();
         console.log('Полученные данные:', data);
         
         if (!data || !Array.isArray(data)) {
             console.error('Получены некорректные данные:', data);
             throw new Error('Получены некорректные данные от сервера');
         }
+
+        // Оставляем только тренировки на тренажере (исключаем естественный склон)
+        data = data.filter(t => (t.slope_type ? t.slope_type === 'simulator' : t.simulator_id != null));
 
         const trainingList = document.querySelector('.training-list');
         if (!trainingList) {
@@ -824,18 +1265,23 @@ function getEquipmentTypeName(equipmentType) {
 // Загрузка расписания
 async function loadSchedule() {
     try {
-        const response = await fetch('/api/schedule/admin');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        // Загружаем данные для тренажера и естественного склона параллельно
+        const [simulatorResponse, naturalSlopeResponse] = await Promise.all([
+            fetch('/api/schedule/admin?slope_type=simulator'),
+            fetch('/api/schedule/admin?slope_type=natural_slope')
+        ]);
+
+        if (!simulatorResponse.ok || !naturalSlopeResponse.ok) {
+            throw new Error(`HTTP error! status: ${simulatorResponse.status} / ${naturalSlopeResponse.status}`);
         }
         
-        const data = await response.json();
-        console.log('Полученные данные:', data);
+        const [simulatorData, naturalSlopeData] = await Promise.all([
+            simulatorResponse.json(),
+            naturalSlopeResponse.json()
+        ]);
         
-        if (!data || !Array.isArray(data)) {
-            console.error('Получены некорректные данные:', data);
-            throw new Error('Получены некорректные данные от сервера');
-        }
+        console.log('Полученные данные тренажера:', simulatorData);
+        console.log('Полученные данные естественного склона:', naturalSlopeData);
 
         const scheduleList = document.querySelector('.schedule-list');
         if (!scheduleList) {
@@ -843,29 +1289,58 @@ async function loadSchedule() {
             return;
         }
 
-        if (data.length === 0) {
-            scheduleList.innerHTML = '<div class="alert alert-info">Нет доступных тренировок на ближайшие 7 дней</div>';
-            return;
-        }
-
-        // Группируем тренировки по дате
-        const grouped = {};
-        data.forEach(training => {
-            const date = training.date;
-            if (!grouped[date]) grouped[date] = [];
-            grouped[date].push(training);
-        });
-
-        // Формируем HTML
+        // Формируем HTML для обеих секций
         let html = '';
-        Object.keys(grouped).forEach(date => {
-            html += `
-                <div class="training-date-header">${formatDateWithWeekday(date)}</div>
-                <div class="training-table-container">
-                    <table class="training-table">
-                        <thead>
-                            <tr>
-                                <th>Время</th>
+
+        // Секция тренажера
+        html += '<div class="schedule-section">';
+        html += '<h3 class="schedule-section-title">🏔️ Горнолыжный тренажер</h3>';
+        html += await renderScheduleSection(simulatorData, 'simulator');
+        html += '</div>';
+
+        // Секция естественного склона
+        html += '<div class="schedule-section">';
+        html += '<h3 class="schedule-section-title">🎿 Естественный склон</h3>';
+        html += await renderScheduleSection(naturalSlopeData, 'natural_slope');
+        html += '</div>';
+
+        scheduleList.innerHTML = html;
+    } catch (error) {
+        console.error('Ошибка при загрузке расписания:', error);
+        showError('Не удалось загрузить расписание');
+    }
+}
+
+// Рендеринг секции расписания
+async function renderScheduleSection(data, slopeType) {
+    if (!data || !Array.isArray(data)) {
+        console.error('Получены некорректные данные:', data);
+        return '<div class="alert alert-danger">Ошибка загрузки данных</div>';
+    }
+
+    if (data.length === 0) {
+        return '<div class="alert alert-info">Нет доступных тренировок на ближайшие 7 дней</div>';
+    }
+
+    // Группируем тренировки по дате
+    const grouped = {};
+    data.forEach(training => {
+        const date = training.date;
+        if (!grouped[date]) grouped[date] = [];
+        grouped[date].push(training);
+    });
+
+    // Формируем HTML
+    let html = '';
+    Object.keys(grouped).forEach(date => {
+        html += `<div class="schedule-date-group">
+            <div class="schedule-date-header">${formatDateWithWeekday(date)}</div>
+            <div class="training-table-container">
+                <table class="training-table">
+                    <thead>
+                        <tr>
+                            ${slopeType === 'simulator' ? 
+                                `<th>Время</th>
                                 <th>Тип</th>
                                 <th>Название</th>
                                 <th>Тренер</th>
@@ -873,38 +1348,76 @@ async function loadSchedule() {
                                 <th>Участников</th>
                                 <th>Уровень</th>
                                 <th>Цена</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${grouped[date].map(training => `
-                                <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
-                                    <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
-                                    <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
-                                    <td>${training.is_individual ? getEquipmentTypeName(training.equipment_type) : (training.group_name || '-')}</td>
+                                <th>Действия</th>` :
+                                `<th>Время</th>
+                                <th>Тип</th>
+                                <th>Участник</th>
+                                <th>Тренер</th>
+                                <th>Участников</th>
+                                <th>Цена</th>
+                                <th>Действия</th>`
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${grouped[date].map(training => `
+                            <tr class="training-row ${training.simulator_id === 2 ? 'simulator-2' : ''}">
+                                <td>${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</td>
+                                <td>${training.is_individual ? 'Индивидуальная' : 'Групповая'}</td>
+                                ${slopeType === 'simulator' ? 
+                                    `<td>${training.is_individual ? getEquipmentTypeName(training.equipment_type) : (training.group_name || '-')}</td>
                                     <td>${training.trainer_name || 'Не указан'}</td>
-                                    <td>${training.simulator_name}</td>
+                                    <td>${training.simulator_name || '-'}</td>
                                     <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
                                     <td>${training.skill_level || '-'}</td>
-                                    <td>${training.price} ₽</td>
-                                    <td class="training-actions">
-                                        <button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual})">
+                                    <td>${training.price} ₽</td>` :
+                                    `<td>${getParticipantName(training)}</td>
+                                    <td>${training.trainer_name || 'Не указан'}</td>
+                                    <td>${training.is_individual ? '1/1' : `${training.current_participants}/${training.max_participants}`}</td>
+                                    <td>${formatNaturalSlopePricePerPerson(training)} ₽</td>`
+                                }
+                                <td class="training-actions">
+                                    ${slopeType === 'natural_slope' ? 
+                                        `<button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
                                             Подробнее
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        });
+                                        </button>` :
+                                        `<button class="btn-secondary" onclick="viewScheduleDetails(${training.id}, ${training.is_individual}, '${slopeType}')">
+                                            Подробнее
+                                        </button>`
+                                    }
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    });
 
-        scheduleList.innerHTML = html;
-    } catch (error) {
-        console.error('Ошибка при загрузке расписания:', error);
-        showError('Не удалось загрузить расписание');
+    return html;
+}
+
+// Получение имени участника для естественного склона
+function getParticipantName(training) {
+    if (training.is_individual) {
+        // Для индивидуальных тренировок используем participant_names из API
+        return training.participant_names || 'Участник';
+    } else {
+        return training.group_name || '-';
     }
+}
+
+// Форматирование цены для естественного склона: показываем цену за человека
+function formatNaturalSlopePricePerPerson(training) {
+    if (training.is_individual) {
+        // Для индивидуальных тренировок показываем как есть
+        return training.price != null ? Number(training.price).toFixed(2) : '-';
+    }
+    // Для групповых: делим общую стоимость на максимальное число участников
+    const totalPrice = training.price != null ? Number(training.price) : null;
+    const max = Number(training.max_participants) || 0;
+    if (totalPrice == null || max <= 0) return '-';
+    return (totalPrice / max).toFixed(2);
 }
 
 // Загрузка тренажеров
@@ -1276,7 +1789,15 @@ async function editTrainer(trainerId) {
 async function loadClients() {
     try {
         console.log('Начало загрузки клиентов');
-        const response = await fetch('/api/clients');
+        
+        // Получаем значение фильтра спортсменов
+        const athleteFilter = document.getElementById('clientAthleteFilter');
+        let url = '/api/clients';
+        if (athleteFilter && athleteFilter.value) {
+            url += `?is_athlete=${athleteFilter.value}`;
+        }
+        
+        const response = await fetch(url);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -1288,6 +1809,12 @@ async function loadClients() {
         const clientsContainer = document.getElementById('clientsContainer');
         if (!clientsContainer) {
             throw new Error('Элемент clientsContainer не найден');
+        }
+
+        // Добавляем обработчик фильтра при первой загрузке
+        if (athleteFilter && !athleteFilter.hasAttribute('data-initialized')) {
+            athleteFilter.addEventListener('change', loadClients);
+            athleteFilter.setAttribute('data-initialized', 'true');
         }
 
         // Применяем текущие фильтры и сортировку
@@ -1442,6 +1969,7 @@ function displayClients() {
                     <th>Возраст</th>
                     <th>Уровень</th>
                     <th>Баланс</th>
+                    <th>🏔️ Спортсмен</th>
                     <th>Отзыв 2ГИС</th>
                     <th>Отзыв Яндекс</th>
                     <th>Действия</th>
@@ -1479,17 +2007,35 @@ function displayClients() {
                         childBirthdayText = `<span class="birthday-text birthday-cake-blink">🎂<span class='birthday-date-red'>${formatBirthdayShort(childBirthDate)}</span></span>`;
                     }
                     
+                    // Форматируем счетчики тренировок для клиента
+                    const clientIndividualCount = client.client_individual_count || 0;
+                    const clientGroupCount = client.client_group_count || 0;
+                    const clientTrainingCount = `${client.full_name} (${clientIndividualCount} и./${clientGroupCount} г.)`;
+                    
+                    // Форматируем счетчики тренировок для ребенка
+                    const childIndividualCount = client.child_individual_count || 0;
+                    const childGroupCount = client.child_group_count || 0;
+                    const childTrainingCount = client.child_name 
+                        ? `${client.child_name} (${childIndividualCount} и./${childGroupCount} г.)`
+                        : '-';
+                    
                     return `
                         <tr class="${clientBirthdayClass || childBirthdayClass}">
                             <td>${index + 1}</td>
-                            <td>${client.full_name} ${clientBirthdayText}</td>
+                            <td>${clientTrainingCount} ${clientBirthdayText}</td>
                             <td>${clientAge} лет</td>
                             <td>${client.phone}</td>
                             <td>${client.skill_level || '-'}</td>
-                            <td>${client.child_name ? client.child_name + childBirthdayText : '-'}</td>
+                            <td>${childTrainingCount} ${childBirthdayText}</td>
                             <td>${childAge ? `${childAge} лет` : '-'}</td>
                             <td>${client.child_skill_level || '-'}</td>
                             <td>${client.balance || 0} ₽</td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" 
+                                       onchange="toggleClientAthleteStatus(${client.id}, ${client.is_athlete || false})"
+                                       ${client.is_athlete ? 'checked' : ''}
+                                       title="Отметить клиента как спортсмена (может покупать абонементы)">
+                            </td>
                             <td style="text-align: center;">
                                 <input type="checkbox" 
                                        onchange="updateReviewStatus(${client.id}, '2gis', this.checked)"
@@ -1728,12 +2274,16 @@ async function loadFinances() {
                 <div class="summary-section">
                     <h3>Расходы</h3>
                     <div class="summary-item">
-                        <span>Групповые тренировки:</span>
+                        <span>Групповые тренировки (аренда):</span>
                         <span class="amount expense">${formatCurrency(data.group_expenses)}</span>
                     </div>
                     <div class="summary-item">
-                        <span>Индивидуальные тренировки:</span>
+                        <span>Индивидуальные тренировки (аренда):</span>
                         <span class="amount expense">${formatCurrency(data.individual_expenses)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>ЗП Инструкторов:</span>
+                        <span class="amount expense">${formatCurrency(data.trainer_salary_expenses)}</span>
                     </div>
                     <div class="summary-item total">
                         <span>Общие расходы:</span>
@@ -2115,7 +2665,7 @@ async function viewTrainingDetails(trainingId) {
 }
 
 // Просмотр деталей тренировки из расписания (групповой или индивидуальной)
-async function viewScheduleDetails(trainingId, isIndividual) {
+async function viewScheduleDetails(trainingId, isIndividual, slopeType) {
     try {
         let training;
         
@@ -2135,6 +2685,14 @@ async function viewScheduleDetails(trainingId, isIndividual) {
             }
             training = await response.json();
             training.is_individual = false;
+        }
+        
+        // Определяем тип склона из переданного параметра или из данных тренировки
+        if (slopeType) {
+            training.slope_type = slopeType;
+        } else if (!training.slope_type) {
+            // Если не указан явно, определяем по наличию simulator_id
+            training.slope_type = training.simulator_id ? 'simulator' : 'natural_slope';
         }
         
         // Создаем модальное окно
@@ -2160,7 +2718,37 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                             <p><strong>Длительность:</strong> ${training.duration} минут</p>
                             <p><strong>Тренажёр:</strong> ${training.simulator_name}</p>
                             <p><strong>Тип:</strong> ${equipmentName}</p>
-                            <p><strong>Тренер:</strong> ${trainerText}</p>
+                            <p><strong>Тренер (требуется):</strong> ${trainerText}</p>
+                            ${training.with_trainer ? `
+                                <p><strong>Назначен:</strong> 
+                                    <span id="assigned-trainer-${trainingId}">
+                                        ${training.trainer_name 
+                                            ? `${training.trainer_name} (${training.trainer_phone})` 
+                                            : '<span style="color: #ff6b6b;">Не назначен</span>'}
+                                    </span>
+                                </p>
+                                ${!training.trainer_name ? `
+                                    <div class="form-group" style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px;" id="trainer-assignment-${trainingId}">
+                                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Назначить тренера:</label>
+                                        <select id="trainer-select-${trainingId}" class="form-control" style="width: 100%; padding: 8px; margin-bottom: 8px;">
+                                            <option value="">Загрузка...</option>
+                                        </select>
+                                        <button 
+                                            class="btn-primary" 
+                                            onclick="assignTrainer(${trainingId}, '${training.equipment_type}')">
+                                            Назначить тренера
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <div style="margin-top: 12px;">
+                                        <button 
+                                            class="btn-secondary" 
+                                            onclick="showChangeTrainerForm(${trainingId}, '${training.equipment_type}', '${training.trainer_name}')">
+                                            🔄 Изменить тренера
+                                        </button>
+                                    </div>
+                                `}
+                            ` : ''}
                             <p><strong>Цена:</strong> ${training.price} ₽</p>
                         </div>
                         <div class="detail-group">
@@ -2198,6 +2786,11 @@ async function viewScheduleDetails(trainingId, isIndividual) {
             `;
         } else {
             // Модальное окно для групповой тренировки
+            const isNaturalSlope = training.slope_type === 'natural_slope';
+            const totalPrice = training.price != null ? parseFloat(training.price) : null;
+            const maxParticipants = training.max_participants || 1;
+            const pricePerPerson = totalPrice && maxParticipants > 0 ? (totalPrice / maxParticipants).toFixed(2) : null;
+            
             modal.innerHTML = `
                 <div class="modal-content">
                     <h3>Детали групповой тренировки</h3>
@@ -2206,11 +2799,14 @@ async function viewScheduleDetails(trainingId, isIndividual) {
                             <h4>Основная информация</h4>
                             <p><strong>Дата:</strong> ${formatDate(training.session_date)}</p>
                             <p><strong>Время:</strong> ${training.start_time.slice(0,5)} - ${training.end_time.slice(0,5)}</p>
-                            <p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>
+                            ${!isNaturalSlope && training.simulator_id ? `<p><strong>Тренажёр:</strong> Тренажёр ${training.simulator_id}</p>` : ''}
                             <p><strong>Группа:</strong> ${training.group_name || 'Не указана'}</p>
                             <p><strong>Тренер:</strong> ${training.trainer_name || 'Не указан'}</p>
                             <p><strong>Уровень:</strong> ${training.skill_level || '-'}</p>
-                            <p><strong>Цена:</strong> ${training.price != null ? training.price : '-'} ₽</p>
+                            ${totalPrice != null ? `
+                                <p><strong>Цена общая:</strong> ${totalPrice.toFixed(2)} ₽</p>
+                                ${pricePerPerson ? `<p><strong>Цена за человека:</strong> ${pricePerPerson} ₽</p>` : ''}
+                            ` : '<p><strong>Цена:</strong> -</p>'}
                         </div>
                         <div class="detail-group">
                             <h4>Участники (${training.participants_count || 0}/${training.max_participants})</h4>
@@ -2258,6 +2854,11 @@ async function viewScheduleDetails(trainingId, isIndividual) {
         
         document.body.appendChild(modal);
         modal.style.display = 'block';
+        
+        // Автоматически загружаем тренеров если нужно
+        if (training.is_individual && training.with_trainer && !training.trainer_name) {
+            loadAvailableTrainers(trainingId, training.equipment_type);
+        }
 
         // Закрытие по клику вне окна
         modal.onclick = (e) => {
@@ -2420,11 +3021,51 @@ function showError(message) {
 }
 
 function showSuccess(message) {
+    // Попробовать найти .admin-content, если не найден - использовать body
+    const container = document.querySelector('.admin-content') || document.body;
+    
     const successDiv = document.createElement('div');
     successDiv.className = 'alert alert-success';
-    successDiv.textContent = message;
-    document.querySelector('.admin-content').insertBefore(successDiv, document.querySelector('.admin-content').firstChild);
-    setTimeout(() => successDiv.remove(), 3000);
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        min-width: 300px;
+        max-width: 500px;
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    `;
+    successDiv.textContent = '✅ ' + message;
+    
+    // Добавить на страницу
+    document.body.appendChild(successDiv);
+    
+    // Анимация появления
+    setTimeout(() => {
+        successDiv.style.opacity = '1';
+        successDiv.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Автоматическое удаление через 5 секунд
+    setTimeout(() => {
+        successDiv.style.opacity = '0';
+        successDiv.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.remove();
+            }
+        }, 300);
+    }, 5000);
+    
+    console.log('Сообщение об успехе отображено:', message);
 }
 
 // Закрытие модальных окон при клике вне их области
@@ -2436,7 +3077,8 @@ window.onclick = function(event) {
 
 // Закрытие модальных окон при клике вне их области
 window.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
+    // Исключаем модальное окно отправки сообщений - оно закрывается только по кнопке "Отмена"
+    if (e.target.classList.contains('modal') && e.target.id !== 'notify-clients-modal') {
         e.target.style.display = 'none';
     }
 });
@@ -2923,6 +3565,46 @@ async function updateReviewStatus(clientId, reviewType, isChecked) {
     }
 }
 
+// Функция для переключения статуса спортсмена
+async function toggleClientAthleteStatus(clientId, currentStatus) {
+    try {
+        console.log(`Переключение статуса спортсмена: клиент ${clientId}, текущий статус ${currentStatus}`);
+        
+        const response = await fetch(`/api/clients/${clientId}/athlete-status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                is_athlete: !currentStatus
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении статуса спортсмена');
+        }
+
+        const result = await response.json();
+        console.log('Статус спортсмена обновлен:', result);
+        
+        // Показываем уведомление об успешном обновлении
+        const statusText = !currentStatus ? 'спортсменом' : 'обычным клиентом';
+        showSuccess(`Клиент отмечен как ${statusText}`);
+        
+        // Перезагружаем список клиентов для обновления данных
+        await loadClients();
+        
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса спортсмена:', error);
+        showError(error.message || 'Не удалось обновить статус спортсмена');
+        
+        // Возвращаем чекбокс в предыдущее состояние
+        await loadClients();
+    }
+}
+
 // Функция для экспорта контактов
 async function exportContacts() {
     try {
@@ -3056,6 +3738,9 @@ function getTransactionTypeRu(type) {
         case 'payment': return 'Оплата';
         case 'refill': return 'Пополнение';
         case 'amount': return 'Возврат';
+        case 'subscription_purchase': return 'Покупка абонемента';
+        case 'subscription_usage': return 'Запись по абонементу';
+        case 'subscription_return': return 'Возврат занятия в абонемент';
         default: return type;
     }
 } 
@@ -3226,12 +3911,319 @@ function daysToNextBirthday(birthDate) {
     return diff;
 }
 
+// Функция конвертации Markdown в HTML для Telegram
+function markdownToHtml(text) {
+    if (!text) return '';
+    
+    let html = text;
+    
+    // Сначала сохраняем уже существующие HTML-теги (например, <u>текст</u>)
+    // Используем уникальный плейсхолдер с невидимыми символами, который не конфликтует с Markdown
+    const htmlPlaceholders = [];
+    let htmlIdx = 0;
+    
+    // Сохраняем все HTML теги с их содержимым (не жадный режим)
+    const htmlTagPattern = /<(u|b|i|s|code|a|pre)(\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
+    let match;
+    const matches = [];
+    while ((match = htmlTagPattern.exec(html)) !== null) {
+        matches.push({
+            full: match[0],
+            start: match.index,
+            end: match.index + match[0].length
+        });
+    }
+    
+    // Заменяем с конца, чтобы не сбить индексы
+    // Используем плейсхолдер с невидимыми символами, чтобы избежать конфликтов
+    for (let i = matches.length - 1; i >= 0; i--) {
+        const placeholder = `\u0001HTML${htmlIdx}\u0001`;
+        htmlPlaceholders[htmlIdx] = matches[i].full;
+        html = html.substring(0, matches[i].start) + placeholder + html.substring(matches[i].end);
+        htmlIdx++;
+    }
+    
+    // Конвертируем Markdown в HTML (обрабатываем в правильном порядке)
+    
+    // Моноширинный: `текст` -> <code>текст</code>
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Зачеркнутый: ~текст~ -> <s>текст</s>
+    html = html.replace(/~([^~]+)~/g, '<s>$1</s>');
+    
+    // Жирный: **текст** -> <b>текст</b> (двойные звездочки обрабатываем первыми)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    
+    // Курсив: _текст_ -> <i>текст</i>
+    // Обрабатываем все случаи _текст_ (не внутри звездочек и других символов)
+    html = html.replace(/_([^_\n]+)_/g, '<i>$1</i>');
+    
+    // Жирный: *текст* -> <b>текст</b> (одиночные звездочки)
+    // Обрабатываем только одиночные звездочки
+    html = html.replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
+    
+    // Восстанавливаем сохраненные HTML-теги (в обратном порядке, чтобы индексы совпали)
+    for (let i = htmlPlaceholders.length - 1; i >= 0; i--) {
+        html = html.replace(`\u0001HTML${i}\u0001`, htmlPlaceholders[i]);
+    }
+    
+    // Экранируем специальные символы HTML, но сохраняем теги форматирования
+    const formatPlaceholders = [];
+    let fmtIdx = 0;
+    
+    html = html.replace(/<(b|i|u|s|code|a|pre)(\s[^>]*)?>|<\/(b|i|u|s|code|a|pre)>/gi, (match) => {
+        const placeholder = `\u0002FMT${fmtIdx}\u0002`;
+        formatPlaceholders[fmtIdx] = match;
+        fmtIdx++;
+        return placeholder;
+    });
+    
+    // Экранируем остальные символы
+    html = html.replace(/&/g, '&amp;');
+    html = html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Восстанавливаем теги форматирования
+    formatPlaceholders.forEach((tag, index) => {
+        html = html.replace(`\u0002FMT${index}\u0002`, tag);
+    });
+    
+    return html;
+}
+
+// Новая функция для отправки сообщений с поддержкой медиа и форматирования
+async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
+    event.preventDefault();
+    const form = event.target;
+    const rawMessage = form.querySelector('#notify-message').value.trim();
+    const recipientType = form.querySelector('#recipient-type').value;
+    const clientSelect = form.querySelector('#notify-client-select');
+    const groupSelect = form.querySelector('#group-select');
+    const scheduleCheckbox = form.querySelector('#schedule-message');
+    const scheduleDatetime = form.querySelector('#schedule-datetime');
+
+    if (!rawMessage) {
+        showError('Введите текст сообщения');
+        return;
+    }
+
+    // Конвертируем Markdown в HTML перед отправкой
+    const message = markdownToHtml(rawMessage);
+
+    // Проверяем, редактируется ли существующее сообщение
+    const editingMessageId = form.dataset.editingMessageId;
+    if (editingMessageId) {
+        // Если редактируем существующее сообщение, используем функцию обновления
+        if (typeof updateScheduledMessage === 'function') {
+            await updateScheduledMessage(editingMessageId, form);
+            return;
+        }
+    }
+    
+    // Проверяем, отложенное ли это сообщение
+    const isScheduled = scheduleCheckbox && scheduleCheckbox.checked;
+    if (isScheduled) {
+        if (!scheduleDatetime || !scheduleDatetime.value) {
+            showError('Укажите дату и время отправки');
+            return;
+        }
+        
+        // Отправляем как отложенное сообщение
+        try {
+            showLoading('Создание отложенного сообщения...');
+            
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('recipient_type', recipientType);
+            formData.append('parse_mode', 'HTML');
+            
+            if (recipientType === 'client') {
+                const clientId = clientSelect ? clientSelect.value : null;
+                if (!clientId) {
+                    showError('Выберите клиента');
+                    hideLoading();
+                    return;
+                }
+                formData.append('recipient_id', clientId);
+            }
+            
+            // Конвертируем локальное время в ISO строку для отправки на сервер
+            const scheduledDateTime = new Date(scheduleDatetime.value);
+            formData.append('scheduled_at', scheduledDateTime.toISOString());
+            
+            if (mediaFile) {
+                formData.append('media', mediaFile);
+                formData.append('media_type', mediaType);
+            }
+            
+            const response = await fetch('/api/trainings/scheduled-messages', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при создании отложенного сообщения');
+            }
+            
+            const scheduledDate = new Date(scheduleDatetime.value);
+            const formattedDate = scheduledDate.toLocaleString('ru-RU', {
+                timeZone: 'Asia/Yekaterinburg',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            showSuccess(`Отложенное сообщение создано. Будет отправлено: ${formattedDate}`);
+            hideLoading();
+            
+            // Удаляем флаг редактирования, если был
+            delete form.dataset.editingMessageId;
+            
+            // Закрываем модальное окно и очищаем форму
+            document.getElementById('notify-clients-modal').style.display = 'none';
+            form.reset();
+            if (form.querySelector('#notify-preview')) {
+                form.querySelector('#notify-preview').innerHTML = '';
+            }
+            
+            // Очищаем поиск клиентов
+            const clientSearchInput = form.querySelector('#notify-client-search-input');
+            const clientSelectHidden = form.querySelector('#notify-client-select');
+            if (clientSearchInput) clientSearchInput.value = '';
+            if (clientSelectHidden) clientSelectHidden.value = '';
+            const clientSearchResults = form.querySelector('#notify-client-search-results');
+            if (clientSearchResults) clientSearchResults.style.display = 'none';
+            
+            // Очищаем медиа
+            const removeMediaBtn = form.querySelector('#remove-media-btn');
+            if (removeMediaBtn) {
+                removeMediaBtn.click();
+            }
+            
+            // Скрываем контейнер отложенной отправки
+            const scheduleCheckbox = form.querySelector('#schedule-message');
+            const scheduleContainer = form.querySelector('#schedule-datetime-container');
+            if (scheduleCheckbox) {
+                scheduleCheckbox.checked = false;
+            }
+            if (scheduleContainer) {
+                scheduleContainer.style.display = 'none';
+            }
+            
+            return;
+        } catch (error) {
+            console.error('Ошибка при создании отложенного сообщения:', error);
+            hideLoading();
+            showError(error.message);
+            return;
+        }
+    }
+
+    let endpoint;
+    let recipientId = null;
+
+    switch (recipientType) {
+        case 'all':
+            endpoint = '/api/trainings/notify-clients';
+            break;
+        case 'client':
+            const clientId = clientSelect ? clientSelect.value : null;
+            if (!clientId) {
+                showError('Выберите клиента');
+                return;
+            }
+            recipientId = clientId;
+            endpoint = `/api/trainings/notify-client/${recipientId}`;
+            break;
+        case 'group':
+            if (!groupSelect || !groupSelect.value) {
+                showError('Выберите групповую тренировку');
+                return;
+            }
+            recipientId = groupSelect.value;
+            endpoint = `/api/trainings/notify-group/${recipientId}`;
+            break;
+        default:
+            showError('Неверный тип получателей');
+            return;
+    }
+
+    try {
+        showLoading('Отправка сообщения...');
+
+        // Если есть медиа, используем FormData
+        if (mediaFile) {
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('media', mediaFile);
+            formData.append('mediaType', mediaType);
+            formData.append('parse_mode', 'HTML'); // Используем HTML для поддержки <u>
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                body: formData
+                // НЕ устанавливаем Content-Type, браузер автоматически установит multipart/form-data
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при отправке сообщения');
+            }
+
+            showSuccess(result.message || 'Сообщение успешно отправлено');
+        } else {
+            // Если медиа нет, отправляем JSON с форматированием
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    message, 
+                    parse_mode: 'HTML' // Используем HTML для поддержки всех тегов
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Ошибка при отправке сообщения');
+            }
+
+            showSuccess(result.message || 'Сообщение успешно отправлено');
+        }
+
+        // Закрываем модальное окно и очищаем форму
+        document.getElementById('notify-clients-modal').style.display = 'none';
+        form.reset();
+        if (form.querySelector('#notify-preview')) {
+            form.querySelector('#notify-preview').innerHTML = '';
+        }
+        
+        // Очищаем медиа
+        const removeMediaBtn = form.querySelector('#remove-media-btn');
+        if (removeMediaBtn) {
+            removeMediaBtn.click();
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке сообщения:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Старая функция (оставляем для совместимости, если где-то используется)
 async function handleNotifyFormSubmit(event) {
     event.preventDefault();
     const form = event.target;
     const message = form.querySelector('#notify-message').value.trim();
     const recipientType = form.querySelector('#recipient-type').value;
-    const clientSelect = form.querySelector('#client-select');
+    const clientSelect = form.querySelector('#notify-client-select');
     const groupSelect = form.querySelector('#group-select');
 
     if (!message) {
@@ -4196,5 +5188,1149 @@ async function removeParticipantFromTraining(trainingId, participantId, particip
         showError(error.message);
     } finally {
         hideLoading();
+    }
+}
+
+// === НАЗНАЧЕНИЕ ТРЕНЕРОВ ===
+
+// Загрузка доступных тренеров в селектор
+async function loadAvailableTrainers(trainingId, equipmentType) {
+    try {
+        const response = await fetch(`/api/individual-trainings/trainers/available?equipment_type=${equipmentType}`);
+        if (!response.ok) throw new Error('Ошибка при загрузке тренеров');
+        
+        const trainers = await response.json();
+        const select = document.getElementById(`trainer-select-${trainingId}`);
+        
+        if (!select) {
+            console.error(`Селектор trainer-select-${trainingId} не найден`);
+            return;
+        }
+        
+        if (trainers.length === 0) {
+            select.innerHTML = '<option value="">Нет доступных тренеров</option>';
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Выберите тренера...</option>' +
+            trainers.map(t => `<option value="${t.id}">${t.full_name} (${t.phone})</option>`).join('');
+            
+    } catch (error) {
+        console.error('Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить список тренеров');
+    }
+}
+
+// Назначение тренера на индивидуальную тренировку
+async function assignTrainer(trainingId, equipmentType) {
+    const select = document.getElementById(`trainer-select-${trainingId}`);
+    const trainerId = select.value;
+    
+    if (!trainerId) {
+        showError('Пожалуйста, выберите тренера');
+        return;
+    }
+    
+    try {
+        showLoading('Назначение тренера...');
+        
+        const response = await fetch(`/api/individual-trainings/${trainingId}/assign-trainer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trainer_id: trainerId })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при назначении тренера');
+        }
+        
+        const result = await response.json();
+        
+        // Обновляем отображение
+        const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+        if (assignedSpan) {
+            assignedSpan.innerHTML = `${result.trainer_name} (${result.trainer_phone})`;
+        }
+        
+        // Скрываем форму назначения
+        const assignmentForm = document.getElementById(`trainer-assignment-${trainingId}`);
+        if (assignmentForm) {
+            assignmentForm.remove();
+        }
+        
+        hideLoading();
+        showSuccess(`Тренер ${result.trainer_name} успешно назначен!`);
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            loadSchedule();
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка при назначении тренера:', error);
+        showError(error.message || 'Не удалось назначить тренера');
+    }
+}
+
+// Показать форму изменения тренера
+function showChangeTrainerForm(trainingId, equipmentType, currentTrainerName) {
+    // Скрываем кнопку "Изменить тренера"
+    const changeButton = document.querySelector(`button[onclick="showChangeTrainerForm(${trainingId}, '${equipmentType}', '${currentTrainerName}')"]`);
+    if (changeButton) {
+        changeButton.style.display = 'none';
+    }
+    
+    // Создаем форму изменения
+    const formHtml = `
+        <div class="form-group" style="margin-top: 16px; padding: 16px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;" id="change-trainer-form-${trainingId}">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Изменить тренера:</label>
+            <p style="margin-bottom: 12px; color: #856404; font-size: 14px;">
+                Текущий: <strong>${currentTrainerName}</strong>
+            </p>
+            <select id="new-trainer-select-${trainingId}" class="form-control" style="width: 100%; padding: 8px; margin-bottom: 8px;">
+                <option value="">Загрузка...</option>
+            </select>
+            <div style="display: flex; gap: 8px;">
+                <button 
+                    class="btn-primary" 
+                    onclick="changeTrainer(${trainingId}, '${equipmentType}')">
+                    ✅ Изменить
+                </button>
+                <button 
+                    class="btn-secondary" 
+                    onclick="cancelChangeTrainer(${trainingId}, '${equipmentType}', '${currentTrainerName}')">
+                    ❌ Отмена
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Вставляем форму после информации о назначенном тренере
+    const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+    if (assignedSpan) {
+        assignedSpan.parentElement.insertAdjacentHTML('afterend', formHtml);
+    }
+    
+    // Загружаем список тренеров
+    loadAvailableTrainersForChange(trainingId, equipmentType);
+}
+
+// Загрузка тренеров для формы изменения
+async function loadAvailableTrainersForChange(trainingId, equipmentType) {
+    try {
+        const response = await fetch(`/api/individual-trainings/trainers/available?equipment_type=${equipmentType}`);
+        if (!response.ok) throw new Error('Ошибка при загрузке тренеров');
+        
+        const trainers = await response.json();
+        const select = document.getElementById(`new-trainer-select-${trainingId}`);
+        
+        if (!select) {
+            console.error(`Селектор new-trainer-select-${trainingId} не найден`);
+            return;
+        }
+        
+        if (trainers.length === 0) {
+            select.innerHTML = '<option value="">Нет доступных тренеров</option>';
+            return;
+        }
+        
+        select.innerHTML = '<option value="">Выберите нового тренера...</option>' +
+            trainers.map(t => `<option value="${t.id}">${t.full_name} (${t.phone})</option>`).join('');
+            
+    } catch (error) {
+        console.error('Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить список тренеров');
+    }
+}
+
+// Изменение тренера
+async function changeTrainer(trainingId, equipmentType) {
+    const select = document.getElementById(`new-trainer-select-${trainingId}`);
+    const newTrainerId = select.value;
+    
+    if (!newTrainerId) {
+        showError('Пожалуйста, выберите нового тренера');
+        return;
+    }
+    
+    try {
+        showLoading('Изменение тренера...');
+        
+        const response = await fetch(`/api/individual-trainings/${trainingId}/change-trainer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trainer_id: newTrainerId })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при изменении тренера');
+        }
+        
+        const result = await response.json();
+        
+        // Обновляем отображение
+        const assignedSpan = document.getElementById(`assigned-trainer-${trainingId}`);
+        if (assignedSpan) {
+            assignedSpan.innerHTML = `${result.trainer_name} (${result.trainer_phone})`;
+        }
+        
+        // Скрываем форму изменения
+        const changeForm = document.getElementById(`change-trainer-form-${trainingId}`);
+        if (changeForm) {
+            changeForm.remove();
+        }
+        
+        // Показываем кнопку "Изменить тренера" снова
+        const changeButton = document.querySelector(`button[onclick*="showChangeTrainerForm(${trainingId}"]`);
+        if (changeButton) {
+            changeButton.style.display = 'inline-block';
+            changeButton.setAttribute('onclick', `showChangeTrainerForm(${trainingId}, '${equipmentType}', '${result.trainer_name}')`);
+        }
+        
+        hideLoading();
+        showSuccess(`Тренер изменен на ${result.trainer_name}!`);
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            loadSchedule();
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка при изменении тренера:', error);
+        showError(error.message || 'Не удалось изменить тренера');
+    }
+}
+
+// Отмена изменения тренера
+function cancelChangeTrainer(trainingId, equipmentType, currentTrainerName) {
+    // Скрываем форму изменения
+    const changeForm = document.getElementById(`change-trainer-form-${trainingId}`);
+    if (changeForm) {
+        changeForm.remove();
+    }
+    
+    // Показываем кнопку "Изменить тренера" снова
+    const changeButton = document.querySelector(`button[onclick*="showChangeTrainerForm(${trainingId}"]`);
+    if (changeButton) {
+        changeButton.style.display = 'inline-block';
+    }
+}
+
+// ==========================================
+// ФУНКЦИОНАЛ СОЗДАНИЯ АБОНЕМЕНТОВ
+// ==========================================
+
+// Проценты скидок в зависимости от количества занятий
+const SUBSCRIPTION_DISCOUNTS = {
+    3: 5,   // 3 занятия - 5% скидка
+    5: 10,  // 5 занятий - 10% скидка
+    7: 20,  // 7 занятий - 20% скидка
+    10: 25  // 10 занятий - 25% скидка
+};
+
+// Загрузка цен групповых занятий для абонементов
+async function loadGroupPricesForSubscription() {
+    try {
+        const response = await fetch('/api/winter-prices?type=group&is_active=true');
+        
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке цен');
+        }
+        
+        const prices = await response.json();
+        
+        // Фильтруем только групповые цены и сортируем по количеству участников
+        const groupPrices = prices
+            .filter(price => price.type === 'group')
+            .sort((a, b) => {
+                const aParticipants = a.participants || 0;
+                const bParticipants = b.participants || 0;
+                return aParticipants - bParticipants;
+            });
+        
+        return groupPrices;
+    } catch (error) {
+        console.error('Ошибка при загрузке цен:', error);
+        showError('Не удалось загрузить цены из прайса');
+        return [];
+    }
+}
+
+// Заполнение выпадающего списка цен
+async function populatePriceSelect() {
+    const priceSelect = document.getElementById('subscription-price-select');
+    if (!priceSelect) return;
+    
+    // Очистить текущие опции (кроме первой)
+    while (priceSelect.options.length > 1) {
+        priceSelect.remove(1);
+    }
+    
+    // Загрузить цены
+    const prices = await loadGroupPricesForSubscription();
+    
+    if (prices.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Нет доступных цен';
+        option.disabled = true;
+        priceSelect.appendChild(option);
+        return;
+    }
+    
+    // Добавить опции для каждой цены
+    prices.forEach(price => {
+        const option = document.createElement('option');
+        option.value = price.id;
+        
+        // Формируем текст опции: "X человек - YYYY ₽"
+        const participantsText = price.participants 
+            ? `${price.participants} человек`
+            : 'Не указано';
+        const priceText = parseFloat(price.price).toLocaleString('ru-RU');
+        
+        option.textContent = `${participantsText} - ${priceText} ₽`;
+        option.dataset.priceId = price.id;
+        option.dataset.totalPrice = price.price;
+        option.dataset.participants = price.participants || '';
+        
+        priceSelect.appendChild(option);
+    });
+}
+
+// Открытие модального окна создания абонемента
+async function openSubscriptionModal() {
+    const modal = document.getElementById('subscription-modal');
+    if (!modal) return;
+    
+    // Сброс формы
+    document.getElementById('subscription-form').reset();
+    document.getElementById('subscription-id').value = '';
+        document.getElementById('subscription-modal-title').textContent = 'Создать абонемент';
+        document.getElementById('subscription-submit-btn').textContent = 'Создать абонемент';
+    
+    // Скрыть блоки с информацией о скидке и цене
+    document.getElementById('subscription-discount-controls').style.display = 'none';
+    document.getElementById('subscription-discount-info').style.display = 'none';
+    document.getElementById('subscription-price-info').style.display = 'none';
+    
+    // Сброс значений
+    document.getElementById('subscription-discount').value = '';
+    document.getElementById('subscription-price-id').value = '';
+    document.getElementById('subscription-price-per-person').value = '';
+    document.getElementById('subscription-price-per-session').value = '';
+    document.getElementById('subscription-participants').value = '';
+    document.getElementById('subscription-is-active').checked = true;
+    
+    // Сброс процентов скидки к значениям по умолчанию
+    document.getElementById('discount-3').value = '5';
+    document.getElementById('discount-5').value = '10';
+    document.getElementById('discount-7').value = '15';
+    document.getElementById('discount-10').value = '20';
+    
+    // Отключить выбор количества занятий до выбора цены
+    const subscriptionSessions = document.getElementById('subscription-sessions');
+    if (subscriptionSessions) {
+        subscriptionSessions.disabled = true;
+        subscriptionSessions.value = '';
+    }
+    
+    // Добавить обработчик submit формы (удаляем старый и добавляем новый каждый раз, чтобы избежать конфликтов)
+    const subscriptionForm = document.getElementById('subscription-form');
+    if (subscriptionForm) {
+        // Удалить старые обработчики (клонируем форму без обработчиков)
+        const newForm = subscriptionForm.cloneNode(true);
+        subscriptionForm.parentNode.replaceChild(newForm, subscriptionForm);
+        
+        // Добавить обработчик на новую форму
+        const form = document.getElementById('subscription-form');
+        if (form) {
+            form.addEventListener('submit', handleSubscriptionSubmit);
+        }
+    }
+    
+    // Загрузить и заполнить список цен (после клонирования формы!)
+    await populatePriceSelect();
+    
+    // Добавить обработчик изменения выбранной цены (после клонирования формы!)
+    // Используем setTimeout, чтобы убедиться, что DOM обновлен после populatePriceSelect
+    setTimeout(() => {
+        const priceSelect = document.getElementById('subscription-price-select');
+        if (priceSelect) {
+            // Удалить старый обработчик, если есть, через клонирование
+            const newPriceSelect = priceSelect.cloneNode(true);
+            priceSelect.parentNode.replaceChild(newPriceSelect, priceSelect);
+            
+            // Добавить обработчик на новый элемент
+            const newSelect = document.getElementById('subscription-price-select');
+            if (newSelect) {
+                newSelect.addEventListener('change', handlePriceSelection);
+                console.log('Обработчик изменения цены добавлен на селект');
+            }
+        }
+    }, 150);
+    
+    // Добавить обработчик изменения количества занятий (после клонирования формы!)
+    const subscriptionSessionsNew = document.getElementById('subscription-sessions');
+    if (subscriptionSessionsNew) {
+        // Удалить старый обработчик, если есть
+        const newSessions = subscriptionSessionsNew.cloneNode(true);
+        subscriptionSessionsNew.parentNode.replaceChild(newSessions, subscriptionSessionsNew);
+        
+        // Добавить обработчик на новый элемент
+        const newSessionsEl = document.getElementById('subscription-sessions');
+        if (newSessionsEl) {
+            newSessionsEl.addEventListener('change', calculateSubscriptionPrice);
+        }
+    }
+    
+    // Обработчик закрытия при клике вне модального окна
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeSubscriptionModal();
+        }
+    };
+    
+    // Открыть модальное окно
+    modal.style.display = 'block';
+}
+
+// Обработчик выбора цены из прайса
+function handlePriceSelection() {
+    const priceSelect = document.getElementById('subscription-price-select');
+    const selectedOption = priceSelect.options[priceSelect.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        // Если цена не выбрана, отключить выбор количества занятий
+        const subscriptionSessions = document.getElementById('subscription-sessions');
+        if (subscriptionSessions) {
+            subscriptionSessions.disabled = true;
+            subscriptionSessions.value = '';
+        }
+        
+        // Скрыть блоки с информацией
+        document.getElementById('subscription-discount-controls').style.display = 'none';
+        document.getElementById('subscription-discount-info').style.display = 'none';
+        document.getElementById('subscription-price-info').style.display = 'none';
+        
+        // Сбросить скрытые поля
+        document.getElementById('subscription-price-id').value = '';
+        document.getElementById('subscription-price-per-person').value = '';
+        document.getElementById('subscription-price-per-session').value = '';
+        document.getElementById('subscription-participants').value = '';
+        
+        return;
+    }
+    
+    // Получить данные выбранной цены
+    const priceId = selectedOption.value;
+    const totalPrice = parseFloat(selectedOption.dataset.totalPrice);
+    const participants = parseInt(selectedOption.dataset.participants) || 1;
+    
+    // Рассчитать цену за одного человека (для внутренних расчетов)
+    const pricePerPerson = totalPrice / participants;
+    
+    // Сохранить в скрытые поля
+    // price-per-person - цена за одного человека (для отправки на сервер)
+    // price-per-session - цена за групповое занятие (для расчета абонемента)
+    document.getElementById('subscription-price-id').value = priceId;
+    document.getElementById('subscription-price-per-person').value = pricePerPerson;
+    document.getElementById('subscription-price-per-session').value = totalPrice;
+    document.getElementById('subscription-participants').value = participants;
+    
+    // Включить выбор количества занятий
+    const subscriptionSessions = document.getElementById('subscription-sessions');
+    if (subscriptionSessions) {
+        subscriptionSessions.disabled = false;
+        const firstOption = subscriptionSessions.querySelector('option:first-child');
+        if (firstOption) {
+            firstOption.textContent = 'Выберите количество занятий';
+        }
+        
+        // Сохранить выбранное значение количества занятий, если оно уже выбрано (при редактировании)
+        const currentSessionsValue = subscriptionSessions.value;
+        
+        // Убедиться, что обработчик события добавлен
+        const currentSessions = document.getElementById('subscription-sessions');
+        if (currentSessions) {
+            // Удалить старый обработчик через клонирование
+            const newSessionsEl = currentSessions.cloneNode(true);
+            currentSessions.parentNode.replaceChild(newSessionsEl, currentSessions);
+            // Добавить обработчик на новый элемент
+            const newEl = document.getElementById('subscription-sessions');
+            if (newEl) {
+                // Восстановить выбранное значение, если оно было
+                if (currentSessionsValue && currentSessionsValue !== '') {
+                    newEl.value = currentSessionsValue;
+                }
+                if (!newEl.dataset.listenerAdded) {
+                    newEl.addEventListener('change', calculateSubscriptionPrice);
+                    newEl.dataset.listenerAdded = 'true';
+                }
+            }
+        }
+    }
+    
+    // Показать блок настройки процентов скидки
+    document.getElementById('subscription-discount-controls').style.display = 'block';
+    
+    // Если количество занятий уже выбрано, показать блоки с информацией
+    const sessionsValue = document.getElementById('subscription-sessions')?.value;
+    if (sessionsValue && sessionsValue !== '') {
+        // Если количество занятий уже выбрано, пересчитать цену
+        calculateSubscriptionPrice();
+    } else {
+        // Скрыть блоки с информацией до выбора количества занятий
+        document.getElementById('subscription-discount-info').style.display = 'none';
+        document.getElementById('subscription-price-info').style.display = 'none';
+    }
+    
+    // Добавить обработчики изменения процентов скидки
+    const discountInputs = ['discount-3', 'discount-5', 'discount-7', 'discount-10'];
+    discountInputs.forEach(discountId => {
+        const discountInput = document.getElementById(discountId);
+        if (discountInput) {
+            // Удалить старый обработчик через клонирование
+            const newInput = discountInput.cloneNode(true);
+            discountInput.parentNode.replaceChild(newInput, discountInput);
+            
+            // Добавить обработчик на новый элемент
+            const newInputEl = document.getElementById(discountId);
+            if (newInputEl) {
+                newInputEl.addEventListener('input', () => {
+                    // Если количество занятий уже выбрано, пересчитать цену
+                    const sessionsEl = document.getElementById('subscription-sessions');
+                    if (sessionsEl && sessionsEl.value) {
+                        calculateSubscriptionPrice();
+                    }
+                });
+            }
+        }
+    });
+    
+    // Если количество занятий уже выбрано, пересчитать цену
+    if (subscriptionSessions && subscriptionSessions.value) {
+        calculateSubscriptionPrice();
+    } else {
+        // Иначе сбросить выбор количества занятий
+        subscriptionSessions.value = '';
+    }
+}
+
+// Закрытие модального окна создания абонемента
+function closeSubscriptionModal() {
+    const modal = document.getElementById('subscription-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Расчет цены абонемента при выборе количества занятий
+function calculateSubscriptionPrice() {
+    const sessionsSelect = document.getElementById('subscription-sessions');
+    const sessionsCount = parseInt(sessionsSelect?.value) || 0;
+    
+    // Проверить, выбрана ли цена из прайса
+    // Используем цену за одного человека (цена за занятие / количество участников)
+    const pricePerPerson = parseFloat(document.getElementById('subscription-price-per-person').value);
+    
+    if (!pricePerPerson || pricePerPerson <= 0) {
+        // Если цена не выбрана, скрыть блоки
+        document.getElementById('subscription-discount-info').style.display = 'none';
+        document.getElementById('subscription-price-info').style.display = 'none';
+        return;
+    }
+    
+    if (!sessionsCount || !['3', '5', '7', '10'].includes(sessionsCount.toString())) {
+        // Скрыть блоки если количество не выбрано или неверное
+        document.getElementById('subscription-discount-info').style.display = 'none';
+        document.getElementById('subscription-price-info').style.display = 'none';
+        return;
+    }
+    
+    // Получить процент скидки из поля ввода для выбранного номинала
+    const discountInput = document.getElementById(`discount-${sessionsCount}`);
+    const discountPercentage = discountInput ? parseFloat(discountInput.value) || 0 : SUBSCRIPTION_DISCOUNTS[sessionsCount] || 0;
+    
+    // Сохранить скидку в скрытое поле
+    document.getElementById('subscription-discount').value = discountPercentage;
+    
+    // Рассчитать цены на основе цены за одного человека
+    // Цена без скидки = цена за одного человека * количество занятий
+    const totalPriceWithoutDiscount = pricePerPerson * sessionsCount;
+    // Цена со скидкой = цена без скидки * (1 - процент скидки)
+    const totalPriceWithDiscount = totalPriceWithoutDiscount * (1 - discountPercentage / 100);
+    const savings = totalPriceWithoutDiscount - totalPriceWithDiscount;
+    
+    // Обновить отображение скидки
+    document.getElementById('subscription-discount-display').textContent = discountPercentage;
+    document.getElementById('subscription-discount-info').style.display = 'block';
+    
+    // Рассчитать цену за одно занятие для клиента
+    const pricePerSessionFinal = totalPriceWithDiscount / sessionsCount;
+    
+    // Обновить отображение цены
+    document.getElementById('subscription-price-per-person-without').textContent = Math.round(pricePerPerson).toLocaleString('ru-RU');
+    document.getElementById('subscription-price-without').textContent = Math.round(totalPriceWithoutDiscount).toLocaleString('ru-RU');
+    document.getElementById('subscription-price-with').textContent = Math.round(totalPriceWithDiscount).toLocaleString('ru-RU');
+    document.getElementById('subscription-savings').textContent = Math.round(savings).toLocaleString('ru-RU');
+    document.getElementById('subscription-price-per-session-final').textContent = Math.round(pricePerSessionFinal).toLocaleString('ru-RU');
+    document.getElementById('subscription-price-info').style.display = 'block';
+}
+
+// ==========================================
+// ЗАГРУЗКА И ОТОБРАЖЕНИЕ АБОНЕМЕНТОВ
+// ==========================================
+
+// Загрузка страницы абонементов
+async function loadSubscriptionsPage() {
+    try {
+        // Загружаем статистику
+        const statsResponse = await fetch('/api/natural-slope-subscriptions/stats');
+        if (!statsResponse.ok) throw new Error('Ошибка при загрузке статистики');
+        const stats = await statsResponse.json();
+        
+        // Обновляем статистику
+        document.getElementById('total-subscription-types').textContent = stats.total_types || 0;
+        document.getElementById('active-subscriptions-count').textContent = stats.active_count || 0;
+        document.getElementById('clients-with-subscriptions').textContent = stats.clients_with_subscriptions || 0;
+        
+        // Загружаем список типов абонементов
+        const typesResponse = await fetch('/api/natural-slope-subscriptions/types');
+        if (!typesResponse.ok) throw new Error('Ошибка при загрузке типов абонементов');
+        const subscriptionTypes = await typesResponse.json();
+        displaySubscriptionTypes(subscriptionTypes);
+        
+        // Загружаем активные абонементы клиентов
+        const clientSubscriptionsResponse = await fetch('/api/natural-slope-subscriptions/client-subscriptions?status=active');
+        if (clientSubscriptionsResponse.ok) {
+            const clientSubscriptions = await clientSubscriptionsResponse.json();
+            displayClientSubscriptions(clientSubscriptions);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке абонементов:', error);
+        showError('Ошибка при загрузке абонементов: ' + error.message);
+    }
+}
+
+// Отображение списка типов абонементов
+function displaySubscriptionTypes(subscriptionTypes) {
+    const container = document.getElementById('subscription-types-list');
+    if (!container) return;
+    
+    if (subscriptionTypes.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #666;">
+                <p style="font-size: 18px; margin-bottom: 20px;">📭 Абонементов пока нет</p>
+                <p>Создайте первый абонемент, нажав кнопку "➕ Создать абонемент"</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = subscriptionTypes.map(sub => {
+        const statusBadge = sub.is_active 
+            ? '<span style="background: #10b981; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">Активен</span>'
+            : '<span style="background: #6b7280; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">Неактивен</span>';
+        
+        const createdDate = new Date(sub.created_at).toLocaleDateString('ru-RU');
+        const activeCount = parseInt(sub.active_subscriptions_count) || 0;
+        const clientsCount = parseInt(sub.clients_count) || 0;
+        
+        return `
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                            <h4 style="margin: 0; font-size: 18px;">${sub.name}</h4>
+                            ${statusBadge}
+                        </div>
+                        ${sub.description ? `<p style="color: #666; margin: 5px 0;">${sub.description}</p>` : ''}
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn-secondary" onclick="editSubscriptionType(${sub.id})" style="padding: 6px 12px; font-size: 14px;">
+                            ✏️ Редактировать
+                        </button>
+                        <button class="btn-danger" onclick="deleteSubscriptionType(${sub.id})" style="padding: 6px 12px; font-size: 14px;">
+                            🗑️ Удалить
+                        </button>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Занятий</small>
+                        <strong style="font-size: 16px;">${sub.sessions_count}</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Скидка</small>
+                        <strong style="font-size: 16px; color: #10b981;">${parseFloat(sub.discount_percentage).toFixed(0)}%</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Цена</small>
+                        <strong style="font-size: 16px;">${parseFloat(sub.price).toLocaleString('ru-RU')} ₽</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Цена за занятие</small>
+                        <strong style="font-size: 16px;">${parseFloat(sub.price_per_session).toLocaleString('ru-RU')} ₽</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Действует до</small>
+                        <strong style="font-size: 16px;">${sub.expires_at ? new Date(sub.expires_at).toLocaleDateString('ru-RU') : (sub.validity_days ? `${sub.validity_days} дн.` : 'Не указано')}</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Активных абонементов</small>
+                        <strong style="font-size: 16px;">${activeCount}</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Клиентов</small>
+                        <strong style="font-size: 16px;">${clientsCount}</strong>
+                    </div>
+                    <div>
+                        <small style="color: #666; display: block; margin-bottom: 4px;">Создан</small>
+                        <strong style="font-size: 16px;">${createdDate}</strong>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Отображение активных абонементов клиентов
+function displayClientSubscriptions(clientSubscriptions) {
+    const container = document.getElementById('active-subscriptions-list');
+    if (!container) return;
+    
+    if (clientSubscriptions.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #666;">
+                <p style="font-size: 18px;">Нет активных абонементов у клиентов</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = clientSubscriptions.map(sub => {
+        const purchasedDate = new Date(sub.purchased_at).toLocaleDateString('ru-RU');
+        const expiresDate = new Date(sub.expires_at).toLocaleDateString('ru-RU');
+        const daysLeft = Math.ceil((new Date(sub.expires_at) - new Date()) / (1000 * 60 * 60 * 24));
+        const daysLeftClass = daysLeft <= 7 ? 'color: #ef4444;' : daysLeft <= 30 ? 'color: #f59e0b;' : 'color: #10b981;';
+        
+        return `
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                        <strong>${sub.client_name}</strong>
+                        <div style="margin-top: 5px; color: #666; font-size: 14px;">
+                            ${sub.subscription_name} • Осталось занятий: <strong>${sub.remaining_sessions}/${sub.total_sessions}</strong>
+                        </div>
+                        <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                            Куплен: ${purchasedDate} • Истекает: ${expiresDate} 
+                            <span style="${daysLeftClass} font-weight: bold;">(${daysLeft > 0 ? daysLeft : 0} дн.)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Редактирование типа абонемента
+async function editSubscriptionType(id) {
+    try {
+        // Загрузить список всех абонементов и найти нужный
+        const response = await fetch('/api/natural-slope-subscriptions/types');
+        if (!response.ok) throw new Error('Ошибка при загрузке данных абонементов');
+        
+        const subscriptions = await response.json();
+        const subscription = subscriptions.find(sub => sub.id === parseInt(id));
+        
+        if (!subscription) {
+            throw new Error('Абонемент не найден');
+        }
+        
+        // Открыть модальное окно с заполненными данными
+        const modal = document.getElementById('subscription-modal');
+        if (!modal) return;
+        
+        // Заполнить форму данными
+        document.getElementById('subscription-id').value = subscription.id.toString();
+        document.getElementById('subscription-modal-title').textContent = 'Редактировать абонемент';
+        document.getElementById('subscription-name').value = subscription.name;
+        document.getElementById('subscription-description').value = subscription.description || '';
+        // Преобразовать validity_days в дату окончания действия
+        // Если у абонемента есть expires_at, использовать его, иначе вычислить из validity_days
+        let expiresDate = null;
+        if (subscription.expires_at) {
+            expiresDate = new Date(subscription.expires_at).toISOString().split('T')[0];
+        } else if (subscription.validity_days) {
+            // Вычислить дату окончания: сегодня + validity_days дней
+            const today = new Date();
+            today.setDate(today.getDate() + subscription.validity_days);
+            expiresDate = today.toISOString().split('T')[0];
+        }
+        document.getElementById('subscription-validity').value = expiresDate || '';
+        document.getElementById('subscription-is-active').checked = subscription.is_active;
+        
+        // Установить количество занятий и скидку ПЕРЕД загрузкой цен
+        const sessionsCount = subscription.sessions_count;
+        const discountPercentage = parseFloat(subscription.discount_percentage);
+        
+        // Сохранить эти значения в глобальной переменной для использования в handlePriceSelection
+        window._editSubscriptionData = {
+            sessionsCount: sessionsCount,
+            discountPercentage: discountPercentage
+        };
+        
+        // Загрузить цены
+        await populatePriceSelect();
+        
+        // Найти цену из прайса, соответствующую цене абонемента
+        // Цена за занятие после скидки = price_per_session
+        // Обратная расчет: цена за человека без скидки = price_per_session / (1 - discount_percentage / 100)
+        const pricePerPersonWithoutDiscount = subscription.price_per_session / (1 - discountPercentage / 100);
+        
+        // Получить список цен и найти соответствующую
+        const prices = await loadGroupPricesForSubscription();
+        
+        // Попробовать найти подходящую цену из прайса
+        let foundPrice = null;
+        for (const price of prices) {
+            const pricePerPerson = price.price / (price.participants || 1);
+            // Проверяем с небольшой погрешностью (10 руб)
+            if (Math.abs(pricePerPerson - pricePerPersonWithoutDiscount) < 10) {
+                foundPrice = price;
+                break;
+            }
+        }
+        
+        // Установить количество занятий
+        document.getElementById('subscription-sessions').value = sessionsCount;
+        document.getElementById(`discount-${sessionsCount}`).value = discountPercentage.toFixed(0);
+        document.getElementById('subscription-discount').value = discountPercentage.toFixed(2);
+        
+        // Показать блоки настроек
+        document.getElementById('subscription-discount-controls').style.display = 'block';
+        
+        if (foundPrice) {
+            // Найти опцию в селекте и выбрать её
+            const priceSelect = document.getElementById('subscription-price-select');
+            for (let i = 0; i < priceSelect.options.length; i++) {
+                if (priceSelect.options[i].value == foundPrice.id) {
+                    priceSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            // Установить значения в скрытые поля ПЕРЕД вызовом handlePriceSelection
+            const totalPrice = foundPrice.price;
+            const participants = foundPrice.participants || 1;
+            const pricePerPerson = totalPrice / participants;
+            
+            document.getElementById('subscription-price-id').value = foundPrice.id;
+            document.getElementById('subscription-price-per-person').value = pricePerPerson;
+            document.getElementById('subscription-price-per-session').value = totalPrice;
+            document.getElementById('subscription-participants').value = participants;
+            
+            // Включить выбор количества занятий и сохранить выбранное значение
+            document.getElementById('subscription-sessions').disabled = false;
+            
+            // Вызвать расчет цены (а не handlePriceSelection, чтобы не перезаписать выбранные значения)
+            calculateSubscriptionPrice();
+        } else {
+            // Если не нашли подходящую цену, просто включить выбор и установить значения вручную
+            document.getElementById('subscription-sessions').disabled = false;
+            
+            // Сохранить вычисленные значения для последующего использования
+            document.getElementById('subscription-price-per-person').value = pricePerPersonWithoutDiscount;
+            
+            // Рассчитать и показать цену
+            setTimeout(() => {
+                calculateSubscriptionPrice();
+            }, 100);
+        }
+        
+        // Обновить текст кнопки
+        document.getElementById('subscription-submit-btn').textContent = 'Сохранить изменения';
+        
+        // КРИТИЧЕСКИ ВАЖНО: Добавить обработчик submit формы (как в openSubscriptionModal)
+        const subscriptionForm = document.getElementById('subscription-form');
+        if (subscriptionForm) {
+            // Удалить старые обработчики (клонируем форму без обработчиков)
+            const newForm = subscriptionForm.cloneNode(true);
+            subscriptionForm.parentNode.replaceChild(newForm, subscriptionForm);
+            
+            // Добавить обработчик на новую форму
+            const form = document.getElementById('subscription-form');
+            if (form) {
+                form.addEventListener('submit', handleSubscriptionSubmit);
+                console.log('Обработчик submit формы добавлен для редактирования');
+            } else {
+                console.error('Форма subscription-form не найдена после клонирования');
+            }
+        } else {
+            console.error('Форма subscription-form не найдена');
+        }
+        
+        // Добавить обработчик изменения выбранной цены
+        setTimeout(() => {
+            const priceSelect = document.getElementById('subscription-price-select');
+            if (priceSelect) {
+                // Удалить старый обработчик, если есть, через клонирование
+                const newPriceSelect = priceSelect.cloneNode(true);
+                priceSelect.parentNode.replaceChild(newPriceSelect, priceSelect);
+                
+                // Добавить обработчик на новый элемент
+                const newSelect = document.getElementById('subscription-price-select');
+                if (newSelect) {
+                    newSelect.addEventListener('change', handlePriceSelection);
+                    console.log('Обработчик изменения цены добавлен для редактирования');
+                }
+            }
+        }, 150);
+        
+        // Добавить обработчик изменения количества занятий
+        const subscriptionSessionsEl = document.getElementById('subscription-sessions');
+        if (subscriptionSessionsEl) {
+            // Удалить старый обработчик через клонирование
+            const newSessions = subscriptionSessionsEl.cloneNode(true);
+            subscriptionSessionsEl.parentNode.replaceChild(newSessions, subscriptionSessionsEl);
+            
+            // Добавить обработчик на новый элемент
+            const newSessionsEl = document.getElementById('subscription-sessions');
+            if (newSessionsEl) {
+                newSessionsEl.addEventListener('change', calculateSubscriptionPrice);
+                console.log('Обработчик изменения количества занятий добавлен для редактирования');
+            }
+        }
+        
+        // Добавить обработчики изменения процентов скидки
+        const discountInputs = ['discount-3', 'discount-5', 'discount-7', 'discount-10'];
+        discountInputs.forEach(discountId => {
+            const discountInput = document.getElementById(discountId);
+            if (discountInput) {
+                // Удалить старый обработчик через клонирование
+                const newInput = discountInput.cloneNode(true);
+                discountInput.parentNode.replaceChild(newInput, discountInput);
+                
+                // Добавить обработчик на новый элемент
+                const newInputEl = document.getElementById(discountId);
+                if (newInputEl) {
+                    newInputEl.addEventListener('input', () => {
+                        console.log(`Изменен процент скидки для ${discountId}:`, newInputEl.value);
+                        const sessionsEl = document.getElementById('subscription-sessions');
+                        const sessionsCount = sessionsEl?.value;
+                        
+                        // Если количество занятий выбрано, обновить скрытое поле discount и пересчитать цену
+                        if (sessionsCount) {
+                            const discountValue = parseFloat(newInputEl.value) || 0;
+                            
+                            // Если это поле скидки соответствует выбранному количеству занятий, обновить скрытое поле
+                            if (sessionsCount === discountId.replace('discount-', '')) {
+                                document.getElementById('subscription-discount').value = discountValue.toFixed(2);
+                            }
+                            
+                            // Всегда пересчитать цену, если количество занятий выбрано
+                            calculateSubscriptionPrice();
+                        }
+                    });
+                    console.log(`Обработчик процента скидки добавлен для ${discountId}`);
+                }
+            }
+        });
+        
+        // Открыть модальное окно
+        modal.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка при редактировании абонемента:', error);
+        showError('Ошибка при загрузке данных абонемента: ' + error.message);
+    }
+}
+
+// Удаление типа абонемента
+async function deleteSubscriptionType(id) {
+    if (!confirm('Вы уверены, что хотите удалить этот абонемент? Это действие нельзя отменить.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/natural-slope-subscriptions/types/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка при удалении абонемента');
+        }
+        
+        showSuccess('Абонемент успешно удален');
+        await loadSubscriptionsPage();
+        
+    } catch (error) {
+        console.error('Ошибка при удалении абонемента:', error);
+        showError(error.message || 'Не удалось удалить абонемент');
+    }
+}
+
+// Обработчик отправки формы создания абонемента
+async function handleSubscriptionSubmit(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Собрать данные из формы
+    const name = document.getElementById('subscription-name').value.trim();
+    const description = document.getElementById('subscription-description').value.trim();
+    const expiresAt = document.getElementById('subscription-validity').value;
+    const sessionsCount = parseInt(document.getElementById('subscription-sessions').value);
+    const discountPercentage = parseFloat(document.getElementById('subscription-discount').value);
+    const priceId = document.getElementById('subscription-price-id').value;
+    const pricePerPerson = parseFloat(document.getElementById('subscription-price-per-person').value);
+    const isActive = document.getElementById('subscription-is-active').checked;
+    
+    // Валидация
+    if (!name) {
+        showError('Введите название абонемента');
+        return;
+    }
+    
+    if (!expiresAt) {
+        showError('Укажите дату окончания действия абонемента');
+        return;
+    }
+    
+    // Проверка, что дата не в прошлом
+    const selectedDate = new Date(expiresAt);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedDate < today) {
+        showError('Дата окончания действия не может быть в прошлом');
+        return;
+    }
+    
+    if (!sessionsCount || !['3', '5', '7', '10'].includes(sessionsCount.toString())) {
+        showError('Выберите количество занятий');
+        return;
+    }
+    
+    if (!priceId || !pricePerPerson || pricePerPerson <= 0) {
+        showError('Выберите цену из прайса');
+        return;
+    }
+    
+    if (!discountPercentage || discountPercentage < 0 || discountPercentage > 100) {
+        showError('Укажите корректный процент скидки');
+        return;
+    }
+    
+    // Рассчитать общую цену абонемента (цена за одного человека * количество занятий со скидкой)
+    const priceWithoutDiscount = pricePerPerson * sessionsCount;
+    const priceWithDiscount = priceWithoutDiscount * (1 - discountPercentage / 100);
+    
+    // Рассчитать цену за одно занятие после скидки (для сохранения в БД)
+    const pricePerSessionAfterDiscount = pricePerPerson * (1 - discountPercentage / 100);
+    
+    // Проверить, это редактирование или создание
+    const subscriptionId = document.getElementById('subscription-id').value;
+    const isEdit = subscriptionId && subscriptionId !== '' && subscriptionId !== '0';
+    
+    console.log('Режим:', isEdit ? 'Редактирование' : 'Создание', 'ID:', subscriptionId);
+    
+    // Данные для отправки
+    const subscriptionData = {
+        name: name,
+        description: description || null,
+        sessions_count: sessionsCount,
+        discount_percentage: discountPercentage,
+        price: Math.round(priceWithDiscount),
+        price_per_session: Math.round(pricePerSessionAfterDiscount),
+        expires_at: expiresAt,
+        is_active: isActive
+    };
+    
+    console.log('Данные для отправки на сервер:', JSON.stringify(subscriptionData, null, 2));
+    
+    try {
+        // Показать загрузку
+        const submitButton = document.getElementById('subscription-submit-btn') || 
+                            (event.target?.querySelector ? event.target.querySelector('button[type="submit"]') : null) ||
+                            document.querySelector('#subscription-form button[type="submit"]');
+        
+        if (!submitButton) {
+            console.error('Кнопка submit не найдена');
+            showError('Ошибка: кнопка отправки не найдена');
+            return;
+        }
+        
+        const originalButtonText = submitButton.textContent;
+        submitButton.disabled = true;
+        submitButton.textContent = isEdit ? 'Сохранение...' : 'Создание...';
+        
+        // Отправить запрос
+        const url = isEdit 
+            ? `/api/natural-slope-subscriptions/types/${subscriptionId}`
+            : '/api/natural-slope-subscriptions/types';
+        const method = isEdit ? 'PUT' : 'POST';
+        
+        console.log('Отправка запроса:', method, url, subscriptionData);
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(subscriptionData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('Ошибка ответа сервера:', error);
+            throw new Error(error.error || 'Ошибка при сохранении абонемента');
+        }
+        
+        const savedSubscription = await response.json();
+        console.log('Абонемент сохранен:', savedSubscription);
+        
+        // Показать успех с детальной информацией
+        const successMessage = isEdit 
+            ? 'Изменения абонемента успешно сохранены!' 
+            : 'Абонемент успешно создан!';
+        showSuccess(successMessage);
+        console.log('Показываем сообщение об успехе:', successMessage);
+        
+        // Закрыть модальное окно
+        closeSubscriptionModal();
+        
+        // Перезагрузить список абонементов и убедиться, что остаемся на странице абонементов
+        // Сначала переключаемся на страницу абонементов (если не на ней)
+        const subscriptionsPage = document.getElementById('subscriptions-page');
+        if (subscriptionsPage && subscriptionsPage.style.display === 'none') {
+            switchPage('subscriptions');
+        }
+        
+        // Затем перезагружаем данные (НО НЕ перезагружаем DOM, чтобы не потерять обработчики формы)
+        if (typeof loadSubscriptionsPage === 'function') {
+            await loadSubscriptionsPage();
+        }
+        
+        // ВАЖНО: После перезагрузки страницы нужно переустановить обработчик формы, если модальное окно все еще открыто
+        // Но так как мы закрыли модальное окно, это не нужно. Однако если нужно будет работать с формой снова,
+        // обработчик будет установлен при следующем открытии модального окна.
+        
+    } catch (error) {
+        console.error('Ошибка при сохранении абонемента:', error);
+        showError(error.message || 'Не удалось сохранить абонемент');
+        
+        // Восстановить кнопку
+        const submitBtn = document.getElementById('subscription-submit-btn') || 
+                          document.querySelector('#subscription-form button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = isEdit ? 'Сохранить изменения' : 'Создать абонемент';
+        }
     }
 }

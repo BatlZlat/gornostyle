@@ -26,6 +26,12 @@ const trainerAuthRouter = require('./routes/trainerAuth');
 const trainerBookingsRouter = require('./routes/trainerBookings');
 const individualTrainingsRouter = require('./routes/individual-trainings');
 const clientSettingsRouter = require('./routes/client-settings');
+const promotionsRouter = require('./routes/promotions');
+const trainerSalaryRouter = require('./routes/trainer-salary');
+const naturalSlopeSubscriptionsRouter = require('./routes/natural-slope-subscriptions');
+const winterPricesRouter = require('./routes/winter-prices');
+const winterTrainingsRouter = require('./routes/winter-trainings');
+const winterScheduleRouter = require('./routes/winter-schedule');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
@@ -42,6 +48,19 @@ emailQueueProcessor.start();
 
 // Запускаем планировщик уведомлений
 scheduler.init();
+
+// Глобальный обработчик необработанных промисов
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанное отклонение промиса:', reason);
+    console.error('Promise:', promise);
+    // Не завершаем процесс, только логируем
+});
+
+// Глобальный обработчик необработанных исключений
+process.on('uncaughtException', (error) => {
+    console.error('❌ Необработанное исключение:', error);
+    // В продакшене можно добавить логику для graceful shutdown
+});
 
 const app = express();
 const PORT = process.env.PORT;
@@ -378,6 +397,12 @@ app.use('/api/children', verifyToken, childrenRouter);
 app.use('/api/applications', verifyToken, applicationsRouter);
 app.use('/api/certificates', verifyToken, certificatesRouter);
 app.use('/api/individual-trainings', verifyToken, individualTrainingsRouter);
+app.use('/api/promotions', verifyToken, promotionsRouter);
+app.use('/api/trainer-salary', verifyToken, trainerSalaryRouter);
+app.use('/api/natural-slope-subscriptions', verifyToken, naturalSlopeSubscriptionsRouter);
+app.use('/api/winter-prices', verifyToken, winterPricesRouter);
+app.use('/api/winter-trainings', verifyToken, winterTrainingsRouter);
+app.use('/api/winter-schedule', verifyToken, winterScheduleRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
 app.get('/api/public/trainers', async (req, res) => {

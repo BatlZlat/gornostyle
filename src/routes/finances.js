@@ -124,21 +124,28 @@ router.get('/statistics', async (req, res) => {
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
-             JOIN individual_training_sessions its ON 
-                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
-                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
-             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
         for (const payment of individualPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Индивидуальная тренировка на естественном склоне, (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) continue;
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
@@ -151,8 +158,8 @@ router.get('/statistics', async (req, res) => {
                  AND created_at BETWEEN $3 AND $4
                  LIMIT 1`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
@@ -184,28 +191,39 @@ router.get('/statistics', async (req, res) => {
             `SELECT 
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
-             FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2
-             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             FROM training_sessions 
+             WHERE session_date BETWEEN $1 AND $2
+             AND training_type = FALSE
+             AND ((session_date + start_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
             (individualExpensesResult.rows[0].count_30 * cost_30) + 
             (individualExpensesResult.rows[0].count_60 * cost_60);
 
-        // 7. Общие расходы
-        const totalExpenses = groupExpenses + individualExpenses;
+        // 7. Расходы на ЗП тренеров (только approved и paid)
+        const trainerSalaryResult = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total
+             FROM trainer_payments
+             WHERE status IN ('approved', 'paid')
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const trainerSalaryExpenses = parseFloat(trainerSalaryResult.rows[0].total);
 
-        // 8. Прибыль с групповых тренировок
+        // 8. Общие расходы (аренда + ЗП тренеров)
+        const totalExpenses = groupExpenses + individualExpenses + trainerSalaryExpenses;
+
+        // 9. Прибыль с групповых тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const groupProfit = groupIncome - groupExpenses;
 
-        // 9. Прибыль с индивидуальных тренировок
+        // 10. Прибыль с индивидуальных тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const individualProfit = individualIncome - individualExpenses;
 
-        // 10. Общая прибыль
-        const totalProfit = groupProfit + individualProfit;
+        // 11. Общая прибыль (доход минус все расходы включая ЗП тренеров)
+        const totalProfit = totalIncome - totalExpenses;
 
-        // 11. Количество тренировок
+        // 12. Количество тренировок
         const groupSessions = parseInt(groupExpensesResult.rows[0].count);
         const individualSessions30 = parseInt(individualExpensesResult.rows[0].count_30);
         const individualSessions60 = parseInt(individualExpensesResult.rows[0].count_60);
@@ -218,6 +236,7 @@ router.get('/statistics', async (req, res) => {
             total_income: totalIncome,
             group_expenses: groupExpenses,
             individual_expenses: individualExpenses,
+            trainer_salary_expenses: trainerSalaryExpenses,
             total_expenses: totalExpenses,
             group_profit: groupProfit,
             individual_profit: individualProfit,
@@ -230,7 +249,8 @@ router.get('/statistics', async (req, res) => {
             debugGroupIncome
         });
     } catch (e) {
-        console.error(e);
+        console.error('Ошибка в API финансов:', e);
+        console.error('Stack trace:', e.stack);
         res.status(500).json({ error: 'Ошибка при получении статистики' });
     }
 });
@@ -329,21 +349,28 @@ router.get('/export', async (req, res) => {
 
         // 3. Доход от индивидуальных тренировок (без возвратов)
         const individualPayments = await pool.query(
-            `SELECT t.id, t.amount, t.description, t.created_at, its.preferred_date, its.preferred_time, its.duration
+            `SELECT t.id, t.amount, t.description, t.created_at, ts.session_date, ts.start_time, ts.duration
              FROM transactions t
-             JOIN individual_training_sessions its ON 
-                its.preferred_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
-                AND its.preferred_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
+             JOIN training_sessions ts ON 
+                ts.session_date = TO_DATE(SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1), 'DD.MM.YYYY')
+                AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Индивидуальная%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
-             AND ((its.preferred_date + its.preferred_time)::timestamp + (its.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         let individualIncome = 0;
         for (const payment of individualPayments.rows) {
-            const match = payment.description.match(/Дата: (\d{1,2}\.\d{1,2}\.\d{4}), Время: ([0-9:]+)/);
-            if (!match) continue;
+            // Извлекаем ФИО, дату и время из description оплаты
+            const fioMatch = payment.description.match(/Индивидуальная тренировка на естественном склоне, (.*?), Дата:/);
+            const match = payment.description.match(/Дата:\s*(\d{1,2}\.\d{1,2}\.\d{4}),\s*Время:\s*([0-9:]+)/);
+            if (!fioMatch || !match) continue;
+            const fio = fioMatch[1].trim();
             const dateStr = match[1];
             const timeStr = match[2];
             const paddedDate = padDate(dateStr);
@@ -356,8 +383,8 @@ router.get('/export', async (req, res) => {
                  AND created_at BETWEEN $3 AND $4
                  LIMIT 1`,
                 [
-                    `%Дата: ${dateStr}, Время: ${timeStr}%`,
-                    `%Дата: ${paddedDate}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${dateStr}, Время: ${timeStr}%`,
+                    `%${fio}%, Дата: ${paddedDate}, Время: ${timeStr}%`,
                     start_date, end_date
                 ]
             );
@@ -389,28 +416,39 @@ router.get('/export', async (req, res) => {
             `SELECT 
                 COUNT(CASE WHEN duration = 30 THEN 1 END) as count_30,
                 COUNT(CASE WHEN duration = 60 THEN 1 END) as count_60
-             FROM individual_training_sessions 
-             WHERE preferred_date BETWEEN $1 AND $2
-             AND ((preferred_date + preferred_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
+             FROM training_sessions 
+             WHERE session_date BETWEEN $1 AND $2
+             AND training_type = FALSE
+             AND ((session_date + start_time)::timestamp + (duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
         );
         const individualExpenses = 
             (individualExpensesResult.rows[0].count_30 * cost_30) + 
             (individualExpensesResult.rows[0].count_60 * cost_60);
 
-        // 7. Общие расходы
-        const totalExpenses = groupExpenses + individualExpenses;
+        // 7. Расходы на ЗП тренеров (только approved и paid)
+        const trainerSalaryResult = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total
+             FROM trainer_payments
+             WHERE status IN ('approved', 'paid')
+             AND created_at BETWEEN $1 AND $2`,
+            [start_date, end_date]
+        );
+        const trainerSalaryExpenses = parseFloat(trainerSalaryResult.rows[0].total);
 
-        // 8. Прибыль с групповых тренировок
+        // 8. Общие расходы (аренда + ЗП тренеров)
+        const totalExpenses = groupExpenses + individualExpenses + trainerSalaryExpenses;
+
+        // 9. Прибыль с групповых тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const groupProfit = groupIncome - groupExpenses;
 
-        // 9. Прибыль с индивидуальных тренировок
+        // 10. Прибыль с индивидуальных тренировок (без учета ЗП тренеров - они учтены в общих расходах)
         const individualProfit = individualIncome - individualExpenses;
 
-        // 10. Общая прибыль
-        const totalProfit = groupProfit + individualProfit;
+        // 11. Общая прибыль (доход минус все расходы включая ЗП тренеров)
+        const totalProfit = totalIncome - totalExpenses;
 
-        // 11. Количество тренировок
+        // 12. Количество тренировок
         const groupSessions = parseInt(groupExpensesResult.rows[0].count);
         const individualSessions30 = parseInt(individualExpensesResult.rows[0].count_30);
         const individualSessions60 = parseInt(individualExpensesResult.rows[0].count_60);
@@ -423,8 +461,9 @@ router.get('/export', async (req, res) => {
         statSheet.addRow(['Доходы от групповых', groupIncome]);
         statSheet.addRow(['Доходы от индивидуальных', individualIncome]);
         statSheet.addRow(['Общие доходы', totalIncome]);
-        statSheet.addRow(['Расходы на групповые', groupExpenses]);
-        statSheet.addRow(['Расходы на индивидуальные', individualExpenses]);
+        statSheet.addRow(['Расходы на групповые (аренда)', groupExpenses]);
+        statSheet.addRow(['Расходы на индивидуальные (аренда)', individualExpenses]);
+        statSheet.addRow(['Расходы на ЗП инструкторов', trainerSalaryExpenses]);
         statSheet.addRow(['Общие расходы', totalExpenses]);
         statSheet.addRow(['Прибыль от групповых', groupProfit]);
         statSheet.addRow(['Прибыль от индивидуальных', individualProfit]);
@@ -459,17 +498,19 @@ router.get('/export', async (req, res) => {
         const indSheet = workbook.addWorksheet('Индивидуальные тренировки');
         indSheet.addRow(['ФИО участника', 'Дата', 'Время начала', 'Длительность', 'Стоимость', 'Телефон']);
         const indParticipants = await pool.query(`
-            SELECT c.full_name, its.preferred_date, its.preferred_time, its.duration, its.price, c.phone
-            FROM individual_training_sessions its
-            JOIN clients c ON its.client_id = c.id
-            WHERE its.preferred_date BETWEEN $1 AND $2
-            ORDER BY its.preferred_date, its.preferred_time
+            SELECT c.full_name, ts.session_date, ts.start_time, ts.duration, ts.price, c.phone
+            FROM training_sessions ts
+            JOIN session_participants sp ON ts.id = sp.session_id
+            JOIN clients c ON sp.client_id = c.id
+            WHERE ts.session_date BETWEEN $1 AND $2
+            AND ts.training_type = FALSE
+            ORDER BY ts.session_date, ts.start_time
         `, [start_date, end_date]);
         for (const row of indParticipants.rows) {
             indSheet.addRow([
                 row.full_name,
-                row.preferred_date ? row.preferred_date.toLocaleDateString('ru-RU') : '',
-                row.preferred_time ? row.preferred_time.slice(0,5) : '',
+                row.session_date ? row.session_date.toLocaleDateString('ru-RU') : '',
+                row.start_time ? row.start_time.slice(0,5) : '',
                 row.duration,
                 row.price,
                 row.phone
@@ -706,6 +747,15 @@ router.post('/refill-wallet', async (req, res) => {
         
         // Фиксируем транзакцию
         await client.query('COMMIT');
+        
+        // Обновляем реферальный статус при пополнении
+        try {
+            const { updateReferralStatusOnDeposit } = require('../services/referral-service');
+            await updateReferralStatusOnDeposit(client_id, amount);
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении реферального статуса:', error);
+            // Не прерываем основной процесс при ошибке в реферальной системе
+        }
         
         // Отправляем уведомление в админ-бот
         try {

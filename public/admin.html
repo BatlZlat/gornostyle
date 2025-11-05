@@ -15,7 +15,8 @@
         <div class="admin-content">
             <nav class="admin-menu">
                 <button class="menu-item active" data-page="schedule">Расписание</button>
-                <button class="menu-item" data-page="training">Тренировки</button>
+                <button class="menu-item" data-page="training">🎿 Тренировки ТРЕНАЖЕР</button>
+                <button class="menu-item" data-page="winter-trainings">🏔️ Тренировки ЗИМА</button>
                 <button class="menu-item" data-page="applications">Заявки</button>
                 <button class="menu-item" data-page="simulators">Тренажеры</button>
                 <button class="menu-item" data-page="trainers">Тренера</button>
@@ -23,6 +24,9 @@
                 <button class="menu-item" data-page="prices">Прайс</button>
                 <button class="menu-item" data-page="certificates">Сертификаты</button>
                 <button class="menu-item" data-page="finances">Финансы</button>
+                <button class="menu-item" data-page="promotions">🎁 Акции</button>
+                <button class="menu-item" data-page="subscriptions">🎫 Абонементы</button>
+                <button class="menu-item" data-page="scheduled-messages">⏰ Отложенные сообщения</button>
                 <button class="menu-item btn-primary" id="notify-clients-btn" style="margin-top:10px;">Отправить сообщение клиентам</button>
                 <button class="menu-item btn-secondary" onclick="openRecurringSchedule()" style="margin-top:5px;">📅 Постоянное расписание</button>
             </nav>
@@ -122,6 +126,13 @@
                         <div class="search-controls">
                             <input type="text" id="clientSearch" placeholder="Поиск по ФИО или телефону" class="search-input">
                         </div>
+                        <div class="filter-controls">
+                            <select id="clientAthleteFilter" class="filter-select">
+                                <option value="">Все клиенты</option>
+                                <option value="true">Только спортсмены</option>
+                                <option value="false">Только не спортсмены</option>
+                            </select>
+                        </div>
                         <div class="sort-controls">
                             <select id="clientSort" class="sort-select">
                                 <option value="created_desc">По дате создания (новые первые)</option>
@@ -141,7 +152,10 @@
                 <!-- Страница прайса -->
                 <div class="page-content" id="prices-page" style="display: none;">
                     <div class="page-header">
-                        <h2>Прайс</h2>
+                        <h2>🎿 Прайс (Тренажер)</h2>
+                        <div class="page-actions">
+                            <button class="btn-secondary" onclick="openWinterPricesModal()">🏔️ Прайс зимнее направление</button>
+                        </div>
                     </div>
                     <div class="prices-container">
                         <div class="price-section">
@@ -234,6 +248,7 @@
                         <h2>Финансы</h2>
                         <div class="page-actions">
                             <a href="#" class="btn-primary" id="create-payment-link">Ссылка для оплаты</a>
+                            <button class="btn-secondary" id="trainer-salary-btn">💰 ЗП Инструктора</button>
                         </div>
                     </div>
                     
@@ -268,6 +283,197 @@
                     
                     <div class="finances-list">
                         <!-- Список платежей будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница Акций -->
+                <div class="page-content" id="promotions-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🎁 Управление Акциями и Бонусами</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="create-bonus-btn">➕ Создать акцию</button>
+                        </div>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="promotions-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Активных акций</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="active-bonuses-count">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Выплачено бонусов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-bonuses-paid">0₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Реферальных переходов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="referral-count">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Список акций -->
+                    <div class="promotions-list">
+                        <h3>Все акции</h3>
+                        <div id="bonuses-list">
+                            <!-- Список акций будет загружен динамически -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница Абонементов -->
+                <div class="page-content" id="subscriptions-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🎫 Управление Абонементами</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="create-subscription-btn">➕ Создать абонемент</button>
+                        </div>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="subscriptions-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Типов абонементов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-subscription-types">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Активных абонементов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="active-subscriptions-count">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Клиентов с абонементами</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="clients-with-subscriptions">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Список типов абонементов -->
+                    <div class="subscriptions-list">
+                        <h3>Типы абонементов</h3>
+                        <div id="subscription-types-list">
+                            <!-- Список типов абонементов будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- История активных абонементов -->
+                    <div class="active-subscriptions-section" style="margin-top: 40px;">
+                        <h3>Активные абонементы клиентов</h3>
+                        <div id="active-subscriptions-list">
+                            <!-- Список активных абонементов будет загружен динамически -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница отложенных сообщений -->
+                <div class="page-content" id="scheduled-messages-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>⏰ Отложенные сообщения</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="refresh-scheduled-btn">🔄 Обновить</button>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры -->
+                    <div class="filter-section" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <select id="status-filter-scheduled" class="form-control" style="width: auto;">
+                            <option value="pending" selected>Ожидают отправки</option>
+                            <option value="sent">Отправленные</option>
+                            <option value="cancelled">Отмененные</option>
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+
+                    <!-- Список отложенных сообщений -->
+                    <div id="scheduled-messages-list" class="scheduled-messages-list">
+                        <!-- Список будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница ЗП Инструктора -->
+                <div class="page-content" id="trainer-salary-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>💰 Управление ЗП Инструкторов</h2>
+                        <button class="btn-secondary" id="back-to-finances-btn">🔙 Назад к финансам</button>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="salary-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего инструкторов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-trainers-count">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Выплачено в этом месяце</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-salary-paid">0₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">К выплате (Pending)</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="pending-salary">0₽</p>
+                        </div>
+                    </div>
+
+                    <!-- Список инструкторов -->
+                    <div class="trainers-salary-list">
+                        <h3>Настройки ЗП инструкторов</h3>
+                        <div id="trainers-salary-list">
+                            <!-- Список инструкторов будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- История выплат -->
+                    <div class="salary-payments-history" style="margin-top: 40px;">
+                        <h3>История выплат</h3>
+                        <div class="filter-section" style="margin-bottom: 20px;">
+                            <select id="trainer-filter" class="form-control" style="max-width: 300px; display: inline-block;">
+                                <option value="">Все инструкторы</option>
+                            </select>
+                            <select id="status-filter" class="form-control" style="max-width: 200px; display: inline-block; margin-left: 10px;">
+                                <option value="">Все статусы</option>
+                                <option value="pending">В ожидании</option>
+                                <option value="approved">Одобрено</option>
+                                <option value="paid">Выплачено</option>
+                            </select>
+                        </div>
+                        <div id="salary-payments-list">
+                            <!-- История выплат будет загружена динамически -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница зимних тренировок -->
+                <div class="page-content" id="winter-trainings-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🏔️ Тренировки на естественном склоне (ЗИМА)</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" onclick="openCreateWinterTraining()">➕ Создать тренировку</button>
+                            <a href="archive-winter-trainings.html" class="btn-secondary">📋 Архив тренировок</a>
+                            <a href="winter-schedule.html" class="btn-secondary">🗓️ Управление расписанием</a>
+                            <button class="btn-secondary" onclick="openWinterPricesModal()">💰 Управление ценами</button>
+                        </div>
+                    </div>
+
+                    <div class="winter-trainings-controls" style="margin-bottom: 20px;">
+                        <div class="date-navigation">
+                            <button class="btn-icon" id="winter-prev-date">←</button>
+                            <input type="date" id="winter-trainings-date" class="date-picker">
+                            <button class="btn-icon" id="winter-next-date">→</button>
+                        </div>
+                        <div class="filter-controls" style="margin-top: 10px;">
+                            <select id="winter-type-filter" class="filter-select">
+                                <option value="">Все типы</option>
+                                <option value="individual">Индивидуальное</option>
+                                <option value="sport_group">Спортивная группа (до 4)</option>
+                                <option value="group">Обычная группа</option>
+                            </select>
+                            <select id="winter-status-filter" class="filter-select">
+                                <option value="">Все статусы</option>
+                                <option value="scheduled">Запланирована</option>
+                                <option value="completed">Завершена</option>
+                                <option value="cancelled">Отменена</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="winter-trainings-list">
+                        <!-- Список зимних тренировок будет загружен динамически -->
                     </div>
                 </div>
             </main>
@@ -347,7 +553,312 @@
         </div>
     </div>
 
+    <!-- Модальное окно для создания/редактирования акции -->
+    <div id="bonus-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <h3 id="bonus-modal-title">Создать акцию</h3>
+            <form id="bonus-form">
+                <input type="hidden" id="bonus-id">
+                
+                <div class="form-group">
+                    <label for="bonus-name">Название акции *</label>
+                    <input type="text" id="bonus-name" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-description">Описание</label>
+                    <textarea id="bonus-description" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-type">Тип бонуса *</label>
+                    <select id="bonus-type" class="form-control" required>
+                        <option value="">Выберите тип</option>
+                        <option value="registration">Регистрация</option>
+                        <option value="booking">Запись на тренировку</option>
+                        <option value="referral">Реферальная программа</option>
+                        <option value="group_booking">Групповая тренировка</option>
+                        <option value="individual_booking">Индивидуальная тренировка</option>
+                        <option value="attendance_milestone">Посещение N тренировок</option>
+                        <option value="subscription_purchase">Покупка абонемента</option>
+                        <option value="early_booking">Ранняя запись</option>
+                        <option value="review">Отзыв</option>
+                        <option value="birthday">День рождения</option>
+                        <option value="morning_training">Утренняя тренировка</option>
+                        <option value="evening_training">Вечерняя тренировка</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-slope-type">Тип склона *</label>
+                    <select id="bonus-slope-type" class="form-control" required>
+                        <option value="both">Оба</option>
+                        <option value="simulator">Тренажер</option>
+                        <option value="natural_slope">Естественный склон</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-amount">Сумма бонуса (₽) *</label>
+                    <input type="number" id="bonus-amount" class="form-control" min="0" step="0.01" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-min-amount">Минимальная сумма для получения (₽)</label>
+                    <input type="number" id="bonus-min-amount" class="form-control" min="0" step="0.01" value="0">
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-max-per-user">Максимум на пользователя</label>
+                    <input type="number" id="bonus-max-per-user" class="form-control" min="0" step="1" placeholder="Не ограничено">
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-valid-from">Действует с</label>
+                    <input type="datetime-local" id="bonus-valid-from" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label for="bonus-valid-until">Действует до</label>
+                    <input type="datetime-local" id="bonus-valid-until" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="bonus-is-active" checked>
+                        Акция активна
+                    </label>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeBonusModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно для создания/редактирования абонемента -->
+    <div id="subscription-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3 id="subscription-modal-title">Создать абонемент</h3>
+                <button class="close-btn" onclick="closeSubscriptionModal()">×</button>
+            </div>
+            <form id="subscription-form" onsubmit="return false;">
+                <input type="hidden" id="subscription-id">
+                <input type="hidden" id="subscription-discount">
+                <input type="hidden" id="subscription-price-id">
+                <input type="hidden" id="subscription-price-per-person">
+                <input type="hidden" id="subscription-price-per-session">
+                <input type="hidden" id="subscription-participants">
+                
+                <div class="form-group">
+                    <label for="subscription-name">Название абонемента *</label>
+                    <input type="text" id="subscription-name" class="form-control" required placeholder="Например: Абонемент на 10 занятий">
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-description">Описание абонемента</label>
+                    <textarea id="subscription-description" class="form-control" rows="3" placeholder="Краткое описание абонемента (опционально)"></textarea>
+                    <small style="color: #666;">Дополнительная информация об абонементе</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-validity">Действует до (дата включительно) *</label>
+                    <input type="date" id="subscription-validity" class="form-control" required>
+                    <small style="color: #666;">Дата окончания действия абонемента (включительно)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-price-select">Цена за групповое занятие *</label>
+                    <select id="subscription-price-select" class="form-control" required>
+                        <option value="">Выберите цену из прайса</option>
+                        <!-- Опции будут загружены динамически -->
+                    </select>
+                    <small style="color: #666;">Выберите цену для расчета абонемента</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription-sessions">Количество занятий *</label>
+                    <select id="subscription-sessions" class="form-control" required disabled>
+                        <option value="">Сначала выберите цену из прайса</option>
+                        <option value="3">3 занятия</option>
+                        <option value="5">5 занятий</option>
+                        <option value="7">7 занятий</option>
+                        <option value="10">10 занятий</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="subscription-discount-controls" style="display:none;">
+                    <label>Настройка процентов скидки *</label>
+                    <div style="background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>3 занятия:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-3" class="form-control" min="0" max="100" step="0.01" value="5" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>5 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-5" class="form-control" min="0" max="100" step="0.01" value="10" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px;">
+                            <span>7 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-7" class="form-control" min="0" max="100" step="0.01" value="15" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center;">
+                            <span>10 занятий:</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="discount-10" class="form-control" min="0" max="100" step="0.01" value="20" style="width: 70px; padding: 4px 8px;">
+                                <span style="color: #666;">%</span>
+                            </div>
+                        </div>
+                        <small style="color: #666; margin-top: 8px; display: block;">Вы можете изменить процент скидки для каждого номинала</small>
+                    </div>
+                </div>
+
+                <div class="form-group" id="subscription-discount-info" style="display:none;">
+                    <label>Текущий процент скидки</label>
+                    <div style="background: #f3f4f6; padding: 12px; border-radius: 8px;">
+                        <p style="margin: 0; font-size: 16px; font-weight: bold; color: #10b981;">
+                            <span id="subscription-discount-display">0</span>%
+                        </p>
+                        <small style="color: #666;">Применяется для выбранного количества занятий</small>
+                    </div>
+                </div>
+
+                <div class="form-group" id="subscription-price-info" style="display:none;">
+                    <label>Цена абонемента</label>
+                    <div style="background: #f3f4f6; padding: 12px; border-radius: 8px;">
+                        <div style="margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <span style="color: #666; font-size: 14px;">Цена за одного человека без скидки:</span>
+                                <span style="text-decoration: line-through; color: #9ca3af; font-size: 16px;">
+                                    <span id="subscription-price-per-person-without">0</span> ₽
+                                </span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <span style="text-decoration: line-through; color: #9ca3af; font-size: 18px;">
+                                <span id="subscription-price-without">0</span> ₽
+                            </span>
+                            <span style="font-size: 24px; font-weight: bold; color: #10b981;">
+                                <span id="subscription-price-with">0</span> ₽
+                            </span>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <small style="color: #666;">Экономия: <span id="subscription-savings">0</span> ₽</small>
+                        </div>
+                        <div style="border-top: 1px solid #d1d5db; padding-top: 8px; margin-top: 8px;">
+                            <strong style="color: #059669; font-size: 16px;">
+                                💰 Цена за одно занятие: <span id="subscription-price-per-session-final">0</span> ₽
+                            </strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="subscription-is-active" checked>
+                        Абонемент активен (доступен для покупки)
+                    </label>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeSubscriptionModal()">Отмена</button>
+                    <button type="submit" class="btn-primary" id="subscription-submit-btn">Создать абонемент</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно управления зимними ценами -->
+    <div id="winter-prices-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:900px;">
+            <div class="modal-header">
+                <h3>💰 Управление ценами (Зимнее направление)</h3>
+                <button class="close-btn" onclick="closeWinterPricesModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <button class="btn-primary" onclick="openCreateWinterPriceModal()" style="margin-bottom:20px;">➕ Добавить цену</button>
+                <div id="winter-prices-list">
+                    <!-- Список цен будет загружен динамически -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания/редактирования зимней цены -->
+    <div id="winter-price-edit-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3 id="winter-price-modal-title">Добавить цену</h3>
+                <button class="close-btn" onclick="closeWinterPriceEditModal()">×</button>
+            </div>
+            <form id="winter-price-form" onsubmit="saveWinterPrice(event)">
+                <input type="hidden" id="winter-price-id">
+                
+                <div class="form-group">
+                    <label for="winter-price-type">Тип тренировки *</label>
+                    <select id="winter-price-type" class="form-control" required onchange="updateWinterPriceFormFields()">
+                        <option value="">Выберите тип</option>
+                        <option value="individual">Индивидуальное</option>
+                        <option value="sport_group">Спортивная группа (до 4 чел)</option>
+                        <option value="group">Обычная группа</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="participants-group" style="display:none;">
+                    <label for="winter-price-participants">Количество участников *</label>
+                    <input type="number" id="winter-price-participants" class="form-control" min="1" max="20" step="1">
+                    <small style="color:#666;">Для спортивной группы - количество от 1 до 4</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-duration">Длительность (минут) *</label>
+                    <input type="number" id="winter-price-duration" class="form-control" value="60" required min="15" step="15">
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-price">Цена (₽) *</label>
+                    <input type="number" id="winter-price-price" class="form-control" required min="0" step="0.01">
+                    <small style="color:#666;" id="price-hint">Для индивидуальных и спортивных групп - цена за человека. Для обычных групп - общая цена.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="winter-price-description">Описание</label>
+                    <textarea id="winter-price-description" class="form-control" rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="winter-price-active" checked>
+                        Цена активна
+                    </label>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeWinterPriceEditModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="js/admin.js?v=20250930"></script>
+    <script src="js/admin-promotions.js?v=1"></script>
+    <script src="js/admin-trainer-salary.js?v=1"></script>
+    <script src="js/admin-winter-prices.js?v=1"></script>
+    <script src="js/admin-winter-trainings.js?v=1"></script>
+    <script src="js/admin-scheduled-messages.js?v=1"></script>
 </body>
 </html> 

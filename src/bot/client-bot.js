@@ -1,10 +1,12 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient } = require('./admin-notify');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient, notifyAdminNaturalSlopeTrainingCancellation, notifyAdminNaturalSlopeTrainingBooking } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
 const jwt = require('jsonwebtoken');
 const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
+const axios = require('axios');
+const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscriptionUsage } = require('../services/subscription-helper');
 
 // Настройка подключения к БД
 const pool = new Pool({
@@ -19,6 +21,36 @@ const pool = new Pool({
 // Создаем экземпляр бота
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const userStates = new Map();
+
+// Глобальный обработчик ошибок бота
+bot.on('polling_error', (error) => {
+    console.error('❌ Ошибка polling:', error.code, error.message);
+});
+
+bot.on('error', (error) => {
+    console.error('❌ Ошибка бота:', error.code, error.message);
+});
+
+// Безопасная отправка сообщений с обработкой ошибок
+async function safeSendMessage(chatId, text, options = {}) {
+    try {
+        return await bot.sendMessage(chatId, text, options);
+    } catch (error) {
+        if (error.response && error.response.body) {
+            const errorBody = error.response.body;
+            console.error(`❌ Ошибка отправки сообщения пользователю ${chatId}:`, errorBody.description);
+            
+            // Если пользователь заблокировал бота или деактивирован
+            if (errorBody.error_code === 403) {
+                console.warn(`⚠️ Пользователь ${chatId} заблокировал бота или деактивирован`);
+                // Можно добавить логику для пометки пользователя как неактивного в БД
+            }
+        } else {
+            console.error(`❌ Ошибка отправки сообщения пользователю ${chatId}:`, error.message);
+        }
+        return null;
+    }
+}
 
 // Функция для получения JWT токена
 function getJWTToken() {
@@ -39,6 +71,7 @@ async function showMainMenu(chatId, telegramId = null) {
                 ['📝 Записаться на тренировку'],
                 ['📋 Мои записи', '👤 Личный кабинет'],
                 ['🎁 Сертификаты', '💰 Кошелек'],
+                ['🎫 Абонементы'],
                 ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
             ],
             resize_keyboard: true,
@@ -122,7 +155,7 @@ async function validateDateWithHumor(dateStr, trainingType = 'individual') {
     }
 
     // Проверяем максимальную дату расписания только для индивидуальных тренировок
-    if (trainingType === 'individual') {
+    if (trainingType === 'individual' || trainingType === 'natural_slope_individual') {
         const maxScheduleDate = await getMaxScheduleDate();
         
         // Проверяем, что дата не превышает максимальную дату расписания
@@ -138,6 +171,21 @@ async function validateDateWithHumor(dateStr, trainingType = 'individual') {
                 date: null
             };
         }
+    }
+
+    // Дополнительная проверка для зимних тренировок (только выходные)
+    if (trainingType === 'natural_slope_individual') {
+        // Убираем проверку выходных дней - теперь проверяем наличие расписания в БД
+        // const dayOfWeek = date.getDay(); // 0 = воскресенье, 6 = суббота
+        // if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        //     return {
+        //         valid: false,
+        //         message: '🏔️ *Зимние тренировки доступны только по выходным!*\n\n' +
+        //                  'Выберите субботу или воскресенье для записи на естественный склон. 🎿\n\n' +
+        //                  'В будние дни работают только тренажеры! 🏠',
+        //         date: null
+        //     };
+        // }
     }
 
     return {
@@ -189,16 +237,33 @@ async function registerClient(data) {
         throw new Error('Отсутствуют обязательные поля для регистрации');
     }
 
-    const client = await pool.connect();
+    const dbClient = await pool.connect();
     try {
         console.log('Начало транзакции');
-        await client.query('BEGIN');
+        await dbClient.query('BEGIN');
         
-        // Вставляем клиента с skill_level = 1 по умолчанию
-        const res = await client.query(
-            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level) 
-             VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id`,
-            [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname]
+        // Генерируем уникальный реферальный код для нового клиента
+        const newReferralCode = await generateUniqueReferralCode();
+        console.log('Сгенерирован реферальный код:', newReferralCode);
+        
+        // Если есть реферальный код пригласившего, проверяем его
+        let referrerId = null;
+        if (data.referral_code) {
+            const referrerResult = await dbClient.query(
+                'SELECT id FROM clients WHERE referral_code = $1',
+                [data.referral_code]
+            );
+            if (referrerResult.rows.length > 0) {
+                referrerId = referrerResult.rows[0].id;
+                console.log('Найден пригласивший пользователь, ID:', referrerId);
+            }
+        }
+        
+        // Вставляем клиента с skill_level = 1 по умолчанию и реферальными данными
+        const res = await dbClient.query(
+            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
+             VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8) RETURNING id`,
+            [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
         );
         
         console.log('Клиент создан, ID:', res.rows[0].id);
@@ -207,16 +272,159 @@ async function registerClient(data) {
         // Создаем кошелек
         const walletNumber = await generateUniqueWalletNumber();
         console.log('Создание кошелька:', walletNumber);
-        await client.query(
+        const walletResult = await dbClient.query(
             `INSERT INTO wallets (client_id, wallet_number, balance) 
-             VALUES ($1, $2, 0)`,
+             VALUES ($1, $2, 0) RETURNING id`,
             [clientId, walletNumber]
         );
+        const walletId = walletResult.rows[0].id;
+        
+        // Если есть пригласивший, создаем запись в referral_transactions и начисляем бонус приглашенному
+        if (referrerId) {
+            // Получаем сумму бонуса из настроек
+            const bonusSettingsResult = await dbClient.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const refereeBonus = bonusSettingsResult.rows.length > 0 
+                ? bonusSettingsResult.rows[0].bonus_amount 
+                : 500.00;
+            
+            // Создаем запись в referral_transactions
+            // Проверяем наличие колонок в таблице для совместимости
+            const columnsCheck = await dbClient.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'referral_transactions' 
+                AND column_name IN ('referee_bonus_paid', 'referral_code')
+            `);
+            
+            const hasRefereeBonusPaid = columnsCheck.rows.some(r => r.column_name === 'referee_bonus_paid');
+            const hasReferralCode = columnsCheck.rows.some(r => r.column_name === 'referral_code');
+            
+            // Получаем реферальный код пригласившего
+            const referrerCodeResult = await dbClient.query(
+                'SELECT referral_code FROM clients WHERE id = $1',
+                [referrerId]
+            );
+            const referrerCode = referrerCodeResult.rows[0]?.referral_code || 'UNKNOWN';
+            
+            let referralInsertQuery;
+            let referralParams;
+            
+            if (hasRefereeBonusPaid && hasReferralCode) {
+                // Новая структура с referee_bonus_paid и referral_code
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, referral_code, status, referee_bonus, referee_bonus_paid, registration_date) 
+                                     VALUES ($1, $2, $3, 'registered', $4, TRUE, CURRENT_TIMESTAMP) RETURNING id`;
+                referralParams = [referrerId, clientId, referrerCode, refereeBonus];
+            } else if (hasReferralCode) {
+                // Структура с referral_code, но без referee_bonus_paid
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, referral_code, status, referee_bonus, registration_date) 
+                                     VALUES ($1, $2, $3, 'registered', $4, CURRENT_TIMESTAMP) RETURNING id`;
+                referralParams = [referrerId, clientId, referrerCode, refereeBonus];
+            } else {
+                // Старая структура без referral_code и referee_bonus_paid
+                referralInsertQuery = `INSERT INTO referral_transactions (referrer_id, referee_id, status, referee_bonus) 
+                                     VALUES ($1, $2, 'registered', $3) RETURNING id`;
+                referralParams = [referrerId, clientId, refereeBonus];
+            }
+            
+            const referralResult = await dbClient.query(referralInsertQuery, referralParams);
+            console.log('Создана реферальная транзакция: referrer_id =', referrerId, ', referee_id =', clientId);
+            
+            // Начисляем бонус приглашенному сразу после регистрации
+            await dbClient.query(
+                `UPDATE wallets 
+                 SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                 WHERE id = $2`,
+                [refereeBonus, walletId]
+            );
+            
+            await dbClient.query(
+                `INSERT INTO transactions (wallet_id, amount, type, description)
+                 VALUES ($1, $2, 'bonus', $3)`,
+                [
+                    walletId,
+                    refereeBonus,
+                    `Реферальный бонус за регистрацию по ссылке`
+                ]
+            );
+            
+            // Создаем запись в bonus_transactions
+            const bonusSettingIdResult = await dbClient.query(
+                `SELECT id FROM bonus_settings WHERE bonus_type = 'referral' AND is_active = TRUE LIMIT 1`
+            );
+            
+            if (bonusSettingIdResult.rows.length > 0) {
+                const bonusSettingId = bonusSettingIdResult.rows[0].id;
+                await dbClient.query(
+                    `INSERT INTO bonus_transactions (client_id, bonus_setting_id, amount, description, status, approved_at)
+                     VALUES ($1, $2, $3, $4, 'approved', CURRENT_TIMESTAMP)`,
+                    [
+                        clientId,
+                        bonusSettingId,
+                        refereeBonus,
+                        `Реферальный бонус за регистрацию по реферальной ссылке`
+                    ]
+                );
+            }
+            
+            console.log(`✅ Начислено ${refereeBonus}₽ приглашенному (ID: ${clientId}) сразу после регистрации`);
+            
+            // Отправляем уведомление приглашенному о получении бонуса
+            try {
+                const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                if (TELEGRAM_BOT_TOKEN && data.telegram_id) {
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: data.telegram_id,
+                            text: `🎉 *Поздравляем!*\n\nВам начислено *${Math.round(refereeBonus)}₽* на баланс за регистрацию по реферальной ссылке!\n\n💡 Эта сумма поможет оплатить первую тренировку со скидкой.\n\nСпасибо, что присоединились к нам! 🎁`,
+                            parse_mode: 'Markdown'
+                        })
+                    });
+                }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления приглашенному о бонусе:', notificationError);
+            }
+            
+            // Отправляем уведомление пригласившему о регистрации реферала
+            try {
+                const referrerResult = await dbClient.query(
+                    'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+                    [referrerId]
+                );
+                
+                if (referrerResult.rows.length > 0 && referrerResult.rows[0].telegram_id) {
+                    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+                    const refereeName = data.full_name;
+                    const bonusAmount = Math.round(refereeBonus);
+                    
+                    if (TELEGRAM_BOT_TOKEN) {
+                        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: referrerResult.rows[0].telegram_id,
+                                text: `🎉 *Поздравляем!*\n\nВаш реферал *${refereeName}* зарегистрировался в боте.\n\nПосле первой тренировки ${refereeName} вы получите ${bonusAmount}₽.\n\nСпасибо, что помогаете нам развиваться! Приглашайте больше друзей и получайте больше бонусов. 🎁`,
+                                parse_mode: 'Markdown'
+                            })
+                        });
+                        console.log(`✅ Отправлено уведомление пригласившему (ID: ${referrerId}) о регистрации реферала`);
+                    }
+                }
+            } catch (notificationError) {
+                console.error('Ошибка при отправке уведомления пригласившему о регистрации реферала:', notificationError);
+            }
+        }
         
         // Если есть данные о ребенке, создаем запись
         if (data.child && data.child.full_name && data.child.birth_date) {
             console.log('Создание записи о ребенке');
-            await client.query(
+            await dbClient.query(
                 `INSERT INTO children (parent_id, full_name, birth_date, sport_type, skill_level) 
                  VALUES ($1, $2, $3, 'ski', 1)`,
                 [clientId, data.child.full_name, data.child.birth_date]
@@ -224,15 +432,15 @@ async function registerClient(data) {
             console.log('Запись о ребенке создана');
         }
         
-        await client.query('COMMIT');
+        await dbClient.query('COMMIT');
         console.log('Транзакция успешно завершена');
-        return { walletNumber: formatWalletNumber(walletNumber) };
+        return { walletNumber: formatWalletNumber(walletNumber), referralCode: newReferralCode };
     } catch (e) {
         console.error('Ошибка при регистрации клиента:', e);
-        await client.query('ROLLBACK');
+        await dbClient.query('ROLLBACK');
         throw e;
     } finally {
-        client.release();
+        dbClient.release();
     }
 }
 
@@ -275,15 +483,54 @@ async function finishRegistration(chatId, data) {
             skill_level: 1, // всегда 1 при регистрации
             child: data.child
         });
-        await bot.sendMessage(chatId,
-            '✅ *Регистрация успешно завершена!*\n\n' +
+        
+        let registrationMessage = '✅ *Регистрация успешно завершена!*\n\n' +
             '🎉 Добро пожаловать в Ski-instruktor!\n\n' +
-            '— *Записывайтесь на тренировки, управляйте своими занятиями и балансом прямо в Telegram!*\n\n' +
-            '👥 *Групповые тренировки выгоднее!* Если не удалось собрать свою команду, просто оставьте заявку через пункт меню "Записаться на тренировку" → "Предложить тренировку". Мы с радостью поможем вам найти единомышленников! 🏂\n\n' +
+            '— *Записывайтесь на тренировки, управляйте своими занятиями и балансом прямо в Telegram!*\n\n';
+        
+        // Если пользователь пришел по реферальной ссылке, показываем информацию о бонусе
+        if (data.referral_code) {
+            // Проверяем, активна ли реферальная программа
+            const referralActiveResult = await pool.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const isReferralActive = referralActiveResult.rows.length > 0;
+            
+            if (isReferralActive) {
+                const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
+                registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
+                    `✅ Вам уже начислено *${bonusAmount}₽* на баланс!\n` +
+                    `💡 Эта сумма поможет оплатить первую тренировку со скидкой.\n\n` +
+                    `💰 Ваш друг получит *${bonusAmount}₽* после того, как вы пополните баланс и пройдете первую тренировку.\n\n`;
+            } else {
+                registrationMessage += '🎁 *Вы пришли по реферальной ссылке!*\n' +
+                    'Спасибо, что присоединились к нам!\n\n';
+            }
+        }
+        
+        // Проверяем и начисляем бонусы за регистрацию
+        try {
+            const { checkAndAwardBonus } = require('../services/bonus-system');
+            await checkAndAwardBonus('registration', result.id, {
+                amount: 0,
+                description: 'Регистрация нового пользователя'
+            });
+        } catch (error) {
+            console.error('Ошибка при начислении бонуса за регистрацию:', error);
+            // Не прерываем основной процесс
+        }
+        
+        registrationMessage += '👥 *Групповые тренировки выгоднее!* Если не удалось собрать свою команду, просто оставьте заявку через пункт меню "Записаться на тренировку" → "Предложить тренировку". Мы с радостью поможем вам найти единомышленников! 🏂\n\n' +
             '👶 *Есть дети?* Добавляйте их в личном кабинете и записывайте на тренировки. Пусть растут чемпионами!\n\n' +
             '💳 *Пополнение баланса* — легко и просто! Пополняйте счет на любую сумму. Главное — не забудьте указать номер вашего кошелька в комментарии к платежу. Если забыли — не беда, поддержка всегда на связи! 😉\n\n' +
             '🎁 *Подарочные сертификаты* — отличный способ порадовать друга или близкого. Дарите спорт и хорошее настроение!\n\n' +
-            `• Если возникли вопросы — пишите или звоните в поддержку: ${process.env.ADMIN_PHONE || 'не указан'}\n\n`,
+            '📤 *Приглашайте друзей!* Используйте кнопку "Поделиться ботом" и получайте бонусы за каждого приведенного друга!\n\n' +
+            `• Если возникли вопросы — пишите или звоните в поддержку: ${process.env.ADMIN_PHONE || 'не указан'}\n\n`;
+        
+        await bot.sendMessage(chatId, registrationMessage,
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
@@ -291,7 +538,7 @@ async function finishRegistration(chatId, data) {
                         ['📝 Записаться на тренировку'],
                         ['📋 Мои записи', '👤 Личный кабинет'],
                         ['🎁 Сертификаты', '💰 Кошелек'],
-                        ['📤 Поделиться ботом']
+                        ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
                     ],
                     resize_keyboard: true,
                     one_time_keyboard: false,
@@ -720,6 +967,57 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
+    // Обработка кнопки "Абонементы"
+    if (msg.text === '🎫 Абонементы') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showSubscriptionsMenu(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Купить абонемент"
+    if (msg.text === '🛒 Купить абонемент') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showAvailableSubscriptions(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка кнопки "Мои абонементы"
+    if (msg.text === '📋 Мои абонементы') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (client) {
+            return showMySubscriptions(chatId, client.id);
+        } else {
+            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+        }
+    }
+
+    // Обработка выбора абонемента для покупки
+    if (state && state.step === 'subscription_purchase_selection') {
+        const selectedIndex = parseInt(msg.text) - 1;
+        const subscriptions = state.data?.available_subscriptions || [];
+
+        if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= subscriptions.length) {
+            return bot.sendMessage(chatId,
+                '❌ Неверный номер абонемента. Пожалуйста, выберите номер из списка.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        const selectedType = subscriptions[selectedIndex];
+        return purchaseSubscription(chatId, state.data.client_id, selectedType.id);
+    }
+
     // Обработка кнопки "Подарить еще сертификат"
     if (msg.text === '💝 Подарить еще сертификат') {
         return showCertificatesMenu(chatId);
@@ -792,8 +1090,8 @@ async function handleTextMessage(msg) {
         return showMainMenu(chatId);
     }
 
-    // Глобальная обработка "Добавить ребенка"
-    if (msg.text === '➕ Добавить ребенка') {
+    // Глобальная обработка "Добавить человека"
+    if (msg.text === '➕ Добавить человека') {
         let clientId;
         if (state && state.data && state.data.client_id) {
             clientId = state.data.client_id;
@@ -805,7 +1103,7 @@ async function handleTextMessage(msg) {
             clientId = client.id;
         }
         userStates.set(chatId, { step: 'add_child_name', data: { client_id: clientId } });
-        return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+        return bot.sendMessage(chatId, '👤 Введите ФИО человека:', {
             reply_markup: {
                 keyboard: [['🔙 Отмена']],
                 resize_keyboard: true
@@ -897,20 +1195,156 @@ async function handleTextMessage(msg) {
     // Обработка "Естественный склон"
     if (msg.text === '🏔️ Естественный склон') {
         console.log('Выбран естественный склон');
+        
+        // Проверяем, что клиент зарегистрирован
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем меню выбора типа тренировки
         return bot.sendMessage(chatId,
-            '🏔️ *Естественный склон*\n\n' +
-            '⚠️ *Раздел находится в разработке*\n\n' +
-            'Запись на тренировки на естественном склоне будет доступна после официального открытия горнолыжного сезона в Тюмени.',
+            '🏔️ *Естественный склон (Кулига Парк)*\n\n' +
+            'Выберите тип тренировки:',
             {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     keyboard: [
+                        ['🏔️ Индивидуальная тренировка'],
+                        ['👥 Групповая тренировка'],
                         ['🔙 Назад в меню']
                     ],
                     resize_keyboard: true
                 }
             }
         );
+    }
+
+    // Обработка "Индивидуальная тренировка" (естественный склон)
+    if (msg.text === '🏔️ Индивидуальная тренировка') {
+        console.log('Выбрана индивидуальная тренировка на естественном склоне');
+        
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Получаем список детей клиента
+        const childrenResult = await pool.query(
+            'SELECT id, full_name FROM children WHERE parent_id = $1',
+            [client.id]
+        );
+        const children = childrenResult.rows;
+
+        // Проверяем, есть ли дети
+        if (children.length > 0) {
+            // Есть дети - спрашиваем для кого запись
+            const childrenButtons = children.map(child => [`👶 ${child.full_name}`]);
+            childrenButtons.push(['👤 Для себя'], ['🔙 Назад в меню']);
+            
+            return bot.sendMessage(chatId,
+                '👤 *Для кого записываемся?*\n\n' +
+                'Выберите участника тренировки:',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: childrenButtons,
+                        resize_keyboard: true
+                    }
+                }
+            );
+        } else {
+            // Нет детей - записываем только для себя
+            userStates.set(chatId, {
+                step: 'natural_slope_individual_date_from_calendar',
+                data: {
+                    client_id: client.id,
+                    participant_type: 'self',
+                    participant_id: client.id,
+                    participant_name: client.full_name
+                }
+            });
+            return showNaturalSlopeAvailableDates(chatId);
+        }
+    }
+
+    // Обработка "Групповая тренировка" (естественный склон)
+    if (msg.text === '👥 Групповая тренировка') {
+        console.log('Выбрана групповая тренировка на естественном склоне');
+        
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем доступные групповые тренировки на ближайшую неделю
+        return showAvailableGroupTrainings(chatId, client.id);
+    }
+
+    // Обработка кнопки "🏔️ Выбрать другую тренировку" (естественный склон)
+    if (msg.text === '🏔️ Выбрать другую тренировку') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Показываем доступные групповые тренировки на естественном склоне
+        return showAvailableGroupTrainings(chatId, client.id);
+    }
+
+    // Обработка выбора участника для индивидуальной тренировки (естественный склон)
+    if (msg.text && msg.text.startsWith('👶 ')) {
+        const childName = msg.text.replace('👶 ', '');
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Находим ребенка по имени
+        const childResult = await pool.query(
+            'SELECT id, full_name FROM children WHERE parent_id = $1 AND full_name = $2',
+            [client.id, childName]
+        );
+
+        if (childResult.rows.length === 0) {
+            return bot.sendMessage(chatId, '❌ Ребенок не найден.');
+        }
+
+        const child = childResult.rows[0];
+
+        // Устанавливаем состояние для записи ребенка
+        userStates.set(chatId, {
+            step: 'natural_slope_individual_date_from_calendar',
+            data: {
+                client_id: client.id,
+                participant_type: 'child',
+                participant_id: child.id,
+                participant_name: child.full_name
+            }
+        });
+        return showNaturalSlopeAvailableDates(chatId);
+    }
+
+    // Обработка "Для себя" для индивидуальной тренировки (естественный склон)
+    if (msg.text === '👤 Для себя') {
+        const client = await getClientByTelegramId(msg.from.id.toString());
+        
+        if (!client) {
+            return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+        }
+
+        // Устанавливаем состояние для записи самого клиента
+        userStates.set(chatId, {
+            step: 'natural_slope_individual_date_from_calendar',
+            data: {
+                client_id: client.id,
+                participant_type: 'self',
+                participant_id: client.id,
+                participant_name: client.full_name
+            }
+        });
+        return showNaturalSlopeAvailableDates(chatId);
     }
 
     // Обработка состояний
@@ -1124,8 +1558,8 @@ async function handleTextMessage(msg) {
 
                 if (childrenResult.rows.length === 0) {
                     return bot.sendMessage(chatId,
-                        '❌ У вас нет добавленных детей в профиле.\n\n' +
-                        'Пожалуйста, сначала добавьте ребенка через меню "Личный кабинет" -> "➕ Добавить ребенка"',
+                        '❌ У вас нет добавленных людей в профиле.\n\n' +
+                        'Пожалуйста, сначала добавьте человека через меню "Личный кабинет" -> "➕ Добавить человека"',
                         {
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
@@ -1135,7 +1569,7 @@ async function handleTextMessage(msg) {
                     );
                 }
 
-                let message = '👶 *Выберите ребенка:*\n\n';
+                let message = '👤 *Выберите человека:*\n\n';
                 // Убираем пункт "Для себя" при выборе "для себя и ребенка"
                 if (trainingFor === 'both') {
                     childrenResult.rows.forEach((child, index) => {
@@ -1524,7 +1958,7 @@ async function handleTextMessage(msg) {
                 if (!state.data.children || state.data.children.length === 0) {
                     state.step = 'add_child_name';
                     userStates.set(chatId, state);
-                    return bot.sendMessage(chatId, '👶 Введите ФИО ребенка:', {
+                    return bot.sendMessage(chatId, '👤 Введите ФИО человека:', {
                         reply_markup: {
                             keyboard: [['🔙 Отмена']],
                             resize_keyboard: true
@@ -1539,7 +1973,7 @@ async function handleTextMessage(msg) {
                     state.step = 'select_child';
                     userStates.set(chatId, state);
                     return bot.sendMessage(chatId,
-                        '👶 *Выберите ребенка из списка:*\n\n' + childrenList,
+                        '👤 *Выберите человека из списка:*\n\n' + childrenList,
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -3161,7 +3595,7 @@ async function handleTextMessage(msg) {
 
                 // Проверяем возрастные ограничения
                 if (isChildrenTraining) {
-                    if (clientAge >= 16) {
+                    if (clientAge >= 18) {
                         // Проверяем наличие детей у клиента
                         const childrenResult = await pool.query(
                             `SELECT id, full_name, 
@@ -3169,22 +3603,22 @@ async function handleTextMessage(msg) {
                                 skill_level
                             FROM children 
                             WHERE parent_id = $1 AND 
-                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 16`,
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 18`,
                             [state.data.client_id]
                         );
 
                         if (childrenResult.rows.length === 0) {
                             return bot.sendMessage(chatId,
-                                '❌ На данную тренировку можно записать только детей до 16 лет.\n\n' +
-                                'У вас нет детей младше 16 лет или вы не добавили их в профиль.\n\n' +
+                                '❌ На данную тренировку можно записать только детей до 18 лет.\n\n' +
+                                'У вас нет детей младше 18 лет или вы не добавили их в профиль.\n\n' +
                                 'Вы можете:\n' +
                                 '• Выбрать другую тренировку\n' +
-                                '• Добавить ребенка в профиль',
+                                '• Добавить человека в профиль',
                                 {
                                     reply_markup: {
                                         keyboard: [
                                             ['🎿 Выбрать другую тренировку'],
-                                            ['👤 Добавить ребенка'],
+                                            ['👤 Добавить человека'],
                                             ['🔙 Назад в меню']
                                         ],
                                         resize_keyboard: true
@@ -3200,7 +3634,7 @@ async function handleTextMessage(msg) {
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level} уровень)\n`;
                         });
@@ -3216,22 +3650,22 @@ async function handleTextMessage(msg) {
                             }
                         });
                     }
-                    // Если клиент младше 16 лет, он может записаться сам
+                    // Если клиент младше 18 лет, он может записаться сам
                 } else if (isAdultTraining) {
-                    if (clientAge < 16) {
-                        // Проверяем, есть ли у клиента дети старше 16 лет
+                    if (clientAge < 18) {
+                        // Проверяем, есть ли у клиента дети старше 18 лет
                         const childrenResult = await pool.query(
                             `SELECT id, full_name, 
                                 EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
                             FROM children 
                             WHERE parent_id = $1 AND 
-                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) >= 16`,
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) >= 18`,
                             [state.data.client_id]
                         );
 
                         if (childrenResult.rows.length === 0) {
                             return bot.sendMessage(chatId,
-                                '❌ На данную тренировку можно записаться только с 16 лет.\n\n' +
+                                '❌ На данную тренировку можно записаться только с 18 лет.\n\n' +
                                 'Пожалуйста, выберите детскую тренировку или тренировку без возрастных ограничений.',
                                 {
                                     reply_markup: {
@@ -3242,14 +3676,14 @@ async function handleTextMessage(msg) {
                             );
                         }
 
-                        // Если есть дети старше 16 лет, предлагаем выбрать ребенка
+                        // Если есть дети старше 18 лет, предлагаем выбрать ребенка
                         state.data.selected_session = selectedSession;
                         state.data.available_children = childrenResult.rows;
                         state.data.training_type = 'children';
                         state.step = 'select_child_for_training';
                         userStates.set(chatId, state);
 
-                        let message = '👶 *Выберите ребенка для записи на тренировку:*\n\n';
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
                         childrenResult.rows.forEach((child, index) => {
                             message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
                         });
@@ -3265,7 +3699,7 @@ async function handleTextMessage(msg) {
                             }
                         });
                     }
-                    // Если клиент старше 16 лет, он может записаться сам
+                    // Если клиент старше 18 лет, он может записаться сам
                 }
                 // Для общей тренировки нет возрастных ограничений
                 
@@ -3570,6 +4004,848 @@ async function handleTextMessage(msg) {
                 }
             });
         }
+        case 'natural_slope_group_training_selection': {
+            const selectedIndex = parseInt(msg.text) - 1;
+            const state = userStates.get(chatId);
+            
+            if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= (state.data.available_group_trainings?.length || 0)) {
+                return bot.sendMessage(chatId,
+                    '❌ Пожалуйста, выберите тренировку из списка.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            try {
+                const selectedTraining = state.data.available_group_trainings[selectedIndex];
+                
+                // Получаем client_id из состояния
+                if (!state.data.client_id) {
+                    const client = await getClientByTelegramId(msg.from.id.toString());
+                    if (!client) {
+                        return bot.sendMessage(chatId, '❌ Клиент не найден. Пожалуйста, зарегистрируйтесь.');
+                    }
+                    state.data.client_id = client.id;
+                    userStates.set(chatId, state);
+                }
+                const clientId = state.data.client_id;
+                
+                // Получаем данные клиента
+                const clientResult = await pool.query(
+                    `SELECT c.*, 
+                        EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birth_date)) as age,
+                        COALESCE(w.balance, 0) as balance
+                    FROM clients c
+                    LEFT JOIN wallets w ON c.id = w.client_id
+                    WHERE c.id = $1`,
+                    [clientId]
+                );
+                
+                if (!clientResult.rows[0]) {
+                    return bot.sendMessage(chatId, '❌ Клиент не найден.');
+                }
+                
+                const client = clientResult.rows[0];
+                const clientAge = Math.floor(client.age);
+
+                // Определяем тип тренировки по названию группы
+                const isChildrenTraining = selectedTraining.group_name?.toLowerCase().includes('дети');
+                const isAdultTraining = selectedTraining.group_name?.toLowerCase().includes('взрослые');
+                const isGeneralTraining = !isChildrenTraining && !isAdultTraining;
+
+                // Проверяем возрастные ограничения
+                if (isChildrenTraining) {
+                    if (clientAge >= 18) {
+                        // Проверяем наличие детей у клиента
+                        const childrenResult = await pool.query(
+                            `SELECT id, full_name, 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age,
+                                skill_level
+                            FROM children 
+                            WHERE parent_id = $1 AND 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) < 18`,
+                            [clientId]
+                        );
+
+                        if (childrenResult.rows.length === 0) {
+                            return bot.sendMessage(chatId,
+                                '❌ На данную тренировку можно записать только детей до 18 лет.\n\n' +
+                                'У вас нет детей младше 18 лет или вы не добавили их в профиль.\n\n' +
+                                'Вы можете:\n' +
+                                '• Выбрать другую тренировку\n' +
+                                '• Добавить человека в профиль',
+                                {
+                                    reply_markup: {
+                                        keyboard: [
+                                            ['🏔️ Выбрать другую тренировку'],
+                                            ['👤 Добавить человека'],
+                                            ['🔙 Назад в меню']
+                                        ],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+
+                        // Если есть дети, предлагаем выбрать ребенка
+                        state.data.selected_training = selectedTraining;
+                        state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'children';
+                        state.step = 'select_child_for_natural_slope_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level || '-'} уровень)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name} (${child.skill_level || '-'} ур.)`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
+                    // Если клиент младше 18 лет, он может записаться сам
+                } else if (isAdultTraining) {
+                    if (clientAge < 18) {
+                        // Проверяем, есть ли у клиента дети старше 18 лет
+                        const childrenResult = await pool.query(
+                            `SELECT id, full_name, 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
+                            FROM children 
+                            WHERE parent_id = $1 AND 
+                                EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) >= 18`,
+                            [clientId]
+                        );
+
+                        if (childrenResult.rows.length === 0) {
+                            return bot.sendMessage(chatId,
+                                '❌ На данную тренировку можно записаться только с 18 лет.\n\n' +
+                                'Пожалуйста, выберите детскую тренировку или тренировку без возрастных ограничений.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+
+                        // Если есть дети старше 18 лет, предлагаем выбрать ребенка
+                        state.data.selected_training = selectedTraining;
+                        state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'children';
+                        state.step = 'select_child_for_natural_slope_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👤 *Выберите человека для записи на тренировку:*\n\n';
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 1}. ${child.full_name} (${Math.floor(child.age)} лет)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ...childrenResult.rows.map((child, i) => [`${i + 1}. ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
+                    // Если клиент старше 18 лет, он может записаться сам
+                }
+                // Для общей тренировки нет возрастных ограничений
+                
+                // Для общих тренировок предлагаем выбор участника
+                if (isGeneralTraining) {
+                    // Проверяем наличие детей у клиента
+                    const childrenResult = await pool.query(
+                        `SELECT id, full_name, 
+                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age,
+                            skill_level
+                        FROM children 
+                        WHERE parent_id = $1`,
+                        [clientId]
+                    );
+
+                    if (childrenResult.rows.length > 0) {
+                        // Если есть дети, предлагаем выбрать участника
+                        state.data.selected_training = selectedTraining;
+                        state.data.available_children = childrenResult.rows;
+                        state.data.training_type = 'general';
+                        state.step = 'select_child_for_natural_slope_training';
+                        userStates.set(chatId, state);
+
+                        let message = '👤 *Выберите участника для записи на тренировку:*\n\n';
+                        message += `1. Для себя (${client.full_name})\n`;
+                        childrenResult.rows.forEach((child, index) => {
+                            message += `${index + 2}. Для ребенка: ${child.full_name} (${Math.floor(child.age)} лет, ${child.skill_level || '-'} уровень)\n`;
+                        });
+
+                        return bot.sendMessage(chatId, message, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ...childrenResult.rows.map((child, i) => [`${i + 2}. Для ребенка: ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
+                    // Если детей нет, продолжаем с записью для клиента
+                }
+
+                // Форматируем дату и время
+                const date = new Date(selectedTraining.date);
+                const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                const balance = parseFloat(client.balance || 0);
+                const pricePerPerson = selectedTraining.max_participants > 0 && selectedTraining.price 
+                    ? (parseFloat(selectedTraining.price) / selectedTraining.max_participants) 
+                    : 0;
+
+                // Формируем сообщение с деталями тренировки
+                let message = '📋 *Проверьте данные перед записью на тренировку:*\n\n';
+                message += `👤 *ФИО участника:* ${client.full_name}\n`;
+                message += `📅 *Дата тренировки:* ${dateStr} (${dayName})\n`;
+                message += `⏰ *Время:* ${timeStr}\n`;
+                message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
+                message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
+                message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
+                if (selectedTraining.trainer_name) {
+                    message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
+                }
+                message += `💰 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽\n`;
+                message += `💳 *Баланс:* ${balance.toFixed(2)} ₽\n\n`;
+
+                // Добавляем блок про уровень
+                const clientLevel = client.skill_level || 0;
+                const requiredLevel = selectedTraining.skill_level || 0;
+                if (clientLevel >= requiredLevel) {
+                    message += `✅ Ваш текущий уровень: ${clientLevel}/10 — вы можете записаться на эту тренировку! Отличный выбор! 😎🎿\n\n`;
+                } else {
+                    message += `⚠️ Ваш уровень: ${clientLevel}/10. Для этой тренировки требуется уровень ${requiredLevel}/10.\n`;
+                    message += `К сожалению, пока вы не можете записаться на эту тренировку. Не расстраивайтесь — попробуйте выбрать другую или прокачайте свой скилл! 💪😉\n\n`;
+                }
+
+                message += 'Выберите действие:';
+
+                // Сохраняем выбранную тренировку в состоянии
+                state.data.selected_training = selectedTraining;
+                if (!state.data.client_id) {
+                    state.data.client_id = clientId;
+                }
+                state.step = 'confirm_natural_slope_group_training';
+                userStates.set(chatId, state);
+
+                return bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['✅ Записаться'],
+                            ['💳 Пополнить баланс'],
+                            ['❌ Я передумал'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка при проверке тренировки естественного склона:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка при проверке тренировки. Пожалуйста, попробуйте позже.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        }
+
+        case 'select_child_for_natural_slope_training': {
+            const state = userStates.get(chatId);
+            
+            // Обработка кнопки "🔙 Назад" и "🔙 Назад в меню"
+            if (msg.text === '🔙 Назад' || msg.text === '🔙 Назад в меню') {
+                if (msg.text === '🔙 Назад в меню') {
+                    userStates.delete(chatId);
+                    return showMainMenu(chatId);
+                }
+                state.step = 'natural_slope_group_training_selection';
+                userStates.set(chatId, state);
+                return showAvailableGroupTrainings(chatId, state.data.client_id);
+            }
+            
+            // Обработка выбора "Для себя" в общих тренировках
+            if (msg.text === '1. Для себя') {
+                const selectedTraining = state.data.selected_training;
+
+                // Получаем данные клиента
+                const clientResult = await pool.query(
+                    `SELECT c.*, COALESCE(w.balance, 0) as balance 
+                    FROM clients c 
+                    LEFT JOIN wallets w ON c.id = w.client_id 
+                    WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const client = clientResult.rows[0];
+                const balance = parseFloat(client.balance || 0);
+                const pricePerPerson = selectedTraining.max_participants > 0 && selectedTraining.price 
+                    ? (parseFloat(selectedTraining.price) / selectedTraining.max_participants) 
+                    : 0;
+
+                // Форматируем дату и время
+                const date = new Date(selectedTraining.date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const timeStr = String(selectedTraining.start_time).substring(0, 5);
+
+                // Формируем сообщение с деталями тренировки для клиента
+                let message = '📋 *Проверьте данные перед записью на тренировку:*\n\n';
+                message += `👤 *ФИО участника:* ${client.full_name}\n`;
+                message += `📅 *Дата тренировки:* ${dateStr} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${timeStr}\n`;
+                message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
+                message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
+                message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
+                if (selectedTraining.trainer_name) {
+                    message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
+                }
+                message += `💰 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽\n`;
+                message += `💳 *Баланс:* ${balance.toFixed(2)} ₽\n\n`;
+
+                // Добавляем блок про уровень клиента
+                const clientLevel = client.skill_level || 0;
+                const requiredLevel = selectedTraining.skill_level || 0;
+                if (clientLevel >= requiredLevel) {
+                    message += `✅ Ваш текущий уровень: ${clientLevel}/10 — вы можете записаться на эту тренировку! Отличный выбор! 😎🎿\n\n`;
+                } else {
+                    message += `⚠️ Ваш уровень: ${clientLevel}/10. Для этой тренировки требуется уровень ${requiredLevel}/10.\n`;
+                    message += `К сожалению, пока вы не можете записаться на эту тренировку. Не расстраивайтесь — попробуйте выбрать другую или прокачайте свой скилл! 💪😉\n\n`;
+                }
+
+                message += 'Выберите действие:';
+
+                // НЕ сохраняем selected_child - это означает запись для самого клиента
+                state.step = 'confirm_natural_slope_group_training';
+                userStates.set(chatId, state);
+
+                return bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['✅ Записаться'],
+                            ['💳 Пополнить баланс'],
+                            ['❌ Я передумал'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            }
+
+            // Обработка выбора ребенка с учетом типа тренировки
+            const selectedIndex = state.data.training_type === 'children' 
+                ? parseInt(msg.text) - 1  // Детские тренировки: 1,2,3 → 0,1,2
+                : parseInt(msg.text) - 2; // Общие тренировки: 1="Для себя", 2,3 → 0,1
+            
+            if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= state.data.available_children.length) {
+                return bot.sendMessage(chatId,
+                    '❌ Пожалуйста, выберите участника из списка.',
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['1. Для себя'],
+                                ...state.data.available_children.map((child, i) => [`${i + 2}. Для ребенка: ${child.full_name}`]),
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            const selectedChild = state.data.available_children[selectedIndex];
+            const selectedTraining = state.data.selected_training;
+
+            // Проверяем уровень подготовки ребенка
+            const childLevel = selectedChild.skill_level || 0;
+            const requiredLevel = selectedTraining.skill_level || 0;
+            if (childLevel < requiredLevel) {
+                return bot.sendMessage(chatId,
+                    `❌ Нельзя записать ребенка на эту тренировку.\n\n` +
+                    `Уровень подготовки ребенка (${childLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n` +
+                    `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока уровень подготовки ребенка повысится.`,
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['🏔️ Выбрать другую тренировку'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            // Получаем баланс клиента
+            const balanceResult = await pool.query(
+                'SELECT COALESCE(balance, 0) as balance FROM wallets WHERE client_id = $1',
+                [state.data.client_id]
+            );
+            const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+            
+            // Сохраняем баланс в состоянии
+            state.data.client_balance = balance;
+
+            // Форматируем дату и время
+            const date = new Date(selectedTraining.date);
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+            const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            const timeStr = String(selectedTraining.start_time).substring(0, 5);
+
+            // Преобразуем цену в число
+            const pricePerPerson = selectedTraining.max_participants > 0 && selectedTraining.price 
+                ? (parseFloat(selectedTraining.price) / selectedTraining.max_participants) 
+                : 0;
+
+            // Формируем сообщение с деталями тренировки
+            let message = '📋 *Проверьте данные перед записью на тренировку:*\n\n';
+            message += `👤 *ФИО участника:* ${selectedChild.full_name}\n`;
+            message += `📅 *Дата тренировки:* ${dateStr} (${dayOfWeek})\n`;
+            message += `⏰ *Время:* ${timeStr}\n`;
+            message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
+            message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
+            message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
+            message += `🏔️ *Место:* Кулига Парк\n`;
+            if (selectedTraining.trainer_name) {
+                message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
+            }
+            message += `💰 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽\n`;
+            message += `💳 *Баланс:* ${balance.toFixed(2)} ₽\n\n`;
+
+            // Добавляем блок про уровень ребенка
+            if (childLevel >= requiredLevel) {
+                message += `✅ Уровень вашего ребенка: ${childLevel}/10 — можно записаться на эту тренировку! Молодцы! 🏅👶\n\n`;
+            } else {
+                message += `⚠️ Уровень ребенка: ${childLevel}/10. Для этой тренировки требуется уровень ${requiredLevel}/10.\n`;
+                message += `Пока нельзя записаться на эту тренировку. Не переживайте — выберите другую или подождите, пока уровень подрастет! 🚀😉\n\n`;
+            }
+
+            message += 'Выберите действие:';
+
+            // Сохраняем выбранного ребенка в состоянии
+            state.data.selected_child = selectedChild;
+            state.step = 'confirm_natural_slope_group_training';
+            userStates.set(chatId, state);
+
+            return bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: [
+                        ['✅ Записаться'],
+                        ['💳 Пополнить баланс'],
+                        ['❌ Я передумал'],
+                        ['🔙 Назад']
+                    ],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        case 'confirm_natural_slope_group_training': {
+            const state = userStates.get(chatId);
+            
+            if (msg.text === '🔙 Назад') {
+                // Если был выбран ребенок, возвращаемся к выбору участника
+                if (state.data.selected_child || state.data.available_children) {
+                    state.step = 'select_child_for_natural_slope_training';
+                    userStates.set(chatId, state);
+                    return bot.sendMessage(chatId,
+                        '👤 *Выберите участника для записи на тренировку:*',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['1. Для себя'],
+                                    ...(state.data.available_children || []).map((child, i) => [`${i + 2}. Для ребенка: ${child.full_name}`]),
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } else {
+                    // Иначе возвращаемся к списку тренировок
+                    state.step = 'natural_slope_group_training_selection';
+                    userStates.set(chatId, state);
+                    return showAvailableGroupTrainings(chatId, state.data.client_id);
+                }
+            }
+
+            if (msg.text === '❌ Я передумал') {
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+            }
+
+            if (msg.text === '✅ Записаться') {
+                const selectedTraining = state.data.selected_training;
+                const client = await pool.connect();
+
+                try {
+                    await client.query('BEGIN');
+
+                    // Получаем данные клиента
+                    const clientResult = await client.query(
+                        `SELECT c.*, COALESCE(w.balance, 0) as balance 
+                        FROM clients c 
+                        LEFT JOIN wallets w ON c.id = w.client_id 
+                        WHERE c.id = $1`,
+                        [state.data.client_id]
+                    );
+                    
+                    if (!clientResult.rows[0]) {
+                        throw new Error('Клиент не найден');
+                    }
+                    
+                    const clientData = clientResult.rows[0];
+                    const balance = parseFloat(clientData.balance || 0);
+                    const pricePerPerson = selectedTraining.max_participants > 0 && selectedTraining.price 
+                        ? (parseFloat(selectedTraining.price) / selectedTraining.max_participants) 
+                        : 0;
+
+                    // Проверяем наличие активного абонемента для групповых зимних тренировок
+                    let useSubscription = false;
+                    let subscriptionInfo = null;
+                    
+                    const subscriptionsCheck = await client.query(
+                        `SELECT 
+                            ns.*,
+                            st.name as subscription_name,
+                            st.sessions_count as total_sessions,
+                            st.price_per_session
+                         FROM natural_slope_subscriptions ns
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE ns.client_id = $1
+                            AND ns.status = 'active'
+                            AND ns.remaining_sessions > 0
+                            AND ns.expires_at >= CURRENT_DATE
+                         ORDER BY ns.expires_at ASC, ns.purchased_at ASC
+                         LIMIT 1`,
+                        [state.data.client_id]
+                    );
+
+                    if (subscriptionsCheck.rows.length > 0) {
+                        useSubscription = true;
+                        subscriptionInfo = subscriptionsCheck.rows[0];
+                        console.log(`✅ Используется абонемент ID ${subscriptionInfo.id} для клиента ${state.data.client_id}`);
+                    }
+
+                    // Проверяем баланс только если нет абонемента
+                    if (!useSubscription && balance < pricePerPerson) {
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId,
+                            `❌ Недостаточно средств на балансе.\n\n` +
+                            `Требуется: ${pricePerPerson.toFixed(2)} руб.\n` +
+                            `Доступно: ${balance.toFixed(2)} руб.\n\n` +
+                            `Пожалуйста, пополните баланс или используйте абонемент.`,
+                            {
+                                reply_markup: {
+                                    keyboard: [
+                                        ['💳 Пополнить баланс'],
+                                        ['🎫 Абонементы'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    // Проверяем уровень подготовки (для клиента или ребенка)
+                    let participantLevel = 0;
+                    let participantName = clientData.full_name;
+                    
+                    if (state.data.selected_child) {
+                        // Если выбран ребенок, проверяем его уровень
+                        participantLevel = state.data.selected_child.skill_level || 0;
+                        participantName = state.data.selected_child.full_name;
+                    } else {
+                        // Если выбран клиент, проверяем его уровень
+                        participantLevel = clientData.skill_level || 0;
+                    }
+                    
+                    const requiredLevel = selectedTraining.skill_level || 0;
+                    if (participantLevel < requiredLevel) {
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId,
+                            `❌ Нельзя записаться на эту тренировку.\n\n` +
+                            `Уровень подготовки (${participantLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n` +
+                            `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока уровень подготовки повысится.`,
+                            {
+                                reply_markup: {
+                                    keyboard: [
+                                        ['🏔️ Выбрать другую тренировку'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    // Проверяем количество участников
+                    const participantsResult = await client.query(
+                        'SELECT COUNT(*) as count FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedTraining.id, 'confirmed']
+                    );
+                    
+                    if (parseInt(participantsResult.rows[0].count) >= selectedTraining.max_participants) {
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId,
+                            '❌ К сожалению, все места на эту тренировку уже заняты.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    // Записываем на тренировку (клиента или ребенка) - сначала создаем запись
+                    const participantResult = await client.query(
+                        `INSERT INTO session_participants 
+                        (session_id, client_id, child_id, is_child, status) 
+                        VALUES ($1, $2, $3, $4, $5) 
+                        RETURNING id`,
+                        [
+                            selectedTraining.id,
+                            state.data.client_id,
+                            state.data.selected_child ? state.data.selected_child.id : null,
+                            !!state.data.selected_child,
+                            'confirmed'
+                        ]
+                    );
+
+                    let amountCharged = 0;
+                    let usedSubscriptionId = null;
+                    let remainingAfter = null;
+                    let totalSessions = null;
+
+                    if (useSubscription) {
+                        // Списываем занятие из абонемента
+                        await client.query(
+                            `UPDATE natural_slope_subscriptions 
+                             SET remaining_sessions = remaining_sessions - 1,
+                                 status = CASE 
+                                    WHEN remaining_sessions - 1 = 0 THEN 'used'
+                                    ELSE 'active'
+                                 END
+                             WHERE id = $1`,
+                            [subscriptionInfo.id]
+                        );
+
+                        // Записываем использование абонемента с привязкой к участнику
+                        await client.query(
+                            `INSERT INTO natural_slope_subscription_usage (
+                                subscription_id, training_session_id, session_participant_id,
+                                original_price, subscription_price, savings, used_at
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+                            [
+                                subscriptionInfo.id,
+                                selectedTraining.id,
+                                participantResult.rows[0].id,
+                                pricePerPerson,
+                                subscriptionInfo.price_per_session || 0,
+                                pricePerPerson - (subscriptionInfo.price_per_session || 0)
+                            ]
+                        );
+
+                        usedSubscriptionId = subscriptionInfo.id;
+                        remainingAfter = subscriptionInfo.remaining_sessions - 1;
+                        totalSessions = subscriptionInfo.total_sessions;
+                        amountCharged = 0;
+
+                        // Получаем id кошелька для создания транзакции
+                        const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        
+                        if (walletId) {
+                            // Формируем дату и время для описания
+                            const date = new Date(selectedTraining.date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                            
+                            // Создаем запись в транзакциях с типом subscription_usage
+                            await client.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId, 
+                                    0, 
+                                    'subscription_usage', 
+                                    `Запись по абонементу: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин. Занятий осталось: ${remainingAfter}/${totalSessions}`
+                                ]
+                            );
+                        }
+
+                        console.log(`✅ Использован абонемент ${subscriptionInfo.subscription_name}. Осталось занятий: ${remainingAfter}/${totalSessions}`);
+                    } else {
+                        // Списываем средства с баланса
+                        await client.query(
+                            'UPDATE wallets SET balance = balance - $1 WHERE client_id = $2',
+                            [pricePerPerson, state.data.client_id]
+                        );
+
+                        amountCharged = pricePerPerson;
+
+                        // Получаем id кошелька для создания транзакции
+                        const walletRes = await client.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        
+                        if (walletId) {
+                            // Формируем дату и время для описания
+                            const date = new Date(selectedTraining.date);
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                            
+                            // Создаем запись в транзакциях (используем уже объявленную participantName)
+                            await client.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [walletId, pricePerPerson, 'payment', `Запись: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин.`]
+                            );
+                        }
+                    }
+
+                    await client.query('COMMIT');
+
+                    // Проверяем и обновляем реферальный статус после записи на тренировку (включая запись по абонементу)
+                    try {
+                        const { updateReferralStatusOnTraining, isFirstTraining } = require('../services/referral-service');
+                        const isFirst = await isFirstTraining(state.data.client_id);
+                        if (isFirst) {
+                            console.log(`🎁 Это первая тренировка клиента ${state.data.client_id}, проверяем реферальный бонус...`);
+                            await updateReferralStatusOnTraining(state.data.client_id);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке реферального бонуса:', error);
+                        // Не прерываем основной процесс
+                    }
+
+                    // Проверяем milestone бонусы (посещение N тренировок)
+                    try {
+                        const { checkMilestoneBonuses } = require('../services/bonus-system');
+                        await checkMilestoneBonuses(state.data.client_id);
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке milestone бонусов:', error);
+                        // Не прерываем основной процесс
+                    }
+
+                    // Отправляем сообщение об успешной записи
+                    const date = new Date(selectedTraining.date);
+                    const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const timeStr = String(selectedTraining.start_time).substring(0, 5);
+                    const newBalance = balance - amountCharged;
+
+                    // Формируем сообщение в зависимости от способа оплаты
+                    let message = '✅ *Тренировка В КУЛИГА ПАРКЕ успешно забронирована!*\n\n' +
+                        `👤 *Участник:* ${participantName}\n` +
+                        `📅 *Дата:* ${dateStr} (${dayName})\n` +
+                        `⏰ *Время:* ${timeStr}\n` +
+                        `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n` +
+                        `👥 *Мест:* ${parseInt(participantsResult.rows[0].count) + 1}/${selectedTraining.max_participants}\n` +
+                        `🏔️ *Место:* Кулига Парк\n`;
+                    
+                    if (useSubscription) {
+                        message += `🎫 *Оплата:* По абонементу "${subscriptionInfo.subscription_name}"\n` +
+                            `📊 *Занятий осталось:* ${remainingAfter}/${totalSessions}\n` +
+                            `💳 *Баланс:* ${balance.toFixed(2)} ₽\n\n` +
+                            '🎿 Удачной тренировки!';
+                    } else {
+                        message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} ₽\n` +
+                            `💳 *Остаток на балансе:* ${newBalance.toFixed(2)} ₽\n\n` +
+                            '🎿 Удачной тренировки!';
+                    }
+
+                    // Отправляем уведомление администратору
+                    try {
+                        const { notifyAdminWinterGroupTrainingCreated } = require('./admin-notify');
+                        // Рассчитываем стоимость занятия по абонементу
+                        // Используем price_per_session из типа абонемента, если он есть, иначе вычисляем: цена абонемента / количество занятий
+                        let subscriptionPricePerSession = null;
+                        if (useSubscription) {
+                            if (subscriptionInfo.price_per_session) {
+                                subscriptionPricePerSession = parseFloat(subscriptionInfo.price_per_session);
+                            } else if (subscriptionInfo.total_paid && subscriptionInfo.total_sessions) {
+                                subscriptionPricePerSession = parseFloat(subscriptionInfo.total_paid) / parseInt(subscriptionInfo.total_sessions);
+                            }
+                        }
+                        
+                        await notifyAdminWinterGroupTrainingCreated({
+                            used_subscription: useSubscription,
+                            subscription_name: useSubscription ? subscriptionInfo.subscription_name : null,
+                            remaining_sessions: useSubscription ? remainingAfter : null,
+                            total_sessions: useSubscription ? totalSessions : null,
+                            subscription_price_per_session: subscriptionPricePerSession,
+                            ...selectedTraining,
+                            client_name: clientData.full_name,
+                            client_phone: clientData.phone,
+                            child_name: state.data.selected_child ? state.data.selected_child.full_name : null,
+                            current_participants: parseInt(participantsResult.rows[0].count) + 1
+                        });
+                    } catch (error) {
+                        console.error('Ошибка при отправке уведомления администратору:', error);
+                    }
+
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, message, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 В главное меню']],
+                            resize_keyboard: true
+                        }
+                    });
+
+                } catch (error) {
+                    await client.query('ROLLBACK');
+                    console.error('Ошибка при записи на групповую тренировку естественного склона:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при записи на тренировку. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } finally {
+                    client.release();
+                }
+            }
+            break;
+        }
+
         case 'confirm_group_training': {
             if (msg.text === '🔙 Назад') {
                 state.step = 'group_training_selection';
@@ -3729,6 +5005,28 @@ async function handleTextMessage(msg) {
 
                     await client.query('COMMIT');
 
+                    // Проверяем и обновляем реферальный статус после записи на тренировку
+                    try {
+                        const { updateReferralStatusOnTraining, isFirstTraining } = require('../services/referral-service');
+                        const isFirst = await isFirstTraining(state.data.client_id);
+                        if (isFirst) {
+                            console.log(`🎁 Это первая тренировка клиента ${state.data.client_id}, проверяем реферальный бонус...`);
+                            await updateReferralStatusOnTraining(state.data.client_id);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке реферального бонуса:', error);
+                        // Не прерываем основной процесс
+                    }
+
+                    // Проверяем milestone бонусы (посещение N тренировок)
+                    try {
+                        const { checkMilestoneBonuses } = require('../services/bonus-system');
+                        await checkMilestoneBonuses(state.data.client_id);
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке milestone бонусов:', error);
+                        // Не прерываем основной процесс
+                    }
+
                     // Отправляем сообщение об успешной записи
                     const participantName = state.data.selected_child 
                         ? state.data.selected_child.full_name 
@@ -3794,11 +5092,9 @@ async function handleTextMessage(msg) {
         case 'main_menu': {
             if (msg.text === '📋 Мои записи') {
                 try {
-                    // Получаем все записи клиента и его детей
-                    const result = await pool.query(
-                        `WITH client_sessions AS (
-                            -- Групповые тренировки
-                            SELECT 
+                    // Получаем групповые тренировки на тренажере
+                    const groupResult = await pool.query(
+                        `SELECT 
                                 sp.id,
                                 sp.session_id,
                                 sp.child_id,
@@ -3814,7 +5110,8 @@ async function handleTextMessage(msg) {
                                 ts.price,
                                 ts.max_participants,
                                 (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                                'group' as session_type
+                                'group' as session_type,
+                                'simulator' as slope_type
                             FROM session_participants sp
                             JOIN training_sessions ts ON sp.session_id = ts.id
                             JOIN simulators s ON ts.simulator_id = s.id
@@ -3825,16 +5122,135 @@ async function handleTextMessage(msg) {
                             WHERE sp.client_id = $1
                             AND ts.status = 'scheduled'
                             AND sp.status = 'confirmed'
+                            AND ts.simulator_id IS NOT NULL
                             AND (
                               (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                             )
+                        ORDER BY ts.session_date, ts.start_time`,
+                        [state.data.client_id]
+                    );
+                    
+                    // Получаем групповые тренировки на естественном склоне
+                    const winterGroupResult = await pool.query(
+                        `SELECT 
+                            sp.id,
+                            sp.session_id,
+                            sp.child_id,
+                            COALESCE(c.full_name, cl.full_name) as participant_name,
+                            ts.session_date,
+                            ts.start_time,
+                            ts.duration,
+                            ts.equipment_type,
+                            NULL as simulator_name,
+                            g.name as group_name,
+                            t.full_name as trainer_name,
+                            ts.skill_level,
+                            ts.price,
+                            ts.max_participants,
+                            (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                            'group_winter' as session_type,
+                            'natural_slope' as slope_type,
+                            CASE WHEN nsu.id IS NOT NULL THEN true ELSE false END as used_subscription,
+                            st.name as subscription_name,
+                            ns.remaining_sessions as subscription_remaining_sessions,
+                            st.sessions_count as subscription_total_sessions
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        LEFT JOIN groups g ON ts.group_id = g.id
+                        LEFT JOIN trainers t ON ts.trainer_id = t.id
+                        LEFT JOIN children c ON sp.child_id = c.id
+                        JOIN clients cl ON sp.client_id = cl.id
+                        LEFT JOIN natural_slope_subscription_usage nsu ON nsu.session_participant_id = sp.id
+                        LEFT JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                        LEFT JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                        WHERE sp.client_id = $1
+                        AND ts.status = 'scheduled'
+                        AND sp.status = 'confirmed'
+                        AND ts.simulator_id IS NULL
+                        AND ts.group_id IS NOT NULL
+                        AND (
+                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                         )
-                        SELECT * FROM client_sessions
-                        ORDER BY session_date, start_time`,
+                        ORDER BY ts.session_date, ts.start_time`,
                         [state.data.client_id]
                     );
 
-                    if (result.rows.length === 0) {
+                    // Получаем индивидуальные тренировки
+                    const individualResult = await pool.query(
+                        `SELECT 
+                            its.id,
+                            its.child_id,
+                            its.simulator_id,
+                            COALESCE(ch.full_name, cl.full_name) as participant_name,
+                            its.preferred_date as session_date,
+                            its.preferred_time as start_time,
+                            (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
+                            its.duration,
+                            its.equipment_type,
+                            s.name as simulator_name,
+                            NULL as group_name,
+                            NULL as trainer_name,
+                            NULL as skill_level,
+                            its.price,
+                            1 as max_participants,
+                            1 as current_participants,
+                            'individual' as session_type,
+                            its.with_trainer
+                        FROM individual_training_sessions its
+                        JOIN simulators s ON its.simulator_id = s.id
+                        LEFT JOIN children ch ON its.child_id = ch.id
+                        JOIN clients cl ON its.client_id = cl.id
+                        WHERE (its.client_id = $1 OR ch.parent_id = $1)
+                        AND (its.preferred_date::timestamp + its.preferred_time::interval + (its.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                        ORDER BY its.preferred_date, its.preferred_time`,
+                        [state.data.client_id]
+                    );
+
+                    // Получаем индивидуальные тренировки естественного склона
+                    const naturalSlopeIndividualResult = await pool.query(
+                        `SELECT 
+                            sp.id,
+                            sp.session_id,
+                            sp.child_id,
+                            COALESCE(c.full_name, cl.full_name) as participant_name,
+                            ts.session_date,
+                            ts.start_time,
+                            ts.end_time,
+                            ts.duration,
+                            ts.equipment_type,
+                            NULL as simulator_name,
+                            NULL as group_name,
+                            t.full_name as trainer_name,
+                            NULL as skill_level,
+                            ts.price,
+                            1 as max_participants,
+                            1 as current_participants,
+                            'individual_natural_slope' as session_type,
+                            ts.with_trainer,
+                            'natural_slope' as slope_type
+                        FROM session_participants sp
+                        JOIN training_sessions ts ON sp.session_id = ts.id
+                        LEFT JOIN trainers t ON ts.trainer_id = t.id
+                        LEFT JOIN children c ON sp.child_id = c.id
+                        JOIN clients cl ON sp.client_id = cl.id
+                        WHERE sp.client_id = $1
+                        AND ts.status = 'scheduled'
+                        AND sp.status = 'confirmed'
+                        AND ts.training_type = FALSE
+                        AND ts.slope_type = 'natural_slope'
+                        AND (
+                          (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+                        )
+                        ORDER BY ts.session_date, ts.start_time`,
+                        [state.data.client_id]
+                    );
+
+                    const groupSessions = groupResult.rows;
+                    const winterGroupSessions = winterGroupResult.rows;
+                    const individualSessions = individualResult.rows;
+                    const naturalSlopeIndividualSessions = naturalSlopeIndividualResult.rows;
+
+                    if (groupSessions.length === 0 && winterGroupSessions.length === 0 && individualSessions.length === 0 && naturalSlopeIndividualSessions.length === 0) {
                         return bot.sendMessage(chatId,
                             'У вас пока нет записей на тренировки.',
                             {
@@ -3851,7 +5267,7 @@ async function handleTextMessage(msg) {
                     let allSessions = [];
                     let counter = 1;
                     if (groupSessions.length > 0) {
-                        message += '\n👥 *Групповые тренировки:*\n';
+                        message += '\n👥 *Групповые тренировки (тренажер):*\n';
                         groupSessions.forEach(session => {
                             const date = new Date(session.session_date);
                             const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -3870,8 +5286,36 @@ async function handleTextMessage(msg) {
                             counter++;
                         });
                     }
+                    if (winterGroupSessions.length > 0) {
+                        message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+                        winterGroupSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
+                            message += `👥 *Группа:* ${session.group_name}\n`;
+                            if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                            if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            if (session.used_subscription) {
+                                message += `🎫 *Оплата:* По абонементу "${session.subscription_name}"\n`;
+                                if (session.subscription_remaining_sessions != null && session.subscription_total_sessions != null) {
+                                    message += `📊 *Занятий осталось:* ${session.subscription_remaining_sessions}/${session.subscription_total_sessions}\n`;
+                                }
+                            } else {
+                                message += `💰 *Стоимость:* ${pricePerPerson} руб.\n`;
+                            }
+                            allSessions.push({ ...session, session_type: 'group_winter' });
+                            counter++;
+                        });
+                    }
                     if (individualSessions.length > 0) {
-                        message += '\n👤 *Индивидуальные тренировки:*\n';
+                        message += '\n👤 *Индивидуальные тренировки (тренажер):*\n';
                         individualSessions.forEach(session => {
                             const date = new Date(session.session_date);
                             const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -3886,7 +5330,27 @@ async function handleTextMessage(msg) {
                             message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
                             message += `⏱ *Длительность:* ${session.duration} мин\n`;
                             message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
-                            allSessions.push({ ...session, session_type: 'individual' });
+                            allSessions.push({ ...session, session_type: 'individual_simulator' });
+                            counter++;
+                        });
+                    }
+                    if (naturalSlopeIndividualSessions.length > 0) {
+                        message += '\n🏔️ *Индивидуальные тренировки (Кулига Парк):*\n';
+                        naturalSlopeIndividualSessions.forEach(session => {
+                            const date = new Date(session.session_date);
+                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                            const [hours, minutes] = session.start_time.split(':');
+                            const formattedTime = `${hours}:${minutes}`;
+                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                            message += `⏰ *Время:* ${formattedTime}\n`;
+                            message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
+                            message += `👨‍🏫 *С тренером*\n`;
+                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            message += `⏱ *Длительность:* ${session.duration} мин\n`;
+                            message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
+                            allSessions.push({ ...session, session_type: 'individual_natural_slope' });
                             counter++;
                         });
                     }
@@ -4100,7 +5564,7 @@ async function handleTextMessage(msg) {
                             resize_keyboard: true
                         }
                     });
-                } else if (selectedSession.session_type === 'individual') {
+                } else if (selectedSession.session_type === 'individual_simulator') {
                     // --- отмена индивидуальной тренировки ---
                     const date = new Date(selectedSession.session_date);
                     const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -4119,6 +5583,19 @@ async function handleTextMessage(msg) {
                     const client = clientRes.rows[0];
 
                     // Освобождаем слоты в расписании
+                    let endTime = selectedSession.end_time;
+                    if (!endTime) {
+                        // Вычисляем время окончания: start_time + duration минут
+                        const startTime = selectedSession.start_time;
+                        const duration = selectedSession.duration || 30;
+                        const [hours, minutes] = startTime.split(':').map(Number);
+                        const startMinutes = hours * 60 + minutes;
+                        const endMinutes = startMinutes + duration;
+                        const endHours = Math.floor(endMinutes / 60);
+                        const endMins = endMinutes % 60;
+                        endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+                    }
+                    
                     await pool.query(
                         `UPDATE schedule 
                          SET is_booked = false 
@@ -4130,7 +5607,7 @@ async function handleTextMessage(msg) {
                             selectedSession.simulator_id,
                             selectedSession.session_date,
                             selectedSession.start_time,
-                            selectedSession.end_time
+                            endTime
                         ]
                     );
 
@@ -4167,6 +5644,320 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${formattedTime}\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else if (selectedSession.session_type === 'group_winter') {
+                    // --- отмена зимней групповой тренировки ---
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+
+                    // Получаем информацию о тренировке
+                    const groupInfoRes = await pool.query(
+                        `SELECT ts.*, g.name as group_name, t.full_name as trainer_name
+                         FROM training_sessions ts
+                         LEFT JOIN groups g ON ts.group_id = g.id
+                         LEFT JOIN trainers t ON ts.trainer_id = t.id
+                         WHERE ts.id = $1`,
+                        [selectedSession.session_id]
+                    );
+                    const groupInfo = groupInfoRes.rows[0];
+
+                    // Получаем информацию об участнике
+                    const participantRes = await pool.query(
+                        `SELECT sp.*, 
+                            COALESCE(ch.full_name, c.full_name) as participant_name,
+                            c.full_name as client_name,
+                            c.phone as client_phone,
+                            ch.id as child_id,
+                            ch.full_name as child_name
+                         FROM session_participants sp
+                         JOIN clients c ON sp.client_id = c.id
+                         LEFT JOIN children ch ON sp.child_id = ch.id
+                         WHERE sp.id = $1`,
+                        [selectedSession.id]
+                    );
+                    const participant = participantRes.rows[0];
+
+                    // Рассчитываем цену за одного участника
+                    const pricePerPerson = groupInfo.max_participants 
+                        ? (Number(groupInfo.price) / groupInfo.max_participants)
+                        : Number(groupInfo.price);
+
+                    // Подсчитываем оставшихся участников
+                    const seatsRes = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
+                    );
+                    const currentParticipants = parseInt(seatsRes.rows[0].count) - 1;
+                    const maxParticipants = groupInfo.max_participants;
+                    const seatsLeft = `${currentParticipants}/${maxParticipants}`;
+
+                    // Формируем participant_name только если есть child_id
+                    const participantName = participant.child_id ? participant.child_name : null;
+
+                    // Проверяем, использовался ли абонемент (нужно до уведомления админу)
+                    const subscriptionUsageCheckBefore = await pool.query(
+                        `SELECT 
+                            nsu.*,
+                            st.name as subscription_name
+                         FROM natural_slope_subscription_usage nsu
+                         JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE nsu.training_session_id = $1`,
+                        [selectedSession.session_id]
+                    );
+
+                    // Уведомляем админа об отмене групповой зимней тренировки
+                    try {
+                        const { notifyAdminGroupTrainingCancellation } = require('./admin-notify');
+                        await notifyAdminGroupTrainingCancellation({
+                            client_name: participant.client_name,
+                            participant_name: participantName,
+                            client_phone: participant.client_phone,
+                            date: groupInfo.session_date,
+                            time: groupInfo.start_time,
+                            group_name: groupInfo.group_name,
+                            trainer_name: groupInfo.trainer_name,
+                            simulator_name: null, // Групповые зимние тренировки не на тренажере
+                            seats_left: seatsLeft,
+                            refund: pricePerPerson,
+                            used_subscription: subscriptionUsageCheckBefore.rows.length > 0
+                        });
+                    } catch (error) {
+                        console.error('Ошибка при отправке уведомления администратору об отмене групповой зимней тренировки:', error);
+                    }
+
+                    // Вместо удаления меняем статус на 'cancelled'
+                    await pool.query('UPDATE session_participants SET status = $1 WHERE id = $2', ['cancelled', selectedSession.id]);
+
+                    // Освобождаем слот в winter_schedule если все участники отменили
+                    // Проверяем, есть ли запись в winter_schedule для этой тренировки
+                    const remainingCheck = await pool.query(
+                        'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+                        [selectedSession.session_id, 'confirmed']
+                    );
+                    if (parseInt(remainingCheck.rows[0].count) === 0) {
+                        // Проверяем, есть ли запись в winter_schedule для этого времени
+                        const timeSlot = String(selectedSession.start_time).substring(0, 5);
+                        const slotCheck = await pool.query(
+                            `SELECT id, is_group_training FROM winter_schedule 
+                             WHERE date = $1 AND time_slot = $2::time LIMIT 1`,
+                            [selectedSession.session_date, timeSlot]
+                        );
+                        
+                        // Если есть запись в winter_schedule и это групповая тренировка
+                        if (slotCheck.rows.length > 0 && slotCheck.rows[0].is_group_training) {
+                            // Правильно обновляем: при is_group_training = false должно быть is_individual_training = true
+                            await pool.query(
+                                `UPDATE winter_schedule 
+                                 SET is_available = true, 
+                                     current_participants = 0,
+                                     is_group_training = false,
+                                     is_individual_training = true,
+                                     group_id = NULL,
+                                     trainer_id = NULL,
+                                     max_participants = 1,
+                                     updated_at = NOW()
+                                 WHERE id = $1`,
+                                [slotCheck.rows[0].id]
+                            );
+                        }
+                    }
+
+                    // Проверяем, использовался ли абонемент для этого конкретного участника
+                    const subscriptionUsageCheck = await pool.query(
+                        `SELECT 
+                            nsu.*,
+                            ns.remaining_sessions,
+                            ns.status as subscription_status,
+                            st.name as subscription_name,
+                            st.sessions_count as total_sessions
+                         FROM natural_slope_subscription_usage nsu
+                         JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+                         JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+                         WHERE nsu.session_participant_id = $1
+                         AND ns.client_id = $2`,
+                        [selectedSession.id, state.data.client_id]
+                    );
+
+                    let refundMessage = '';
+                    let returnedSubscription = null;
+
+                    if (subscriptionUsageCheck.rows.length > 0) {
+                        // Использовался абонемент - возвращаем занятие
+                        const subscriptionUsage = subscriptionUsageCheck.rows[0];
+                        
+                        // Возвращаем занятие в абонемент
+                        await pool.query(
+                            `UPDATE natural_slope_subscriptions 
+                             SET remaining_sessions = remaining_sessions + 1,
+                                 status = CASE 
+                                    WHEN expires_at >= CURRENT_DATE THEN 'active'
+                                    ELSE status
+                                 END
+                             WHERE id = $1`,
+                            [subscriptionUsage.subscription_id]
+                        );
+
+                        // Удаляем запись использования
+                        await pool.query(
+                            `DELETE FROM natural_slope_subscription_usage 
+                             WHERE id = $1`,
+                            [subscriptionUsage.id]
+                        );
+
+                        returnedSubscription = {
+                            name: subscriptionUsage.subscription_name,
+                            remaining: subscriptionUsage.remaining_sessions + 1,
+                            total: subscriptionUsage.total_sessions
+                        };
+
+                        refundMessage = `🎫 *Абонемент:* Занятие возвращено в "${returnedSubscription.name}"\n` +
+                            `📊 *Занятий осталось:* ${returnedSubscription.remaining}/${returnedSubscription.total}\n`;
+                        
+                        // Создаем транзакцию для отчетности при возврате занятия в абонемент
+                        const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        if (walletId) {
+                            // Создаем запись о возврате занятия в абонемент
+                            await pool.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId,
+                                    0,
+                                    'subscription_return',
+                                    `Возврат занятия в абонемент: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин. Занятий осталось: ${returnedSubscription.remaining}/${returnedSubscription.total}`
+                                ]
+                            );
+                        }
+                        
+                        console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionUsage.subscription_id} для клиента ${state.data.client_id}`);
+                    } else {
+                        // Не использовался абонемент - возвращаем деньги
+                        await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [pricePerPerson, state.data.client_id]);
+
+                        // Получаем id кошелька
+                        const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                        const walletId = walletRes.rows[0]?.id;
+                        if (walletId) {
+                            // Создаем запись о возврате
+                            await pool.query(
+                                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                                [
+                                    walletId,
+                                    pricePerPerson,
+                                    'amount',
+                                    `Возврат: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                ]
+                            );
+                        }
+
+                        refundMessage = `💰 *Возвращено:* ${pricePerPerson.toFixed(2)} руб.\n`;
+                    }
+
+                    // Сообщение для клиента
+                    const clientMessage = 
+                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `👥 *Группа:* ${groupInfo.group_name}\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
+                        refundMessage +
+                        '\n' + (returnedSubscription ? 'Занятие возвращено в абонемент.' : 'Средства возвращены на ваш баланс.');
+
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, clientMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 В главное меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else if (selectedSession.session_type === 'individual_natural_slope') {
+                    // --- отмена индивидуальной тренировки естественного склона ---
+                    const date = new Date(selectedSession.session_date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = selectedSession.start_time.split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+
+                    // Получаем данные клиента
+                    const clientRes = await pool.query(
+                        `SELECT c.*, 
+                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birth_date)) as age
+                        FROM clients c
+                        WHERE c.id = $1`,
+                        [state.data.client_id]
+                    );
+                    const client = clientRes.rows[0];
+
+                    // Уведомляем админа
+                    await notifyAdminNaturalSlopeTrainingCancellation({
+                        client_name: client.full_name,
+                        participant_name: selectedSession.participant_name,
+                        client_phone: client.phone,
+                        date: selectedSession.session_date,
+                        time: selectedSession.start_time,
+                        trainer_name: selectedSession.trainer_name,
+                        refund: selectedSession.price
+                    });
+
+                    // Освобождаем слот в winter_schedule
+                    await pool.query(
+                        `UPDATE winter_schedule 
+                         SET is_available = true, current_participants = 0
+                         WHERE date = $1 
+                         AND time_slot = $2 
+                         AND is_individual_training = true`,
+                        [selectedSession.session_date, selectedSession.start_time]
+                    );
+
+                    // Удаляем участника из session_participants
+                    await pool.query('DELETE FROM session_participants WHERE id = $1', [selectedSession.id]);
+                    
+                    // Удаляем саму тренировку из training_sessions
+                    await pool.query('DELETE FROM training_sessions WHERE id = $1', [selectedSession.session_id]);
+
+                    // Возвращаем средства
+                    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE client_id = $2', [selectedSession.price, state.data.client_id]);
+
+                    // Получаем id кошелька
+                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [state.data.client_id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    if (walletId) {
+                        // Запись в transactions для естественного склона
+                        await pool.query(
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [walletId, selectedSession.price, 'amount', `Возврат: Индивидуальная тренировка на естественном склоне, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`]
+                        );
+                    }
+
+                    // Сообщение для клиента
+                    const clientMessage = 
+                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `👤 *Участник:* ${selectedSession.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
+                        `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
+                        'Средства возвращены на ваш баланс.';
+
                     userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
                         parse_mode: 'Markdown',
@@ -4222,7 +6013,7 @@ async function handleTextMessage(msg) {
             });
 
             return bot.sendMessage(chatId,
-                '📅 *Введите дату рождения ребенка в формате ДД.ММ.ГГГГ:*\n\n' +
+                '📅 *Введите дату рождения в формате ДД.ММ.ГГГГ:*\n\n' +
                 'Например: 01.01.2015',
                 {
                     parse_mode: 'Markdown',
@@ -4275,7 +6066,7 @@ async function handleTextMessage(msg) {
 
                 userStates.delete(chatId);
                 await bot.sendMessage(chatId,
-                    '✅ *Ребенок успешно добавлен!*',
+                    '✅ *Человек успешно добавлен!*',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -4286,9 +6077,9 @@ async function handleTextMessage(msg) {
                 );
                 return showPersonalCabinet(chatId);
             } catch (error) {
-                console.error('Ошибка при добавлении ребенка:', error);
+                console.error('Ошибка при добавлении человека:', error);
                 return bot.sendMessage(chatId,
-                    '❌ Произошла ошибка при добавлении ребенка. Пожалуйста, попробуйте позже.',
+                    '❌ Произошла ошибка при добавлении человека. Пожалуйста, попробуйте позже.',
                     {
                         reply_markup: {
                             keyboard: [['🔙 В главное меню']],
@@ -4601,6 +6392,28 @@ async function handleTextMessage(msg) {
                             'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
                             [walletId, state.data.price, 'payment', `Запись: Индивидуальная, ${participantName}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${state.data.duration} мин.`]
                         );
+                    }
+
+                    // Проверяем и обновляем реферальный статус после записи на индивидуальную тренировку
+                    try {
+                        const { updateReferralStatusOnTraining, isFirstTraining } = require('../services/referral-service');
+                        const isFirst = await isFirstTraining(state.data.client_id);
+                        if (isFirst) {
+                            console.log(`🎁 Это первая тренировка клиента ${state.data.client_id}, проверяем реферальный бонус...`);
+                            await updateReferralStatusOnTraining(state.data.client_id);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке реферального бонуса:', error);
+                        // Не прерываем основной процесс
+                    }
+
+                    // Проверяем milestone бонусы (посещение N тренировок)
+                    try {
+                        const { checkMilestoneBonuses } = require('../services/bonus-system');
+                        await checkMilestoneBonuses(state.data.client_id);
+                    } catch (error) {
+                        console.error('❌ Ошибка при проверке milestone бонусов:', error);
+                        // Не прерываем основной процесс
                     }
 
                     // Получаем данные клиента для уведомления
@@ -4934,6 +6747,406 @@ async function handleTextMessage(msg) {
             return activateCertificate(chatId, certificateNumber, clientId);
         }
 
+        // Обработка состояний для зимних тренировок
+        case 'natural_slope_individual_date': {
+            // Показываем календарь доступных дат вместо ручного ввода
+            await showNaturalSlopeAvailableDates(chatId);
+            return;
+        }
+        
+        case 'natural_slope_individual_date_from_calendar': {
+            const selectedDate = state.data.selected_date;
+            // Проверяем, есть ли расписание на выбранную дату
+            const scheduleResult = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM winter_schedule 
+                 WHERE date = $1 AND is_individual_training = true`,
+                [selectedDate]
+            );
+            
+            if (parseInt(scheduleResult.rows[0].count) === 0) {
+                // Нет расписания на эту дату - ищем ближайшие доступные даты
+                const nearestDatesResult = await pool.query(
+                    `SELECT DISTINCT date 
+                     FROM winter_schedule 
+                     WHERE date > $1 AND is_individual_training = true
+                     ORDER BY date 
+                     LIMIT 3`,
+                    [selectedDate]
+                );
+                
+                if (nearestDatesResult.rows.length === 0) {
+                    return bot.sendMessage(chatId,
+                        '❌ *К сожалению, на эту дату нет записи на тренировку.*\n\n' +
+                        'Расписание на зимние тренировки пока не создано. Обратитесь к администратору.',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Форматируем ближайшие даты
+                const nearestDates = nearestDatesResult.rows.map(row => {
+                    const date = new Date(row.date);
+                    return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                }).join(', ');
+                
+                return bot.sendMessage(chatId,
+                    `❌ *К сожалению, на эту дату нет записи на тренировку.*\n\n` +
+                    `📅 *Ближайшие доступные даты:* ${nearestDates}\n\n` +
+                    `Попробуйте выбрать одну из этих дат.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            state.data.selected_date = selectedDate;
+            state.step = 'natural_slope_individual_time';
+            userStates.set(chatId, state);
+
+            // Показываем доступные временные слоты для выбранной даты
+            return showNaturalSlopeTimeSlots(chatId, selectedDate, state.data);
+        }
+
+        case 'natural_slope_individual_time': {
+            // Обработка выбора времени
+            if (!msg.text || !msg.text.startsWith('⏰ ')) {
+                return bot.sendMessage(chatId, 'Пожалуйста, выберите время из предложенных вариантов.');
+            }
+            
+            const selectedTime = msg.text.replace('⏰ ', '');
+            const validTimes = (state && state.data && Array.isArray(state.data.available_times)) ? state.data.available_times : [];
+            
+            if (!validTimes.includes(selectedTime)) {
+                return bot.sendMessage(chatId, '❌ Неверное время. Пожалуйста, выберите из предложенных вариантов.');
+            }
+            
+            // Сохраняем выбранное время
+            state.data.selected_time = selectedTime;
+            state.step = 'natural_slope_individual_confirm';
+            userStates.set(chatId, state);
+            
+            // Получаем цену для индивидуальной тренировки
+            const priceResult = await pool.query(
+                `SELECT price FROM winter_prices 
+                 WHERE type = 'individual' AND is_active = true 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const price = priceResult.rows.length > 0 ? parseFloat(priceResult.rows[0].price) : 2500;
+            
+            // Получаем баланс клиента из таблицы wallets
+            const balanceResult = await pool.query(
+                `SELECT balance FROM wallets WHERE client_id = $1`,
+                [state.data.client_id]
+            );
+            
+            const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+            
+            // Форматируем дату для отображения
+            const date = new Date(state.data.selected_date);
+            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            
+            // Показываем подтверждение записи
+            return bot.sendMessage(chatId,
+                `📋 *Проверьте данные заявки:*\n\n` +
+                `*Детали тренировки:*\n` +
+                `• ФИО участника: ${state.data.participant_name}\n` +
+                `• Тип тренировки: Индивидуальная\n` +
+                `• Снаряжение: Горные лыжи 🎿\n` +
+                `• Тренер: С тренером 👨‍🏫\n` +
+                `• Длительность: 60 минут ⏱️\n` +
+                `• Дата: ${formattedDate}\n` +
+                `• Время: ${selectedTime}\n` +
+                `• Место: Кулига Парк\n` +
+                `• Стоимость: ${price.toFixed(2)} руб. 💰\n` +
+                `• Ваш баланс: ${balance.toFixed(2)} руб. 💳\n\n` +
+                `*Выберите действие:*`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['✅ Записаться'],
+                            ['💰 Пополнить баланс'],
+                            ['❌ Я передумал']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        case 'natural_slope_individual_confirm': {
+            if (msg.text === '✅ Записаться') {
+                // Проверяем баланс из таблицы wallets
+                const balanceResult = await pool.query(
+                    `SELECT balance FROM wallets WHERE client_id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const balance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                
+                // Получаем цену
+                const priceResult = await pool.query(
+                    `SELECT price FROM winter_prices 
+                     WHERE type = 'individual' AND is_active = true 
+                     ORDER BY created_at DESC LIMIT 1`
+                );
+                
+                const price = priceResult.rows.length > 0 ? parseFloat(priceResult.rows[0].price) : 2500;
+                
+                if (balance < price) {
+                    return bot.sendMessage(chatId,
+                        `❌ *Недостаточно средств на балансе!*\n\n` +
+                        `💰 *Требуется:* ${price.toFixed(2)} руб.\n` +
+                        `💳 *Ваш баланс:* ${balance.toFixed(2)} руб.\n` +
+                        `📊 *Не хватает:* ${(price - balance).toFixed(2)} руб.\n\n` +
+                        `Пополните баланс и попробуйте снова.`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['💰 Пополнить баланс'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Создаем запись в winter_schedule
+                const dbClient = await pool.connect();
+                try {
+                    await dbClient.query('BEGIN');
+                    
+                    // Находим слот в расписании
+                    const slotResult = await dbClient.query(
+                        `SELECT id FROM winter_schedule 
+                         WHERE date = $1 AND time_slot = $2 AND is_individual_training = true`,
+                        [state.data.selected_date, state.data.selected_time + ':00']
+                    );
+                    
+                    if (slotResult.rows.length === 0) {
+                        throw new Error('Слот не найден в расписании');
+                    }
+                    
+                    const slotId = slotResult.rows[0].id;
+                    
+                    // Помечаем слот как занятый
+                    await dbClient.query(
+                        `UPDATE winter_schedule 
+                         SET is_available = false, current_participants = 1
+                         WHERE id = $1`,
+                        [slotId]
+                    );
+                    
+                    // Создаем запись в training_sessions для зимней тренировки
+                    const trainingResult = await dbClient.query(
+                        `INSERT INTO training_sessions (
+                            session_date, start_time, end_time, duration,
+                            training_type, max_participants, price, status,
+                            equipment_type, with_trainer, slope_type, winter_training_type,
+                            created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+                        RETURNING id`,
+                        [
+                            state.data.selected_date,
+                            state.data.selected_time + ':00',
+                            state.data.selected_time + ':00',
+                            60, // duration
+                            false, // training_type: false = individual
+                            1, // max_participants
+                            price,
+                            'scheduled', // status
+                            'ski', // equipment_type
+                            true, // with_trainer
+                            'natural_slope', // slope_type
+                            'individual' // winter_training_type
+                        ]
+                    );
+                    
+                    const trainingId = trainingResult.rows[0].id;
+                    
+                    // Создаем запись в session_participants
+                    await dbClient.query(
+                        `INSERT INTO session_participants (
+                            session_id, client_id, child_id, is_child, status, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
+                        [
+                            trainingId,
+                            state.data.client_id,
+                            state.data.participant_type === 'child' ? state.data.participant_id : null,
+                            state.data.participant_type === 'child',
+                            'confirmed'
+                        ]
+                    );
+                    
+                    // Списываем деньги с баланса
+                    await dbClient.query(
+                        `UPDATE wallets 
+                         SET balance = balance - $1 
+                         WHERE client_id = $2`,
+                        [price, state.data.client_id]
+                    );
+                    
+                    // Создаем запись о транзакции
+                    const walletResult = await dbClient.query(
+                        `SELECT id FROM wallets WHERE client_id = $1`,
+                        [state.data.client_id]
+                    );
+                    
+                    if (walletResult.rows.length === 0) {
+                        throw new Error('Кошелек клиента не найден');
+                    }
+                    
+                    const walletId = walletResult.rows[0].id;
+                    
+                    // Форматируем дату для транзакции
+                    const transactionDate = new Date(state.data.selected_date);
+                    const formattedTransactionDate = `${transactionDate.getDate().toString().padStart(2, '0')}.${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}.${transactionDate.getFullYear()}`;
+                    
+                    await dbClient.query(
+                        `INSERT INTO transactions (
+                            wallet_id, amount, type, description, created_at
+                        ) VALUES ($1, $2, $3, $4, NOW())`,
+                        [
+                            walletId,
+                            price,
+                            'payment',
+                            `Индивидуальная тренировка на естественном склоне, ${state.data.participant_name}, Дата: ${formattedTransactionDate}, Время: ${state.data.selected_time}, Длительность: 60 мин.`
+                        ]
+                    );
+                    
+                    await dbClient.query('COMMIT');
+                    
+                    // Получаем обновленный баланс после списания
+                    const updatedBalanceResult = await pool.query(
+                        `SELECT balance FROM wallets WHERE client_id = $1`,
+                        [state.data.client_id]
+                    );
+                    const updatedBalance = parseFloat(updatedBalanceResult.rows[0]?.balance || 0);
+                    
+                    // Получаем данные клиента для уведомления
+                    const clientRes = await pool.query(
+                        `SELECT c.*, 
+                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birth_date)) as age
+                        FROM clients c
+                        WHERE c.id = $1`,
+                        [state.data.client_id]
+                    );
+                    const client = clientRes.rows[0];
+                    
+                    // Уведомляем админа
+                    await notifyAdminNaturalSlopeTrainingBooking({
+                        client_name: client.full_name,
+                        participant_name: state.data.participant_name,
+                        client_phone: client.phone,
+                        date: state.data.selected_date,
+                        time: state.data.selected_time,
+                        price: price
+                    });
+                    
+                    // Очищаем состояние
+                    userStates.delete(chatId);
+                    
+                    // Форматируем дату для сообщения
+                    const date = new Date(state.data.selected_date);
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    
+                    // Отправляем подтверждение
+                    return bot.sendMessage(chatId,
+                        `✅ Тренировка *В КУЛИГА ПАРКЕ* успешно забронирована!\n\n` +
+                        `👤 *Участник:* ${state.data.participant_name}\n` +
+                        `📅 *Дата:* ${formattedDate}\n` +
+                        `⏰ *Время:* ${state.data.selected_time}\n` +
+                        `🏔️ *Место:* Кулига Парк\n` +
+                        `💰 *Стоимость:* ${price.toFixed(2)} руб.\n` +
+                        `💳 *Остаток на балансе:* ${updatedBalance.toFixed(2)} руб.\n\n` +
+                        `🎿 *Удачной тренировки!*`,
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                    
+                } catch (error) {
+                    await dbClient.query('ROLLBACK');
+                    console.error('Ошибка при записи на тренировку:', error);
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка при записи на тренировку. Попробуйте позже.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                } finally {
+                    dbClient.release();
+                }
+                
+            } else if (msg.text === '💰 Пополнить баланс') {
+                // Показываем информацию о пополнении баланса
+                const clientResult = await pool.query(
+                    `SELECT c.*, w.wallet_number, w.balance 
+                     FROM clients c 
+                     LEFT JOIN wallets w ON c.id = w.client_id 
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+                
+                const client = clientResult.rows[0];
+                const walletNumber = client.wallet_number || 'не указан';
+                
+                return bot.sendMessage(chatId,
+                    `💰 *Пополнение баланса*\n\n` +
+                    `💳 *Номер кошелька:* \`${walletNumber}\`\n\n` +
+                    `📋 *Инструкция:*\n` +
+                    `1. Переведите деньги на номер кошелька\n` +
+                    `2. В комментарии укажите номер кошелька\n` +
+                    `3. Деньги поступят в течение 5 минут\n\n` +
+                    `После пополнения вернитесь к записи на тренировку.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🔙 Назад к записи'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                
+            } else if (msg.text === '❌ Я передумал') {
+                // Очищаем состояние и возвращаемся в меню
+                userStates.delete(chatId);
+                return showMainMenu(chatId);
+                
+            } else if (msg.text === '🔙 Назад к записи') {
+                // Возвращаемся к выбору времени
+                state.step = 'natural_slope_individual_time';
+                userStates.set(chatId, state);
+                return showNaturalSlopeTimeSlots(chatId, state.data.selected_date, state.data);
+                
+            } else {
+                return bot.sendMessage(chatId, 'Пожалуйста, выберите действие из предложенных вариантов.');
+            }
+        }
+
         // ... rest of the states ...
     }
 }
@@ -4948,6 +7161,20 @@ bot.on('callback_query', async (callbackQuery) => {
     const state = userStates.get(chatId);
 
     try {
+        // Выбор даты для зимнего склона (инлайн-календарь)
+        if (data && data.startsWith('ns_date:')) {
+            const date = data.split(':')[1];
+            const st = state || { step: 'natural_slope_individual_time', data: {} };
+            st.data = st.data || {};
+            st.data.selected_date = date;
+            st.step = 'natural_slope_individual_time';
+            userStates.set(chatId, st);
+            try { await bot.answerCallbackQuery(callbackQuery.id); } catch (_) {}
+            // Удаляем сообщение с календарем
+            try { await bot.deleteMessage(chatId, callbackQuery.message.message_id); } catch (_) {}
+            // Сразу показываем доступные слоты
+            return showNaturalSlopeTimeSlots(chatId, date, st.data);
+        }
         // Обработка выбора дизайна сертификата
         if (data.startsWith('select_design_')) {
             await bot.answerCallbackQuery(callbackQuery.id, {
@@ -4959,6 +7186,50 @@ bot.on('callback_query', async (callbackQuery) => {
             
             if (state && state.step === 'certificate_design_selection') {
                 return showRecipientForm(chatId, state.data.client_id, parseInt(nominalValue), parseInt(designId));
+            }
+            return;
+        }
+
+        // Обработка копирования реферальной ссылки (не требует состояния)
+        if (data.startsWith('copy_referral_')) {
+            const referralCode = data.replace('copy_referral_', '');
+            const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+            const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
+            const botShareLink = `https://t.me/${botUsername}`;
+            
+            // Проверяем, активна ли реферальная программа
+            const referralActiveResult = await pool.query(
+                `SELECT bonus_amount FROM bonus_settings 
+                 WHERE bonus_type = 'referral' AND is_active = TRUE 
+                 ORDER BY created_at DESC LIMIT 1`
+            );
+            
+            const isReferralActive = referralActiveResult.rows.length > 0;
+            
+            if (isReferralActive) {
+                // Реферальная программа активна - показываем реферальную ссылку
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Реферальная ссылка скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${referralLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
+            } else {
+                // Реферальная программа неактивна - показываем обычную ссылку на бота
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: `Ссылка на бота скопирована!`,
+                    show_alert: false
+                });
+                
+                await bot.sendMessage(chatId, 
+                    `🔗 <b>Ссылка на бота:</b>\n<code>${botShareLink}</code>\n\n` +
+                    `📋 Нажмите на ссылку, чтобы скопировать её`,
+                    { parse_mode: 'HTML' }
+                );
             }
             return;
         }
@@ -5006,6 +7277,7 @@ bot.on('callback_query', async (callbackQuery) => {
             });
             return;
         }
+
 
         if (data.startsWith('time_')) {
             const [, simulatorId, time] = data.split('_');
@@ -5204,7 +7476,7 @@ async function showMyBookings(chatId) {
             return;
         }
 
-        // --- Групповые тренировки ---
+        // --- Групповые тренировки на тренажере ---
         const groupResult = await pool.query(
             `WITH client_sessions AS (
                 SELECT 
@@ -5223,7 +7495,8 @@ async function showMyBookings(chatId) {
                     ts.price,
                     ts.max_participants,
                     (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
-                    'group' as session_type
+                    'group' as session_type,
+                    'simulator' as slope_type
                 FROM session_participants sp
                 JOIN training_sessions ts ON sp.session_id = ts.id
                 JOIN simulators s ON ts.simulator_id = s.id
@@ -5234,6 +7507,7 @@ async function showMyBookings(chatId) {
                 WHERE sp.client_id = $1
                 AND ts.status = 'scheduled'
                 AND sp.status = 'confirmed'
+                AND ts.simulator_id IS NOT NULL
                 AND (
                   (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
                 )
@@ -5243,14 +7517,61 @@ async function showMyBookings(chatId) {
             [client.id]
         );
 
-        // --- Индивидуальные тренировки ---
+        // --- Групповые тренировки на естественном склоне ---
+        const winterGroupResult = await pool.query(
+            `SELECT 
+                sp.id,
+                sp.session_id,
+                sp.child_id,
+                COALESCE(c.full_name, cl.full_name) as participant_name,
+                ts.session_date,
+                ts.start_time,
+                ts.duration,
+                ts.equipment_type,
+                NULL as simulator_name,
+                g.name as group_name,
+                t.full_name as trainer_name,
+                ts.skill_level,
+                ts.price,
+                ts.max_participants,
+                (SELECT COUNT(*) FROM session_participants WHERE session_id = ts.id AND status = 'confirmed') as current_participants,
+                'group_winter' as session_type,
+                'natural_slope' as slope_type,
+                CASE WHEN nsu.id IS NOT NULL THEN true ELSE false END as used_subscription,
+                st.name as subscription_name,
+                ns.remaining_sessions as subscription_remaining_sessions,
+                st.sessions_count as subscription_total_sessions
+            FROM session_participants sp
+            JOIN training_sessions ts ON sp.session_id = ts.id
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN children c ON sp.child_id = c.id
+            JOIN clients cl ON sp.client_id = cl.id
+            LEFT JOIN natural_slope_subscription_usage nsu ON nsu.session_participant_id = sp.id
+            LEFT JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+            LEFT JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+            WHERE sp.client_id = $1
+            AND ts.status = 'scheduled'
+            AND sp.status = 'confirmed'
+            AND ts.simulator_id IS NULL
+            AND ts.group_id IS NOT NULL
+            AND (
+              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+            )
+            ORDER BY ts.session_date, ts.start_time`,
+            [client.id]
+        );
+
+        // --- Индивидуальные тренировки тренажера ---
         const individualResult = await pool.query(
             `SELECT 
                 its.id,
                 its.child_id,
+                its.simulator_id,
                 COALESCE(ch.full_name, cl.full_name) as participant_name,
                 its.preferred_date as session_date,
                 its.preferred_time as start_time,
+                (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
                 its.duration,
                 its.equipment_type,
                 s.name as simulator_name,
@@ -5260,8 +7581,9 @@ async function showMyBookings(chatId) {
                 its.price,
                 1 as max_participants,
                 1 as current_participants,
-                'individual' as session_type,
-                its.with_trainer
+                'individual_simulator' as session_type,
+                its.with_trainer,
+                'simulator' as slope_type
             FROM individual_training_sessions its
             JOIN simulators s ON its.simulator_id = s.id
             LEFT JOIN children ch ON its.child_id = ch.id
@@ -5272,10 +7594,52 @@ async function showMyBookings(chatId) {
             [client.id]
         );
 
+        // --- Индивидуальные тренировки естественного склона ---
+        const naturalSlopeIndividualResult = await pool.query(
+            `SELECT 
+                sp.id,
+                sp.session_id,
+                sp.child_id,
+                COALESCE(c.full_name, cl.full_name) as participant_name,
+                ts.session_date,
+                ts.start_time,
+                ts.end_time,
+                ts.duration,
+                ts.equipment_type,
+                NULL as simulator_name,
+                NULL as group_name,
+                t.full_name as trainer_name,
+                NULL as skill_level,
+                ts.price,
+                1 as max_participants,
+                1 as current_participants,
+                'individual_natural_slope' as session_type,
+                ts.with_trainer,
+                'natural_slope' as slope_type
+            FROM session_participants sp
+            JOIN training_sessions ts ON sp.session_id = ts.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN children c ON sp.child_id = c.id
+            JOIN clients cl ON sp.client_id = cl.id
+            WHERE sp.client_id = $1
+            AND ts.status = 'scheduled'
+            AND sp.status = 'confirmed'
+            AND ts.training_type = FALSE
+            AND ts.slope_type = 'natural_slope'
+            AND (
+              (ts.session_date::timestamp + ts.start_time::interval + (ts.duration || ' minutes')::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
+            )
+            ORDER BY ts.session_date, ts.start_time`,
+            [client.id]
+        );
+
         // --- Формируем общий список ---
         const groupSessions = groupResult.rows;
+        const winterGroupSessions = winterGroupResult.rows;
         const individualSessions = individualResult.rows;
-        if (groupSessions.length === 0 && individualSessions.length === 0) {
+        const naturalSlopeIndividualSessions = naturalSlopeIndividualResult.rows;
+        
+        if (groupSessions.length === 0 && winterGroupSessions.length === 0 && individualSessions.length === 0 && naturalSlopeIndividualSessions.length === 0) {
             await bot.sendMessage(chatId, 'У вас пока нет записей на тренировки.', {
                 reply_markup: {
                     keyboard: [['🔙 В главное меню']],
@@ -5288,8 +7652,9 @@ async function showMyBookings(chatId) {
         let message = `📋 *Ваши записи на тренировки:*\n\n`;
         let allSessions = [];
         let counter = 1;
+        
         if (groupSessions.length > 0) {
-            message += '\n👥 *Групповые тренировки:*\n';
+            message += '\n👥 *Групповые тренировки (тренажер):*\n';
             groupSessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -5308,8 +7673,38 @@ async function showMyBookings(chatId) {
                 counter++;
             });
         }
+        
+        if (winterGroupSessions.length > 0) {
+            message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+            winterGroupSessions.forEach(session => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
+                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `👥 *Группа:* ${session.group_name}\n`;
+                if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
+                if (session.used_subscription) {
+                    message += `🎫 *Оплата:* По абонементу "${session.subscription_name}"\n`;
+                    if (session.subscription_remaining_sessions != null && session.subscription_total_sessions != null) {
+                        message += `📊 *Занятий осталось:* ${session.subscription_remaining_sessions}/${session.subscription_total_sessions}\n`;
+                    }
+                } else {
+                    message += `💰 *Стоимость:* ${pricePerPerson} руб.\n`;
+                }
+                allSessions.push({ ...session, session_type: 'group_winter' });
+                counter++;
+            });
+        }
+        
         if (individualSessions.length > 0) {
-            message += '\n👤 *Индивидуальные тренировки:*\n';
+            message += '\n👤 *Индивидуальные тренировки (тренажер):*\n';
             individualSessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
@@ -5324,7 +7719,28 @@ async function showMyBookings(chatId) {
                 message += `🎿 *Тренажер:* ${session.simulator_name}\n`;
                 message += `⏱ *Длительность:* ${session.duration} мин\n`;
                 message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
-                allSessions.push({ ...session, session_type: 'individual' });
+                allSessions.push({ ...session, session_type: 'individual_simulator' });
+                counter++;
+            });
+        }
+        
+        if (naturalSlopeIndividualSessions.length > 0) {
+            message += '\n🏔️ *Индивидуальные тренировки (естественный склон):*\n';
+            naturalSlopeIndividualSessions.forEach(session => {
+                const date = new Date(session.session_date);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                const [hours, minutes] = session.start_time.split(':');
+                const formattedTime = `${hours}:${minutes}`;
+                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                message += `⏰ *Время:* ${formattedTime}\n`;
+                message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
+                message += `👨‍🏫 *С тренером*\n`;
+                message += `🏔️ *Место:* Кулига Парк\n`;
+                message += `⏱ *Длительность:* ${session.duration} мин\n`;
+                message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
+                allSessions.push({ ...session, session_type: 'individual_natural_slope' });
                 counter++;
             });
         }
@@ -5570,6 +7986,15 @@ async function showPersonalCabinet(chatId) {
 
         const clientStats = clientStatsResult.rows[0];
 
+        // Получаем количество рефералов
+        const referralCountResult = await pool.query(
+            `SELECT COUNT(*) as referral_count
+             FROM referral_transactions
+             WHERE referrer_id = $1`,
+            [client.id]
+        );
+        const referralCount = parseInt(referralCountResult.rows[0].referral_count) || 0;
+
         // Получаем информацию о детях
         const childrenResult = await pool.query(
             `SELECT c.*, 
@@ -5620,18 +8045,19 @@ async function showPersonalCabinet(chatId) {
         message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n`;
         message += `📊 *Статистика тренировок:*\n`;
         message += `   • Индивидуальных: ${clientStats.individual_count || 0}\n`;
-        message += `   • Групповых: ${clientStats.group_count || 0}\n\n`;
+        message += `   • Групповых: ${clientStats.group_count || 0}\n`;
+        message += `\n👥 *Рефералы:* ${referralCount} чел.\n\n`;
 
-        // Информация о детях
+        // Информация о добавленных людях
         if (childrenResult.rows.length > 0) {
-            message += `*Информация о детях:*\n`;
+            message += `*Информация о добавленных людях:*\n`;
             childrenResult.rows.forEach((child, index) => {
                 const childAge = calculateAge(child.birth_date);
                 const childBirthDate = formatBirthDate(child.birth_date);
                 const stats = childStats[child.id] || { individual_count: 0, group_count: 0 };
                 
-                message += `\n*Ребенок ${index + 1}:*\n`;
-                message += `👶 *ФИО:* ${child.full_name}\n`;
+                message += `\n*Человек ${index + 1}:*\n`;
+                message += `👤 *ФИО:* ${child.full_name}\n`;
                 message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
                 message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
                 message += `📊 *Статистика тренировок:*\n`;
@@ -5644,7 +8070,7 @@ async function showPersonalCabinet(chatId) {
 
         // Кнопки действий
         const keyboard = [
-            ['➕ Добавить ребенка'],
+            ['➕ Добавить человека'],
             ['🔙 Назад в меню']
         ];
 
@@ -6528,28 +8954,77 @@ async function showUserCertificates(chatId, clientId) {
     }
 }
 
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/start(.*)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const telegramId = msg.from.id.toString();
     const username = msg.from.username || '';
     const nickname = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
     const client = await getClientByTelegramId(telegramId);
+    
+    // Извлекаем реферальный код из команды /start
+    const referralCode = match[1] ? match[1].trim() : null;
 
     // Очищаем предыдущее состояние
     userStates.delete(chatId);
 
     if (!client) {
-        await bot.sendMessage(chatId,
-            '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
+        // Проверяем наличие реферального кода
+        let welcomeMessage = '🎿 Добро пожаловать в Ski-instruktor! 🏔\n\n' +
             '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
             'Я помогу вам:\n' +
             '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
             '• ⛷ Забронировать занятия в Кулиге зимой\n' +
             '• 💳 Управлять вашим балансом\n' +
-            '• 🎁 Приобрести подарочные сертификаты\n\n' +
-            '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯',
+            '• 🎁 Приобрести подарочные сертификаты\n\n';
+        
+        // Если есть реферальный код, проверяем его валидность
+        if (referralCode) {
+            try {
+                const referrerResult = await pool.query(
+                    'SELECT id, full_name FROM clients WHERE referral_code = $1',
+                    [referralCode]
+                );
+                
+                if (referrerResult.rows.length > 0) {
+                    const referrer = referrerResult.rows[0];
+                    
+                    // Проверяем, активна ли реферальная программа
+                    const referralActiveResult = await pool.query(
+                        `SELECT bonus_amount FROM bonus_settings 
+                         WHERE bonus_type = 'referral' AND is_active = TRUE 
+                         ORDER BY created_at DESC LIMIT 1`
+                    );
+                    
+                    const isReferralActive = referralActiveResult.rows.length > 0;
+                    
+                    if (isReferralActive) {
+                        const bonusAmount = Math.round(referralActiveResult.rows[0].bonus_amount);
+                        welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
+                            `Пригласил вас: ${referrer.full_name}\n\n` +
+                            `💰 После регистрации:\n` +
+                            `• Вы получите <b>${bonusAmount}₽</b> на баланс сразу!\n` +
+                            `• Эта сумма поможет оплатить первую тренировку со скидкой\n\n` +
+                            `💰 Ваш друг получит <b>${bonusAmount}₽</b> после того, как вы пополните баланс и пройдете первую тренировку.\n\n`;
+                    } else {
+                        // Реферальная программа неактивна, но ссылка все равно работает
+                        welcomeMessage += `🎁 <b>Вы пришли по реферальной ссылке!</b>\n` +
+                            `Пригласил вас: ${referrer.full_name}\n\n`;
+                    }
+                    
+                    console.log(`✅ Новый пользователь пришел по реферальной ссылке ${referralCode} от пользователя ID ${referrer.id}`);
+                } else {
+                    console.log(`⚠️ Неверный реферальный код: ${referralCode}`);
+                }
+            } catch (error) {
+                console.error('Ошибка при проверке реферального кода:', error);
+            }
+        }
+        
+        welcomeMessage += '🚀 Давайте начнем! Нажмите на кнопку "Запуск сервиса Ski-instruktor" внизу экрана, и я помогу вам зарегистрироваться в системе! 🎯';
+        
+        await bot.sendMessage(chatId, welcomeMessage,
             {
-                parse_mode: 'Markdown',
+                parse_mode: 'HTML',
                 reply_markup: {
                     keyboard: [[{ text: '🚀 Запуск сервиса Ski-instruktor' }]],
                     resize_keyboard: true,
@@ -6559,7 +9034,7 @@ bot.onText(/\/start/, async (msg) => {
         );
         userStates.set(chatId, {
             step: 'wait_start',
-            data: { telegram_id: telegramId, username, nickname }
+            data: { telegram_id: telegramId, username, nickname, referral_code: referralCode }
         });
     } else {
         await showMainMenu(chatId, telegramId);
@@ -6656,37 +9131,170 @@ async function setNotificationMode(msg, isSilent) {
 // Обработчик команды "Поделиться ботом"
 async function handleShareBotCommand(msg) {
     const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
     const botUsername = process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+    
+    try {
+        // Получаем реферальный код пользователя
+        const result = await pool.query(
+            'SELECT referral_code FROM clients WHERE telegram_id = $1',
+            [telegramId]
+        );
+
+        if (!result.rows[0]) {
+            await bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+            return;
+        }
+
+        let referralCode = result.rows[0].referral_code;
+
+        // Если у пользователя нет реферального кода, генерируем его
+        if (!referralCode) {
+            referralCode = await generateUniqueReferralCode();
+            await pool.query(
+                'UPDATE clients SET referral_code = $1 WHERE telegram_id = $2',
+                [referralCode, telegramId]
+            );
+            console.log(`✅ Сгенерирован реферальный код ${referralCode} для пользователя ${telegramId}`);
+        }
+
+        // Формируем реферальную ссылку
+        const referralLink = `https://t.me/${botUsername}?start=${referralCode}`;
     const botShareLink = `https://t.me/${botUsername}`;
 
-    const message = `🎿 <b>Поделитесь нашим ботом с друзьями!</b>\n\n` +
-        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
-        `🏂 <b>Ski-instruktor</b> — ваш помощник для записи на горнолыжный тренажер\n\n` +
-        `✨ <b>Основные возможности:</b>\n` +
-        `• 📝 Запись на групповые и индивидуальные тренировки\n` +
-        `• 👥 Управление детскими занятиями\n` +
-        `• 💰 Пополнение баланса\n` +
-        `• 📋 Просмотр своих записей\n` +
-        `• 🎁 Подарочные сертификаты\n\n` +
-        `📋 <b>Дополнительное меню (синяя кнопка справа):</b>\n` +
-        `• 📍 Бот подскажет адрес\n` +
-        `• 👥 Поделится информацией о тренере\n` +
-        `• 💰 Покажет актуальные цены\n\n` +
-        `🎯 <b>Перейти в бота можно щелкнув по имени ниже:</b>\n` +
-        `<a href='${botShareLink}'>@${botUsername}</a>\n\n` +
-        `💡 <b>Или просто перешлите это сообщение друзьям!</b>`;
+        // Проверяем, активна ли реферальная программа
+        const referralActiveResult = await pool.query(
+            `SELECT bonus_amount FROM bonus_settings 
+             WHERE bonus_type = 'referral' AND is_active = TRUE 
+             ORDER BY created_at DESC LIMIT 1`
+        );
+        
+        const isReferralActive = referralActiveResult.rows.length > 0;
+        const bonusAmount = isReferralActive ? Math.round(referralActiveResult.rows[0].bonus_amount) : 500;
+
+        let message;
+        
+        if (isReferralActive) {
+            // Реферальная программа активна - показываем с бонусами
+            message = `🎿 Поделитесь нашим ботом с друзьями!
+
+${referralLink}
+
+🏂 Ski-instruktor — ваш помощник для записи на горнолыжный тренажер
+
+✨ Основные возможности:
+• 📝 Запись на групповые и индивидуальные тренировки
+• 👥 Управление детскими занятиями
+• 💰 Пополнение баланса
+• 📋 Просмотр своих записей
+• 🎁 Подарочные сертификаты
+
+📋 Дополнительное меню (синяя кнопка справа):
+• 📍 Бот подскажет адрес
+• 👥 Поделится информацией о тренере
+• 💰 Покажет актуальные цены
+
+🎯 Перейти в бота можно щелкнув по имени ниже:
+${referralLink}
+
+🎁 Реферальная программа:
+• Ваш друг получит ${bonusAmount}₽ на баланс сразу после регистрации
+• Эта сумма поможет ему оплатить первую тренировку со скидкой
+• Вы получите ${bonusAmount}₽ на баланс после того, как друг пополнит баланс и пройдет первую тренировку.`;
+        } else {
+            // Реферальная программа неактивна - показываем обычное сообщение
+            message = `🎿 Поделитесь нашим ботом с друзьями!
+
+@${botUsername}
+
+🏂 Ski-instruktor — ваш помощник для записи на горнолыжный тренажер
+
+✨ Основные возможности:
+• 📝 Запись на групповые и индивидуальные тренировки
+• 👥 Управление детскими занятиями
+• 💰 Пополнение баланса
+• 📋 Просмотр своих записей
+• 🎁 Подарочные сертификаты
+
+📋 Дополнительное меню (синяя кнопка справа):
+• 📍 Бот подскажет адрес
+• 👥 Поделится информацией о тренере
+• 💰 Покажет актуальные цены
+
+🎯 Перейти в бота можно щелкнув по имени ниже:
+@${botUsername}
+
+💡 Или просто перешлите это сообщение друзьям!`;
+        }
+
+        // Создаем кнопки в зависимости от состояния реферальной программы
+        let inlineKeyboard;
+        
+        if (isReferralActive) {
+            // Реферальная программа активна - показываем все кнопки
+            const shareText = `🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂 Используй мою ссылку и получи ${bonusAmount}₽ на баланс!`;
+            inlineKeyboard = [
+                [{ 
+                    text: `📤 Поделиться с друзьями`, 
+                    url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`
+                }],
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }]
+            ];
+        } else {
+            // Реферальная программа неактивна - показываем только кнопки для обычного бота
+            inlineKeyboard = [
+                [{ 
+                    text: `📤 Поделиться с друзьями`, 
+                    url: `https://t.me/share/url?url=${encodeURIComponent(botShareLink)}&text=${encodeURIComponent('🎿 Присоединяйся к Ski-instruktor! Тренируйся на горнолыжном тренажере круглый год! 🏂')}`
+                }],
+                [{ text: `🔗 Скопировать ссылку`, callback_data: `copy_referral_${referralCode}` }]
+            ];
+        }
 
     await bot.sendMessage(chatId, message, {
         parse_mode: 'HTML',
         reply_markup: {
-            inline_keyboard: [
-                [{ text: `🚀 Зайти в бота @${botUsername}`, url: botShareLink }],
-                [{ text: `📋 Скопировать имя бота`, callback_data: `copy_bot_name_${botUsername}` }]
-            ],
-            keyboard: [['🔙 В главное меню']],
-            resize_keyboard: true
+                inline_keyboard: inlineKeyboard
+            }
+        });
+
+        console.log(`📤 Пользователь ${telegramId} запросил реферальную ссылку: ${referralLink}`);
+
+    } catch (error) {
+        console.error('Ошибка при получении реферальной ссылки:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Функция генерации уникального реферального кода
+async function generateUniqueReferralCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    while (!isUnique && attempts < maxAttempts) {
+        code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
         }
-    });
+
+        // Проверяем уникальность
+        const result = await pool.query(
+            'SELECT COUNT(*) FROM clients WHERE referral_code = $1',
+            [code]
+        );
+        
+        isUnique = parseInt(result.rows[0].count) === 0;
+        attempts++;
+    }
+
+    if (!isUnique) {
+        throw new Error('Не удалось сгенерировать уникальный реферальный код');
+    }
+
+    return code;
 }
 
 // Вспомогательная функция для отображения типа спорта
@@ -6700,5 +9308,636 @@ function getSportTypeDisplay(sportType) {
             return 'Горные лыжи и сноуборд 🎿🏂';
         default:
             return sportType;
+    }
+}
+
+
+// Показ доступных дат (инлайн-календарь) для зимних индивидуальных
+async function showNaturalSlopeAvailableDates(chatId) {
+    // Получаем ближайшие доступные даты (со свободными слотами)
+    const res = await pool.query(
+        `SELECT DISTINCT date, date::text AS date_str
+         FROM winter_schedule
+         WHERE is_individual_training = true
+           AND is_available = true
+           AND date >= CURRENT_DATE
+         ORDER BY date
+         LIMIT 60`
+    );
+    if (res.rows.length === 0) {
+        return bot.sendMessage(chatId,
+            '❌ На ближайшее время нет доступных дат зимних тренировок. Попробуйте позже.',
+            { reply_markup: { keyboard: [['🔙 Назад в меню']], resize_keyboard: true } }
+        );
+    }
+    // Строим клавиатуру по 4 даты в ряд
+    const buttons = [];
+    let row = [];
+    res.rows.forEach((r) => {
+        const iso = r.date_str || (r.date && r.date.toISOString ? r.date.toISOString().split('T')[0] : String(r.date));
+        const [yy, mm, dd] = iso.split('-');
+        const label = `${dd}.${mm}`;
+        row.push({ text: label, callback_data: `ns_date:${iso}` });
+        if (row.length === 4) { buttons.push(row); row = []; }
+    });
+    if (row.length) buttons.push(row);
+    return bot.sendMessage(chatId, '📅 Выберите доступную дату:', {
+        reply_markup: { inline_keyboard: buttons }
+    });
+}
+
+// Функция показа временных слотов для зимних тренировок
+async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
+    try {
+        // Получаем свободные индивидуальные слоты из winter_schedule на выбранную дату
+        const freeSlotsRes = await pool.query(
+            `SELECT time_slot FROM winter_schedule
+             WHERE date = $1 
+               AND is_individual_training = true
+               AND is_available = true
+             ORDER BY time_slot`,
+            [selectedDate]
+        );
+        const availableSlots = freeSlotsRes.rows.map(r => String(r.time_slot).substring(0,5));
+        
+        if (availableSlots.length === 0) {
+            const d0 = new Date(selectedDate);
+            const noSlotsDate = `${d0.getDate().toString().padStart(2,'0')}.${(d0.getMonth()+1).toString().padStart(2,'0')}.${d0.getFullYear()}`;
+            return bot.sendMessage(chatId,
+                `❌ *На ${noSlotsDate} все слоты заняты!*\n\n` +
+                'Выберите другую дату или попробуйте позже.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        // Сохраняем слоты в состоянии для последующей проверки
+        if (data) {
+            data.available_times = availableSlots;
+        }
+        // Создаем кнопки для доступных слотов
+        const slotButtons = availableSlots.map(slot => [`⏰ ${slot}`]);
+        slotButtons.push(['🔙 Назад в меню']);
+        
+        const d = new Date(selectedDate);
+        const formattedDate = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+        return bot.sendMessage(chatId,
+            `⏰ *Выберите время тренировки на ${formattedDate}:*\n\n` +
+            `👤 *Участник:* ${data.participant_name}\n` +
+            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне в Кулига Парке\n\n` +
+            `📋 *Доступные слоты:*`,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    keyboard: slotButtons,
+                    resize_keyboard: true
+                }
+            }
+        );
+        
+    } catch (error) {
+        console.error('Ошибка при показе временных слотов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при загрузке расписания. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// Функция показа доступных групповых тренировок для зимнего направления
+async function showAvailableGroupTrainings(chatId, clientId) {
+    try {
+        // Получаем групповые тренировки на естественном склоне из training_sessions
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(startDate.getDate() + 7);
+        
+        const result = await pool.query(
+            `SELECT 
+                ts.id,
+                ts.session_date as date,
+                ts.start_time,
+                ts.end_time,
+                ts.duration,
+                g.name as group_name,
+                t.full_name as trainer_name,
+                t.phone as trainer_phone,
+                ts.max_participants,
+                ts.price,
+                ts.skill_level,
+                COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) as current_participants
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN session_participants sp ON ts.id = sp.session_id
+            WHERE ts.training_type = true
+                AND ts.slope_type = 'natural_slope'
+                AND ts.winter_training_type = 'group'
+                AND ts.status = 'scheduled'
+                AND ts.session_date >= $1::date
+                AND ts.session_date <= $2::date
+                AND (
+                    ts.session_date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                    OR (
+                        ts.session_date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                        AND ts.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                    )
+                )
+            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
+                     g.name, t.full_name, t.phone, ts.max_participants, ts.price, ts.skill_level
+            HAVING COUNT(CASE WHEN sp.status = 'confirmed' THEN 1 END) < ts.max_participants
+            ORDER BY ts.session_date, ts.start_time`,
+            [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
+        );
+        
+        if (result.rows.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *На ближайшую неделю групповых тренировок не найдено!*\n\n' +
+                'Попробуйте записаться на индивидуальную тренировку или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        // Формируем сообщение с доступными тренировками
+        let message = '👥 *Доступные групповые тренировки на естественном склоне в Кулига Парк:*\n\n';
+        
+        result.rows.forEach((training, index) => {
+            const date = new Date(training.date);
+            const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+            const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            const timeStr = String(training.start_time).substring(0, 5);
+            const pricePerPerson = training.max_participants > 0 && training.price 
+                ? (parseFloat(training.price) / training.max_participants).toFixed(2) 
+                : '—';
+            
+            message += `${index + 1}. ${training.group_name || 'Групповая тренировка'}\n`;
+            message += `   📅 ${dateStr} (${dayName})\n`;
+            message += `   ⏰ ${timeStr}\n`;
+            message += `   👥 Мест: ${training.current_participants || 0}/${training.max_participants} (уровень ${training.skill_level || '-'})\n`;
+            if (training.trainer_name) {
+                message += `   👨‍🏫 ${training.trainer_name}\n`;
+            }
+            message += `   💰 Цена за человека: ${pricePerPerson} ₽\n\n`;
+        });
+        
+        message += 'Чтобы выбрать тренировку, введите её номер в чат.\n';
+        message += 'Например: *1* - для выбора первой тренировки\n\n';
+        message += '⚠️ *При записи на тренировку убедитесь, что:*\n';
+        message += '• ваш баланс пополнен\n';
+        message += '• ваш уровень подготовки соответствует или выше указанного уровня тренировки';
+        
+        // Сохраняем список тренировок в состояние пользователя
+        const state = userStates.get(chatId) || {};
+        state.data = state.data || {};
+        state.data.available_group_trainings = result.rows;
+        state.data.client_id = clientId;
+        state.step = 'natural_slope_group_training_selection';
+        userStates.set(chatId, state);
+        
+        // Создаем кнопки для выбора тренировки
+        const trainingButtons = result.rows.map((_, index) => [`${index + 1}`]);
+        trainingButtons.push(['🔙 Назад в меню']);
+        
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: trainingButtons,
+                resize_keyboard: true
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при показе групповых тренировок:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при загрузке групповых тренировок. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+// ============= ФУНКЦИИ ДЛЯ РАБОТЫ С АБОНЕМЕНТАМИ =============
+
+/**
+ * Показ меню абонементов
+ */
+async function showSubscriptionsMenu(chatId, clientId) {
+    try {
+        // Получаем активные абонементы клиента
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/client/${clientId}`;
+        
+        console.log('Запрос абонементов клиента:', url);
+        
+        let activeSubscriptions = [];
+        try {
+            const subscriptionsResponse = await axios.get(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const subscriptions = subscriptionsResponse.data;
+            console.log('Получено абонементов клиента:', subscriptions?.length || 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            activeSubscriptions = subscriptions.filter(sub => {
+                const expiresAt = new Date(sub.expires_at);
+                return sub.remaining_sessions > 0 && expiresAt >= today && sub.status === 'active';
+            });
+            console.log('Активных абонементов:', activeSubscriptions.length);
+        } catch (error) {
+            console.error('Ошибка при получении абонементов клиента:', error.response?.status, error.response?.data || error.message);
+        }
+
+        let message = '🎫 *Абонементы*\n\n';
+        
+        if (activeSubscriptions.length > 0) {
+            message += '✅ *Ваши активные абонементы:*\n\n';
+            activeSubscriptions.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий: ${sub.remaining_sessions} из ${sub.total_sessions}\n`;
+                message += `   📅 Действует до: ${expiresStr}\n`;
+                message += `   💰 Цена за занятие: ${parseFloat(sub.total_paid / sub.total_sessions).toFixed(2)} ₽\n\n`;
+            });
+        } else {
+            message += 'У вас пока нет активных абонементов.\n\n';
+        }
+
+        message += 'Выберите действие:';
+
+        const buttons = [];
+        if (activeSubscriptions.length > 0) {
+            buttons.push(['📋 Мои абонементы']);
+        }
+        buttons.push(['🛒 Купить абонемент']);
+        buttons.push(['🔙 Назад в меню']);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: buttons,
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе меню абонементов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+/**
+ * Показ доступных абонементов для покупки
+ */
+async function showAvailableSubscriptions(chatId, clientId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/types?is_active=true`;
+        
+        console.log('Запрос абонементов:', url);
+        
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Статус ответа:', response.status);
+
+        const subscriptionTypes = response.data;
+        console.log('Получено типов абонементов:', subscriptionTypes?.length || 0);
+
+        if (subscriptionTypes.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *В данный момент нет доступных абонементов для покупки.*\n\n' +
+                'Попробуйте позже или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        // Фильтруем только те, у которых дата окончания еще не прошла
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const availableTypes = subscriptionTypes.filter(type => {
+            const expiresDate = new Date(type.expires_at);
+            return expiresDate >= today;
+        });
+
+        if (availableTypes.length === 0) {
+            return bot.sendMessage(chatId,
+                '❌ *Все доступные абонементы истекли.*\n\n' +
+                'Попробуйте позже или обратитесь к администратору.',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        let message = '🛒 *Доступные абонементы для покупки:*\n\n';
+
+        availableTypes.forEach((type, index) => {
+            const expiresDate = new Date(type.expires_at);
+            const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+            
+            message += `${index + 1}. *${type.name}*\n`;
+            if (type.description) {
+                message += `   ${type.description}\n`;
+            }
+            message += `   🎯 Количество занятий: ${type.sessions_count}\n`;
+            message += `   💰 Скидка: ${type.discount_percentage}%\n`;
+            message += `   💵 Цена абонемента: ${parseFloat(type.price).toFixed(2)} ₽\n`;
+            message += `   💰 Цена за занятие: ${parseFloat(type.price_per_session).toFixed(2)} ₽\n`;
+            message += `   📅 Действует до: ${expiresStr}\n\n`;
+        });
+
+        message += 'Введите номер абонемента для покупки.\n';
+        message += 'Например: *1* - для покупки первого абонемента';
+
+        // Сохраняем список в состояние
+        const state = userStates.get(chatId) || {};
+        state.data = state.data || {};
+        state.data.available_subscriptions = availableTypes;
+        state.data.client_id = clientId;
+        state.step = 'subscription_purchase_selection';
+        userStates.set(chatId, state);
+
+        // Создаем кнопки для выбора
+        const buttons = availableTypes.map((_, index) => [`${index + 1}`]);
+        buttons.push(['🔙 Назад в меню']);
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: buttons,
+                resize_keyboard: true
+            }
+        });
+        } catch (error) {
+            console.error('Ошибка при показе доступных абонементов:', error);
+            const errorMessage = error.response 
+                ? `Ошибка ${error.response.status}: ${error.response.data?.error || error.response.statusText}`
+                : error.message;
+            console.error('Детали ошибки:', errorMessage);
+            
+            return bot.sendMessage(chatId,
+                '❌ Произошла ошибка при загрузке абонементов. Попробуйте позже.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+}
+
+/**
+ * Показ моих абонементов
+ */
+async function showMySubscriptions(chatId, clientId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/client/${clientId}`;
+        
+        console.log('Запрос моих абонементов:', url);
+        
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const subscriptions = response.data;
+        console.log('Получено абонементов:', subscriptions?.length || 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Разделяем на активные и неактивные
+        const active = subscriptions.filter(sub => {
+            const expiresAt = new Date(sub.expires_at);
+            return sub.remaining_sessions > 0 && expiresAt >= today && sub.status === 'active';
+        });
+
+        const expired = subscriptions.filter(sub => {
+            const expiresAt = new Date(sub.expires_at);
+            return expiresAt < today || sub.status === 'expired';
+        });
+
+        const used = subscriptions.filter(sub => sub.remaining_sessions === 0 || sub.status === 'used');
+
+        let message = '📋 *Мои абонементы*\n\n';
+
+        if (active.length > 0) {
+            message += '✅ *Активные абонементы:*\n\n';
+            active.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий: ${sub.remaining_sessions} из ${sub.total_sessions}\n`;
+                message += `   📅 Действует до: ${expiresStr}\n`;
+                message += `   💰 Цена за занятие: ${parseFloat(sub.total_paid / sub.total_sessions).toFixed(2)} ₽\n\n`;
+            });
+        }
+
+        if (used.length > 0) {
+            message += '✅ *Использованные абонементы:*\n\n';
+            used.forEach((sub, index) => {
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   🎯 Занятий использовано: ${sub.total_sessions}\n\n`;
+            });
+        }
+
+        if (expired.length > 0) {
+            message += '⏰ *Истекшие абонементы:*\n\n';
+            expired.forEach((sub, index) => {
+                const expiresDate = new Date(sub.expires_at);
+                const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+                
+                message += `${index + 1}. *${sub.subscription_name}*\n`;
+                message += `   📅 Истёк: ${expiresStr}\n`;
+                message += `   🎯 Осталось занятий: ${sub.remaining_sessions}\n\n`;
+            });
+        }
+
+        if (active.length === 0 && used.length === 0 && expired.length === 0) {
+            message += 'У вас пока нет абонементов.';
+        }
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе моих абонементов:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+}
+
+/**
+ * Покупка абонемента
+ */
+async function purchaseSubscription(chatId, clientId, subscriptionTypeId) {
+    try {
+        const token = getJWTToken();
+        const url = `${process.env.BASE_URL || 'http://localhost:8080'}/api/natural-slope-subscriptions/purchase`;
+        const response = await axios.post(url, {
+            client_id: clientId,
+            subscription_type_id: subscriptionTypeId
+        }, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = response.data;
+
+        if (result.error) {
+            let errorMessage = '❌ Ошибка при покупке абонемента: ';
+            
+            if (result.error) {
+                if (result.error.includes('Недостаточно средств')) {
+                    errorMessage += `Недостаточно средств на балансе.\n\n`;
+                    errorMessage += `Требуется: ${result.required?.toFixed(2) || 'N/A'} ₽\n`;
+                    errorMessage += `Доступно: ${result.available?.toFixed(2) || 'N/A'} ₽\n\n`;
+                    errorMessage += `Пожалуйста, пополните баланс и попробуйте снова.`;
+                    
+                    return bot.sendMessage(chatId, errorMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['💳 Пополнить баланс'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                } else {
+                    errorMessage += result.error;
+                }
+            } else {
+                errorMessage += 'Неизвестная ошибка';
+            }
+
+            return bot.sendMessage(chatId, errorMessage, {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            });
+        }
+
+        // Успешная покупка
+        const subscription = result;
+        const expiresDate = new Date(subscription.expires_at);
+        const expiresStr = `${expiresDate.getDate().toString().padStart(2, '0')}.${(expiresDate.getMonth() + 1).toString().padStart(2, '0')}.${expiresDate.getFullYear()}`;
+
+        let message = '✅ *Абонемент успешно приобретен!*\n\n';
+        message += `🎫 *${subscription.subscription_name}*\n`;
+        message += `🎯 Количество занятий: ${subscription.remaining_sessions} из ${subscription.total_sessions}\n`;
+        message += `📅 Действует до: ${expiresStr}\n`;
+        message += `💰 Цена за занятие: ${parseFloat(subscription.total_paid / subscription.total_sessions).toFixed(2)} ₽\n\n`;
+        message += `Спасибо за покупку! Теперь вы можете использовать абонемент при записи на групповые тренировки на естественном склоне.`;
+
+        // Уведомление администратора
+        try {
+            const { notifyAdminSubscriptionPurchase } = require('./admin-notify');
+            const clientData = await pool.query('SELECT full_name FROM clients WHERE id = $1', [clientId]);
+            const clientName = clientData.rows[0]?.full_name || 'Неизвестно';
+            
+            await notifyAdminSubscriptionPurchase({
+                client_name: clientName,
+                client_id: clientId,
+                subscription_name: subscription.subscription_name,
+                price: subscription.total_paid,
+                sessions_count: subscription.total_sessions
+            });
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления админу о покупке абонемента:', notifyError);
+        }
+
+        // Очищаем состояние
+        userStates.set(chatId, { step: 'main_menu', data: { client_id: clientId } });
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: [['🔙 Назад в меню']],
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при покупке абонемента:', error);
+        const errorMessage = error.response 
+            ? `Ошибка ${error.response.status}: ${JSON.stringify(error.response.data)}`
+            : error.message;
+        console.error('Детали ошибки покупки:', errorMessage);
+        
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка при покупке абонемента. Попробуйте позже.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
     }
 }

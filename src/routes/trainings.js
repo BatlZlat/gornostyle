@@ -3,7 +3,59 @@ const router = express.Router();
 const { pool } = require('../db/index');
 const fetch = require('node-fetch');
 const { notifyAdminGroupTrainingCancellationByAdmin, calculateAge } = require('../bot/admin-notify');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
+
+// Настройка multer для загрузки медиа
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../../uploads/messages');
+        // Создаем директорию, если её нет
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'media-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi|webm|quicktime/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        // Расширяем проверку MIME типов для .mov файлов
+        const allowedMimeTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+            'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm',
+            'video/mov' // Добавляем поддержку .mov
+        ];
+        const mimetype = allowedMimeTypes.includes(file.mimetype) || 
+                        file.mimetype.startsWith('video/') || 
+                        file.mimetype.startsWith('image/');
+        
+        // Специальная обработка для .mov файлов
+        const isMovFile = path.extname(file.originalname).toLowerCase() === '.mov';
+        if (isMovFile) {
+            // .mov файлы могут иметь разные MIME типы
+            return cb(null, true);
+        }
+        
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Неподдерживаемый тип файла: ' + file.mimetype));
+        }
+    }
+});
 
 // Создание новой тренировки
 router.post('/', async (req, res) => {
@@ -457,7 +509,255 @@ router.get('/active-groups', async (req, res) => {
     }
 });
 
-// Получение тренировки по ID (должен быть после /active-groups)
+// ==========================================
+// РОУТЫ ДЛЯ ОТЛОЖЕННЫХ СООБЩЕНИЙ
+// Должны быть ПЕРЕД роутом /:id, чтобы избежать конфликтов
+// ==========================================
+
+// Получение списка отложенных сообщений
+router.get('/scheduled-messages', async (req, res) => {
+    try {
+        const { status = 'pending' } = req.query;
+        
+        let query = `
+            SELECT sm.*, c.full_name as recipient_name, a.full_name as created_by_name
+            FROM scheduled_messages sm
+            LEFT JOIN clients c ON sm.recipient_id = c.id
+            LEFT JOIN administrators a ON sm.created_by = a.id
+            WHERE sm.status = $1
+            ORDER BY sm.scheduled_at ASC
+        `;
+        
+        const result = await pool.query(query, [status]);
+        
+        res.json({ messages: result.rows });
+    } catch (error) {
+        console.error('Ошибка при получении отложенных сообщений:', error);
+        console.error('Детали ошибки:', error.message, error.stack);
+        res.status(500).json({ error: 'Ошибка при получении отложенных сообщений: ' + error.message });
+    }
+});
+
+// Создание отложенного сообщения
+router.post('/scheduled-messages', upload.single('media'), async (req, res) => {
+    try {
+        const { message, recipient_type, recipient_id, scheduled_at, parse_mode = 'HTML', media_type } = req.body;
+        const mediaFile = req.file;
+        
+        if (!message) {
+            return res.status(400).json({ error: 'Нет текста сообщения' });
+        }
+        
+        if (!scheduled_at) {
+            return res.status(400).json({ error: 'Не указана дата и время отправки' });
+        }
+        
+        if (recipient_type === 'client' && !recipient_id) {
+            return res.status(400).json({ error: 'Не указан получатель' });
+        }
+        
+        // Проверяем, что дата в будущем
+        const scheduledDate = new Date(scheduled_at);
+        if (scheduledDate <= new Date()) {
+            return res.status(400).json({ error: 'Дата и время отправки должны быть в будущем' });
+        }
+        
+        // Сохраняем путь к медиа файлу, если он есть
+        let mediaFilePath = null;
+        if (mediaFile) {
+            mediaFilePath = mediaFile.path;
+        }
+        
+        // Получаем ID администратора из сессии (если есть) или используем 1 по умолчанию
+        const createdBy = req.session?.adminId || 1;
+        
+        const result = await pool.query(
+            `INSERT INTO scheduled_messages 
+            (message, parse_mode, media_file_path, media_type, recipient_type, recipient_id, scheduled_at, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, scheduled_at`,
+            [message, parse_mode, mediaFilePath, media_type || null, recipient_type, recipient_id || null, scheduled_at, createdBy]
+        );
+        
+        const scheduledMessage = result.rows[0];
+        
+        // Уведомляем администратора
+        const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+        const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
+        if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
+            const scheduledDateFormatted = new Date(scheduled_at).toLocaleString('ru-RU', {
+                timeZone: 'Asia/Yekaterinburg',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            const recipientText = recipient_type === 'client' 
+                ? `👤 Конкретный клиент (ID: ${recipient_id})`
+                : '👥 Все пользователи';
+            
+            const adminText = `📅 <b>Создано отложенное сообщение</b>\n\n${recipientText}\n\n📝 <b>Текст:</b>\n${message}\n\n⏰ <b>Будет отправлено:</b> ${scheduledDateFormatted}`;
+            
+            await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chat_id: ADMIN_TELEGRAM_ID, 
+                    text: adminText,
+                    parse_mode: 'HTML'
+                })
+            });
+        }
+        
+        res.json({ 
+            message: 'Отложенное сообщение создано',
+            id: scheduledMessage.id,
+            scheduled_at: scheduledMessage.scheduled_at
+        });
+    } catch (error) {
+        console.error('Ошибка при создании отложенного сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Ошибка при создании отложенного сообщения' });
+    }
+});
+
+// Редактирование отложенного сообщения
+router.put('/scheduled-messages/:id', upload.single('media'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message, recipient_type, recipient_id, scheduled_at, parse_mode = 'HTML', media_type } = req.body;
+        const mediaFile = req.file;
+        
+        // Проверяем, что сообщение существует и еще не отправлено
+        const checkResult = await pool.query(
+            'SELECT * FROM scheduled_messages WHERE id = $1',
+            [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Отложенное сообщение не найдено' });
+        }
+        
+        const existingMessage = checkResult.rows[0];
+        
+        if (existingMessage.status === 'sent') {
+            return res.status(400).json({ error: 'Нельзя редактировать уже отправленное сообщение' });
+        }
+        
+        // Обновляем данные
+        let updateFields = [];
+        let values = [];
+        let paramIndex = 1;
+        
+        if (message) {
+            updateFields.push(`message = $${paramIndex++}`);
+            values.push(message);
+        }
+        
+        if (scheduled_at) {
+            const scheduledDate = new Date(scheduled_at);
+            if (scheduledDate <= new Date()) {
+                return res.status(400).json({ error: 'Дата и время отправки должны быть в будущем' });
+            }
+            updateFields.push(`scheduled_at = $${paramIndex++}`);
+            values.push(scheduled_at);
+        }
+        
+        if (recipient_type) {
+            updateFields.push(`recipient_type = $${paramIndex++}`);
+            values.push(recipient_type);
+        }
+        
+        if (recipient_id !== undefined) {
+            updateFields.push(`recipient_id = $${paramIndex++}`);
+            values.push(recipient_id || null);
+        }
+        
+        if (mediaFile) {
+            // Удаляем старый файл, если он есть
+            if (existingMessage.media_file_path && fs.existsSync(existingMessage.media_file_path)) {
+                fs.unlinkSync(existingMessage.media_file_path);
+            }
+            updateFields.push(`media_file_path = $${paramIndex++}`);
+            values.push(mediaFile.path);
+            if (media_type) {
+                updateFields.push(`media_type = $${paramIndex++}`);
+                values.push(media_type);
+            }
+        }
+        
+        updateFields.push(`updated_at = NOW()`);
+        values.push(id);
+        
+        const updateQuery = `
+            UPDATE scheduled_messages 
+            SET ${updateFields.join(', ')}
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `;
+        
+        const result = await pool.query(updateQuery, values);
+        
+        res.json({ 
+            message: 'Отложенное сообщение обновлено',
+            scheduled_message: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка при обновлении отложенного сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Ошибка при обновлении отложенного сообщения' });
+    }
+});
+
+// Удаление отложенного сообщения
+router.delete('/scheduled-messages/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Проверяем, что сообщение существует
+        const checkResult = await pool.query(
+            'SELECT * FROM scheduled_messages WHERE id = $1',
+            [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Отложенное сообщение не найдено' });
+        }
+        
+        const message = checkResult.rows[0];
+        
+        if (message.status === 'sent') {
+            return res.status(400).json({ error: 'Нельзя удалить уже отправленное сообщение' });
+        }
+        
+        // Удаляем файл, если он есть
+        if (message.media_file_path && fs.existsSync(message.media_file_path)) {
+            fs.unlinkSync(message.media_file_path);
+        }
+        
+        // Удаляем сообщение из БД
+        await pool.query('DELETE FROM scheduled_messages WHERE id = $1', [id]);
+        
+        res.json({ message: 'Отложенное сообщение удалено' });
+    } catch (error) {
+        console.error('Ошибка при удалении отложенного сообщения:', error);
+        res.status(500).json({ error: 'Ошибка при удалении отложенного сообщения' });
+    }
+});
+
+// ==========================================
+// КОНЕЦ РОУТОВ ДЛЯ ОТЛОЖЕННЫХ СООБЩЕНИЙ
+// ==========================================
+
+// Получение тренировки по ID (должен быть после /active-groups и /scheduled-messages)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -909,7 +1209,14 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
         }
 
         const training = trainingResult.rows[0];
-        const price = Number(training.price);
+        
+        // Для зимних групповых тренировок (simulator_id IS NULL) цена должна быть за одного участника
+        // Для тренировок на тренажере цена уже за человека
+        let price = Number(training.price);
+        if (!training.simulator_id && training.group_id && training.max_participants) {
+            // Зимняя групповая тренировка - делим общую цену на количество участников
+            price = price / training.max_participants;
+        }
 
         // Получаем информацию об участнике
         const participantResult = await client.query(`
@@ -940,41 +1247,107 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
             ['cancelled', participantId]
         );
 
-        // Возвращаем средства на счет клиента
-        const walletResult = await client.query(
-            'SELECT id, balance FROM wallets WHERE client_id = $1',
-            [participant.client_id]
+        // Проверяем, использовался ли абонемент для этой тренировки
+        const subscriptionUsageCheck = await client.query(
+            `SELECT 
+                nsu.*,
+                ns.remaining_sessions,
+                ns.status as subscription_status,
+                st.name as subscription_name,
+                st.sessions_count as total_sessions
+             FROM natural_slope_subscription_usage nsu
+             JOIN natural_slope_subscriptions ns ON nsu.subscription_id = ns.id
+             JOIN natural_slope_subscription_types st ON ns.subscription_type_id = st.id
+             WHERE nsu.training_session_id = $1`,
+            [trainingId]
         );
 
-        if (walletResult.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'Кошелек клиента не найден' });
-        }
-
-        const wallet = walletResult.rows[0];
-        const newBalance = Number(wallet.balance) + price;
-
-        await client.query(
-            'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
-            [newBalance, wallet.id]
-        );
-
-        // Создаем запись о возврате в транзакциях
         const dateObj = new Date(training.session_date);
         const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
         const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
         const duration = training.duration || 60;
         const participantName = participant.is_child ? participant.child_full_name : participant.full_name;
 
-        await client.query(
-            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-            [
-                wallet.id,
-                price,
-                'refund',
-                `Возврат: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`
-            ]
-        );
+        let usedSubscription = false;
+        let subscriptionInfo = null;
+        let refundAmount = 0;
+        let refundType = 'refund';
+        let refundDescription = '';
+
+        if (subscriptionUsageCheck.rows.length > 0) {
+            // Использовался абонемент - возвращаем занятие
+            usedSubscription = true;
+            subscriptionInfo = subscriptionUsageCheck.rows[0];
+            
+            // Возвращаем занятие в абонемент
+            await client.query(
+                `UPDATE natural_slope_subscriptions 
+                 SET remaining_sessions = remaining_sessions + 1,
+                     status = CASE 
+                        WHEN expires_at >= CURRENT_DATE THEN 'active'
+                        ELSE status
+                     END
+                 WHERE id = $1`,
+                [subscriptionInfo.subscription_id]
+            );
+
+            // Удаляем запись использования
+            await client.query(
+                `DELETE FROM natural_slope_subscription_usage 
+                 WHERE id = $1`,
+                [subscriptionInfo.id]
+            );
+
+            const remainingSessions = subscriptionInfo.remaining_sessions + 1;
+            
+            // Получаем кошелек для создания транзакции
+            const walletResult = await client.query(
+                'SELECT id FROM wallets WHERE client_id = $1',
+                [participant.client_id]
+            );
+
+            if (walletResult.rows.length > 0) {
+                const wallet = walletResult.rows[0];
+                refundType = 'subscription_return';
+                refundAmount = 0;
+                refundDescription = `Возврат занятия в абонемент: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин. Занятий осталось: ${remainingSessions}/${subscriptionInfo.total_sessions}`;
+
+                await client.query(
+                    'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                    [wallet.id, refundAmount, refundType, refundDescription]
+                );
+            }
+
+            console.log(`✅ Возвращено занятие в абонемент ID ${subscriptionInfo.subscription_id} для клиента ${participant.client_id}`);
+        } else {
+            // Не использовался абонемент - возвращаем деньги
+            const walletResult = await client.query(
+                'SELECT id, balance FROM wallets WHERE client_id = $1',
+                [participant.client_id]
+            );
+
+            if (walletResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Кошелек клиента не найден' });
+            }
+
+            const wallet = walletResult.rows[0];
+            const newBalance = Number(wallet.balance) + price;
+
+            await client.query(
+                'UPDATE wallets SET balance = $1, last_updated = NOW() WHERE id = $2',
+                [newBalance, wallet.id]
+            );
+
+            refundAmount = price;
+            refundType = 'refund';
+            refundDescription = `Возврат: Группа, ${participantName}, Дата: ${formattedDate}, Время: ${startTime}, Длительность: ${duration} мин.`;
+
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [wallet.id, refundAmount, refundType, refundDescription]
+            );
+        }
 
         // Подсчитываем оставшихся участников
         const remainingParticipantsResult = await client.query(
@@ -988,22 +1361,54 @@ router.delete('/:id/participants/:participantId', async (req, res) => {
         const days = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
         const dayOfWeek = days[dateObj.getDay()];
         const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()} (${dayOfWeek})`;
-        const trainingInfo = `📅 Дата: ${dateStr}
-⏰ Время: ${startTime} - ${training.end_time ? training.end_time.slice(0, 5) : ''}
-👥 Группа: ${training.group_name || '-'}
-👨‍🏫 Тренер: ${training.trainer_name || '-'}
-🎿 Тренажер: ${training.simulator_name || `Тренажер ${training.simulator_id}`}
-💰 Возврат: ${price.toFixed(2)} руб.`;
+        
+        // Определяем, является ли тренировка зимней (естественный склон)
+        const isWinterTraining = !training.simulator_id;
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${training.simulator_name || `Тренажер ${training.simulator_id}`}\n`;
+        }
+        
+        // Формируем информацию о тренировке для уведомления
+        let refundInfo = '';
+        if (usedSubscription) {
+            refundInfo = `🎫 *Абонемент:* Занятие возвращено в "${subscriptionInfo.subscription_name}"\n` +
+                `📊 *Занятий осталось:* ${subscriptionInfo.remaining_sessions + 1}/${subscriptionInfo.total_sessions}\n`;
+        } else {
+            refundInfo = `💰 *Возврат:* ${price.toFixed(2)} руб.`;
+        }
+
+        const trainingInfo = `📅 *Дата:* ${dateStr}
+⏰ *Время:* ${startTime}
+👥 *Группа:* ${training.group_name || '-'}
+👨‍🏫 *Тренер:* ${training.trainer_name || '-'}
+${locationLine}${refundInfo}`;
 
         // Отправляем уведомление клиенту
         if (participant.telegram_id) {
             const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
             const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
-            const clientMessage = `❗️ Вы были удалены из тренировки администратором:
+            
+            // Заголовок зависит от типа тренировки
+            const clientHeader = isWinterTraining 
+                ? '❗️ Вы были удалены из тренировки в Кулига Парк на естественном склоне администратором:'
+                : '❗️ Вы были удалены из тренировки администратором:';
+            
+            let refundMessage = '';
+            if (usedSubscription) {
+                refundMessage = '\nЗанятие возвращено в абонемент.';
+            } else {
+                refundMessage = `\nДеньги в размере ${price.toFixed(2)} руб. возвращены на ваш счет.`;
+            }
+            
+            const clientMessage = `${clientHeader}
 
 ${trainingInfo}
-
-Деньги в размере ${price.toFixed(2)} руб. возвращены на ваш счет.
+${refundMessage}
 По всем вопросам обращайтесь к администратору: ${ADMIN_PHONE}`;
 
             try {
@@ -1012,7 +1417,8 @@ ${trainingInfo}
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         chat_id: participant.telegram_id,
-                        text: clientMessage
+                        text: clientMessage,
+                        parse_mode: 'Markdown'
                     })
                 });
             } catch (notificationError) {
@@ -1036,9 +1442,14 @@ ${trainingInfo}
                 time: training.start_time,
                 group_name: training.group_name,
                 trainer_name: training.trainer_name,
-                simulator_name: training.simulator_name || `Тренажер ${training.simulator_id}`,
+                simulator_id: training.simulator_id,
+                simulator_name: training.simulator_name || (training.simulator_id ? `Тренажер ${training.simulator_id}` : null),
                 seats_left: seatsLeft,
-                refund: price
+                refund: usedSubscription ? 0 : price,
+                used_subscription: usedSubscription,
+                subscription_name: usedSubscription ? subscriptionInfo.subscription_name : null,
+                remaining_sessions: usedSubscription ? subscriptionInfo.remaining_sessions + 1 : null,
+                total_sessions: usedSubscription ? subscriptionInfo.total_sessions : null
             });
         } catch (notificationError) {
             console.error('Ошибка при отправке уведомления администратору:', notificationError);
@@ -1047,8 +1458,9 @@ ${trainingInfo}
         await client.query('COMMIT');
         res.json({
             message: 'Участник успешно удален из тренировки',
-            refund: price,
-            remaining_participants: remainingCount
+            refund: refundAmount,
+            remaining_participants: remainingCount,
+            used_subscription: usedSubscription
         });
     } catch (error) {
         await client.query('ROLLBACK');
@@ -1338,37 +1750,92 @@ router.post('/notify-group/:id', async (req, res) => {
     }
 });
 
-// Рассылка сообщения всем клиентам с telegram_id
-router.post('/notify-clients', async (req, res) => {
-    const { message } = req.body;
+// Рассылка сообщения всем клиентам с telegram_id (с поддержкой медиа и форматирования)
+router.post('/notify-clients', upload.single('media'), async (req, res) => {
+    const message = req.body.message || (req.body.message === '' ? '' : req.body.message);
+    const parseMode = req.body.parse_mode || 'HTML';
+    const mediaFile = req.file;
+    
     if (!message) return res.status(400).json({ error: 'Нет текста сообщения' });
 
     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     try {
         const result = await pool.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
-
         const clients = result.rows;
 
         let sent = 0;
+        let errors = 0;
+
         for (const client of clients) {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: client.telegram_id, text: message })
-            });
-            sent++;
+            try {
+                if (mediaFile) {
+                    const FormData = require('form-data');
+                    const form = new FormData();
+                    form.append('chat_id', client.telegram_id);
+                    form.append('caption', message);
+                    form.append('parse_mode', parseMode);
+                    
+                    // Определяем тип медиа по MIME или расширению файла
+                    const fileExt = path.extname(mediaFile.originalname).toLowerCase();
+                    const isVideo = mediaFile.mimetype.startsWith('video/') || 
+                                  ['.mp4', '.mov', '.avi', '.webm'].includes(fileExt);
+                    const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+                    const fieldName = isVideo ? 'video' : 'photo';
+                    
+                    form.append(fieldName, fs.createReadStream(mediaFile.path));
+
+                    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+                        method: 'POST',
+                        body: form
+                    });
+
+                    const responseData = await response.json();
+                    if (!response.ok || !responseData.ok) {
+                        console.error(`Ошибка отправки ${endpoint} клиенту ${client.telegram_id}:`, responseData);
+                        throw new Error(`Ошибка отправки: ${responseData.description || 'Неизвестная ошибка'}`);
+                    }
+                } else {
+                    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            chat_id: client.telegram_id, 
+                            text: message,
+                            parse_mode: parseMode
+                        })
+                    });
+                }
+                sent++;
+            } catch (clientError) {
+                console.error(`Ошибка отправки клиенту ${client.telegram_id}:`, clientError);
+                errors++;
+            }
         }
-        res.json({ message: `Сообщение отправлено ${sent} клиентам` });
+
+        // Удаляем файл после отправки всем
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
+
+        res.json({ 
+            message: `Сообщение отправлено ${sent} клиентам${errors > 0 ? `, ${errors} ошибок` : ''}` 
+        });
     } catch (error) {
         console.error('Ошибка при рассылке:', error);
+        // Удаляем файл в случае ошибки
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
         res.status(500).json({ error: 'Ошибка при рассылке' });
     }
 });
 
-// Отправка сообщения конкретному клиенту
-router.post('/notify-client/:id', async (req, res) => {
+// Отправка сообщения конкретному клиенту (с поддержкой медиа и форматирования)
+router.post('/notify-client/:id', upload.single('media'), async (req, res) => {
     const { id: clientId } = req.params;
-    const { message } = req.body;
+    const message = req.body.message || (req.body.message === '' ? '' : req.body.message);
+    const parseMode = req.body.parse_mode || 'HTML';
+    const mediaFile = req.file;
     
     if (!message) {
         return res.status(400).json({ error: 'Нет текста сообщения' });
@@ -1391,22 +1858,63 @@ router.post('/notify-client/:id', async (req, res) => {
             return res.status(400).json({ error: 'У клиента не указан Telegram ID' });
         }
 
-        // Отправляем сообщение
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                chat_id: client.telegram_id, 
-                text: message,
-                parse_mode: 'Markdown'
-            })
-        });
+        // Отправляем сообщение с медиа или без
+        if (mediaFile) {
+            const FormData = require('form-data');
+            const form = new FormData();
+            form.append('chat_id', client.telegram_id);
+            form.append('caption', message);
+            form.append('parse_mode', parseMode);
+            
+            // Определяем тип медиа по MIME или расширению файла
+            const fileExt = path.extname(mediaFile.originalname).toLowerCase();
+            const isVideo = mediaFile.mimetype.startsWith('video/') || 
+                          ['.mp4', '.mov', '.avi', '.webm'].includes(fileExt);
+            const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+            const fieldName = isVideo ? 'video' : 'photo';
+            
+            console.log(`Отправка ${endpoint} для клиента ${client.telegram_id}:`, {
+                filename: mediaFile.originalname,
+                mimetype: mediaFile.mimetype,
+                size: mediaFile.size,
+                path: mediaFile.path
+            });
+            
+            form.append(fieldName, fs.createReadStream(mediaFile.path));
+
+            const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`, {
+                method: 'POST',
+                body: form
+            });
+
+            const responseData = await response.json();
+            if (!response.ok || !responseData.ok) {
+                console.error(`Ошибка отправки ${endpoint}:`, responseData);
+                throw new Error(`Ошибка отправки: ${responseData.description || 'Неизвестная ошибка'}`);
+            }
+
+            console.log(`Успешно отправлено ${endpoint} клиенту ${client.telegram_id}`);
+
+            // Удаляем файл после отправки
+            fs.unlinkSync(mediaFile.path);
+        } else {
+            // Отправляем только текст
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chat_id: client.telegram_id, 
+                    text: message,
+                    parse_mode: parseMode
+                })
+            });
+        }
 
         // Уведомляем администратора
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
         const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
         if (ADMIN_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
-            const adminText = `📨 *Отправлено сообщение клиенту*\n\n👤 *Клиент:* ${client.full_name}\n\n📝 *Текст:*\n${message}`;
+            const adminText = `📨 <b>Отправлено сообщение клиенту</b>\n\n👤 <b>Клиент:</b> ${client.full_name}\n\n📝 <b>Текст:</b>\n${message}`;
 
             await fetch(`https://api.telegram.org/bot${ADMIN_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
@@ -1414,7 +1922,7 @@ router.post('/notify-client/:id', async (req, res) => {
                 body: JSON.stringify({ 
                     chat_id: ADMIN_TELEGRAM_ID, 
                     text: adminText,
-                    parse_mode: 'Markdown'
+                    parse_mode: 'HTML'
                 })
             });
         }
@@ -1425,6 +1933,10 @@ router.post('/notify-client/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка при отправке сообщения:', error);
+        // Удаляем файл в случае ошибки
+        if (mediaFile && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
+        }
         res.status(500).json({ error: 'Ошибка при отправке сообщения' });
     }
 });

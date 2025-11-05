@@ -93,3 +93,4 @@ public/images/trainers/*.jpeg
 public/images/trainers/*.png
 
 *.docx
+uploads/

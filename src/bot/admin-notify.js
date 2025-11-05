@@ -12,6 +12,12 @@ function formatDate(dateStr) {
     return `${day}.${month}.${year}`;
 }
 
+// Функция для форматирования времени (HH:MM)
+function formatTime(timeStr) {
+    if (!timeStr) return '';
+    return timeStr.toString().slice(0, 5);
+}
+
 // Функция для отправки уведомления о создании расписания
 async function notifyScheduleCreated(month) {
     try {
@@ -110,11 +116,14 @@ async function notifyNewTrainingRequest(trainingData) {
             return;
         }
 
+        // Форматируем дату в формат д.м.г
+        const formattedDate = formatDate(trainingData.date);
+
         const message = `
 🔔 *Новая заявка на тренировку!*
 
 👤 *Клиент:* ${trainingData.client_name}
-📅 *Дата:* ${trainingData.date}
+📅 *Дата:* ${formattedDate}
 ⏰ *Время:* ${trainingData.time}
 🎯 *Тип:* ${trainingData.type}
 👥 *Группа:* ${trainingData.group_name || 'Индивидуальная'}
@@ -205,6 +214,163 @@ ${trainingData.child_name ? `👶 *Ребенок:* ${trainingData.child_name}\n
     }
 }
 
+// Уведомление: создана зимняя групповая тренировка администратором (естественный склон)
+async function notifyAdminWinterGroupTrainingCreatedByAdmin(data) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Получаем дату из правильного поля (date или session_date)
+        const dateValue = data.date || data.session_date;
+        let dateObj;
+        
+        if (dateValue instanceof Date) {
+            dateObj = dateValue;
+        } else if (typeof dateValue === 'string') {
+            dateObj = new Date(dateValue);
+        } else {
+            console.error('Ошибка: дата не найдена в данных', data);
+            dateObj = new Date();
+        }
+        
+        // Форматируем дату в DD.MM.YYYY
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year}`;
+        
+        // Форматируем время в ЧЧ:ММ
+        const timeFormatted = String(data.start_time || '').substring(0, 5);
+        
+        // Вычисляем цену за человека
+        const totalPrice = (data.price != null) ? Number(data.price) : null;
+        const maxParticipants = (data.max_participants != null) ? Number(data.max_participants) : null;
+        const pricePerPerson = (totalPrice != null && maxParticipants && maxParticipants > 0)
+            ? (totalPrice / maxParticipants)
+            : null;
+
+        // Формируем сообщение о создании тренировки
+        let message = '✅ *Создана зимняя групповая тренировка на естественном склоне в Кулига Парк*\n\n';
+        
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${timeFormatted}\n`;
+        
+        if (data.group_name) {
+            message += `👥 *Группа:* ${data.group_name}\n`;
+        }
+        
+        if (data.trainer_name) {
+            message += `👨‍🏫 *Тренер:* ${data.trainer_name}\n`;
+        }
+        
+        if (maxParticipants != null) {
+            message += `🧑‍🤝‍🧑 *Мест:* ${maxParticipants}\n`;
+        }
+        
+        if (pricePerPerson != null) {
+            message += `💳 *Цена за человека:* ${pricePerPerson.toFixed(2)} ₽\n`;
+        }
+        
+        if (totalPrice != null) {
+            message += `💰 *Цена (общая):* ${totalPrice.toFixed(2)} ₽`;
+        }
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о создании зимней групповой тренировки:', error);
+    }
+}
+
+// Уведомление: новая запись на групповую зимнюю тренировку (естественный склон)
+async function notifyAdminWinterGroupTrainingCreated(data) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Получаем дату из правильного поля (date или session_date)
+        const dateValue = data.date || data.session_date;
+        let dateObj;
+        
+        if (dateValue instanceof Date) {
+            dateObj = dateValue;
+        } else if (typeof dateValue === 'string') {
+            dateObj = new Date(dateValue);
+        } else {
+            console.error('Ошибка: дата не найдена в данных', data);
+            dateObj = new Date();
+        }
+        
+        // Форматируем дату в DD.MM.YYYY
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year}`;
+        
+        // Форматируем время в ЧЧ:ММ
+        const timeFormatted = String(data.start_time || '').substring(0, 5);
+        
+        // Вычисляем цену за человека
+        const totalPrice = (data.price != null) ? Number(data.price) : null;
+        const maxParticipants = (data.max_participants != null) ? Number(data.max_participants) : null;
+        const pricePerPerson = (totalPrice != null && maxParticipants && maxParticipants > 0)
+            ? (totalPrice / maxParticipants)
+            : null;
+
+        // Формируем сообщение согласно требованиям
+        let message = '👥 *Новая запись на групповую Зимнюю тренировку в Кулига Парк!*\n\n';
+        
+        if (data.client_name) {
+            message += `👤 *Клиент:* ${data.client_name}\n`;
+        }
+        
+        if (data.child_name) {
+            message += `👶 *Ребенок:* ${data.child_name}\n`;
+        }
+        
+        if (data.client_phone) {
+            message += `📱 *Телефон:* ${data.client_phone}\n`;
+        }
+        
+        if (data.group_name) {
+            message += `👥 *Группа:* ${data.group_name}\n`;
+        }
+        
+        if (data.used_subscription) {
+            message += `🎫 *Оплата:* По абонементу "${data.subscription_name}"\n`;
+            message += `📊 *Занятий осталось:* ${data.remaining_sessions}/${data.total_sessions}\n`;
+            // Показываем стоимость занятия по абонементу (цена абонемента / количество занятий)
+            if (data.subscription_price_per_session != null) {
+                message += `💵 *Стоимость занятия по абонементу:* ${Number(data.subscription_price_per_session).toFixed(2)} руб.\n`;
+            }
+        } else if (pricePerPerson != null) {
+            message += `💰 *Стоимость:* ${pricePerPerson.toFixed(2)} руб.\n`;
+        }
+        
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${timeFormatted}\n`;
+        
+        if (data.current_participants != null && data.max_participants != null) {
+            message += `👥 *Участников:* ${data.current_participants}/${data.max_participants}`;
+        }
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о записи на зимнюю групповую тренировку:', error);
+    }
+}
+
 // Функция для отправки уведомления об отмене групповой тренировки
 async function notifyAdminGroupTrainingCancellation(trainingData) {
     try {
@@ -214,8 +380,27 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
             return;
         }
 
+        // Определяем, является ли это зимней тренировкой (если нет тренажера)
+        const isWinterTraining = !trainingData.simulator_name;
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
+        }
+
+        // Формируем строку с информацией о возврате
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент*';
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+        }
+
         const message =
-            '❌ *Отмена групповой тренировки!*\n\n' +
+            (isWinterTraining ? '❌ *Отмена групповой зимней тренировки!*\n\n' : '❌ *Отмена групповой тренировки!*\n\n') +
             `👤 *Клиент:* ${trainingData.client_name}\n` +
             (trainingData.participant_name ? `👤 *Участник:* ${trainingData.participant_name}\n` : '') +
             `📞 *Телефон:* ${trainingData.client_phone}\n` +
@@ -223,9 +408,9 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
             `⏰ *Время:* ${trainingData.time}\n` +
             `👥 *Группа:* ${trainingData.group_name}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
-            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            locationLine +
             `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
-            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
@@ -244,18 +429,48 @@ async function notifyAdminParticipantRemoved(trainingData) {
             return;
         }
 
+        // Определяем, является ли тренировка зимней (естественный склон)
+        const isWinterTraining = !trainingData.simulator_id;
+        
+        // Заголовок зависит от типа тренировки
+        const header = isWinterTraining 
+            ? '👥 *Удаление участника из тренировки на естественном склоне в Кулига Парк!*'
+            : '👥 *Удаление участника из тренировки!*';
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
+        }
+
+        // Формируем строку с информацией о возврате
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент*\n';
+            if (trainingData.subscription_name) {
+                refundLine += `🎫 *Абонемент:* ${trainingData.subscription_name}\n`;
+            }
+            if (trainingData.remaining_sessions != null && trainingData.total_sessions != null) {
+                refundLine += `📊 *Занятий осталось:* ${trainingData.remaining_sessions}/${trainingData.total_sessions}`;
+            }
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+        }
+
         const message =
-            '👥 *Удаление участника из тренировки!*\n\n' +
+            `${header}\n\n` +
             `👤 *Клиент:* ${trainingData.client_name}\n` +
             (trainingData.participant_name ? `👶 *Участник:* ${trainingData.participant_name} (${trainingData.age} лет)\n` : `👤 *Возраст:* ${trainingData.age} лет\n`) +
             `📞 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
-            `⏰ *Время:* ${trainingData.time}\n` +
+            `⏰ *Время:* ${formatTime(trainingData.time)}\n` +
             `👥 *Группа:* ${trainingData.group_name}\n` +
             `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n` +
-            `🎿 *Тренажер:* ${trainingData.simulator_name}\n` +
+            locationLine +
             `🪑 *Мест осталось:* ${trainingData.seats_left}\n` +
-            `💰 *Возврат:* ${Number(trainingData.refund).toFixed(2)} руб.`;
+            refundLine;
 
         for (const adminId of adminIds) {
             await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
@@ -289,6 +504,92 @@ async function notifyAdminIndividualTrainingCancellation(trainingData) {
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления:', error);
+    }
+}
+
+// Функция для отправки уведомления об отмене индивидуальной тренировки естественного склона
+async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Определяем заголовок в зависимости от типа тренировки
+        const isGroupTraining = trainingData.trainer_name && trainingData.trainer_name !== 'Не указан';
+        const header = isGroupTraining 
+            ? '❌ *Отмена групповой зимней тренировки!*\n\n'
+            : '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n';
+
+        // Формируем строку с информацией о возврате
+        let refundLine = '';
+        if (trainingData.used_subscription) {
+            refundLine = '💰 *Возврат занятия на абонемент*';
+            if (trainingData.subscription_name) {
+                refundLine += `\n🎫 *Абонемент:* ${trainingData.subscription_name}`;
+            }
+            if (trainingData.subscription_remaining_sessions != null && trainingData.subscription_total_sessions != null) {
+                refundLine += `\n📊 *Занятий осталось:* ${trainingData.subscription_remaining_sessions}/${trainingData.subscription_total_sessions}`;
+            }
+        } else {
+            refundLine = `💰 *Возврат:* ${Number(trainingData.refund || 0).toFixed(2)} руб.`;
+        }
+
+        let message = header +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n`;
+        
+        if (trainingData.participant_name && trainingData.participant_name !== '—') {
+            message += `👤 *Участник:* ${trainingData.participant_name}\n`;
+        }
+        
+        message += `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n`;
+        
+        if (isGroupTraining && trainingData.group_name) {
+            message += `👥 *Группа:* ${trainingData.group_name}\n`;
+        }
+        
+        if (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан') {
+            message += `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n`;
+        }
+        
+        message += `🏔️ *Место:* Кулига Парк\n` +
+            refundLine;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления об отмене тренировки естественного склона:', error);
+    }
+}
+
+// Функция для отправки уведомления о новой записи на индивидуальную тренировку естественного склона
+async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            '✅ *Новая запись на индивидуальную тренировку Кулига Парк!*\n\n' +
+            `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
+            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `🏔️ *Место:* Кулига Парк\n` +
+            `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о записи на тренировку естественного склона:', error);
     }
 }
 
@@ -621,10 +922,25 @@ async function notifyTomorrowTrainings(trainings) {
                 const participantsStr = training.participants_list || 'Нет участников';
                 const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
                 
+                // Определяем место проведения
+                const locationStr = training.simulator_name 
+                    ? `🎿 Тренажер: ${training.simulator_name}` 
+                    : `🏔️ Место: Кулига Парк`;
+                
+                // Для зимних групповых тренировок показываем цену за человека
+                let priceStr = training.price;
+                if (!training.simulator_name && training.max_participants) {
+                    const pricePerPerson = (Number(training.price) / training.max_participants).toFixed(2);
+                    priceStr = `${pricePerPerson} руб. (за человека, общая: ${Number(training.price).toFixed(2)} руб.)`;
+                } else {
+                    priceStr = `${Number(training.price).toFixed(2)} руб.`;
+                }
+                
                 message += `• ${timeStr} - ${training.group_name || 'Группа'} (${equipmentStr})\n`;
+                message += `  ${locationStr}\n`;
                 message += `  👨‍🏫 Тренер: ${trainerStr}\n`;
                 message += `  👥 Участники: ${participantsStr}\n`;
-                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+                message += `  💰 Стоимость: ${priceStr}\n\n`;
             });
         }
 
@@ -637,9 +953,15 @@ async function notifyTomorrowTrainings(trainings) {
                 const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
                 const participantStr = training.participants_list || 'Участник не указан';
                 
+                // Определяем место проведения
+                const locationStr = training.simulator_name 
+                    ? `🎿 Тренажер: ${training.simulator_name}` 
+                    : `🏔️ Место: Кулига Парк`;
+                
                 message += `• ${timeStr} - ${participantStr} (${equipmentStr})\n`;
+                message += `  ${locationStr}\n`;
                 message += `  ⏱ Длительность: ${durationStr}\n`;
-                message += `  💰 Стоимость: ${training.price} руб.\n\n`;
+                message += `  💰 Стоимость: ${Number(training.price).toFixed(2)} руб.\n\n`;
             });
         }
 
@@ -999,6 +1321,7 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
             participantInfo = `👤 *Участник:* ${participant_name} (${participantAgeDisplay})\n`;
         }
 
+        const simulatorLine = simulator_name ? `\n🎿 *Тренажер:* ${simulator_name}` : '';
         const message = 
             '🗑 *Удалена индивидуальная тренировка*\n\n' +
             `👨‍💼 *Клиент:* ${client_name}\n` +
@@ -1007,8 +1330,7 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
             `📅 *Дата:* ${formatDate(date)}\n` +
             `⏰ *Время:* ${time}\n` +
             `⏱ *Длительность:* ${duration} мин\n` +
-            `${equipmentName} ${trainerText}\n` +
-            `🎿 *Тренажер:* ${simulator_name}\n\n` +
+            `${equipmentName} ${trainerText}${simulatorLine}\n\n` +
             `💰 *Возвращено:* ${refund_amount} ₽\n` +
             `💳 *Новый баланс клиента:* ${new_balance} ₽\n\n` +
             `_Удалено администратором через админ-панель_`;
@@ -1053,5 +1375,36 @@ module.exports = {
     notifyBlockDeleted,
     notifyTrainerBookingCreated,
     notifyTrainerBookingCancelled,
-    notifyAdminIndividualTrainingDeleted
-}; 
+    notifyAdminIndividualTrainingDeleted,
+    notifyAdminNaturalSlopeTrainingCancellation,
+    notifyAdminNaturalSlopeTrainingBooking,
+    notifyAdminWinterGroupTrainingCreated,
+    notifyAdminWinterGroupTrainingCreatedByAdmin,
+    notifyAdminSubscriptionPurchase
+};
+
+// Функция для отправки уведомления о покупке абонемента
+async function notifyAdminSubscriptionPurchase({ client_name, client_id, subscription_name, price, sessions_count }) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            '🎫 *Новая покупка абонемента!*\n\n' +
+            `👨‍💼 *Клиент:* ${client_name}\n` +
+            `🆔 *ID клиента:* ${client_id}\n` +
+            `🎫 *Абонемент:* ${subscription_name}\n` +
+            `🎯 *Количество занятий:* ${sessions_count}\n` +
+            `💰 *Стоимость:* ${Number(price).toFixed(2)} руб.\n` +
+            `💵 *Цена за занятие:* ${Number(price / sessions_count).toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о покупке абонемента:', error);
+    }
+} 

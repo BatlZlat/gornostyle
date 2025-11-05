@@ -7,11 +7,12 @@ const moment = require('moment-timezone');
         const today = now.format('YYYY-MM-DD');
         const currentTime = now.format('HH:mm:ss');
 
-        // Обновляем тренировки, которые уже прошли (по дате и времени)
-        const result = await pool.query(`
+        // Обновляем тренировки тренажера (групповые), которые уже прошли
+        const simulatorResult = await pool.query(`
             UPDATE training_sessions
             SET status = 'completed', updated_at = NOW()
-            WHERE training_type = TRUE
+            WHERE (slope_type IS NULL OR slope_type = 'simulator')
+              AND training_type = TRUE
               AND status = 'scheduled'
               AND (
                 session_date < $1
@@ -19,7 +20,24 @@ const moment = require('moment-timezone');
               )
         `, [today, currentTime]);
 
-        console.log(`Групповых тренировок переведено в completed: ${result.rowCount}`);
+        console.log(`Групповых тренировок тренажера переведено в completed: ${simulatorResult.rowCount}`);
+
+        // Обновляем зимние тренировки (групповые и индивидуальные), которые уже прошли
+        // Важно: обновляем только те, которые действительно прошли по дате И времени
+        const winterResult = await pool.query(`
+            UPDATE training_sessions
+            SET status = 'completed', updated_at = NOW()
+            WHERE slope_type = 'natural_slope'
+              AND status = 'scheduled'
+              AND (
+                session_date < $1::date
+                OR (session_date = $1::date AND end_time::time < $2::time)
+              )
+        `, [today, currentTime]);
+
+        console.log(`Зимних тренировок (естественный склон) переведено в completed: ${winterResult.rowCount}`);
+        console.log(`Всего тренировок переведено в completed: ${simulatorResult.rowCount + winterResult.rowCount}`);
+        
         process.exit(0);
     } catch (err) {
         console.error('Ошибка при обновлении статусов:', err);

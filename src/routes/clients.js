@@ -18,19 +18,96 @@ function convertSkillLevel(level) {
 // Получение списка клиентов
 router.get('/', async (req, res) => {
     try {
-        const result = await pool.query(`
+        const { is_athlete } = req.query;
+        
+        let query = `
             SELECT 
                 c.*,
                 ch.id as child_id,
                 ch.full_name as child_name,
                 ch.birth_date as child_birth_date,
                 ch.skill_level as child_skill_level,
-                w.balance
+                w.balance,
+                -- Подсчет индивидуальных тренировок клиента
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM individual_training_sessions its
+                    WHERE its.client_id = c.id
+                ), 0) +
+                COALESCE((
+                    SELECT COUNT(DISTINCT ts.id)
+                    FROM training_sessions ts
+                    JOIN session_participants sp ON ts.id = sp.session_id
+                    WHERE sp.client_id = c.id
+                        AND sp.child_id IS NULL
+                        AND sp.status IN ('confirmed', 'completed')
+                        AND (
+                            ts.training_type = FALSE OR 
+                            ts.group_id IS NULL
+                        )
+                ), 0) as client_individual_count,
+                -- Подсчет групповых тренировок клиента
+                COALESCE((
+                    SELECT COUNT(DISTINCT ts.id)
+                    FROM training_sessions ts
+                    JOIN session_participants sp ON ts.id = sp.session_id
+                    WHERE sp.client_id = c.id
+                        AND sp.child_id IS NULL
+                        AND sp.status IN ('confirmed', 'completed')
+                        AND (
+                            ts.training_type = TRUE OR 
+                            ts.group_id IS NOT NULL
+                        )
+                ), 0) as client_group_count,
+                -- Подсчет индивидуальных тренировок ребенка
+                CASE 
+                    WHEN ch.id IS NULL THEN 0
+                    ELSE COALESCE((
+                        SELECT COUNT(*) 
+                        FROM individual_training_sessions its
+                        WHERE its.child_id = ch.id
+                    ), 0) +
+                    COALESCE((
+                        SELECT COUNT(DISTINCT ts.id)
+                        FROM training_sessions ts
+                        JOIN session_participants sp ON ts.id = sp.session_id
+                        WHERE sp.child_id = ch.id
+                            AND sp.status IN ('confirmed', 'completed')
+                            AND (
+                                ts.training_type = FALSE OR 
+                                ts.group_id IS NULL
+                            )
+                    ), 0)
+                END as child_individual_count,
+                -- Подсчет групповых тренировок ребенка
+                CASE 
+                    WHEN ch.id IS NULL THEN 0
+                    ELSE COALESCE((
+                        SELECT COUNT(DISTINCT ts.id)
+                        FROM training_sessions ts
+                        JOIN session_participants sp ON ts.id = sp.session_id
+                        WHERE sp.child_id = ch.id
+                            AND sp.status IN ('confirmed', 'completed')
+                            AND (
+                                ts.training_type = TRUE OR 
+                                ts.group_id IS NOT NULL
+                            )
+                    ), 0)
+                END as child_group_count
             FROM clients c
             LEFT JOIN children ch ON c.id = ch.parent_id
             LEFT JOIN wallets w ON c.id = w.client_id
-            ORDER BY c.full_name ASC
-        `);
+        `;
+        
+        const params = [];
+        if (is_athlete !== undefined) {
+            query += ' WHERE c.is_athlete = $1';
+            params.push(is_athlete === 'true');
+        }
+        
+        query += ' ORDER BY c.full_name ASC';
+        
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (error) {
         console.error('Ошибка при получении списка клиентов:', error);
@@ -225,6 +302,46 @@ router.put('/:id/review-status', async (req, res) => {
         console.error('Ошибка при обновлении статуса отзыва:', error);
         res.status(500).json({ 
             error: 'Ошибка при обновлении статуса отзыва',
+            details: error.message
+        });
+    }
+});
+
+// Обновление статуса спортсмена
+router.put('/:id/athlete-status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { is_athlete } = req.body;
+
+        // Валидация данных
+        if (typeof is_athlete !== 'boolean') {
+            return res.status(400).json({ 
+                error: 'Некорректные данные. Укажите is_athlete (boolean)' 
+            });
+        }
+
+        // Обновляем статус спортсмена
+        const result = await pool.query(`
+            UPDATE clients 
+            SET is_athlete = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING id, full_name, is_athlete
+        `, [is_athlete, id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        console.log(`Обновлен статус спортсмена для клиента ${id}: ${is_athlete}`);
+        res.json({
+            success: true,
+            message: 'Статус спортсмена успешно обновлен',
+            client: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка при обновлении статуса спортсмена:', error);
+        res.status(500).json({ 
+            error: 'Ошибка при обновлении статуса спортсмена',
             details: error.message
         });
     }

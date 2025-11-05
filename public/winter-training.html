@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создание зимней тренировки - Ski-instruktor</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        .flatpickr-day.has-schedule {
+            background: rgba(46, 204, 113, 0.15);
+            box-shadow: inset 0 0 0 2px #2ecc71;
+        }
+        .flatpickr-day.has-schedule.free-none { /* есть расписание, но все слоты заняты */
+            background: rgba(241, 196, 15, 0.15);
+            box-shadow: inset 0 0 0 2px #f1c40f;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Создание зимней тренировки</h1>
+            <a href="admin.html" class="btn-secondary">← Назад к админ-панели</a>
+        </header>
+        
+        <div class="admin-content">
+            <main class="admin-main">
+                <div class="page-content">
+                    <form id="createWinterTrainingForm" class="form-container">
+                        <div class="form-group">
+                            <label for="group">Группа:</label>
+                            <select id="group" name="group_id" required>
+                                <option value="">Выберите группу</option>
+                            </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Группы можно управлять на странице <a href="groups.html" target="_blank">Группы</a>
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="date">Дата:</label>
+                            <input type="date" id="date" name="date" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="timeSlot">Время:</label>
+                            <select id="timeSlot" name="time_slot" required>
+                                <option value="">Выберите время</option>
+                                <option value="10:30">10:30</option>
+                                <option value="12:00">12:00</option>
+                                <option value="14:30">14:30</option>
+                                <option value="16:00">16:00</option>
+                                <option value="17:30">17:30</option>
+                                <option value="19:00">19:00</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="trainer">Тренер:</label>
+                            <select id="trainer" name="trainer_id">
+                                <option value="">Выберите тренера (опционально)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="skillLevel">Уровень подготовки:</label>
+                            <select id="skillLevel" name="skill_level" required>
+                                <option value="">Выберите уровень</option>
+                                <option value="1">Уровень 1</option>
+                                <option value="2">Уровень 2</option>
+                                <option value="3">Уровень 3</option>
+                                <option value="4">Уровень 4</option>
+                                <option value="5">Уровень 5</option>
+                                <option value="6">Уровень 6</option>
+                                <option value="7">Уровень 7</option>
+                                <option value="8">Уровень 8</option>
+                                <option value="9">Уровень 9</option>
+                                <option value="10">Уровень 10</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="maxParticipants">Максимальное количество участников:</label>
+                            <select id="maxParticipants" name="max_participants" required>
+                                <option value="">Выберите количество</option>
+                                <option value="2">2 человека</option>
+                                <option value="3">3 человека</option>
+                                <option value="4">4 человека</option>
+                                <option value="6">6 человек</option>
+                            </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Цена будет рассчитана за каждого участника из прайса зимних тренировок
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <span id="trainingPrice"></span>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">Создать тренировку</button>
+                            <a href="admin.html" class="btn-secondary">Отмена</a>
+                        </div>
+                    </form>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr@4.6.13/dist/l10n/ru.js"></script>
+    <script src="js/create-winter-training.js"></script>
+</body>
+</html>
