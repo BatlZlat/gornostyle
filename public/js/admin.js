@@ -942,6 +942,10 @@ function switchPage(page) {
     });
     
     currentPage = page;
+    
+    // Отправляем событие для других скриптов
+    document.dispatchEvent(new CustomEvent('pageChanged', { detail: { page } }));
+    
     loadPageContent(page);
 }
 
@@ -983,6 +987,13 @@ async function loadPageContent(page) {
         case 'subscriptions':
             if (typeof loadSubscriptionsPage === 'function') {
                 await loadSubscriptionsPage();
+            }
+            break;
+        case 'scheduled-messages':
+            if (typeof loadScheduledMessagesPage === 'function') {
+                await loadScheduledMessagesPage();
+            } else if (typeof loadScheduledMessages === 'function') {
+                await loadScheduledMessages();
             }
             break;
         case 'winter-trainings':

@@ -26,6 +26,7 @@
                 <button class="menu-item" data-page="finances">Финансы</button>
                 <button class="menu-item" data-page="promotions">🎁 Акции</button>
                 <button class="menu-item" data-page="subscriptions">🎫 Абонементы</button>
+                <button class="menu-item" data-page="scheduled-messages">⏰ Отложенные сообщения</button>
                 <button class="menu-item btn-primary" id="notify-clients-btn" style="margin-top:10px;">Отправить сообщение клиентам</button>
                 <button class="menu-item btn-secondary" onclick="openRecurringSchedule()" style="margin-top:5px;">📅 Постоянное расписание</button>
             </nav>
@@ -358,6 +359,31 @@
                         <div id="active-subscriptions-list">
                             <!-- Список активных абонементов будет загружен динамически -->
                         </div>
+                    </div>
+                </div>
+
+                <!-- Страница отложенных сообщений -->
+                <div class="page-content" id="scheduled-messages-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>⏰ Отложенные сообщения</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="refresh-scheduled-btn">🔄 Обновить</button>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры -->
+                    <div class="filter-section" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <select id="status-filter-scheduled" class="form-control" style="width: auto;">
+                            <option value="pending" selected>Ожидают отправки</option>
+                            <option value="sent">Отправленные</option>
+                            <option value="cancelled">Отмененные</option>
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+
+                    <!-- Список отложенных сообщений -->
+                    <div id="scheduled-messages-list" class="scheduled-messages-list">
+                        <!-- Список будет загружен динамически -->
                     </div>
                 </div>
 
@@ -833,5 +859,6 @@
     <script src="js/admin-trainer-salary.js?v=1"></script>
     <script src="js/admin-winter-prices.js?v=1"></script>
     <script src="js/admin-winter-trainings.js?v=1"></script>
+    <script src="js/admin-scheduled-messages.js?v=1"></script>
 </body>
 </html> 

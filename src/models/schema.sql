@@ -435,6 +435,24 @@ CREATE TABLE message_recipients (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица отложенных сообщений
+-- МИГРАЦИЯ 025: Создание таблицы для отложенных сообщений
+CREATE TABLE scheduled_messages (
+    id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL,
+    parse_mode VARCHAR(10) DEFAULT 'HTML',
+    media_file_path VARCHAR(500),
+    media_type VARCHAR(20), -- 'photo' или 'video'
+    recipient_type VARCHAR(20) NOT NULL, -- 'all' или 'client'
+    recipient_id INTEGER REFERENCES clients(id), -- заполняется если recipient_type = 'client'
+    scheduled_at TIMESTAMP NOT NULL, -- дата и время отправки (по часовому поясу Asia/Yekaterinburg)
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'sent', 'cancelled'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP, -- когда было отправлено
+    created_by INTEGER REFERENCES administrators(id) -- кто создал отложенное сообщение
+);
+
 -- Таблица настроек группировки
 CREATE TABLE grouping_settings (
     id SERIAL PRIMARY KEY,
@@ -529,6 +547,11 @@ CREATE TABLE certificate_stats (
 -- 021_add_expires_at_to_subscription_types.sql
 --    - Добавлено поле expires_at (DATE) в natural_slope_subscription_types
 --    - Поле validity_days сделано опциональным
+--
+-- 025_create_scheduled_messages.sql
+--    - Создана таблица scheduled_messages для отложенных сообщений
+--    - Добавлены индексы для быстрого поиска сообщений, которые нужно отправить
+--    - Позволяет создавать сообщения, которые будут отправлены в указанное время
 -- 
 -- 022_increase_transaction_type_length.sql
 --    - Увеличена длина поля type в transactions с VARCHAR(20) до VARCHAR(50)
@@ -651,6 +674,10 @@ CREATE INDEX idx_messages_created_by ON messages(created_by);
 CREATE INDEX idx_message_recipients_message ON message_recipients(message_id);
 CREATE INDEX idx_message_recipients_recipient ON message_recipients(recipient_id);
 CREATE INDEX idx_message_recipients_status ON message_recipients(status);
+CREATE INDEX idx_scheduled_messages_pending ON scheduled_messages(scheduled_at, status) WHERE status = 'pending';
+CREATE INDEX idx_scheduled_messages_created_at ON scheduled_messages(created_at DESC);
+CREATE INDEX idx_scheduled_messages_status ON scheduled_messages(status);
+CREATE INDEX idx_scheduled_messages_scheduled_at ON scheduled_messages(scheduled_at);
 CREATE INDEX idx_grouping_settings_active ON grouping_settings(is_active);
 
 -- Создание триггеров для обновления updated_at
@@ -735,6 +762,11 @@ CREATE TRIGGER update_messages_updated_at
 
 CREATE TRIGGER update_message_recipients_updated_at
     BEFORE UPDATE ON message_recipients
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_scheduled_messages_updated_at
+    BEFORE UPDATE ON scheduled_messages
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
