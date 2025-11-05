@@ -5754,9 +5754,20 @@ function calculateSubscriptionPrice() {
     
     // Получить процент скидки из поля ввода для выбранного номинала
     const discountInput = document.getElementById(`discount-${sessionsCount}`);
-    const discountPercentage = discountInput ? parseFloat(discountInput.value) || 0 : SUBSCRIPTION_DISCOUNTS[sessionsCount] || 0;
+    let discountPercentage = 0;
     
-    // Сохранить скидку в скрытое поле
+    if (discountInput && discountInput.value !== '') {
+        discountPercentage = parseFloat(discountInput.value);
+        // Если значение невалидное, использовать значение по умолчанию
+        if (isNaN(discountPercentage)) {
+            discountPercentage = SUBSCRIPTION_DISCOUNTS[sessionsCount] || 0;
+        }
+    } else {
+        // Если поле ввода пустое, использовать значение по умолчанию
+        discountPercentage = SUBSCRIPTION_DISCOUNTS[sessionsCount] || 0;
+    }
+    
+    // Сохранить скидку в скрытое поле (гарантируем, что это число)
     document.getElementById('subscription-discount').value = discountPercentage;
     
     // Рассчитать цены на основе цены за одного человека
@@ -6187,7 +6198,19 @@ async function handleSubscriptionSubmit(event) {
     const description = document.getElementById('subscription-description').value.trim();
     const expiresAt = document.getElementById('subscription-validity').value;
     const sessionsCount = parseInt(document.getElementById('subscription-sessions').value);
-    const discountPercentage = parseFloat(document.getElementById('subscription-discount').value);
+    
+    // Получить процент скидки: сначала из скрытого поля, если пусто - из поля ввода для выбранного номинала
+    let discountPercentage = parseFloat(document.getElementById('subscription-discount').value);
+    if (isNaN(discountPercentage) && sessionsCount) {
+        // Если скрытое поле пустое или невалидное, получить из поля ввода для выбранного номинала
+        const discountInput = document.getElementById(`discount-${sessionsCount}`);
+        discountPercentage = discountInput ? parseFloat(discountInput.value) : (SUBSCRIPTION_DISCOUNTS[sessionsCount] || 0);
+        // Сохранить в скрытое поле для последующих проверок
+        if (!isNaN(discountPercentage)) {
+            document.getElementById('subscription-discount').value = discountPercentage;
+        }
+    }
+    
     const priceId = document.getElementById('subscription-price-id').value;
     const pricePerPerson = parseFloat(document.getElementById('subscription-price-per-person').value);
     const isActive = document.getElementById('subscription-is-active').checked;
@@ -6222,7 +6245,8 @@ async function handleSubscriptionSubmit(event) {
         return;
     }
     
-    if (!discountPercentage || discountPercentage < 0 || discountPercentage > 100) {
+    // Проверка процента скидки: должно быть валидное число от 0 до 100
+    if (isNaN(discountPercentage) || discountPercentage < 0 || discountPercentage > 100) {
         showError('Укажите корректный процент скидки');
         return;
     }
