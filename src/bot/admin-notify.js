@@ -116,11 +116,14 @@ async function notifyNewTrainingRequest(trainingData) {
             return;
         }
 
+        // Форматируем дату в формат д.м.г
+        const formattedDate = formatDate(trainingData.date);
+
         const message = `
 🔔 *Новая заявка на тренировку!*
 
 👤 *Клиент:* ${trainingData.client_name}
-📅 *Дата:* ${trainingData.date}
+📅 *Дата:* ${formattedDate}
 ⏰ *Время:* ${trainingData.time}
 🎯 *Тип:* ${trainingData.type}
 👥 *Группа:* ${trainingData.group_name || 'Индивидуальная'}
