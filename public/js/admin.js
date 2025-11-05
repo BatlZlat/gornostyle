@@ -3933,6 +3933,7 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             });
             
             showSuccess(`Отложенное сообщение создано. Будет отправлено: ${formattedDate}`);
+            hideLoading();
             
             // Закрываем модальное окно и очищаем форму
             document.getElementById('notify-clients-modal').style.display = 'none';
@@ -3948,7 +3949,11 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             }
             
             // Скрываем контейнер отложенной отправки
+            const scheduleCheckbox = form.querySelector('#schedule-message');
             const scheduleContainer = form.querySelector('#schedule-datetime-container');
+            if (scheduleCheckbox) {
+                scheduleCheckbox.checked = false;
+            }
             if (scheduleContainer) {
                 scheduleContainer.style.display = 'none';
             }
@@ -3956,6 +3961,7 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             return;
         } catch (error) {
             console.error('Ошибка при создании отложенного сообщения:', error);
+            hideLoading();
             showError(error.message);
             return;
         }
