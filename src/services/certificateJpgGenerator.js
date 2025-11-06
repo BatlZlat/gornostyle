@@ -151,99 +151,116 @@ class CertificateJpgGenerator {
         }
         
         .certificate-info {
-            background: rgba(0, 0, 0, 0.67);
+            background: rgba(0, 0, 0, 0.75);
             color: white;
-            padding: 25px;
+            padding: 25px 20px;
             border-radius: 12px;
-            width: 300px;
-            height: 440px; /* Увеличено на 40px */
-            margin-right: 30px;
+            width: 280px;
+            height: auto;
+            min-height: 420px;
+            max-height: 450px;
+            margin-right: 25px;
             text-align: center;
-            backdrop-filter: blur(8px);
-            border: none;
-            box-shadow: none;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* Изменено с space-between на flex-start */
-            overflow: hidden; /* Скрываем переполнение */
+            justify-content: space-between;
+            gap: 20px;
         }
         
         .certificate-title {
             font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 5px;
+            font-weight: 700;
+            margin-bottom: 6px;
             color: #FFFFFF;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            line-height: 1.1;
-            text-shadow: none;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            letter-spacing: 1.5px;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.6);
+            font-family: 'Segoe UI', 'Arial', sans-serif;
         }
         
         .certificate-subtitle {
-            font-size: 18px;
-            font-weight: bold;
+            font-size: 13px;
+            font-weight: 600;
             margin-bottom: 20px;
-            color: #FFFFFF;
-            line-height: 1.2;
+            color: #E0E0E0;
+            line-height: 1.3;
             text-transform: uppercase;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            letter-spacing: 0.3px;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
         }
         
         .certificate-number {
-            font-size: 28px;
-            font-weight: bold;
+            font-size: 22px;
+            font-weight: 700;
             color: #FFD700;
-            margin-bottom: 10px; /* Уменьшен интервал */
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            letter-spacing: 1px;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            margin: 12px 0;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.7);
+            letter-spacing: 1.5px;
+            font-family: 'Courier New', monospace;
         }
         
         .certificate-amount {
-            font-size: 28px;
-            font-weight: bold;
+            font-size: 42px;
+            font-weight: 900;
             color: #FFD700;
-            margin-bottom: 10px; /* Уменьшен интервал */
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            margin: 15px 0 8px 0;
+            text-shadow: 3px 3px 8px rgba(0,0,0,0.8);
+            line-height: 1;
+            font-family: 'Arial Black', 'Arial', sans-serif;
+            letter-spacing: -1px;
+        }
+        
+        .certificate-amount-label {
+            font-size: 18px;
+            font-weight: 600;
+            color: #FFFFFF;
+            margin-bottom: 15px;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.6);
         }
         
         .certificate-recipient {
-            font-size: 14px;
-            margin-bottom: 10px;
+            font-size: 15px;
+            margin: 10px 0;
             color: #FFFFFF;
-            font-weight: normal;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            font-weight: 600;
+            line-height: 1.3;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
         }
         
         .certificate-message {
             font-size: 14px;
             font-style: italic;
-            margin-bottom: 15px;
-            color: #FFFFFF;
-            line-height: 1.2;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.1);
+            margin: 12px 0;
+            color: #F0F0F0;
+            line-height: 1.4;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.12);
             border-radius: 6px;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            border-left: 3px solid #FFD700;
+            font-family: 'Georgia', 'Times New Roman', serif;
         }
         
         .certificate-expiry {
             font-size: 14px;
-            color: #FFFFFF;
-            margin-top: 10px;
-            font-weight: normal;
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            color: #E0E0E0;
+            margin-top: 15px;
+            font-weight: 500;
+            line-height: 1.3;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
         }
         
         .certificate-icon {
-            font-size: 20px;
+            font-size: 24px;
             margin-right: 8px;
             color: #FFD700;
             font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.6);
+            vertical-align: middle;
+            font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
         }
     </style>
 </head>
@@ -251,40 +268,44 @@ class CertificateJpgGenerator {
     <div class="certificate-container">
         <div class="certificate-content">
             <div class="certificate-info">
-                <div class="certificate-title">
-                    <span class="certificate-icon">🎁</span>
-                    СЕРТИФИКАТ
-                </div>
-                <div class="certificate-subtitle">
-                    НА ТРЕНИРОВКУ ПО ГОРНЫМ ЛЫЖАМ ИЛИ СНОУБОРДУ
-                </div>
-                
-                <div class="certificate-number">
-                    № ${certificate_number}
+                <div>
+                    <div class="certificate-title">
+                        <span class="certificate-icon">🎁</span>
+                        СЕРТИФИКАТ
+                    </div>
+                    <div class="certificate-subtitle">
+                        НА ТРЕНИРОВКУ ПО ГОРНЫМ<br>ЛЫЖАМ ИЛИ СНОУБОРДУ
+                    </div>
                 </div>
                 
-                <div class="certificate-amount">
-                    <span class="certificate-icon">💰</span> ${nominal_value} руб.
+                <div>
+                    <div class="certificate-number">
+                        № ${certificate_number}
+                    </div>
+                    
+                    <div class="certificate-amount">
+                        ${nominal_value}
+                    </div>
+                    <div class="certificate-amount-label">рублей</div>
                 </div>
                 
-                <!-- Отступ от границы рамки -->
-                <div style="margin: 20px 0; text-align: left;">
+                <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0;">
                     ${recipient_name ? `
-                    <div class="certificate-recipient" style="text-align: left; margin: 8px 0;">
-                        Кому: ${recipient_name}
+                    <div class="certificate-recipient">
+                        <strong>Кому:</strong><br>${recipient_name}
                     </div>
                     ` : ''}
                     
                     ${message ? `
-                    <div class="certificate-message" style="text-align: left; margin: 8px 0;">
-                        "${message}"
+                    <div class="certificate-message">
+                        ${message}
                     </div>
                     ` : ''}
-                    
-                    <!-- Отступ и дата -->
-                    <div class="certificate-expiry" style="text-align: left; margin-top: 15px;">
-                        Сертификат годен до: ${formattedDate}
-                    </div>
+                </div>
+                
+                <div class="certificate-expiry">
+                    <strong>Действителен до:</strong><br>
+                    <span style="color: #FFD700; font-weight: 600;">${formattedDate}</span>
                 </div>
             </div>
         </div>

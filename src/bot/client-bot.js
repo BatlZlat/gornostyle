@@ -1032,6 +1032,21 @@ async function handleTextMessage(msg) {
 
     // Обработка выбора абонемента для покупки
     if (state && state.step === 'subscription_purchase_selection') {
+        // Проверяем кнопку "Назад" перед проверкой номера
+        if (msg.text === '🔙 Назад в меню') {
+            const clientId = state.data?.client_id;
+            userStates.delete(chatId);
+            if (clientId) {
+                return showSubscriptionsMenu(chatId, clientId);
+            } else {
+                // Если clientId нет в состоянии, получаем из telegram_id
+                const client = await getClientByTelegramId(msg.from.id.toString());
+                if (client) {
+                    return showSubscriptionsMenu(chatId, client.id);
+                }
+            }
+        }
+
         const selectedIndex = parseInt(msg.text) - 1;
         const subscriptions = state.data?.available_subscriptions || [];
 
@@ -6550,20 +6565,25 @@ async function handleTextMessage(msg) {
             const clientId = state.data.client_id;
             let nominalValue = 0;
 
-            // Обрабатываем выбор номинала
-            if (msg.text.includes('2 500')) {
+            console.log(`[certificate_nominal_selection] Обработка выбора суммы. Текст: "${msg.text}", clientId: ${clientId}`);
+
+            // Нормализуем текст (убираем лишние пробелы, приводим к нижнему регистру для сравнения)
+            const normalizedText = msg.text.trim().toLowerCase();
+
+            // Обрабатываем выбор номинала (проверяем разными способами)
+            if (msg.text.includes('2 500') || normalizedText.includes('2500') || msg.text.includes('2,500')) {
                 nominalValue = 2500;
-            } else if (msg.text.includes('3 000')) {
+            } else if (msg.text.includes('3 000') || normalizedText.includes('3000') || msg.text.includes('3,000')) {
                 nominalValue = 3000;
-            } else if (msg.text.includes('5 000')) {
+            } else if (msg.text.includes('5 000') || normalizedText.includes('5000') || msg.text.includes('5,000')) {
                 nominalValue = 5000;
-            } else if (msg.text.includes('6 000')) {
+            } else if (msg.text.includes('6 000') || normalizedText.includes('6000') || msg.text.includes('6,000')) {
                 nominalValue = 6000;
-            } else if (msg.text.includes('10 000')) {
+            } else if (msg.text.includes('10 000') || normalizedText.includes('10000') || msg.text.includes('10,000')) {
                 nominalValue = 10000;
-            } else if (msg.text.includes('15 000')) {
+            } else if (msg.text.includes('15 000') || normalizedText.includes('15000') || msg.text.includes('15,000')) {
                 nominalValue = 15000;
-            } else if (msg.text === '💳 Произвольная сумма') {
+            } else if (msg.text === '💳 Произвольная сумма' || normalizedText.includes('произвольная')) {
                 userStates.set(chatId, {
                     step: 'certificate_custom_amount',
                     data: { client_id: clientId }
@@ -6583,9 +6603,46 @@ async function handleTextMessage(msg) {
             }
 
             if (nominalValue > 0) {
-                return showDesignSelection(chatId, clientId, nominalValue);
+                console.log(`[certificate_nominal_selection] Выбран номинал: ${nominalValue}, вызываем showDesignSelection`);
+                try {
+                    return await showDesignSelection(chatId, clientId, nominalValue);
+                } catch (error) {
+                    console.error('[certificate_nominal_selection] Ошибка в showDesignSelection:', error);
+                    return bot.sendMessage(chatId, 
+                        '❌ Произошла ошибка при загрузке дизайнов. Попробуйте позже или обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['💰 2 500 руб.', '💰 3 000 руб.'],
+                                    ['💰 5 000 руб.', '💰 6 000 руб.'],
+                                    ['💰 10 000 руб.', '💰 15 000 руб.'],
+                                    ['💳 Произвольная сумма'],
+                                    ['🔙 Назад']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
             }
-            break;
+            
+            // Если не распознан выбор, отправляем подсказку
+            console.log(`[certificate_nominal_selection] Не распознан выбор суммы: "${msg.text}"`);
+            return bot.sendMessage(chatId, 
+                '❓ Не удалось распознать выбор.\n\nПожалуйста, выберите номинал из предложенных вариантов или нажмите "🔙 Назад".',
+                {
+                    reply_markup: {
+                        keyboard: [
+                            ['💰 2 500 руб.', '💰 3 000 руб.'],
+                            ['💰 5 000 руб.', '💰 6 000 руб.'],
+                            ['💰 10 000 руб.', '💰 15 000 руб.'],
+                            ['💳 Произвольная сумма'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
 
         case 'certificate_custom_amount': {
@@ -6636,7 +6693,7 @@ async function handleTextMessage(msg) {
             }
 
             if (msg.text === '⏭ Пропустить') {
-                // Пропускаем данные получателя
+                // Пропускаем данные получателя, переходим к вводу email
                 const purchaseData = {
                     client_id,
                     nominal_value,
@@ -6644,7 +6701,7 @@ async function handleTextMessage(msg) {
                     recipient_name: null,
                     message: null
                 };
-                return showPurchaseConfirmation(chatId, purchaseData);
+                return showEmailInputForm(chatId, purchaseData);
             }
 
             // Парсим данные получателя из сообщения
@@ -6661,11 +6718,12 @@ async function handleTextMessage(msg) {
                 message = lines.slice(1).join(' ').trim();
                 
                 // Ограничиваем длину пожелания
-                if (message && message.length > 100) {
-                    return bot.sendMessage(chatId, '❌ Пожелание слишком длинное. Максимум 100 символов.\n\nТекущая длина: ' + message.length + ' символов.', {
+                if (message && message.length > 30) {
+                    return bot.sendMessage(chatId, `❌ Пожелание слишком длинное. Максимум 30 символов.\n\nТекущая длина: ${message.length} символов.\n\nВведите более короткое пожелание.`, {
                         reply_markup: {
                             keyboard: [
-                                ['🔙 Попробовать еще раз']
+                                ['⏭ Пропустить'],
+                                ['🔙 Назад']
                             ],
                             resize_keyboard: true
                         }
@@ -6681,6 +6739,64 @@ async function handleTextMessage(msg) {
                 message: message
             };
 
+            // Переходим к вводу email перед подтверждением
+            return showEmailInputForm(chatId, purchaseData);
+        }
+
+        case 'certificate_email_input': {
+            const purchaseData = state.data;
+            
+            if (msg.text === '🔙 Назад') {
+                return showRecipientForm(chatId, purchaseData.client_id, purchaseData.nominal_value, purchaseData.design_id);
+            }
+
+            if (msg.text === '⏭ Пропустить') {
+                // Пропускаем ввод email, переходим к подтверждению
+                purchaseData.email = null;
+                return showPurchaseConfirmation(chatId, purchaseData);
+            }
+
+            // Проверяем, выбрал ли пользователь существующий email
+            if (msg.text.startsWith('Использовать: ')) {
+                const existingEmail = msg.text.replace('Использовать: ', '').trim();
+                purchaseData.email = existingEmail;
+                return showPurchaseConfirmation(chatId, purchaseData);
+            }
+
+            // Валидируем email
+            const email = msg.text.trim();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            if (!emailRegex.test(email)) {
+                // Получаем существующий email для показа кнопки
+                const clientResult = await pool.query(
+                    'SELECT email FROM clients WHERE id = $1',
+                    [purchaseData.client_id]
+                );
+                const existingEmail = clientResult.rows[0]?.email;
+                
+                const keyboard = [
+                    ['⏭ Пропустить'],
+                    ['🔙 Назад']
+                ];
+                if (existingEmail) {
+                    keyboard.unshift([`Использовать: ${existingEmail}`]);
+                }
+
+                return bot.sendMessage(chatId, 
+                    '❌ Неверный формат email.\n\nПожалуйста, введите корректный email адрес.\n\n**Пример:** example@mail.ru\n\nИли нажмите "⏭ Пропустить" для продолжения без email.',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: keyboard,
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            // Сохраняем email и переходим к подтверждению
+            purchaseData.email = email;
             return showPurchaseConfirmation(chatId, purchaseData);
         }
 
@@ -6688,7 +6804,7 @@ async function handleTextMessage(msg) {
             const purchaseData = state.data;
             
             if (msg.text === '🔙 Назад') {
-                return showRecipientForm(chatId, purchaseData.client_id, purchaseData.nominal_value, purchaseData.design_id);
+                return showEmailInputForm(chatId, purchaseData);
             }
 
             if (msg.text === '❌ Отменить') {
@@ -7208,6 +7324,89 @@ bot.on('callback_query', async (callbackQuery) => {
             // Сразу показываем доступные слоты
             return showNaturalSlopeTimeSlots(chatId, date, st.data);
         }
+        // Обработка предварительного просмотра дизайна сертификата
+        if (data.startsWith('preview_design_')) {
+            try {
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: 'Генерация превью...'
+                });
+                
+                const [, , designId, nominalValue] = data.split('_');
+                
+                console.log(`[preview_design] Генерация превью для дизайна ${designId}, номинал ${nominalValue}`);
+                
+                // Получаем информацию о дизайне из БД
+                const designQuery = await pool.query(
+                    'SELECT name FROM certificate_designs WHERE id = $1',
+                    [parseInt(designId)]
+                );
+                
+                const designName = designQuery.rows[0]?.name || 'Дизайн';
+                
+                // Используем существующий сервис для генерации изображения
+                const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+                
+                // Генерируем уникальный номер для файла (чтобы избежать конфликтов при одновременных запросах)
+                // Но в сертификате отобразим просто "PREVIEW" без цифр
+                const uniqueId = Date.now();
+                const previewNumberForFile = `PREVIEW_${uniqueId}`;
+                const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+                
+                const certificateData = {
+                    certificate_number: 'PREVIEW', // Для отображения в сертификате просто "PREVIEW"
+                    nominal_value: parseInt(nominalValue),
+                    recipient_name: 'Образец',
+                    message: 'С днем рождения!',
+                    expiry_date: expiryDate,
+                    design_id: parseInt(designId)
+                };
+                
+                // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
+                const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
+                
+                if (jpgRelativePath) {
+                    // Преобразуем относительный путь в абсолютный
+                    const path = require('path');
+                    const fs = require('fs');
+                    const publicPath = path.join(__dirname, '../../public');
+                    const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
+                    
+                    console.log(`[preview_design] Путь к изображению: ${jpgAbsolutePath}`);
+                    
+                    // Проверяем существование файла
+                    if (!fs.existsSync(jpgAbsolutePath)) {
+                        throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
+                    }
+                    
+                    // Читаем файл и отправляем как фото
+                    const photoBuffer = fs.readFileSync(jpgAbsolutePath);
+                    
+                    // Удаляем временный файл
+                    try {
+                        fs.unlinkSync(jpgAbsolutePath);
+                    } catch (unlinkError) {
+                        console.error('[preview_design] Ошибка при удалении временного файла:', unlinkError);
+                    }
+                    
+                    console.log(`[preview_design] Отправка изображения дизайна "${designName}"`);
+                    
+                    return bot.sendPhoto(chatId, photoBuffer, {
+                        caption: `🎨 **Дизайн "${designName}"**\n\nНоминал: ${nominalValue} руб.`,
+                        parse_mode: 'Markdown'
+                    });
+                }
+                
+                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+                
+            } catch (error) {
+                console.error('[preview_design] Ошибка при показе превью:', error);
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: 'Ошибка загрузки превью'
+                });
+                return bot.sendMessage(chatId, '❌ Не удалось загрузить превью. Попробуйте позже.');
+            }
+        }
+        
         // Обработка выбора дизайна сертификата
         if (data.startsWith('select_design_')) {
             await bot.answerCallbackQuery(callbackQuery.id, {
@@ -8366,21 +8565,23 @@ async function showNominalSelection(chatId, clientId) {
             data: { client_id: clientId }
         });
 
-        const message = `💝 **ПОДАРИТЬ СЕРТИФИКАТ**
+        const message = `💝 <b>ПОДАРИТЬ СЕРТИФИКАТ</b>
+
+⚠️ <b>Важно:</b> Убедитесь, что ваш кошелек пополнен на сумму, которую планируете потратить на сертификат.
 
 Выберите номинал сертификата:
 
-💰 **2 500 руб.** - Индивидуальная 30 мин без тренера
-💰 **3 000 руб.** - Индивидуальная 30 мин с тренером
-💰 **5 000 руб.** - Индивидуальная 60 мин без тренера
-💰 **6 000 руб.** - Индивидуальная 60 мин с тренером
-💰 **10 000 руб.** - Групповые тренировки 3-4 чел
-💰 **15 000 руб.** - Групповые тренировки 5-6 чел
+💰 <b>2 500 руб.</b> - Индивидуальная 30 мин без тренера
+💰 <b>3 000 руб.</b> - Индивидуальная 30 мин с тренером
+💰 <b>5 000 руб.</b> - Индивидуальная 60 мин без тренера
+💰 <b>6 000 руб.</b> - Индивидуальная 60 мин с тренером
+💰 <b>10 000 руб.</b> - Групповые тренировки 3-4 чел
+💰 <b>15 000 руб.</b> - Групповые тренировки 5-6 чел
 
-💳 **Произвольная сумма** (500-50 000 руб.)`;
+💳 <b>Произвольная сумма</b> (500-50 000 руб.)`;
 
         return bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: {
                 keyboard: [
                     ['💰 2 500 руб.', '💰 3 000 руб.'],
@@ -8401,23 +8602,47 @@ async function showNominalSelection(chatId, clientId) {
 // Показать выбор дизайна сертификата
 async function showDesignSelection(chatId, clientId, nominalValue) {
     try {
-        // Получаем доступные дизайны
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${getJWTToken()}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        console.log(`[showDesignSelection] Запрос дизайнов для клиента ${clientId}, номинал: ${nominalValue}`);
+        
+        // Получаем доступные дизайны напрямую из БД (более надежно)
+        let designs;
+        try {
+            const designsQuery = await pool.query(`
+                SELECT id, name, description, image_url, template_url, is_active, sort_order
+                FROM certificate_designs
+                WHERE is_active = true
+                ORDER BY sort_order ASC, name ASC
+            `);
+            
+            designs = designsQuery.rows;
+            console.log(`[showDesignSelection] Получено дизайнов из БД: ${designs.length}`);
+        } catch (dbError) {
+            console.error('[showDesignSelection] Ошибка при получении дизайнов из БД:', dbError);
+            
+            // Fallback: пробуем через API
+            const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${getJWTToken()}`,
+                    'Content-Type': 'application/json'
+                }
+            });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success || !result.designs) {
+                throw new Error('Не удалось получить дизайны сертификатов');
+            }
+            
+            designs = result.designs;
         }
 
-        const result = await response.json();
-        
-        if (!result.success || !result.designs) {
-            throw new Error('Не удалось получить дизайны сертификатов');
+        if (!designs || designs.length === 0) {
+            throw new Error('Нет доступных дизайнов сертификатов');
         }
 
         userStates.set(chatId, {
@@ -8434,37 +8659,32 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
         const inlineKeyboard = [];
         const keyboard = [];
         
-        result.designs.forEach((design, index) => {
+        designs.forEach((design, index) => {
             message += `${index + 1}️⃣ **${design.name}** - ${design.description}\n\n`;
             
-            // Inline кнопки для выбора и предварительного просмотра
+            // Inline кнопки только для предварительного просмотра с названием дизайна
             inlineKeyboard.push([
                 {
-                    text: `${index + 1}️⃣ Выбрать ${design.name}`,
-                    callback_data: `select_design_${design.id}_${nominalValue}`
-                }
-            ]);
-            inlineKeyboard.push([
-                {
-                    text: `👁 Посмотреть дизайн "${design.name}"`,
-                    url: `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/preview?design=${design.id}&amount=${nominalValue}&name=Образец`
+                    text: `👁 Посмотреть ${design.name}`,
+                    callback_data: `preview_design_${design.id}_${nominalValue}`
                 }
             ]);
             
-            // Обычные кнопки для тех, кто предпочитает текст
+            // Обычные кнопки для выбора дизайна
             keyboard.push([`${index + 1}️⃣ ${design.name}`]);
         });
 
         keyboard.push(['🔙 Назад']);
 
+        // Сначала отправляем сообщение с inline кнопками для просмотра
         return bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: inlineKeyboard
             }
         }).then(() => {
-            // Отправляем дополнительную клавиатуру для альтернативного выбора
-            return bot.sendMessage(chatId, '🔄 Или выберите дизайн кнопками ниже:', {
+            // Затем отправляем сообщение с обычными кнопками для выбора
+            return bot.sendMessage(chatId, 'Выберите дизайн кнопками ниже:', {
                 reply_markup: {
                     keyboard: keyboard,
                     resize_keyboard: true
@@ -8472,8 +8692,23 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
             });
         });
     } catch (error) {
-        console.error('Ошибка при показе выбора дизайна:', error);
-        return bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке дизайнов. Попробуйте позже.');
+        console.error('[showDesignSelection] Ошибка при показе выбора дизайна:', error);
+        console.error('[showDesignSelection] Stack trace:', error.stack);
+        return bot.sendMessage(chatId, 
+            `❌ Произошла ошибка при загрузке дизайнов.\n\nОшибка: ${error.message}\n\nПопробуйте позже или обратитесь в поддержку.`,
+            {
+                reply_markup: {
+                    keyboard: [
+                        ['💰 2 500 руб.', '💰 3 000 руб.'],
+                        ['💰 5 000 руб.', '💰 6 000 руб.'],
+                        ['💰 10 000 руб.', '💰 15 000 руб.'],
+                        ['💳 Произвольная сумма'],
+                        ['🔙 Назад']
+                    ],
+                    resize_keyboard: true
+                }
+            }
+        );
     }
 }
 
@@ -8497,12 +8732,12 @@ async function showRecipientForm(chatId, clientId, nominalValue, designId) {
 **Кому:**
 _Например: Иван Иванов_
 
-**Пожелание (до 100 символов):**
-_Например: Поздравляю с днем рождения! Счастья, здоровья, удачи._
+**Пожелание (до 30 символов):**
+_Например: С днем рождения!_
 
 Отправьте данные в формате:
 \`Иван Иванов\`
-\`Поздравляю с днем рождения!\`
+\`С днем рождения!\`
 
 Или нажмите "Пропустить" для создания сертификата без данных получателя.`;
 
@@ -8518,6 +8753,57 @@ _Например: Поздравляю с днем рождения! Счаст
         });
     } catch (error) {
         console.error('Ошибка при показе формы получателя:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
+// Показать форму ввода email
+async function showEmailInputForm(chatId, purchaseData) {
+    try {
+        // Проверяем, есть ли уже email у клиента
+        const clientResult = await pool.query(
+            'SELECT email FROM clients WHERE id = $1',
+            [purchaseData.client_id]
+        );
+        const existingEmail = clientResult.rows[0]?.email;
+
+        userStates.set(chatId, {
+            step: 'certificate_email_input',
+            data: purchaseData
+        });
+
+        let message = `📧 **ЭЛЕКТРОННАЯ ПОЧТА**
+
+Для отправки сертификата на вашу почту, пожалуйста, укажите email адрес:`;
+
+        if (existingEmail) {
+            message += `\n\n💡 **Текущий email в профиле:** ${existingEmail}\n\nВы можете оставить текущий email или указать другой.`;
+        }
+
+        message += `\n\n**Пример:** example@mail.ru
+
+После покупки сертификат можно будет открыть по уникальной ссылке в меню "📋 Мои сертификаты".
+
+Или нажмите "⏭ Пропустить", если не хотите указывать email.`;
+
+        const keyboard = [
+            ['⏭ Пропустить'],
+            ['🔙 Назад']
+        ];
+        
+        if (existingEmail) {
+            keyboard.unshift([`Использовать: ${existingEmail}`]);
+        }
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: keyboard,
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе формы email:', error);
         return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
     }
 }
@@ -8542,24 +8828,81 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
         const balance = parseFloat(clientData.balance) || 0;
 
         // Получаем информацию о дизайне
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${getJWTToken()}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const designsResult = await response.json();
-        const design = designsResult.designs?.find(d => d.id === purchaseData.design_id);
-        const designName = design ? design.name : 'Неизвестный дизайн';
+        const designQuery = await pool.query(
+            'SELECT name FROM certificate_designs WHERE id = $1',
+            [purchaseData.design_id]
+        );
+        const designName = designQuery.rows[0]?.name || 'Неизвестный дизайн';
 
         userStates.set(chatId, {
             step: 'certificate_purchase_confirmation',
             data: purchaseData
         });
 
-        let message = `❗ **ПОДТВЕРДИТЕ ПОКУПКУ**
+        // СНАЧАЛА ОТПРАВЛЯЕМ ПРЕДПРОСМОТР В ВИДЕ ИЗОБРАЖЕНИЯ
+        try {
+            console.log(`[showPurchaseConfirmation] Генерация превью для подтверждения покупки`);
+            
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+            
+            // Генерируем уникальный номер для файла (чтобы избежать конфликтов)
+            // Но в сертификате отобразим просто "PREVIEW" без цифр
+            const uniqueId = Date.now();
+            const previewNumberForFile = `PREVIEW_${uniqueId}`;
+            const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            
+            const certificateData = {
+                certificate_number: 'PREVIEW', // Для отображения в сертификате просто "PREVIEW"
+                nominal_value: purchaseData.nominal_value,
+                recipient_name: purchaseData.recipient_name || null,
+                message: purchaseData.message || null,
+                expiry_date: expiryDate,
+                design_id: purchaseData.design_id
+            };
+            
+            // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
+            const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
+            
+            if (jpgRelativePath) {
+                // Преобразуем относительный путь в абсолютный
+                const path = require('path');
+                const fs = require('fs');
+                const publicPath = path.join(__dirname, '../../public');
+                const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
+                
+                console.log(`[showPurchaseConfirmation] Путь к изображению: ${jpgAbsolutePath}`);
+                
+                // Проверяем существование файла
+                if (!fs.existsSync(jpgAbsolutePath)) {
+                    throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
+                }
+                
+                // Читаем файл и отправляем как фото
+                const photoBuffer = fs.readFileSync(jpgAbsolutePath);
+                
+                // Удаляем временный файл
+                try {
+                    fs.unlinkSync(jpgAbsolutePath);
+                } catch (unlinkError) {
+                    console.error('[showPurchaseConfirmation] Ошибка при удалении временного файла:', unlinkError);
+                }
+                
+                await bot.sendPhoto(chatId, photoBuffer, {
+                    caption: '👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**',
+                    parse_mode: 'Markdown'
+                });
+                
+                console.log(`[showPurchaseConfirmation] Предпросмотр отправлен`);
+            } else {
+                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+            }
+        } catch (previewError) {
+            console.error('[showPurchaseConfirmation] Ошибка при генерации превью:', previewError);
+            // Продолжаем дальше, даже если превью не удалось
+        }
+
+        // ЗАТЕМ ОТПРАВЛЯЕМ ТЕКСТ ПОДТВЕРЖДЕНИЯ
+        let message = `❗️ **ПОДТВЕРДИТЕ ПОКУПКУ НАЖАВ КНОПКУ НИЖЕ "Купить сертификат"**
 
 **Номинал:** ${purchaseData.nominal_value} руб.
 **Дизайн:** ${designName}`;
@@ -8611,6 +8954,32 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
 // Создать сертификат
 async function createCertificate(chatId, purchaseData) {
     try {
+        // Обновляем email клиента, если он был указан
+        if (purchaseData.email) {
+            try {
+                // Проверяем текущий email в базе
+                const currentEmailResult = await pool.query(
+                    'SELECT email FROM clients WHERE id = $1',
+                    [purchaseData.client_id]
+                );
+                const currentEmail = currentEmailResult.rows[0]?.email;
+                
+                // Обновляем только если новый email отличается от текущего
+                if (currentEmail !== purchaseData.email) {
+                    await pool.query(
+                        'UPDATE clients SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                        [purchaseData.email, purchaseData.client_id]
+                    );
+                    console.log(`[createCertificate] Email обновлен для клиента ${purchaseData.client_id}: с "${currentEmail || 'не указан'}" на "${purchaseData.email}"`);
+                } else {
+                    console.log(`[createCertificate] Email для клиента ${purchaseData.client_id} не изменился: ${purchaseData.email}`);
+                }
+            } catch (emailError) {
+                console.error('[createCertificate] Ошибка при обновлении email:', emailError);
+                // Продолжаем без обновления email
+            }
+        }
+
         const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`, {
             method: 'POST',
             headers: {
@@ -8658,8 +9027,8 @@ async function createCertificate(chatId, purchaseData) {
             });
         }
 
-        // Показываем результат успешной покупки
-        await showCertificateResult(chatId, result.certificate);
+        // Показываем результат успешной покупки (передаем purchaseData для проверки email)
+        await showCertificateResult(chatId, result.certificate, purchaseData);
 
     } catch (error) {
         // Очищаем состояние при ошибке
@@ -8676,28 +9045,53 @@ async function createCertificate(chatId, purchaseData) {
 }
 
 // Показать результат создания сертификата
-async function showCertificateResult(chatId, certificate) {
+async function showCertificateResult(chatId, certificate, purchaseData = null) {
     try {
-        let message = `🎉 **СЕРТИФИКАТ УСПЕШНО СОЗДАН!**
+        // Проверяем наличие email у клиента ПОСЛЕ обновления
+        // Сначала проверяем purchaseData.email (если был указан при покупке)
+        // Затем проверяем в базе (email мог быть обновлен при создании сертификата)
+        let hasEmail = false;
+        
+        if (purchaseData && purchaseData.email) {
+            hasEmail = true;
+        } else {
+            const clientResult = await pool.query(
+                'SELECT email FROM clients WHERE id = $1',
+                [certificate.purchaser_id || certificate.client_id]
+            );
+            hasEmail = clientResult.rows[0]?.email ? true : false;
+        }
 
-🎫 **Номер сертификата:** \`${certificate.certificate_number}\`
-💰 **Номинал:** ${certificate.nominal_value} руб.`;
+        const certificateUrl = certificate.certificate_url;
+        
+        let message = `🎉 <b>СЕРТИФИКАТ УСПЕШНО СОЗДАН!</b>
+
+🎫 <b>Номер сертификата:</b> <code>${certificate.certificate_number}</code>
+💰 <b>Номинал:</b> ${certificate.nominal_value} руб.`;
 
         if (certificate.recipient_name) {
-            message += `\n👤 **Получатель:** ${certificate.recipient_name}`;
+            message += `\n👤 <b>Получатель:</b> ${certificate.recipient_name}`;
         }
 
         // Добавляем информацию о сроке действия
         const expiryDate = formatDate(certificate.expiry_date);
-        message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
+        message += `\n⏰ <b>Сертификат годен до:</b> ${expiryDate}`;
 
-        message += `\n\n🔗 **Электронный сертификат:**
-${certificate.certificate_url}`;
+        // Показываем ссылку на сертификат (можно скопировать)
+        message += `\n\n🔗 <b>Ссылка на сертификат:</b>
+<code>${certificateUrl}</code>`;
 
         if (certificate.print_image_url) {
             const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
-            message += `\n\n🖨️ **Для печати:**
-${printUrl}`;
+            message += `\n\n🖨️ <b>Для печати:</b>
+<code>${printUrl}</code>`;
+        }
+
+        // Информация об email
+        if (hasEmail) {
+            message += `\n\n📧 Сертификат отправлен на вашу электронную почту.`;
+        } else {
+            message += `\n\n⚠️ <b>Внимание:</b> Email не указан в вашем профиле. Сертификат не был отправлен на почту.\n\nВы можете использовать ссылку выше для просмотра и печати сертификата.`;
         }
 
         message += `\n\nВы можете:
@@ -8707,9 +9101,22 @@ ${printUrl}`;
 
         userStates.delete(chatId);
 
+        // Используем inline кнопку для открытия сертификата
+        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+        let inlineKeyboard = [];
+        
+        // Добавляем кнопку только если не localhost (Telegram не принимает localhost URLs)
+        if (!baseUrl.includes('localhost')) {
+            inlineKeyboard.push([{
+                text: `🔗 Открыть сертификат ${certificate.certificate_number}`,
+                url: certificateUrl
+            }]);
+        }
+
         return bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: {
+                inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined,
                 keyboard: [
                     ['📋 Мои сертификаты'],
                     ['💝 Подарить еще сертификат'],
@@ -8871,9 +9278,9 @@ async function showUserCertificates(chatId, clientId) {
 
         if (result.certificates.length === 0) {
             return bot.sendMessage(chatId, 
-                '📋 **МОИ СЕРТИФИКАТЫ**\n\nУ вас пока нет сертификатов.\n\nВы можете:\n• Подарить сертификат кому-то\n• Активировать полученный сертификат',
+                '📋 <b>МОИ СЕРТИФИКАТЫ</b>\n\nУ вас пока нет сертификатов.\n\nВы можете:\n• Подарить сертификат кому-то\n• Активировать полученный сертификат',
                 {
-                    parse_mode: 'Markdown',
+                    parse_mode: 'HTML',
                     reply_markup: {
                         keyboard: [
                             ['💝 Подарить сертификат'],
@@ -8890,10 +9297,10 @@ async function showUserCertificates(chatId, clientId) {
         const purchased = result.certificates.filter(cert => cert.relationship_type === 'purchased');
         const activated = result.certificates.filter(cert => cert.relationship_type === 'activated');
 
-        let message = '📋 **МОИ СЕРТИФИКАТЫ**\n\n';
+        let message = '📋 <b>МОИ СЕРТИФИКАТЫ</b>\n\n';
 
         if (purchased.length > 0) {
-            message += '🎁 **ПОДАРЕННЫЕ СЕРТИФИКАТЫ:**\n';
+            message += '🎁 <b>ПОДАРЕННЫЕ СЕРТИФИКАТЫ:</b>\n';
             
             // Сортируем по дате покупки (новые сверху)
             purchased.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
@@ -8913,8 +9320,10 @@ async function showUserCertificates(chatId, clientId) {
                     statusText = 'Подарен';
                 }
                 
-                message += `${statusEmoji} **${statusText}**\n`;
-                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `${statusEmoji} <b>${statusText}</b>\n`;
+                
+                // Номер сертификата как текст для копирования
+                message += `🎫 <b>Номер:</b> <code>${cert.certificate_number}</code>\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.recipient_name) {
@@ -8929,16 +9338,16 @@ async function showUserCertificates(chatId, clientId) {
                     message += `🔓 Активирован: ${activationDate}\n`;
                 }
                 
-                // Добавляем ссылку на сертификат
+                // Добавляем ссылку на сертификат (можно скопировать)
                 const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
-                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                message += `🔗 <b>Ссылка:</b> <code>${certificateUrl}</code>\n`;
                 
                 message += '\n';
             });
         }
 
         if (activated.length > 0) {
-            message += '🔑 **АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:**\n';
+            message += '🔑 <b>АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:</b>\n';
             
             // Сортируем по дате активации (новые сверху)
             activated.sort((a, b) => new Date(b.activation_date) - new Date(a.activation_date));
@@ -8947,8 +9356,10 @@ async function showUserCertificates(chatId, clientId) {
                 const statusEmoji = cert.status === 'used' ? '✅' : '🔓';
                 const statusText = cert.status === 'used' ? 'Использован' : 'Активирован';
                 
-                message += `${statusEmoji} **${statusText}**\n`;
-                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `${statusEmoji} <b>${statusText}</b>\n`;
+                
+                // Номер сертификата как текст для копирования
+                message += `🎫 <b>Номер:</b> <code>${cert.certificate_number}</code>\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.activation_date) {
@@ -8956,9 +9367,9 @@ async function showUserCertificates(chatId, clientId) {
                     message += `🔓 Дата активации: ${activationDate}\n`;
                 }
                 
-                // Добавляем ссылку на сертификат
+                // Добавляем ссылку на сертификат (можно скопировать)
                 const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
-                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                message += `🔗 <b>Ссылка:</b> <code>${certificateUrl}</code>\n`;
                 
                 message += '\n';
             });
@@ -8966,9 +9377,26 @@ async function showUserCertificates(chatId, clientId) {
 
         userStates.delete(chatId);
 
+        // Собираем все сертификаты для создания inline кнопок
+        const allCertificates = [...(purchased || []), ...(activated || [])];
+        const inlineKeyboard = [];
+        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+        
+        // Создаем inline кнопки для каждого сертификата (максимум по 1 на строку)
+        if (!baseUrl.includes('localhost')) {
+            allCertificates.forEach(cert => {
+                const certUrl = `${baseUrl}/certificate/${cert.certificate_number}`;
+                inlineKeyboard.push([{
+                    text: `🔗 Открыть сертификат ${cert.certificate_number}`,
+                    url: certUrl
+                }]);
+            });
+        }
+
         return bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: {
+                inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined,
                 keyboard: [
                     ['💝 Подарить сертификат'],
                     ['🔑 Активировать сертификат'],

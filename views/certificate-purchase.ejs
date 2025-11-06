@@ -256,8 +256,15 @@
             text-decoration: underline;
         }
         
-        .submit-btn {
-            width: 100%;
+        .form-buttons {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .preview-btn {
+            flex: 1;
+            min-width: 200px;
             padding: 18px;
             font-size: 1.2rem;
             font-weight: bold;
@@ -273,9 +280,32 @@
             gap: 10px;
         }
         
-        .submit-btn:hover {
+        .preview-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+        
+        .submit-btn {
+            flex: 1;
+            min-width: 200px;
+            padding: 18px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
         }
         
         .submit-btn:disabled {
@@ -283,6 +313,103 @@
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+        }
+        
+        /* Модальное окно превью */
+        .preview-modal {
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            overflow: auto;
+        }
+        
+        .preview-modal-content {
+            background-color: #fefefe;
+            margin: 2% auto;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .preview-modal-header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 10px 10px 0 0;
+        }
+        
+        .preview-modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        
+        .preview-close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            transition: color 0.3s ease;
+        }
+        
+        .preview-close:hover {
+            color: #ffd700;
+        }
+        
+        .preview-modal-body {
+            padding: 20px;
+            background: #f8f9fa;
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .preview-loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            color: #7f8c8d;
+        }
+        
+        .preview-modal-body iframe {
+            width: 100%;
+            height: 700px;
+            border: none;
+            border-radius: 5px;
+        }
+        
+        .preview-modal-footer {
+            padding: 20px;
+            text-align: center;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+            border-radius: 0 0 10px 10px;
+        }
+        
+        .preview-close-btn {
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            background: #95a5a6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        .preview-close-btn:hover {
+            background: #7f8c8d;
         }
         
         .error-message {
@@ -316,6 +443,30 @@
             
             .design-selector {
                 grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .form-buttons {
+                flex-direction: column;
+            }
+            
+            .preview-btn,
+            .submit-btn {
+                width: 100%;
+                min-width: auto;
+            }
+            
+            .preview-modal-content {
+                width: 95%;
+                margin: 5% auto;
+                max-height: 85vh;
+            }
+            
+            .preview-modal-body iframe {
+                height: 400px;
+            }
+            
+            .preview-modal-header h2 {
+                font-size: 1.2rem;
             }
         }
     </style>
@@ -415,8 +566,10 @@
                     
                     <div class="form-group">
                         <label for="message">Сообщение для получателя</label>
-                        <textarea id="message" name="message" placeholder="Поздравление или пожелание (до 100 символов)" maxlength="100"></textarea>
-                        <div class="form-help">Сообщение будет добавлено в сертификат</div>
+                        <textarea id="message" name="message" placeholder="Поздравление или пожелание (не более 30 символов)" maxlength="30"></textarea>
+                        <div class="form-help">
+                            <span id="messageCharCount">0 / 30 символов</span>
+                        </div>
                     </div>
                 </div>
 
@@ -512,15 +665,39 @@
                     <div class="error-message" id="privacyError"></div>
                 </div>
 
-                <!-- Кнопка отправки -->
-                <button type="submit" class="submit-btn" id="submitBtn">
-                    <i class="fas fa-credit-card"></i>
-                    <span class="btn-text">Перейти к оплате</span>
-                    <span class="loading"><i class="fas fa-spinner fa-spin"></i> Обработка...</span>
-                </button>
+                <!-- Кнопки: Предпросмотр и Оплата -->
+                <div class="form-buttons">
+                    <button type="button" class="preview-btn" id="previewBtn">
+                        <i class="fas fa-eye"></i>
+                        <span>Предварительный просмотр</span>
+                    </button>
+                    <button type="submit" class="submit-btn" id="submitBtn">
+                        <i class="fas fa-credit-card"></i>
+                        <span class="btn-text">Перейти к оплате</span>
+                        <span class="loading"><i class="fas fa-spinner fa-spin"></i> Обработка...</span>
+                    </button>
+                </div>
             </form>
         </div>
     </main>
+
+    <!-- Модальное окно предпросмотра сертификата -->
+    <div id="previewModal" class="preview-modal" style="display: none;">
+        <div class="preview-modal-content">
+            <div class="preview-modal-header">
+                <h2>Предварительный просмотр сертификата</h2>
+                <span class="preview-close">&times;</span>
+            </div>
+            <div class="preview-modal-body" id="previewModalBody">
+                <div class="preview-loading">
+                    <i class="fas fa-spinner fa-spin"></i> Загрузка превью...
+                </div>
+            </div>
+            <div class="preview-modal-footer">
+                <button type="button" class="preview-close-btn">Закрыть</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts -->
     <script src="/js/main.js"></script>
@@ -531,6 +708,8 @@
             const customAmountRadio = document.getElementById('amountCustom');
             const customAmountBlock = document.getElementById('customAmountBlock');
             const submitBtn = document.getElementById('submitBtn');
+            const messageInput = document.getElementById('message');
+            const charCountDisplay = document.getElementById('messageCharCount');
             
             // Предзаполнение суммы из URL параметров
             const urlParams = new URLSearchParams(window.location.search);
@@ -557,6 +736,108 @@
                         customAmountBlock.style.display = 'none';
                     }
                 });
+            });
+            
+            // Счетчик символов для сообщения
+            function updateCharCount() {
+                const length = messageInput.value.length;
+                charCountDisplay.textContent = `${length} / 30 символов`;
+                
+                if (length >= 25) {
+                    charCountDisplay.style.color = '#e67e22'; // Оранжевый при приближении к лимиту
+                }
+                if (length === 30) {
+                    charCountDisplay.style.color = '#e74c3c'; // Красный при достижении лимита
+                }
+                if (length < 25) {
+                    charCountDisplay.style.color = '#7f8c8d'; // Серый по умолчанию
+                }
+            }
+            
+            messageInput.addEventListener('input', updateCharCount);
+            updateCharCount(); // Инициализация при загрузке
+            
+            // Предварительный просмотр сертификата
+            const previewBtn = document.getElementById('previewBtn');
+            const previewModal = document.getElementById('previewModal');
+            const previewModalBody = document.getElementById('previewModalBody');
+            const closeModalElements = document.querySelectorAll('.preview-close, .preview-close-btn');
+            
+            previewBtn.addEventListener('click', async function() {
+                // Собираем данные формы
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData);
+                
+                // Определяем итоговую сумму
+                let amount = data.amount;
+                if (data.amount === 'custom') {
+                    amount = data.customAmountValue;
+                }
+                
+                // Валидация минимальных данных для превью
+                if (!amount || amount < 500 || amount > 50000) {
+                    alert('Пожалуйста, выберите корректный номинал сертификата (от 500 до 50 000 руб.)');
+                    return;
+                }
+                
+                const designId = data.design;
+                if (!designId) {
+                    alert('Пожалуйста, выберите дизайн сертификата');
+                    return;
+                }
+                
+                // Показываем модальное окно с загрузкой
+                previewModal.style.display = 'block';
+                previewModalBody.innerHTML = '<div class="preview-loading"><i class="fas fa-spinner fa-spin"></i> Загрузка превью...</div>';
+                
+                try {
+                    // Отправляем запрос на сервер для генерации превью
+                    const response = await fetch('/api/certificate/preview', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            nominal_value: amount,
+                            design_id: designId,
+                            recipient_name: data.recipientName || null,
+                            message: data.message || null
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Отображаем превью через iframe
+                        const iframe = document.createElement('iframe');
+                        iframe.srcdoc = result.html;
+                        iframe.style.width = '100%';
+                        iframe.style.height = '700px';
+                        iframe.style.border = 'none';
+                        iframe.style.borderRadius = '5px';
+                        previewModalBody.innerHTML = '';
+                        previewModalBody.appendChild(iframe);
+                    } else {
+                        previewModalBody.innerHTML = `<div class="preview-loading" style="color: #e74c3c;"><i class="fas fa-exclamation-circle"></i> Ошибка: ${result.error}</div>`;
+                    }
+                } catch (error) {
+                    console.error('Ошибка при загрузке превью:', error);
+                    previewModalBody.innerHTML = '<div class="preview-loading" style="color: #e74c3c;"><i class="fas fa-exclamation-circle"></i> Произошла ошибка при загрузке превью</div>';
+                }
+            });
+            
+            // Закрытие модального окна
+            closeModalElements.forEach(element => {
+                element.addEventListener('click', function() {
+                    previewModal.style.display = 'none';
+                });
+            });
+            
+            // Закрытие при клике вне модального окна
+            window.addEventListener('click', function(event) {
+                if (event.target === previewModal) {
+                    previewModal.style.display = 'none';
+                }
             });
             
             // Валидация и отправка формы

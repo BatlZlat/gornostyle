@@ -380,6 +380,10 @@ app.use('/api/trainer', trainerBookingsRouter);
 const { registerHandler } = require('./routes/certificates');
 app.post('/api/certificate/register', registerHandler);
 
+// Публичный маршрут для предварительного просмотра сертификата (без авторизации)
+const { previewHandler } = require('./routes/certificates');
+app.post('/api/certificate/preview', previewHandler);
+
 // Защищенные маршруты
 app.use('/api/groups', verifyToken, groupsRouter);
 app.use('/api/recurring-templates', verifyToken, recurringTemplatesRouter);
