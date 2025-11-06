@@ -349,6 +349,16 @@ function initializeEventListeners() {
                             
                             <textarea id="notify-message" class="form-control" rows="6" placeholder="Введите сообщение... Используйте кнопки форматирования выше или Markdown: *жирный*, _курсив_, ~зачеркнутый~, \`моноширинный\`" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; white-space: pre-wrap;"></textarea>
                             
+                            <!-- Счетчик символов и предупреждение -->
+                            <div id="message-info" style="margin-top: 8px; font-size: 13px;">
+                                <div id="char-counter" style="color: #666; margin-bottom: 4px;">
+                                    <span id="char-count">0</span> / <span id="char-limit">4096</span> символов
+                                </div>
+                                <div id="two-messages-warning" style="display: none; padding: 8px 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404; margin-top: 4px;">
+                                    <!-- Содержимое будет обновлено динамически -->
+                                </div>
+                            </div>
+                            
                             <!-- Расширенная панель эмодзи с категориями -->
                             <div style="margin-top: 8px;">
                                 <div class="emoji-categories" style="display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
@@ -639,8 +649,9 @@ function initializeEventListeners() {
             const newPos = start + formattedText.length;
             messageInput.setSelectionRange(newPos, newPos);
             
-            // Обновляем предпросмотр
+            // Обновляем предпросмотр и счетчик
             updatePreview();
+            updateCharCounter();
         }
 
         // Обработчики категорий эмодзи
@@ -672,7 +683,67 @@ function initializeEventListeners() {
         });
 
         // Обработчик ввода текста сообщения
-        messageInput.addEventListener('input', updatePreview);
+        messageInput.addEventListener('input', () => {
+            updatePreview();
+            updateCharCounter();
+        });
+
+        // Функция обновления счетчика символов и предупреждения
+        function updateCharCounter() {
+            const charCountElement = document.getElementById('char-count');
+            const charLimitElement = document.getElementById('char-limit');
+            const charCounterElement = document.getElementById('char-counter');
+            const warningElement = document.getElementById('two-messages-warning');
+            
+            if (!charCountElement || !charCounterElement) {
+                return;
+            }
+            
+            const text = messageInput.value;
+            const charCount = text.length;
+            
+            // Определяем лимит в зависимости от наличия медиа
+            const TELEGRAM_CAPTION_MAX_LENGTH = 1024; // для медиа-файлов (caption)
+            const TELEGRAM_TEXT_MAX_LENGTH = 4096; // для текстовых сообщений (без медиа)
+            
+            const hasMedia = !!uploadedMediaFile;
+            const maxLength = hasMedia ? TELEGRAM_CAPTION_MAX_LENGTH : TELEGRAM_TEXT_MAX_LENGTH;
+            
+            // Обновляем счетчик символов
+            charCountElement.textContent = charCount;
+            
+            // Обновляем лимит
+            if (charLimitElement) {
+                charLimitElement.textContent = maxLength;
+            }
+            
+            // Изменяем цвет в зависимости от количества символов
+            if (charCount > maxLength) {
+                charCounterElement.style.color = '#dc3545'; // красный - превышен лимит
+                charCountElement.style.fontWeight = 'bold';
+            } else if (charCount > maxLength * 0.8) {
+                charCounterElement.style.color = '#ff9800'; // оранжевый (предупреждение - близко к лимиту)
+                charCountElement.style.fontWeight = 'normal';
+            } else {
+                charCounterElement.style.color = '#666'; // серый (норма)
+                charCountElement.style.fontWeight = 'normal';
+            }
+            
+            // Показываем предупреждение о двух сообщениях только если:
+            // 1. Есть загруженный медиа-файл
+            // 2. Текст > 1024 символов (лимит для caption)
+            if (warningElement) {
+                if (hasMedia && charCount > TELEGRAM_CAPTION_MAX_LENGTH) {
+                    warningElement.style.display = 'block';
+                    warningElement.innerHTML = `
+                        <strong>⚠️ Внимание:</strong> Текст превышает лимит для подписи к медиа (1024 символа). 
+                        Будет отправлено <strong>2 сообщения</strong>: сначала медиа без подписи, затем текст отдельным сообщением.
+                    `;
+                } else {
+                    warningElement.style.display = 'none';
+                }
+            }
+        }
 
         // Функция обновления предпросмотра
         function updatePreview() {
@@ -690,6 +761,9 @@ function initializeEventListeners() {
             
             previewBox.innerHTML = text;
         }
+        
+        // Инициализируем счетчик при загрузке
+        updateCharCounter();
 
         // Обработчики эмодзи
         emojiPanel.addEventListener('click', (event) => {
@@ -701,6 +775,7 @@ function initializeEventListeners() {
                 messageInput.focus();
                 messageInput.setSelectionRange(cursorPos + emoji.length, cursorPos + emoji.length);
                 updatePreview();
+                updateCharCounter();
             }
         });
 
@@ -736,6 +811,9 @@ function initializeEventListeners() {
                 }
                 mediaPreviewContainer.style.display = 'block';
                 removeMediaBtn.style.display = 'block';
+                
+                // Обновляем предупреждение после загрузки медиа
+                updateCharCounter();
             };
             reader.readAsDataURL(file);
         });
@@ -751,6 +829,9 @@ function initializeEventListeners() {
             mediaPreviewVideo.style.display = 'none';
             mediaPreviewContainer.style.display = 'none';
             removeMediaBtn.style.display = 'none';
+            
+            // Обновляем предупреждение после удаления медиа
+            updateCharCounter();
         });
 
         // Обработчик отправки формы (модифицированный для поддержки медиа)
@@ -766,7 +847,11 @@ function initializeEventListeners() {
                 form.reset();
                 if (previewBox) previewBox.innerHTML = '';
                 // Очищаем медиа
+                uploadedMediaFile = null;
+                uploadedMediaType = null;
                 if (removeMediaBtn) removeMediaBtn.click();
+                // Сбрасываем счетчик
+                updateCharCounter();
             });
         }
 

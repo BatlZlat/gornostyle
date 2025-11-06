@@ -37,12 +37,7 @@ async function sendScheduledMessages() {
 
         for (const msg of messages) {
             try {
-                // Обновляем статус на "отправляется" (можно добавить отдельный статус, но пока просто отправляем)
-                await pool.query(
-                    'UPDATE scheduled_messages SET status = $1, sent_at = NOW() WHERE id = $2',
-                    ['sent', msg.id]
-                );
-
+                // СНАЧАЛА отправляем сообщение, ПОТОМ обновляем статус
                 if (msg.recipient_type === 'all') {
                     // Отправляем всем клиентам
                     await sendToAllClients(msg);
@@ -51,19 +46,22 @@ async function sendScheduledMessages() {
                     await sendToClient(msg);
                 }
 
+                // Только после успешной отправки обновляем статус на "отправлено"
+                await pool.query(
+                    'UPDATE scheduled_messages SET status = $1, sent_at = NOW() WHERE id = $2',
+                    ['sent', msg.id]
+                );
+
                 sent++;
             } catch (error) {
                 console.error(`Ошибка отправки отложенного сообщения ID ${msg.id}:`, error);
                 errors++;
                 errorsList.push({ id: msg.id, error: error.message });
                 
-                // Возвращаем статус обратно на pending для повторной попытки
-                await pool.query(
-                    'UPDATE scheduled_messages SET status = $1 WHERE id = $2',
-                    ['pending', msg.id]
-                );
+                // Оставляем статус pending для повторной попытки (он уже должен быть pending)
+                // Не нужно обновлять статус, так как мы не обновляли его до отправки
             } finally {
-                // Удаляем медиа файл после отправки
+                // Удаляем медиа файл после отправки (даже если была ошибка)
                 if (msg.media_file_path && fs.existsSync(msg.media_file_path)) {
                     try {
                         fs.unlinkSync(msg.media_file_path);
@@ -121,29 +119,77 @@ async function sendToAllClients(msg) {
         try {
             if (msg.media_file_path && fs.existsSync(msg.media_file_path)) {
                 // Отправляем с медиа
-                const form = new FormData();
-                form.append('chat_id', client.telegram_id);
-                form.append('caption', msg.message);
-                form.append('parse_mode', msg.parse_mode || 'HTML');
+                const TELEGRAM_CAPTION_MAX_LENGTH = 1024;
+                const messageLength = msg.message ? msg.message.length : 0;
                 
-                const isVideo = msg.media_type === 'video';
-                const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
-                const fieldName = isVideo ? 'video' : 'photo';
-                
-                form.append(fieldName, fs.createReadStream(msg.media_file_path));
+                // Если текст превышает лимит для caption, отправляем медиа без caption, затем текст отдельным сообщением
+                if (messageLength > TELEGRAM_CAPTION_MAX_LENGTH) {
+                    // Шаг 1: Отправляем медиа БЕЗ caption
+                    const form = new FormData();
+                    form.append('chat_id', client.telegram_id);
+                    // НЕ добавляем caption, если текст слишком длинный
+                    
+                    const isVideo = msg.media_type === 'video';
+                    const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+                    const fieldName = isVideo ? 'video' : 'photo';
+                    
+                    form.append(fieldName, fs.createReadStream(msg.media_file_path));
 
-                const response = await fetch(
-                    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
-                    { method: 'POST', body: form }
-                );
+                    const response = await fetch(
+                        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
+                        { method: 'POST', body: form }
+                    );
 
-                const responseData = await response.json();
-                if (!response.ok || !responseData.ok) {
-                    throw new Error(responseData.description || 'Ошибка отправки');
+                    const responseData = await response.json();
+                    if (!response.ok || !responseData.ok) {
+                        throw new Error(`Ошибка отправки медиа: ${responseData.description || 'Ошибка отправки'}`);
+                    }
+                    
+                    // Шаг 2: Отправляем полный текст отдельным сообщением
+                    const textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            chat_id: client.telegram_id, 
+                            text: msg.message,
+                            parse_mode: msg.parse_mode || 'HTML'
+                        })
+                    });
+                    
+                    const textResponseData = await textResponse.json();
+                    if (!textResponse.ok || !textResponseData.ok) {
+                        throw new Error(`Ошибка отправки текста: ${textResponseData.description || 'Ошибка отправки'}`);
+                    }
+                } else {
+                    // Текст <= 1024 символов или пустой - отправляем как обычно
+                    const form = new FormData();
+                    form.append('chat_id', client.telegram_id);
+                    
+                    // Добавляем caption только если есть текст
+                    if (msg.message && msg.message.trim()) {
+                        form.append('caption', msg.message);
+                        form.append('parse_mode', msg.parse_mode || 'HTML');
+                    }
+                    
+                    const isVideo = msg.media_type === 'video';
+                    const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+                    const fieldName = isVideo ? 'video' : 'photo';
+                    
+                    form.append(fieldName, fs.createReadStream(msg.media_file_path));
+
+                    const response = await fetch(
+                        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
+                        { method: 'POST', body: form }
+                    );
+
+                    const responseData = await response.json();
+                    if (!response.ok || !responseData.ok) {
+                        throw new Error(responseData.description || 'Ошибка отправки');
+                    }
                 }
             } else {
                 // Отправляем только текст
-                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
@@ -152,6 +198,11 @@ async function sendToAllClients(msg) {
                         parse_mode: msg.parse_mode || 'HTML'
                     })
                 });
+                
+                const responseData = await response.json();
+                if (!response.ok || !responseData.ok) {
+                    throw new Error(responseData.description || 'Ошибка отправки');
+                }
             }
             sent++;
         } catch (error) {
@@ -180,29 +231,77 @@ async function sendToClient(msg) {
 
     if (msg.media_file_path && fs.existsSync(msg.media_file_path)) {
         // Отправляем с медиа
-        const form = new FormData();
-        form.append('chat_id', client.telegram_id);
-        form.append('caption', msg.message);
-        form.append('parse_mode', msg.parse_mode || 'HTML');
+        const TELEGRAM_CAPTION_MAX_LENGTH = 1024;
+        const messageLength = msg.message ? msg.message.length : 0;
         
-        const isVideo = msg.media_type === 'video';
-        const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
-        const fieldName = isVideo ? 'video' : 'photo';
-        
-        form.append(fieldName, fs.createReadStream(msg.media_file_path));
+        // Если текст превышает лимит для caption, отправляем медиа без caption, затем текст отдельным сообщением
+        if (messageLength > TELEGRAM_CAPTION_MAX_LENGTH) {
+            // Шаг 1: Отправляем медиа БЕЗ caption
+            const form = new FormData();
+            form.append('chat_id', client.telegram_id);
+            // НЕ добавляем caption, если текст слишком длинный
+            
+            const isVideo = msg.media_type === 'video';
+            const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+            const fieldName = isVideo ? 'video' : 'photo';
+            
+            form.append(fieldName, fs.createReadStream(msg.media_file_path));
 
-        const response = await fetch(
-            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
-            { method: 'POST', body: form }
-        );
+            const response = await fetch(
+                `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
+                { method: 'POST', body: form }
+            );
 
-        const responseData = await response.json();
-        if (!response.ok || !responseData.ok) {
-            throw new Error(responseData.description || 'Ошибка отправки');
+            const responseData = await response.json();
+            if (!response.ok || !responseData.ok) {
+                throw new Error(`Ошибка отправки медиа: ${responseData.description || 'Ошибка отправки'}`);
+            }
+            
+            // Шаг 2: Отправляем полный текст отдельным сообщением
+            const textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chat_id: client.telegram_id, 
+                    text: msg.message,
+                    parse_mode: msg.parse_mode || 'HTML'
+                })
+            });
+            
+            const textResponseData = await textResponse.json();
+            if (!textResponse.ok || !textResponseData.ok) {
+                throw new Error(`Ошибка отправки текста: ${textResponseData.description || 'Ошибка отправки'}`);
+            }
+        } else {
+            // Текст <= 1024 символов или пустой - отправляем как обычно
+            const form = new FormData();
+            form.append('chat_id', client.telegram_id);
+            
+            // Добавляем caption только если есть текст
+            if (msg.message && msg.message.trim()) {
+                form.append('caption', msg.message);
+                form.append('parse_mode', msg.parse_mode || 'HTML');
+            }
+            
+            const isVideo = msg.media_type === 'video';
+            const endpoint = isVideo ? 'sendVideo' : 'sendPhoto';
+            const fieldName = isVideo ? 'video' : 'photo';
+            
+            form.append(fieldName, fs.createReadStream(msg.media_file_path));
+
+            const response = await fetch(
+                `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
+                { method: 'POST', body: form }
+            );
+
+            const responseData = await response.json();
+            if (!response.ok || !responseData.ok) {
+                throw new Error(responseData.description || 'Ошибка отправки');
+            }
         }
     } else {
         // Отправляем только текст
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -211,6 +310,11 @@ async function sendToClient(msg) {
                 parse_mode: msg.parse_mode || 'HTML'
             })
         });
+        
+        const responseData = await response.json();
+        if (!response.ok || !responseData.ok) {
+            throw new Error(responseData.description || 'Ошибка отправки');
+        }
     }
 
     console.log(`Отложенное сообщение ID ${msg.id} отправлено клиенту ${client.telegram_id}`);
