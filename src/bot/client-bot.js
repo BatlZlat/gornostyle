@@ -6550,20 +6550,25 @@ async function handleTextMessage(msg) {
             const clientId = state.data.client_id;
             let nominalValue = 0;
 
-            // Обрабатываем выбор номинала
-            if (msg.text.includes('2 500')) {
+            console.log(`[certificate_nominal_selection] Обработка выбора суммы. Текст: "${msg.text}", clientId: ${clientId}`);
+
+            // Нормализуем текст (убираем лишние пробелы, приводим к нижнему регистру для сравнения)
+            const normalizedText = msg.text.trim().toLowerCase();
+
+            // Обрабатываем выбор номинала (проверяем разными способами)
+            if (msg.text.includes('2 500') || normalizedText.includes('2500') || msg.text.includes('2,500')) {
                 nominalValue = 2500;
-            } else if (msg.text.includes('3 000')) {
+            } else if (msg.text.includes('3 000') || normalizedText.includes('3000') || msg.text.includes('3,000')) {
                 nominalValue = 3000;
-            } else if (msg.text.includes('5 000')) {
+            } else if (msg.text.includes('5 000') || normalizedText.includes('5000') || msg.text.includes('5,000')) {
                 nominalValue = 5000;
-            } else if (msg.text.includes('6 000')) {
+            } else if (msg.text.includes('6 000') || normalizedText.includes('6000') || msg.text.includes('6,000')) {
                 nominalValue = 6000;
-            } else if (msg.text.includes('10 000')) {
+            } else if (msg.text.includes('10 000') || normalizedText.includes('10000') || msg.text.includes('10,000')) {
                 nominalValue = 10000;
-            } else if (msg.text.includes('15 000')) {
+            } else if (msg.text.includes('15 000') || normalizedText.includes('15000') || msg.text.includes('15,000')) {
                 nominalValue = 15000;
-            } else if (msg.text === '💳 Произвольная сумма') {
+            } else if (msg.text === '💳 Произвольная сумма' || normalizedText.includes('произвольная')) {
                 userStates.set(chatId, {
                     step: 'certificate_custom_amount',
                     data: { client_id: clientId }
@@ -6583,9 +6588,46 @@ async function handleTextMessage(msg) {
             }
 
             if (nominalValue > 0) {
-                return showDesignSelection(chatId, clientId, nominalValue);
+                console.log(`[certificate_nominal_selection] Выбран номинал: ${nominalValue}, вызываем showDesignSelection`);
+                try {
+                    return await showDesignSelection(chatId, clientId, nominalValue);
+                } catch (error) {
+                    console.error('[certificate_nominal_selection] Ошибка в showDesignSelection:', error);
+                    return bot.sendMessage(chatId, 
+                        '❌ Произошла ошибка при загрузке дизайнов. Попробуйте позже или обратитесь в поддержку.',
+                        {
+                            reply_markup: {
+                                keyboard: [
+                                    ['💰 2 500 руб.', '💰 3 000 руб.'],
+                                    ['💰 5 000 руб.', '💰 6 000 руб.'],
+                                    ['💰 10 000 руб.', '💰 15 000 руб.'],
+                                    ['💳 Произвольная сумма'],
+                                    ['🔙 Назад']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
             }
-            break;
+            
+            // Если не распознан выбор, отправляем подсказку
+            console.log(`[certificate_nominal_selection] Не распознан выбор суммы: "${msg.text}"`);
+            return bot.sendMessage(chatId, 
+                '❓ Не удалось распознать выбор.\n\nПожалуйста, выберите номинал из предложенных вариантов или нажмите "🔙 Назад".',
+                {
+                    reply_markup: {
+                        keyboard: [
+                            ['💰 2 500 руб.', '💰 3 000 руб.'],
+                            ['💰 5 000 руб.', '💰 6 000 руб.'],
+                            ['💰 10 000 руб.', '💰 15 000 руб.'],
+                            ['💳 Произвольная сумма'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
 
         case 'certificate_custom_amount': {
@@ -6661,11 +6703,12 @@ async function handleTextMessage(msg) {
                 message = lines.slice(1).join(' ').trim();
                 
                 // Ограничиваем длину пожелания
-                if (message && message.length > 100) {
-                    return bot.sendMessage(chatId, '❌ Пожелание слишком длинное. Максимум 100 символов.\n\nТекущая длина: ' + message.length + ' символов.', {
+                if (message && message.length > 30) {
+                    return bot.sendMessage(chatId, `❌ Пожелание слишком длинное. Максимум 30 символов.\n\nТекущая длина: ${message.length} символов.\n\nВведите более короткое пожелание.`, {
                         reply_markup: {
                             keyboard: [
-                                ['🔙 Попробовать еще раз']
+                                ['⏭ Пропустить'],
+                                ['🔙 Назад']
                             ],
                             resize_keyboard: true
                         }
@@ -7208,6 +7251,105 @@ bot.on('callback_query', async (callbackQuery) => {
             // Сразу показываем доступные слоты
             return showNaturalSlopeTimeSlots(chatId, date, st.data);
         }
+        // Обработка предварительного просмотра дизайна сертификата
+        if (data.startsWith('preview_design_')) {
+            try {
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: 'Загрузка превью...'
+                });
+                
+                const [, , designId, nominalValue] = data.split('_');
+                const state = userStates.get(chatId);
+                
+                // Генерируем превью через API
+                const previewResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificate/preview`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        nominal_value: parseInt(nominalValue),
+                        design_id: parseInt(designId),
+                        recipient_name: 'Образец',
+                        message: 'С днем рождения!'
+                    })
+                });
+                
+                if (previewResponse.ok) {
+                    const previewResult = await previewResponse.json();
+                    if (previewResult.success) {
+                        // Используем существующий сервис для генерации изображения
+                        try {
+                            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+                            
+                            // Генерируем временный номер для превью
+                            const previewNumber = 'PREVIEW' + Date.now();
+                            const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+                            
+                            const certificateData = {
+                                certificate_number: previewNumber,
+                                nominal_value: parseInt(nominalValue),
+                                recipient_name: 'Образец',
+                                message: 'С днем рождения!',
+                                expiry_date: expiryDate,
+                                design_id: parseInt(designId)
+                            };
+                            
+                            // Генерируем JPG из HTML
+                            const jpgResult = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
+                            
+                            if (jpgResult && jpgResult.jpg_path) {
+                                // Читаем файл и отправляем как фото
+                                const fs = require('fs');
+                                const photoBuffer = fs.readFileSync(jpgResult.jpg_path);
+                                
+                                // Удаляем временный файл
+                                try {
+                                    fs.unlinkSync(jpgResult.jpg_path);
+                                } catch (unlinkError) {
+                                    // Игнорируем ошибку удаления
+                                }
+                                
+                                return bot.sendPhoto(chatId, photoBuffer, {
+                                    caption: `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР СЕРТИФИКАТА**\n\nДизайн: ${designId}\nНоминал: ${nominalValue} руб.`,
+                                    parse_mode: 'Markdown'
+                                });
+                            }
+                        } catch (imageError) {
+                            console.error('Ошибка при генерации изображения превью:', imageError);
+                        }
+                        
+                        // Fallback: отправляем ссылку на веб-превью (только если BASE_URL не localhost)
+                        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+                        if (!baseUrl.includes('localhost')) {
+                            const previewUrl = `${baseUrl}/certificate/preview?design=${designId}&amount=${nominalValue}&name=Образец`;
+                            return bot.sendMessage(chatId, `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**\n\n[Открыть превью в браузере](${previewUrl})`, {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        {
+                                            text: '🔗 Открыть превью',
+                                            url: previewUrl
+                                        }
+                                    ]]
+                                }
+                            });
+                        } else {
+                            return bot.sendMessage(chatId, `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**\n\nПревью будет доступно после выбора дизайна и заполнения данных получателя.`);
+                        }
+                    }
+                }
+                
+                return bot.sendMessage(chatId, '❌ Не удалось загрузить превью. Попробуйте позже.');
+            } catch (error) {
+                console.error('Ошибка при показе превью:', error);
+                await bot.answerCallbackQuery(callbackQuery.id, {
+                    text: 'Ошибка загрузки превью'
+                });
+                return;
+            }
+        }
+        
         // Обработка выбора дизайна сертификата
         if (data.startsWith('select_design_')) {
             await bot.answerCallbackQuery(callbackQuery.id, {
@@ -8401,23 +8543,47 @@ async function showNominalSelection(chatId, clientId) {
 // Показать выбор дизайна сертификата
 async function showDesignSelection(chatId, clientId, nominalValue) {
     try {
-        // Получаем доступные дизайны
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${getJWTToken()}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        console.log(`[showDesignSelection] Запрос дизайнов для клиента ${clientId}, номинал: ${nominalValue}`);
+        
+        // Получаем доступные дизайны напрямую из БД (более надежно)
+        let designs;
+        try {
+            const designsQuery = await pool.query(`
+                SELECT id, name, description, image_url, template_url, is_active, sort_order
+                FROM certificate_designs
+                WHERE is_active = true
+                ORDER BY sort_order ASC, name ASC
+            `);
+            
+            designs = designsQuery.rows;
+            console.log(`[showDesignSelection] Получено дизайнов из БД: ${designs.length}`);
+        } catch (dbError) {
+            console.error('[showDesignSelection] Ошибка при получении дизайнов из БД:', dbError);
+            
+            // Fallback: пробуем через API
+            const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${getJWTToken()}`,
+                    'Content-Type': 'application/json'
+                }
+            });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success || !result.designs) {
+                throw new Error('Не удалось получить дизайны сертификатов');
+            }
+            
+            designs = result.designs;
         }
 
-        const result = await response.json();
-        
-        if (!result.success || !result.designs) {
-            throw new Error('Не удалось получить дизайны сертификатов');
+        if (!designs || designs.length === 0) {
+            throw new Error('Нет доступных дизайнов сертификатов');
         }
 
         userStates.set(chatId, {
@@ -8434,20 +8600,18 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
         const inlineKeyboard = [];
         const keyboard = [];
         
-        result.designs.forEach((design, index) => {
+        designs.forEach((design, index) => {
             message += `${index + 1}️⃣ **${design.name}** - ${design.description}\n\n`;
             
             // Inline кнопки для выбора и предварительного просмотра
             inlineKeyboard.push([
                 {
-                    text: `${index + 1}️⃣ Выбрать ${design.name}`,
-                    callback_data: `select_design_${design.id}_${nominalValue}`
-                }
-            ]);
-            inlineKeyboard.push([
+                    text: `👁 Превью`,
+                    callback_data: `preview_design_${design.id}_${nominalValue}`
+                },
                 {
-                    text: `👁 Посмотреть дизайн "${design.name}"`,
-                    url: `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/preview?design=${design.id}&amount=${nominalValue}&name=Образец`
+                    text: `${index + 1}️⃣ Выбрать`,
+                    callback_data: `select_design_${design.id}_${nominalValue}`
                 }
             ]);
             
@@ -8472,8 +8636,23 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
             });
         });
     } catch (error) {
-        console.error('Ошибка при показе выбора дизайна:', error);
-        return bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке дизайнов. Попробуйте позже.');
+        console.error('[showDesignSelection] Ошибка при показе выбора дизайна:', error);
+        console.error('[showDesignSelection] Stack trace:', error.stack);
+        return bot.sendMessage(chatId, 
+            `❌ Произошла ошибка при загрузке дизайнов.\n\nОшибка: ${error.message}\n\nПопробуйте позже или обратитесь в поддержку.`,
+            {
+                reply_markup: {
+                    keyboard: [
+                        ['💰 2 500 руб.', '💰 3 000 руб.'],
+                        ['💰 5 000 руб.', '💰 6 000 руб.'],
+                        ['💰 10 000 руб.', '💰 15 000 руб.'],
+                        ['💳 Произвольная сумма'],
+                        ['🔙 Назад']
+                    ],
+                    resize_keyboard: true
+                }
+            }
+        );
     }
 }
 
@@ -8497,12 +8676,12 @@ async function showRecipientForm(chatId, clientId, nominalValue, designId) {
 **Кому:**
 _Например: Иван Иванов_
 
-**Пожелание (до 100 символов):**
-_Например: Поздравляю с днем рождения! Счастья, здоровья, удачи._
+**Пожелание (до 30 символов):**
+_Например: С днем рождения!_
 
 Отправьте данные в формате:
 \`Иван Иванов\`
-\`Поздравляю с днем рождения!\`
+\`С днем рождения!\`
 
 Или нажмите "Пропустить" для создания сертификата без данных получателя.`;
 
@@ -8577,9 +8756,31 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
         if (balance >= purchaseData.nominal_value) {
             message += `\n💵 **Остаток после покупки:** ${(balance - purchaseData.nominal_value).toFixed(2)} руб.`;
             
+            // Генерируем изображение для предпросмотра
+            let previewKeyboard = [];
+            const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+            
+            // Если не localhost, добавляем кнопку с URL
+            if (!baseUrl.includes('localhost')) {
+                const previewParams = new URLSearchParams({
+                    design: purchaseData.design_id,
+                    amount: purchaseData.nominal_value,
+                    name: purchaseData.recipient_name || 'Образец',
+                    message: purchaseData.message || ''
+                });
+                const previewUrl = `${baseUrl}/certificate/preview?${previewParams.toString()}`;
+                previewKeyboard = [[
+                    {
+                        text: '👁 Предварительный просмотр',
+                        url: previewUrl
+                    }
+                ]];
+            }
+            
             return bot.sendMessage(chatId, message, {
                 parse_mode: 'Markdown',
                 reply_markup: {
+                    inline_keyboard: previewKeyboard,
                     keyboard: [
                         ['✅ Купить сертификат'],
                         ['❌ Отменить', '🔙 Назад']
