@@ -446,7 +446,16 @@ async function registerClient(data) {
 
 // Функция показа согласия на обработку персональных данных
 async function showPrivacyConsent(chatId, data) {
-    const websiteUrl = process.env.WEBSITE_URL || 'https://gornostyle.ru';
+    // Используем BASE_URL из env (если есть), иначе fallback на правильный домен
+    let websiteUrl = process.env.BASE_URL || process.env.WEBSITE_URL || 'https://gornostyle72.ru';
+    
+    // Убираем завершающий слеш, если есть
+    websiteUrl = websiteUrl.replace(/\/$/, '');
+    
+    // Формируем полный URL для политики конфиденциальности
+    const privacyPolicyUrl = `${websiteUrl}/privacy-policy`;
+    
+    console.log(`[showPrivacyConsent] URL политики конфиденциальности: ${privacyPolicyUrl}`);
     
     await bot.sendMessage(chatId, 
         '📋 *Согласие на обработку персональных данных*\n\n' +
@@ -460,7 +469,7 @@ async function showPrivacyConsent(chatId, data) {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '📄 Ознакомиться с полной политикой', url: `${websiteUrl}/privacy-policy` }],
+                    [{ text: '📄 Ознакомиться с полной политикой', url: privacyPolicyUrl }],
                     [
                         { text: '✅ Согласен', callback_data: 'consent_agree' },
                         { text: '❌ Не согласен', callback_data: 'consent_disagree' }
