@@ -9037,31 +9037,34 @@ async function showCertificateResult(chatId, certificate) {
         );
         const hasEmail = clientResult.rows[0]?.email ? true : false;
 
-        let message = `🎉 **СЕРТИФИКАТ УСПЕШНО СОЗДАН!**
+        const certificateUrl = certificate.certificate_url;
+        
+        let message = `🎉 <b>СЕРТИФИКАТ УСПЕШНО СОЗДАН!</b>
 
-🎫 **Номер сертификата:** \`${certificate.certificate_number}\`
-💰 **Номинал:** ${certificate.nominal_value} руб.`;
+🎫 <b>Номер сертификата:</b> <code>${certificate.certificate_number}</code>
+💰 <b>Номинал:</b> ${certificate.nominal_value} руб.`;
 
         if (certificate.recipient_name) {
-            message += `\n👤 **Получатель:** ${certificate.recipient_name}`;
+            message += `\n👤 <b>Получатель:</b> ${certificate.recipient_name}`;
         }
 
         // Добавляем информацию о сроке действия
         const expiryDate = formatDate(certificate.expiry_date);
-        message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
+        message += `\n⏰ <b>Сертификат годен до:</b> ${expiryDate}`;
 
-        message += `\n\n🔗 **Электронный сертификат:**
-[Открыть сертификат](${certificate.certificate_url})`;
+        // Показываем ссылку на сертификат (можно скопировать)
+        message += `\n\n🔗 <b>Ссылка на сертификат:</b>
+<code>${certificateUrl}</code>`;
 
         if (certificate.print_image_url) {
             const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
-            message += `\n\n🖨️ **Для печати:**
-[Скачать для печати](${printUrl})`;
+            message += `\n\n🖨️ <b>Для печати:</b>
+<code>${printUrl}</code>`;
         }
 
         // Предупреждение, если email не указан
         if (!hasEmail) {
-            message += `\n\n⚠️ **Внимание:** Email не указан в вашем профиле. Сертификат не был отправлен на почту.\n\nВы можете использовать ссылку выше для просмотра и печати сертификата.`;
+            message += `\n\n⚠️ <b>Внимание:</b> Email не указан в вашем профиле. Сертификат не был отправлен на почту.\n\nВы можете использовать ссылку выше для просмотра и печати сертификата.`;
         } else {
             message += `\n\n📧 Сертификат отправлен на вашу электронную почту.`;
         }
@@ -9073,9 +9076,22 @@ async function showCertificateResult(chatId, certificate) {
 
         userStates.delete(chatId);
 
+        // Используем inline кнопку для открытия сертификата
+        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+        let inlineKeyboard = [];
+        
+        // Добавляем кнопку только если не localhost (Telegram не принимает localhost URLs)
+        if (!baseUrl.includes('localhost')) {
+            inlineKeyboard.push([{
+                text: `🔗 Открыть сертификат ${certificate.certificate_number}`,
+                url: certificateUrl
+            }]);
+        }
+
         return bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: {
+                inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined,
                 keyboard: [
                     ['📋 Мои сертификаты'],
                     ['💝 Подарить еще сертификат'],
@@ -9237,9 +9253,9 @@ async function showUserCertificates(chatId, clientId) {
 
         if (result.certificates.length === 0) {
             return bot.sendMessage(chatId, 
-                '📋 **МОИ СЕРТИФИКАТЫ**\n\nУ вас пока нет сертификатов.\n\nВы можете:\n• Подарить сертификат кому-то\n• Активировать полученный сертификат',
+                '📋 <b>МОИ СЕРТИФИКАТЫ</b>\n\nУ вас пока нет сертификатов.\n\nВы можете:\n• Подарить сертификат кому-то\n• Активировать полученный сертификат',
                 {
-                    parse_mode: 'Markdown',
+                    parse_mode: 'HTML',
                     reply_markup: {
                         keyboard: [
                             ['💝 Подарить сертификат'],
@@ -9256,10 +9272,10 @@ async function showUserCertificates(chatId, clientId) {
         const purchased = result.certificates.filter(cert => cert.relationship_type === 'purchased');
         const activated = result.certificates.filter(cert => cert.relationship_type === 'activated');
 
-        let message = '📋 **МОИ СЕРТИФИКАТЫ**\n\n';
+        let message = '📋 <b>МОИ СЕРТИФИКАТЫ</b>\n\n';
 
         if (purchased.length > 0) {
-            message += '🎁 **ПОДАРЕННЫЕ СЕРТИФИКАТЫ:**\n';
+            message += '🎁 <b>ПОДАРЕННЫЕ СЕРТИФИКАТЫ:</b>\n';
             
             // Сортируем по дате покупки (новые сверху)
             purchased.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
@@ -9279,8 +9295,10 @@ async function showUserCertificates(chatId, clientId) {
                     statusText = 'Подарен';
                 }
                 
-                message += `${statusEmoji} **${statusText}**\n`;
-                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `${statusEmoji} <b>${statusText}</b>\n`;
+                
+                // Номер сертификата как текст для копирования
+                message += `🎫 <b>Номер:</b> <code>${cert.certificate_number}</code>\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.recipient_name) {
@@ -9295,16 +9313,16 @@ async function showUserCertificates(chatId, clientId) {
                     message += `🔓 Активирован: ${activationDate}\n`;
                 }
                 
-                // Добавляем ссылку на сертификат
+                // Добавляем ссылку на сертификат (можно скопировать)
                 const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
-                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                message += `🔗 <b>Ссылка:</b> <code>${certificateUrl}</code>\n`;
                 
                 message += '\n';
             });
         }
 
         if (activated.length > 0) {
-            message += '🔑 **АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:**\n';
+            message += '🔑 <b>АКТИВИРОВАННЫЕ СЕРТИФИКАТЫ:</b>\n';
             
             // Сортируем по дате активации (новые сверху)
             activated.sort((a, b) => new Date(b.activation_date) - new Date(a.activation_date));
@@ -9313,8 +9331,10 @@ async function showUserCertificates(chatId, clientId) {
                 const statusEmoji = cert.status === 'used' ? '✅' : '🔓';
                 const statusText = cert.status === 'used' ? 'Использован' : 'Активирован';
                 
-                message += `${statusEmoji} **${statusText}**\n`;
-                message += `🎫 Номер: \`${cert.certificate_number}\`\n`;
+                message += `${statusEmoji} <b>${statusText}</b>\n`;
+                
+                // Номер сертификата как текст для копирования
+                message += `🎫 <b>Номер:</b> <code>${cert.certificate_number}</code>\n`;
                 message += `💰 ${cert.nominal_value} руб. • 🎨 ${cert.design.name}\n`;
                 
                 if (cert.activation_date) {
@@ -9322,9 +9342,9 @@ async function showUserCertificates(chatId, clientId) {
                     message += `🔓 Дата активации: ${activationDate}\n`;
                 }
                 
-                // Добавляем ссылку на сертификат
+                // Добавляем ссылку на сертификат (можно скопировать)
                 const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${cert.certificate_number}`;
-                message += `🔗 Ссылка: ${certificateUrl}\n`;
+                message += `🔗 <b>Ссылка:</b> <code>${certificateUrl}</code>\n`;
                 
                 message += '\n';
             });
@@ -9332,9 +9352,26 @@ async function showUserCertificates(chatId, clientId) {
 
         userStates.delete(chatId);
 
+        // Собираем все сертификаты для создания inline кнопок
+        const allCertificates = [...(purchased || []), ...(activated || [])];
+        const inlineKeyboard = [];
+        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+        
+        // Создаем inline кнопки для каждого сертификата (максимум по 1 на строку)
+        if (!baseUrl.includes('localhost')) {
+            allCertificates.forEach(cert => {
+                const certUrl = `${baseUrl}/certificate/${cert.certificate_number}`;
+                inlineKeyboard.push([{
+                    text: `🔗 Открыть сертификат ${cert.certificate_number}`,
+                    url: certUrl
+                }]);
+            });
+        }
+
         return bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
             reply_markup: {
+                inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined,
                 keyboard: [
                     ['💝 Подарить сертификат'],
                     ['🔑 Активировать сертификат'],
