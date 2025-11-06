@@ -6678,7 +6678,7 @@ async function handleTextMessage(msg) {
             }
 
             if (msg.text === '⏭ Пропустить') {
-                // Пропускаем данные получателя
+                // Пропускаем данные получателя, переходим к вводу email
                 const purchaseData = {
                     client_id,
                     nominal_value,
@@ -6686,7 +6686,7 @@ async function handleTextMessage(msg) {
                     recipient_name: null,
                     message: null
                 };
-                return showPurchaseConfirmation(chatId, purchaseData);
+                return showEmailInputForm(chatId, purchaseData);
             }
 
             // Парсим данные получателя из сообщения
@@ -6724,6 +6724,64 @@ async function handleTextMessage(msg) {
                 message: message
             };
 
+            // Переходим к вводу email перед подтверждением
+            return showEmailInputForm(chatId, purchaseData);
+        }
+
+        case 'certificate_email_input': {
+            const purchaseData = state.data;
+            
+            if (msg.text === '🔙 Назад') {
+                return showRecipientForm(chatId, purchaseData.client_id, purchaseData.nominal_value, purchaseData.design_id);
+            }
+
+            if (msg.text === '⏭ Пропустить') {
+                // Пропускаем ввод email, переходим к подтверждению
+                purchaseData.email = null;
+                return showPurchaseConfirmation(chatId, purchaseData);
+            }
+
+            // Проверяем, выбрал ли пользователь существующий email
+            if (msg.text.startsWith('Использовать: ')) {
+                const existingEmail = msg.text.replace('Использовать: ', '').trim();
+                purchaseData.email = existingEmail;
+                return showPurchaseConfirmation(chatId, purchaseData);
+            }
+
+            // Валидируем email
+            const email = msg.text.trim();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            if (!emailRegex.test(email)) {
+                // Получаем существующий email для показа кнопки
+                const clientResult = await pool.query(
+                    'SELECT email FROM clients WHERE id = $1',
+                    [purchaseData.client_id]
+                );
+                const existingEmail = clientResult.rows[0]?.email;
+                
+                const keyboard = [
+                    ['⏭ Пропустить'],
+                    ['🔙 Назад']
+                ];
+                if (existingEmail) {
+                    keyboard.unshift([`Использовать: ${existingEmail}`]);
+                }
+
+                return bot.sendMessage(chatId, 
+                    '❌ Неверный формат email.\n\nПожалуйста, введите корректный email адрес.\n\n**Пример:** example@mail.ru\n\nИли нажмите "⏭ Пропустить" для продолжения без email.',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: keyboard,
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            // Сохраняем email и переходим к подтверждению
+            purchaseData.email = email;
             return showPurchaseConfirmation(chatId, purchaseData);
         }
 
@@ -6731,7 +6789,7 @@ async function handleTextMessage(msg) {
             const purchaseData = state.data;
             
             if (msg.text === '🔙 Назад') {
-                return showRecipientForm(chatId, purchaseData.client_id, purchaseData.nominal_value, purchaseData.design_id);
+                return showEmailInputForm(chatId, purchaseData);
             }
 
             if (msg.text === '❌ Отменить') {
@@ -8682,6 +8740,57 @@ _Например: С днем рождения!_
     }
 }
 
+// Показать форму ввода email
+async function showEmailInputForm(chatId, purchaseData) {
+    try {
+        // Проверяем, есть ли уже email у клиента
+        const clientResult = await pool.query(
+            'SELECT email FROM clients WHERE id = $1',
+            [purchaseData.client_id]
+        );
+        const existingEmail = clientResult.rows[0]?.email;
+
+        userStates.set(chatId, {
+            step: 'certificate_email_input',
+            data: purchaseData
+        });
+
+        let message = `📧 **ЭЛЕКТРОННАЯ ПОЧТА**
+
+Для отправки сертификата на вашу почту, пожалуйста, укажите email адрес:`;
+
+        if (existingEmail) {
+            message += `\n\n💡 **Текущий email в профиле:** ${existingEmail}\n\nВы можете оставить текущий email или указать другой.`;
+        }
+
+        message += `\n\n**Пример:** example@mail.ru
+
+После покупки сертификат можно будет открыть по уникальной ссылке в меню "📋 Мои сертификаты".
+
+Или нажмите "⏭ Пропустить", если не хотите указывать email.`;
+
+        const keyboard = [
+            ['⏭ Пропустить'],
+            ['🔙 Назад']
+        ];
+        
+        if (existingEmail) {
+            keyboard.unshift([`Использовать: ${existingEmail}`]);
+        }
+
+        return bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                keyboard: keyboard,
+                resize_keyboard: true
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при показе формы email:', error);
+        return bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте позже.');
+    }
+}
+
 // Показать подтверждение покупки
 async function showPurchaseConfirmation(chatId, purchaseData) {
     try {
@@ -8828,6 +8937,20 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
 // Создать сертификат
 async function createCertificate(chatId, purchaseData) {
     try {
+        // Обновляем email клиента, если он был указан
+        if (purchaseData.email) {
+            try {
+                await pool.query(
+                    'UPDATE clients SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                    [purchaseData.email, purchaseData.client_id]
+                );
+                console.log(`[createCertificate] Email обновлен для клиента ${purchaseData.client_id}: ${purchaseData.email}`);
+            } catch (emailError) {
+                console.error('[createCertificate] Ошибка при обновлении email:', emailError);
+                // Продолжаем без обновления email
+            }
+        }
+
         const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`, {
             method: 'POST',
             headers: {
