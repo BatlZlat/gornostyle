@@ -432,6 +432,30 @@ async function registerClient(data) {
             console.log('Запись о ребенке создана');
         }
         
+        // Сохраняем согласие на обработку персональных данных
+        // Получаем активную версию политики конфиденциальности
+        const policyResult = await dbClient.query(
+            `SELECT id, version FROM privacy_policies 
+             WHERE is_active = true 
+             ORDER BY effective_date DESC 
+             LIMIT 1`
+        );
+        
+        if (policyResult.rows.length > 0) {
+            const policy = policyResult.rows[0];
+            console.log(`Сохранение согласия на обработку ПД для клиента ${clientId}, политика версия ${policy.version}`);
+            
+            await dbClient.query(
+                `INSERT INTO privacy_consents (client_id, policy_id, consent_type, telegram_id, is_legacy)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (client_id, consent_type, policy_id) DO NOTHING`,
+                [clientId, policy.id, 'registration', data.telegram_id, false]
+            );
+            console.log('Согласие на обработку ПД сохранено');
+        } else {
+            console.warn('⚠️ ВНИМАНИЕ: Не найдена активная политика конфиденциальности. Согласие не сохранено.');
+        }
+        
         await dbClient.query('COMMIT');
         console.log('Транзакция успешно завершена');
         return { walletNumber: formatWalletNumber(walletNumber), referralCode: newReferralCode };
@@ -7397,6 +7421,8 @@ bot.on('callback_query', async (callbackQuery) => {
             });
             
             if (state && state.step === 'privacy_consent') {
+                // Согласие будет сохранено автоматически при регистрации клиента в функции registerClient
+                // Просто завершаем регистрацию
                 await finishRegistration(chatId, state.data);
             }
             return;

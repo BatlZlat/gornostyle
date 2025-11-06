@@ -1312,6 +1312,57 @@ COMMENT ON TABLE natural_slope_subscription_usage IS 'История испол�
 COMMENT ON TABLE client_achievements IS 'Достижения клиентов';
 COMMENT ON TABLE reviews IS 'Отзывы клиентов (интегрировано с существующей системой)';
 
+-- Таблица политики конфиденциальности
+CREATE TABLE IF NOT EXISTS privacy_policies (
+    id SERIAL PRIMARY KEY,
+    version VARCHAR(20) NOT NULL UNIQUE,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    effective_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица согласий на обработку персональных данных
+CREATE TABLE IF NOT EXISTS privacy_consents (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    policy_id INTEGER NOT NULL REFERENCES privacy_policies(id),
+    consent_type VARCHAR(50) NOT NULL DEFAULT 'registration',
+    telegram_id BIGINT, -- ID пользователя в Telegram (для идентификации)
+    consented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_legacy BOOLEAN DEFAULT FALSE, -- true для старых клиентов, которым согласие добавлено массово
+    UNIQUE(client_id, consent_type, policy_id)
+);
+
+-- Индексы для политики конфиденциальности
+CREATE INDEX IF NOT EXISTS idx_privacy_consents_client ON privacy_consents(client_id);
+CREATE INDEX IF NOT EXISTS idx_privacy_consents_policy ON privacy_consents(policy_id);
+CREATE INDEX IF NOT EXISTS idx_privacy_consents_telegram ON privacy_consents(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_privacy_consents_type ON privacy_consents(consent_type);
+CREATE INDEX IF NOT EXISTS idx_privacy_policies_active ON privacy_policies(is_active);
+CREATE INDEX IF NOT EXISTS idx_privacy_policies_version ON privacy_policies(version);
+
+-- Триггер для автоматического обновления updated_at в privacy_policies
+CREATE OR REPLACE FUNCTION update_privacy_policies_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_privacy_policies_updated_at
+    BEFORE UPDATE ON privacy_policies
+    FOR EACH ROW
+    EXECUTE FUNCTION update_privacy_policies_updated_at();
+
+COMMENT ON TABLE privacy_policies IS 'Политика конфиденциальности и обработки персональных данных (версии)';
+COMMENT ON TABLE privacy_consents IS 'Согласия пользователей на обработку персональных данных';
+COMMENT ON COLUMN privacy_consents.consent_type IS 'Тип согласия: registration, certificate_purchase, training_booking и т.д.';
+COMMENT ON COLUMN privacy_consents.is_legacy IS 'true для старых клиентов, которым согласие было добавлено массово';
+
 -- Индексы для абонементов естественного склона
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_client ON natural_slope_subscriptions(client_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_status ON natural_slope_subscriptions(status);
