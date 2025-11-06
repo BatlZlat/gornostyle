@@ -7255,98 +7255,80 @@ bot.on('callback_query', async (callbackQuery) => {
         if (data.startsWith('preview_design_')) {
             try {
                 await bot.answerCallbackQuery(callbackQuery.id, {
-                    text: 'Загрузка превью...'
+                    text: 'Генерация превью...'
                 });
                 
                 const [, , designId, nominalValue] = data.split('_');
-                const state = userStates.get(chatId);
                 
-                // Генерируем превью через API
-                const previewResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificate/preview`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        nominal_value: parseInt(nominalValue),
-                        design_id: parseInt(designId),
-                        recipient_name: 'Образец',
-                        message: 'С днем рождения!'
-                    })
-                });
+                console.log(`[preview_design] Генерация превью для дизайна ${designId}, номинал ${nominalValue}`);
                 
-                if (previewResponse.ok) {
-                    const previewResult = await previewResponse.json();
-                    if (previewResult.success) {
-                        // Используем существующий сервис для генерации изображения
-                        try {
-                            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
-                            
-                            // Генерируем временный номер для превью
-                            const previewNumber = 'PREVIEW' + Date.now();
-                            const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-                            
-                            const certificateData = {
-                                certificate_number: previewNumber,
-                                nominal_value: parseInt(nominalValue),
-                                recipient_name: 'Образец',
-                                message: 'С днем рождения!',
-                                expiry_date: expiryDate,
-                                design_id: parseInt(designId)
-                            };
-                            
-                            // Генерируем JPG из HTML
-                            const jpgResult = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
-                            
-                            if (jpgResult && jpgResult.jpg_path) {
-                                // Читаем файл и отправляем как фото
-                                const fs = require('fs');
-                                const photoBuffer = fs.readFileSync(jpgResult.jpg_path);
-                                
-                                // Удаляем временный файл
-                                try {
-                                    fs.unlinkSync(jpgResult.jpg_path);
-                                } catch (unlinkError) {
-                                    // Игнорируем ошибку удаления
-                                }
-                                
-                                return bot.sendPhoto(chatId, photoBuffer, {
-                                    caption: `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР СЕРТИФИКАТА**\n\nДизайн: ${designId}\nНоминал: ${nominalValue} руб.`,
-                                    parse_mode: 'Markdown'
-                                });
-                            }
-                        } catch (imageError) {
-                            console.error('Ошибка при генерации изображения превью:', imageError);
-                        }
-                        
-                        // Fallback: отправляем ссылку на веб-превью (только если BASE_URL не localhost)
-                        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
-                        if (!baseUrl.includes('localhost')) {
-                            const previewUrl = `${baseUrl}/certificate/preview?design=${designId}&amount=${nominalValue}&name=Образец`;
-                            return bot.sendMessage(chatId, `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**\n\n[Открыть превью в браузере](${previewUrl})`, {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [[
-                                        {
-                                            text: '🔗 Открыть превью',
-                                            url: previewUrl
-                                        }
-                                    ]]
-                                }
-                            });
-                        } else {
-                            return bot.sendMessage(chatId, `👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**\n\nПревью будет доступно после выбора дизайна и заполнения данных получателя.`);
-                        }
+                // Получаем информацию о дизайне из БД
+                const designQuery = await pool.query(
+                    'SELECT name FROM certificate_designs WHERE id = $1',
+                    [parseInt(designId)]
+                );
+                
+                const designName = designQuery.rows[0]?.name || 'Дизайн';
+                
+                // Используем существующий сервис для генерации изображения
+                const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+                
+                // Генерируем временный номер для превью
+                const previewNumber = 'PREVIEW' + Date.now();
+                const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+                
+                const certificateData = {
+                    certificate_number: previewNumber,
+                    nominal_value: parseInt(nominalValue),
+                    recipient_name: 'Образец',
+                    message: 'С днем рождения!',
+                    expiry_date: expiryDate,
+                    design_id: parseInt(designId)
+                };
+                
+                // Генерируем JPG (функция возвращает относительный путь, например "/generated/certificates/certificate_PREVIEW123.jpg")
+                const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
+                
+                if (jpgRelativePath) {
+                    // Преобразуем относительный путь в абсолютный
+                    const path = require('path');
+                    const fs = require('fs');
+                    const publicPath = path.join(__dirname, '../../public');
+                    const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
+                    
+                    console.log(`[preview_design] Путь к изображению: ${jpgAbsolutePath}`);
+                    
+                    // Проверяем существование файла
+                    if (!fs.existsSync(jpgAbsolutePath)) {
+                        throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
                     }
+                    
+                    // Читаем файл и отправляем как фото
+                    const photoBuffer = fs.readFileSync(jpgAbsolutePath);
+                    
+                    // Удаляем временный файл
+                    try {
+                        fs.unlinkSync(jpgAbsolutePath);
+                    } catch (unlinkError) {
+                        console.error('[preview_design] Ошибка при удалении временного файла:', unlinkError);
+                    }
+                    
+                    console.log(`[preview_design] Отправка изображения дизайна "${designName}"`);
+                    
+                    return bot.sendPhoto(chatId, photoBuffer, {
+                        caption: `🎨 **Дизайн "${designName}"**\n\nНоминал: ${nominalValue} руб.`,
+                        parse_mode: 'Markdown'
+                    });
                 }
                 
-                return bot.sendMessage(chatId, '❌ Не удалось загрузить превью. Попробуйте позже.');
+                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+                
             } catch (error) {
-                console.error('Ошибка при показе превью:', error);
+                console.error('[preview_design] Ошибка при показе превью:', error);
                 await bot.answerCallbackQuery(callbackQuery.id, {
                     text: 'Ошибка загрузки превью'
                 });
-                return;
+                return bot.sendMessage(chatId, '❌ Не удалось загрузить превью. Попробуйте позже.');
             }
         }
         
@@ -8721,24 +8703,79 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
         const balance = parseFloat(clientData.balance) || 0;
 
         // Получаем информацию о дизайне
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/designs`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${getJWTToken()}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const designsResult = await response.json();
-        const design = designsResult.designs?.find(d => d.id === purchaseData.design_id);
-        const designName = design ? design.name : 'Неизвестный дизайн';
+        const designQuery = await pool.query(
+            'SELECT name FROM certificate_designs WHERE id = $1',
+            [purchaseData.design_id]
+        );
+        const designName = designQuery.rows[0]?.name || 'Неизвестный дизайн';
 
         userStates.set(chatId, {
             step: 'certificate_purchase_confirmation',
             data: purchaseData
         });
 
-        let message = `❗ **ПОДТВЕРДИТЕ ПОКУПКУ**
+        // СНАЧАЛА ОТПРАВЛЯЕМ ПРЕДПРОСМОТР В ВИДЕ ИЗОБРАЖЕНИЯ
+        try {
+            console.log(`[showPurchaseConfirmation] Генерация превью для подтверждения покупки`);
+            
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+            
+            // Генерируем временный номер для превью
+            const previewNumber = 'PREVIEW' + Date.now();
+            const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            
+            const certificateData = {
+                certificate_number: previewNumber,
+                nominal_value: purchaseData.nominal_value,
+                recipient_name: purchaseData.recipient_name || null,
+                message: purchaseData.message || null,
+                expiry_date: expiryDate,
+                design_id: purchaseData.design_id
+            };
+            
+            // Генерируем JPG (функция возвращает относительный путь)
+            const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
+            
+            if (jpgRelativePath) {
+                // Преобразуем относительный путь в абсолютный
+                const path = require('path');
+                const fs = require('fs');
+                const publicPath = path.join(__dirname, '../../public');
+                const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
+                
+                console.log(`[showPurchaseConfirmation] Путь к изображению: ${jpgAbsolutePath}`);
+                
+                // Проверяем существование файла
+                if (!fs.existsSync(jpgAbsolutePath)) {
+                    throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
+                }
+                
+                // Читаем файл и отправляем как фото
+                const photoBuffer = fs.readFileSync(jpgAbsolutePath);
+                
+                // Удаляем временный файл
+                try {
+                    fs.unlinkSync(jpgAbsolutePath);
+                } catch (unlinkError) {
+                    console.error('[showPurchaseConfirmation] Ошибка при удалении временного файла:', unlinkError);
+                }
+                
+                await bot.sendPhoto(chatId, photoBuffer, {
+                    caption: '👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**',
+                    parse_mode: 'Markdown'
+                });
+                
+                console.log(`[showPurchaseConfirmation] Предпросмотр отправлен`);
+            } else {
+                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+            }
+        } catch (previewError) {
+            console.error('[showPurchaseConfirmation] Ошибка при генерации превью:', previewError);
+            // Продолжаем дальше, даже если превью не удалось
+        }
+
+        // ЗАТЕМ ОТПРАВЛЯЕМ ТЕКСТ ПОДТВЕРЖДЕНИЯ
+        let message = `❗️ **ПОДТВЕРДИТЕ ПОКУПКУ НАЖАВ КНОПКУ НИЖЕ "Купить сертификат"**
 
 **Номинал:** ${purchaseData.nominal_value} руб.
 **Дизайн:** ${designName}`;
@@ -8756,31 +8793,9 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
         if (balance >= purchaseData.nominal_value) {
             message += `\n💵 **Остаток после покупки:** ${(balance - purchaseData.nominal_value).toFixed(2)} руб.`;
             
-            // Генерируем изображение для предпросмотра
-            let previewKeyboard = [];
-            const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
-            
-            // Если не localhost, добавляем кнопку с URL
-            if (!baseUrl.includes('localhost')) {
-                const previewParams = new URLSearchParams({
-                    design: purchaseData.design_id,
-                    amount: purchaseData.nominal_value,
-                    name: purchaseData.recipient_name || 'Образец',
-                    message: purchaseData.message || ''
-                });
-                const previewUrl = `${baseUrl}/certificate/preview?${previewParams.toString()}`;
-                previewKeyboard = [[
-                    {
-                        text: '👁 Предварительный просмотр',
-                        url: previewUrl
-                    }
-                ]];
-            }
-            
             return bot.sendMessage(chatId, message, {
                 parse_mode: 'Markdown',
                 reply_markup: {
-                    inline_keyboard: previewKeyboard,
                     keyboard: [
                         ['✅ Купить сертификат'],
                         ['❌ Отменить', '🔙 Назад']
