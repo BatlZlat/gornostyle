@@ -1032,6 +1032,21 @@ async function handleTextMessage(msg) {
 
     // Обработка выбора абонемента для покупки
     if (state && state.step === 'subscription_purchase_selection') {
+        // Проверяем кнопку "Назад" перед проверкой номера
+        if (msg.text === '🔙 Назад в меню') {
+            const clientId = state.data?.client_id;
+            userStates.delete(chatId);
+            if (clientId) {
+                return showSubscriptionsMenu(chatId, clientId);
+            } else {
+                // Если clientId нет в состоянии, получаем из telegram_id
+                const client = await getClientByTelegramId(msg.from.id.toString());
+                if (client) {
+                    return showSubscriptionsMenu(chatId, client.id);
+                }
+            }
+        }
+
         const selectedIndex = parseInt(msg.text) - 1;
         const subscriptions = state.data?.available_subscriptions || [];
 
