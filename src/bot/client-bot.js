@@ -8940,11 +8940,23 @@ async function createCertificate(chatId, purchaseData) {
         // Обновляем email клиента, если он был указан
         if (purchaseData.email) {
             try {
-                await pool.query(
-                    'UPDATE clients SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-                    [purchaseData.email, purchaseData.client_id]
+                // Проверяем текущий email в базе
+                const currentEmailResult = await pool.query(
+                    'SELECT email FROM clients WHERE id = $1',
+                    [purchaseData.client_id]
                 );
-                console.log(`[createCertificate] Email обновлен для клиента ${purchaseData.client_id}: ${purchaseData.email}`);
+                const currentEmail = currentEmailResult.rows[0]?.email;
+                
+                // Обновляем только если новый email отличается от текущего
+                if (currentEmail !== purchaseData.email) {
+                    await pool.query(
+                        'UPDATE clients SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                        [purchaseData.email, purchaseData.client_id]
+                    );
+                    console.log(`[createCertificate] Email обновлен для клиента ${purchaseData.client_id}: с "${currentEmail || 'не указан'}" на "${purchaseData.email}"`);
+                } else {
+                    console.log(`[createCertificate] Email для клиента ${purchaseData.client_id} не изменился: ${purchaseData.email}`);
+                }
             } catch (emailError) {
                 console.error('[createCertificate] Ошибка при обновлении email:', emailError);
                 // Продолжаем без обновления email
@@ -9039,12 +9051,12 @@ async function showCertificateResult(chatId, certificate) {
         message += `\n⏰ **Сертификат годен до:** ${expiryDate}`;
 
         message += `\n\n🔗 **Электронный сертификат:**
-${certificate.certificate_url}`;
+[Открыть сертификат](${certificate.certificate_url})`;
 
         if (certificate.print_image_url) {
             const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
             message += `\n\n🖨️ **Для печати:**
-${printUrl}`;
+[Скачать для печати](${printUrl})`;
         }
 
         // Предупреждение, если email не указан
