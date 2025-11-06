@@ -994,6 +994,41 @@ async function registerHandler(req, res) {
             console.log('Создан новый кошелек:', walletNumber);
         }
 
+        // Сохраняем согласие на обработку персональных данных
+        try {
+            // Получаем активную политику конфиденциальности
+            const policyQuery = 'SELECT id FROM privacy_policies WHERE is_active = true ORDER BY created_at DESC LIMIT 1';
+            const policyResult = await client.query(policyQuery);
+            
+            if (policyResult.rows.length > 0) {
+                const policyId = policyResult.rows[0].id;
+                
+                // Проверяем, есть ли уже согласие с типом 'certificate_purchase'
+                const existingConsentQuery = `
+                    SELECT id FROM privacy_consents 
+                    WHERE client_id = $1 AND consent_type = 'certificate_purchase' AND policy_id = $2
+                `;
+                const existingConsent = await client.query(existingConsentQuery, [clientId, policyId]);
+                
+                if (existingConsent.rows.length === 0) {
+                    // Создаем новое согласие
+                    const insertConsentQuery = `
+                        INSERT INTO privacy_consents (client_id, policy_id, consent_type, consented_at, is_legacy)
+                        VALUES ($1, $2, 'certificate_purchase', CURRENT_TIMESTAMP, false)
+                    `;
+                    await client.query(insertConsentQuery, [clientId, policyId]);
+                    console.log('Создано согласие на обработку ПД для клиента:', clientId);
+                } else {
+                    console.log('Согласие на обработку ПД уже существует для клиента:', clientId);
+                }
+            } else {
+                console.warn('Активная политика конфиденциальности не найдена');
+            }
+        } catch (consentError) {
+            console.error('Ошибка при сохранении согласия на обработку ПД:', consentError);
+            // Не прерываем транзакцию, просто логируем ошибку
+        }
+
         // Сохраняем данные о планируемом сертификате во временной таблице или сессии
         // Для простоты создадим временную запись в таблице pending_certificates
         const createPendingQuery = `
@@ -1061,5 +1096,95 @@ async function registerHandler(req, res) {
 // Добавляем обработчик в роутер
 router.post('/register', registerHandler);
 
+// 8. Предварительный просмотр сертификата (без сохранения в БД)
+async function previewHandler(req, res) {
+    try {
+        const { 
+            nominal_value, 
+            design_id, 
+            recipient_name, 
+            message 
+        } = req.body;
+
+        // Валидация входных данных
+        if (!nominal_value || !design_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Не указаны обязательные поля: nominal_value, design_id',
+                code: 'INVALID_REQUEST'
+            });
+        }
+
+        if (nominal_value < 500 || nominal_value > 50000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Номинал должен быть от 500 до 50 000 руб.',
+                code: 'INVALID_NOMINAL'
+            });
+        }
+
+        // Проверяем существование дизайна
+        const designResult = await pool.query(
+            'SELECT id, name FROM certificate_designs WHERE id = $1 AND is_active = true',
+            [design_id]
+        );
+        
+        if (designResult.rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Дизайн сертификата не найден или неактивен',
+                code: 'INVALID_DESIGN'
+            });
+        }
+
+        // Генерируем временный номер сертификата для превью
+        const previewNumber = 'PREVIEW';
+        
+        // Вычисляем дату истечения (1 год от текущего момента)
+        const now = new Date();
+        const expiryDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+        // Импортируем генератор сертификатов
+        const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+        
+        // Данные для генерации превью
+        const certificateData = {
+            certificate_number: previewNumber,
+            nominal_value: nominal_value,
+            recipient_name: recipient_name || null,
+            message: message || null,
+            expiry_date: expiryDate,
+            design_id: design_id
+        };
+        
+        // Генерируем HTML для превью
+        const html = await certificateJpgGenerator.generateCertificateHTML(certificateData);
+
+        // Возвращаем HTML
+        res.json({
+            success: true,
+            html: html,
+            data: {
+                nominal_value: parseFloat(nominal_value),
+                design_id: design_id,
+                recipient_name: recipient_name,
+                message: message
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при генерации превью сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+}
+
+// Добавляем обработчик в роутер (для защищенных маршрутов)
+router.post('/preview', previewHandler);
+
 module.exports = router;
 module.exports.registerHandler = registerHandler;
+module.exports.previewHandler = previewHandler;
