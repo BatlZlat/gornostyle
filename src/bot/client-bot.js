@@ -7273,12 +7273,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 // Используем существующий сервис для генерации изображения
                 const certificateJpgGenerator = require('../services/certificateJpgGenerator');
                 
-                // Генерируем временный номер для превью
-                const previewNumber = 'PREVIEW' + Date.now();
+                // Генерируем уникальный номер для файла (чтобы избежать конфликтов при одновременных запросах)
+                // Но в сертификате отобразим просто "PREVIEW" без цифр
+                const uniqueId = Date.now();
+                const previewNumberForFile = `PREVIEW_${uniqueId}`;
                 const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
                 
                 const certificateData = {
-                    certificate_number: previewNumber,
+                    certificate_number: 'PREVIEW', // Для отображения в сертификате просто "PREVIEW"
                     nominal_value: parseInt(nominalValue),
                     recipient_name: 'Образец',
                     message: 'С днем рождения!',
@@ -7286,8 +7288,8 @@ bot.on('callback_query', async (callbackQuery) => {
                     design_id: parseInt(designId)
                 };
                 
-                // Генерируем JPG (функция возвращает относительный путь, например "/generated/certificates/certificate_PREVIEW123.jpg")
-                const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
+                // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
+                const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
                 
                 if (jpgRelativePath) {
                     // Преобразуем относительный путь в абсолютный
@@ -8585,32 +8587,29 @@ async function showDesignSelection(chatId, clientId, nominalValue) {
         designs.forEach((design, index) => {
             message += `${index + 1}️⃣ **${design.name}** - ${design.description}\n\n`;
             
-            // Inline кнопки для выбора и предварительного просмотра
+            // Inline кнопки только для предварительного просмотра с названием дизайна
             inlineKeyboard.push([
                 {
-                    text: `👁 Превью`,
+                    text: `👁 Посмотреть ${design.name}`,
                     callback_data: `preview_design_${design.id}_${nominalValue}`
-                },
-                {
-                    text: `${index + 1}️⃣ Выбрать`,
-                    callback_data: `select_design_${design.id}_${nominalValue}`
                 }
             ]);
             
-            // Обычные кнопки для тех, кто предпочитает текст
+            // Обычные кнопки для выбора дизайна
             keyboard.push([`${index + 1}️⃣ ${design.name}`]);
         });
 
         keyboard.push(['🔙 Назад']);
 
+        // Сначала отправляем сообщение с inline кнопками для просмотра
         return bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: inlineKeyboard
             }
         }).then(() => {
-            // Отправляем дополнительную клавиатуру для альтернативного выбора
-            return bot.sendMessage(chatId, '🔄 Или выберите дизайн кнопками ниже:', {
+            // Затем отправляем сообщение с обычными кнопками для выбора
+            return bot.sendMessage(chatId, 'Выберите дизайн кнопками ниже:', {
                 reply_markup: {
                     keyboard: keyboard,
                     resize_keyboard: true
@@ -8720,12 +8719,14 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
             
             const certificateJpgGenerator = require('../services/certificateJpgGenerator');
             
-            // Генерируем временный номер для превью
-            const previewNumber = 'PREVIEW' + Date.now();
+            // Генерируем уникальный номер для файла (чтобы избежать конфликтов)
+            // Но в сертификате отобразим просто "PREVIEW" без цифр
+            const uniqueId = Date.now();
+            const previewNumberForFile = `PREVIEW_${uniqueId}`;
             const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
             
             const certificateData = {
-                certificate_number: previewNumber,
+                certificate_number: 'PREVIEW', // Для отображения в сертификате просто "PREVIEW"
                 nominal_value: purchaseData.nominal_value,
                 recipient_name: purchaseData.recipient_name || null,
                 message: purchaseData.message || null,
@@ -8733,8 +8734,8 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
                 design_id: purchaseData.design_id
             };
             
-            // Генерируем JPG (функция возвращает относительный путь)
-            const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumber, certificateData);
+            // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
+            const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
             
             if (jpgRelativePath) {
                 // Преобразуем относительный путь в абсолютный
