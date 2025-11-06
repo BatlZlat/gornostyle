@@ -8895,6 +8895,13 @@ async function createCertificate(chatId, purchaseData) {
 // Показать результат создания сертификата
 async function showCertificateResult(chatId, certificate) {
     try {
+        // Проверяем наличие email у клиента
+        const clientResult = await pool.query(
+            'SELECT email FROM clients WHERE id = $1',
+            [certificate.purchaser_id || certificate.client_id]
+        );
+        const hasEmail = clientResult.rows[0]?.email ? true : false;
+
         let message = `🎉 **СЕРТИФИКАТ УСПЕШНО СОЗДАН!**
 
 🎫 **Номер сертификата:** \`${certificate.certificate_number}\`
@@ -8915,6 +8922,13 @@ ${certificate.certificate_url}`;
             const printUrl = `${process.env.BASE_URL || 'http://localhost:8080'}${certificate.print_image_url}`;
             message += `\n\n🖨️ **Для печати:**
 ${printUrl}`;
+        }
+
+        // Предупреждение, если email не указан
+        if (!hasEmail) {
+            message += `\n\n⚠️ **Внимание:** Email не указан в вашем профиле. Сертификат не был отправлен на почту.\n\nВы можете использовать ссылку выше для просмотра и печати сертификата.`;
+        } else {
+            message += `\n\n📧 Сертификат отправлен на вашу электронную почту.`;
         }
 
         message += `\n\nВы можете:
