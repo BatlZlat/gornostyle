@@ -87,10 +87,7 @@ backups/
 public/generated/
 
 # Trainer photos (uploaded directly to host)
-public/images/trainers/*.webp
-public/images/trainers/*.jpg
-public/images/trainers/*.jpeg
-public/images/trainers/*.png
+public/images/trainers/
 
 *.docx
 uploads/

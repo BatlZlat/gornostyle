@@ -172,21 +172,52 @@ class CertificateJpgGenerator {
             box-sizing: border-box;
         }
         
+        :root {
+            color-scheme: only light;
+        }
+        
         body {
             font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif;
-            width: 1050px;
-            height: 494px;
+            background: radial-gradient(circle at top, rgba(13, 27, 42, 0.95), rgba(13, 27, 42, 0.82));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px 10px;
+            overflow: auto;
+            --certificate-scale: clamp(0.3, calc(100vw / 1050), 1);
+        }
+        
+        .certificate-viewport {
+            position: relative;
+            width: calc(1050px * var(--certificate-scale));
+            height: calc(494px * var(--certificate-scale));
+            max-width: 100%;
+            border-radius: 14px;
             overflow: hidden;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
         }
         
         .certificate-container {
-            position: relative;
+            position: absolute;
+            inset: 0;
             width: 1050px;
             height: 494px;
+            transform: scale(var(--certificate-scale));
+            transform-origin: top left;
             background-image: url('${backgroundImageData}');
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
+        }
+        
+        @media (max-height: 620px) {
+            body {
+                align-items: flex-start;
+            }
+            .certificate-viewport {
+                margin-top: 20px;
+            }
         }
         
         .certificate-content {
@@ -315,47 +346,49 @@ class CertificateJpgGenerator {
     </style>
 </head>
 <body>
-    <div class="certificate-container">
-        <div class="certificate-content">
-            <div class="certificate-info">
-                <div>
-                    <div class="certificate-title">
-                        <span class="certificate-icon">🎁</span>
-                        СЕРТИФИКАТ
-                    </div>
-                    <div class="certificate-subtitle">
-                        НА ТРЕНИРОВКУ ПО ГОРНЫМ<br>ЛЫЖАМ ИЛИ СНОУБОРДУ
-                    </div>
-                </div>
-                
-                <div>
-                    <div class="certificate-number">
-                        № ${certificate_number}
+    <div class="certificate-viewport">
+        <div class="certificate-container">
+            <div class="certificate-content">
+                <div class="certificate-info">
+                    <div>
+                        <div class="certificate-title">
+                            <span class="certificate-icon">🎁</span>
+                            СЕРТИФИКАТ
+                        </div>
+                        <div class="certificate-subtitle">
+                            НА ТРЕНИРОВКУ ПО ГОРНЫМ<br>ЛЫЖАМ ИЛИ СНОУБОРДУ
+                        </div>
                     </div>
                     
-                    <div class="certificate-amount">
-                        ${nominal_value}
+                    <div>
+                        <div class="certificate-number">
+                            № ${certificate_number}
+                        </div>
+                        
+                        <div class="certificate-amount">
+                            ${nominal_value}
+                        </div>
+                        <div class="certificate-amount-label">рублей</div>
                     </div>
-                    <div class="certificate-amount-label">рублей</div>
-                </div>
-                
-                <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0;">
-                    ${recipient_name ? `
-                    <div class="certificate-recipient">
-                        <strong>Кому:</strong><br>${recipient_name}
-                    </div>
-                    ` : ''}
                     
-                    ${message ? `
-                    <div class="certificate-message">
-                        ${message}
+                    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0;">
+                        ${recipient_name ? `
+                        <div class="certificate-recipient">
+                            <strong>Кому:</strong><br>${recipient_name}
+                        </div>
+                        ` : ''}
+                        
+                        ${message ? `
+                        <div class="certificate-message">
+                            ${message}
+                        </div>
+                        ` : ''}
                     </div>
-                    ` : ''}
-                </div>
-                
-                <div class="certificate-expiry">
-                    <strong>Действителен до:</strong><br>
-                    <span style="color: #FFD700; font-weight: 600;">${formattedDate}</span>
+                    
+                    <div class="certificate-expiry">
+                        <strong>Действителен до:</strong><br>
+                        <span style="color: #FFD700; font-weight: 600;">${formattedDate}</span>
+                    </div>
                 </div>
             </div>
         </div>

@@ -1157,13 +1157,13 @@ async function previewHandler(req, res) {
             design_id: design_id
         };
         
-        // Генерируем HTML для превью
-        const html = await certificateJpgGenerator.generateCertificateHTML(certificateData);
+        const previewPayload = await certificateJpgGenerator.generateCertificatePreview(certificateData);
 
         // Возвращаем HTML
         res.json({
             success: true,
-            html: html,
+            html: previewPayload.html,
+            image: `data:image/jpeg;base64,${previewPayload.imageBase64}`,
             data: {
                 nominal_value: parseFloat(nominal_value),
                 design_id: design_id,
