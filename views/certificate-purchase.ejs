@@ -19,6 +19,10 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     
     <style>
+        body.modal-open {
+            overflow: hidden;
+        }
+
         .purchase-page {
             padding-top: 80px;
             min-height: 100vh;
@@ -319,24 +323,30 @@
         .preview-modal {
             position: fixed;
             z-index: 10000;
-            left: 0;
-            top: 0;
+            inset: 0;
             width: 100%;
             height: 100%;
+            padding: 20px;
             background-color: rgba(0, 0, 0, 0.7);
-            overflow: auto;
+            overflow: hidden;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .preview-modal.active {
+            display: flex;
         }
         
         .preview-modal-content {
             background-color: #fefefe;
-            margin: 2% auto;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            width: 90%;
-            max-width: 1200px;
-            max-height: 90vh;
+            border-radius: 14px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+            width: min(95%, 920px);
+            max-height: min(90vh, 720px);
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
         
         .preview-modal-header {
@@ -372,6 +382,9 @@
             background: #f8f9fa;
             flex: 1;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
         
         .preview-loading {
@@ -383,9 +396,20 @@
         
         .preview-modal-body iframe {
             width: 100%;
-            height: 700px;
+            max-width: 100%;
+            height: clamp(260px, 65vh, 520px);
             border: none;
-            border-radius: 5px;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+        }
+
+        .preview-modal-body img {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+            background: white;
         }
         
         .preview-modal-footer {
@@ -455,18 +479,59 @@
                 min-width: auto;
             }
             
-            .preview-modal-content {
-                width: 95%;
-                margin: 5% auto;
-                max-height: 85vh;
-            }
-            
-            .preview-modal-body iframe {
-                height: 400px;
-            }
-            
             .preview-modal-header h2 {
                 font-size: 1.2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .purchase-container {
+                padding: 25px 15px 40px;
+            }
+
+            .amount-selector,
+            .design-selector {
+                grid-template-columns: 1fr;
+            }
+
+            .preview-btn,
+            .submit-btn {
+                min-width: 0;
+                font-size: 1.1rem;
+                padding: 16px;
+            }
+
+            .preview-modal-content {
+                width: 100%;
+                max-height: 90vh;
+                border-radius: 12px;
+            }
+
+            .preview-modal-header,
+            .preview-modal-footer {
+                padding: 16px;
+            }
+
+            .preview-modal-body {
+                padding: 16px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .purchase-form {
+                padding: 25px 15px;
+            }
+
+            .form-section h3 {
+                font-size: 1.3rem;
+            }
+
+            .preview-modal-body iframe {
+                height: clamp(240px, 60vh, 460px);
+            }
+
+            .preview-close {
+                font-size: 24px;
             }
         }
     </style>
@@ -682,7 +747,7 @@
     </main>
 
     <!-- Модальное окно предпросмотра сертификата -->
-    <div id="previewModal" class="preview-modal" style="display: none;">
+    <div id="previewModal" class="preview-modal">
         <div class="preview-modal-content">
             <div class="preview-modal-header">
                 <h2>Предварительный просмотр сертификата</h2>
@@ -762,6 +827,16 @@
             const previewModal = document.getElementById('previewModal');
             const previewModalBody = document.getElementById('previewModalBody');
             const closeModalElements = document.querySelectorAll('.preview-close, .preview-close-btn');
+
+            const openPreviewModal = () => {
+                previewModal.classList.add('active');
+                document.body.classList.add('modal-open');
+            };
+
+            const closePreviewModal = () => {
+                previewModal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+            };
             
             previewBtn.addEventListener('click', async function() {
                 // Собираем данные формы
@@ -787,8 +862,8 @@
                 }
                 
                 // Показываем модальное окно с загрузкой
-                previewModal.style.display = 'block';
                 previewModalBody.innerHTML = '<div class="preview-loading"><i class="fas fa-spinner fa-spin"></i> Загрузка превью...</div>';
+                openPreviewModal();
                 
                 try {
                     // Отправляем запрос на сервер для генерации превью
@@ -808,15 +883,21 @@
                     const result = await response.json();
                     
                     if (result.success) {
-                        // Отображаем превью через iframe
-                        const iframe = document.createElement('iframe');
-                        iframe.srcdoc = result.html;
-                        iframe.style.width = '100%';
-                        iframe.style.height = '700px';
-                        iframe.style.border = 'none';
-                        iframe.style.borderRadius = '5px';
                         previewModalBody.innerHTML = '';
-                        previewModalBody.appendChild(iframe);
+
+                        if (result.image) {
+                            const img = document.createElement('img');
+                            img.src = result.image;
+                            img.alt = 'Предпросмотр сертификата';
+                            previewModalBody.appendChild(img);
+                        } else if (result.html) {
+                            const iframe = document.createElement('iframe');
+                            iframe.srcdoc = result.html;
+                            iframe.title = 'Предпросмотр сертификата';
+                            previewModalBody.appendChild(iframe);
+                        } else {
+                            previewModalBody.innerHTML = '<div class="preview-loading" style="color: #e74c3c;"><i class="fas fa-exclamation-circle"></i> Не удалось загрузить превью</div>';
+                        }
                     } else {
                         previewModalBody.innerHTML = `<div class="preview-loading" style="color: #e74c3c;"><i class="fas fa-exclamation-circle"></i> Ошибка: ${result.error}</div>`;
                     }
@@ -829,14 +910,14 @@
             // Закрытие модального окна
             closeModalElements.forEach(element => {
                 element.addEventListener('click', function() {
-                    previewModal.style.display = 'none';
+                    closePreviewModal();
                 });
             });
             
             // Закрытие при клике вне модального окна
             window.addEventListener('click', function(event) {
                 if (event.target === previewModal) {
-                    previewModal.style.display = 'none';
+                    closePreviewModal();
                 }
             });
             
