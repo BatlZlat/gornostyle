@@ -48,7 +48,8 @@ class NotificationService {
                     CASE 
                         WHEN sp.is_child = true THEN ch.full_name
                         ELSE c.full_name
-                    END as display_name
+                    END as display_name,
+                    'simulator' as slope_type
                 FROM training_sessions ts
                 JOIN session_participants sp ON ts.id = sp.session_id
                 JOIN clients c ON sp.client_id = c.id
