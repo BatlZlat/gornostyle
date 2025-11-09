@@ -15,6 +15,14 @@
 -- 022: Увеличена длина поля type в transactions (VARCHAR(20) -> VARCHAR(50))
 -- 023: Добавлено поле session_participant_id в natural_slope_subscription_usage
 -- 024: Добавлено каскадное удаление для внешних ключей referral_transactions
+-- 027: СОЗДАНИЕ СИСТЕМЫ КУЛИГИ (7 таблиц с префиксом kuliga_*)
+--      - kuliga_clients: Клиенты службы инструкторов (упрощенная регистрация)
+--      - kuliga_instructors: Инструкторы (управляются администратором)
+--      - kuliga_schedule_slots: Временные слоты расписания инструкторов
+--      - kuliga_group_trainings: Групповые тренировки
+--      - kuliga_bookings: Бронирования (индивидуальные и групповые)
+--      - kuliga_transactions: Транзакции через Tinkoff Acquiring
+--      - kuliga_admin_settings: Настройки администратора
 -- ============================================================================
 
 -- ============================================================================
@@ -566,6 +574,15 @@ CREATE TABLE certificate_stats (
 --    - Добавлено каскадное удаление (ON DELETE CASCADE) для внешних ключей referral_transactions
 --    - Позволяет удалять клиентов без ошибок нарушения внешнего ключа
 --    - При удалении клиента автоматически удаляются все связанные реферальные транзакции
+--
+-- 027_create_kuliga_system.sql (9 ноября 2025)
+--    - Создана система для службы инструкторов Кулиги Горностайл72
+--    - 7 новых таблиц с префиксом kuliga_*
+--    - Упрощенная регистрация клиентов (ФИО + телефон + email опционально)
+--    - Интеграция с Tinkoff Acquiring для приема платежей
+--    - Поддержка индивидуальных и групповых тренировок
+--    - Автоматическая проверка групповых тренировок в 22:00
+--    - Telegram-боты для уведомлений клиентов и инструкторов
 -- ============================================================================
 
 -- ============================================================================
@@ -1370,4 +1387,180 @@ CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_sl
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
 CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id); -- МИГРАЦИЯ 023
-CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 
+CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active';
+
+-- ============================================================================
+-- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027)
+-- ============================================================================
+-- Создано: 9 ноября 2025
+-- Описание: Служба инструкторов Кулиги Горностайл72 для базы отдыха
+-- Домен: gornostyle.ru/instruktora-kuliga
+-- ============================================================================
+
+-- Таблица клиентов системы Кулиги (упрощенная регистрация)
+-- Клиенты заполняют только ФИО + телефон при бронировании
+CREATE TABLE IF NOT EXISTS kuliga_clients (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    email VARCHAR(255),
+    telegram_id BIGINT UNIQUE,
+    telegram_username VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица инструкторов Кулиги (управляются администратором)
+CREATE TABLE IF NOT EXISTS kuliga_instructors (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    email VARCHAR(255),
+    photo_url VARCHAR(255),
+    description TEXT,
+    sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard', 'both')),
+    is_active BOOLEAN DEFAULT TRUE,
+    hire_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    dismissal_date DATE,
+    telegram_id BIGINT UNIQUE,
+    telegram_username VARCHAR(100),
+    telegram_registered BOOLEAN DEFAULT FALSE,
+    admin_percentage DECIMAL(5,2) DEFAULT 20.00 CHECK (admin_percentage >= 0 AND admin_percentage <= 100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица временных слотов расписания инструкторов
+CREATE TABLE IF NOT EXISTS kuliga_schedule_slots (
+    id SERIAL PRIMARY KEY,
+    instructor_id INTEGER NOT NULL REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'booked', 'group', 'blocked')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_instructor_slot UNIQUE(instructor_id, date, start_time)
+);
+
+-- Таблица групповых тренировок
+CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
+    id SERIAL PRIMARY KEY,
+    instructor_id INTEGER NOT NULL REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
+    slot_id INTEGER NOT NULL REFERENCES kuliga_schedule_slots(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard')),
+    level VARCHAR(50) NOT NULL,
+    description TEXT,
+    price_per_person DECIMAL(10,2) NOT NULL CHECK (price_per_person > 0),
+    max_participants INTEGER NOT NULL CHECK (max_participants > 0),
+    min_participants INTEGER NOT NULL CHECK (min_participants > 0 AND min_participants <= max_participants),
+    current_participants INTEGER DEFAULT 0 CHECK (current_participants >= 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'confirmed', 'cancelled', 'completed')),
+    cancellation_reason TEXT,
+    cancelled_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица бронирований (индивидуальные и групповые)
+CREATE TABLE IF NOT EXISTS kuliga_bookings (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES kuliga_clients(id) ON DELETE CASCADE,
+    booking_type VARCHAR(20) NOT NULL CHECK (booking_type IN ('individual', 'group')),
+    instructor_id INTEGER REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
+    slot_id INTEGER REFERENCES kuliga_schedule_slots(id) ON DELETE CASCADE,
+    group_training_id INTEGER REFERENCES kuliga_group_trainings(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard')),
+    participants_count INTEGER DEFAULT 1 CHECK (participants_count > 0),
+    participants_names TEXT[],
+    price_total DECIMAL(10,2) NOT NULL CHECK (price_total > 0),
+    price_per_person DECIMAL(10,2) NOT NULL CHECK (price_per_person > 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed', 'refunded')),
+    cancellation_reason TEXT,
+    cancelled_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT valid_booking_type CHECK (
+        (booking_type = 'individual' AND instructor_id IS NOT NULL AND slot_id IS NOT NULL AND group_training_id IS NULL) OR
+        (booking_type = 'group' AND group_training_id IS NOT NULL AND instructor_id IS NULL AND slot_id IS NULL)
+    )
+);
+
+-- Таблица транзакций через Tinkoff Acquiring
+CREATE TABLE IF NOT EXISTS kuliga_transactions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES kuliga_clients(id) ON DELETE SET NULL,
+    booking_id INTEGER REFERENCES kuliga_bookings(id) ON DELETE SET NULL,
+    type VARCHAR(50) NOT NULL CHECK (type IN ('payment', 'refund', 'payout')),
+    amount DECIMAL(10,2) NOT NULL,
+    tinkoff_payment_id VARCHAR(100) UNIQUE,
+    tinkoff_order_id VARCHAR(100),
+    tinkoff_status VARCHAR(50),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица настроек администратора
+CREATE TABLE IF NOT EXISTS kuliga_admin_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(100) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Индексы для таблиц Кулиги
+CREATE INDEX IF NOT EXISTS idx_kuliga_clients_phone ON kuliga_clients(phone);
+CREATE INDEX IF NOT EXISTS idx_kuliga_clients_telegram ON kuliga_clients(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_clients_created ON kuliga_clients(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_active ON kuliga_instructors(is_active);
+CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_telegram ON kuliga_instructors(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_sport ON kuliga_instructors(sport_type);
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_instructor ON kuliga_schedule_slots(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_date ON kuliga_schedule_slots(date);
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_status ON kuliga_schedule_slots(status);
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_available ON kuliga_schedule_slots(instructor_id, date, status) WHERE status = 'available';
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_groups_instructor ON kuliga_group_trainings(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_groups_date ON kuliga_group_trainings(date);
+CREATE INDEX IF NOT EXISTS idx_kuliga_groups_status ON kuliga_group_trainings(status);
+CREATE INDEX IF NOT EXISTS idx_kuliga_groups_open ON kuliga_group_trainings(date, status) WHERE status = 'open';
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_client ON kuliga_bookings(client_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_instructor ON kuliga_bookings(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_group ON kuliga_bookings(group_training_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_date ON kuliga_bookings(date);
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_status ON kuliga_bookings(status);
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_client ON kuliga_transactions(client_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_booking ON kuliga_transactions(booking_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_type ON kuliga_transactions(type);
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_status ON kuliga_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_tinkoff ON kuliga_transactions(tinkoff_payment_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_created ON kuliga_transactions(created_at DESC);
+
+-- Комментарии для таблиц Кулиги
+COMMENT ON TABLE kuliga_clients IS 'Клиенты службы инструкторов Кулиги (упрощенная регистрация: ФИО + телефон)';
+COMMENT ON TABLE kuliga_instructors IS 'Инструкторы Кулиги (добавляются администратором, могут регистрироваться в Telegram-боте)';
+COMMENT ON TABLE kuliga_schedule_slots IS 'Временные слоты инструкторов (available=свободен, booked=индивидуальная, group=групповая, blocked=не работает)';
+COMMENT ON TABLE kuliga_group_trainings IS 'Групповые тренировки (автопроверка в 22:00, отмена при недоборе min_participants)';
+COMMENT ON TABLE kuliga_bookings IS 'Бронирования клиентов (поддержка семейного бронирования participants_names[])';
+COMMENT ON TABLE kuliga_transactions IS 'Транзакции через Tinkoff Acquiring (платежи, возвраты, выплаты инструкторам)';
+COMMENT ON TABLE kuliga_admin_settings IS 'Настройки системы Кулиги (глобальный процент админа, время проверки групп)';
+
+COMMENT ON COLUMN kuliga_instructors.admin_percentage IS 'Процент администратора от заработка инструктора (индивидуальный, по умолчанию из kuliga_admin_settings)';
+COMMENT ON COLUMN kuliga_instructors.telegram_registered IS 'Зарегистрирован ли в Telegram-боте для получения уведомлений (уволенные не получают)';
+COMMENT ON COLUMN kuliga_group_trainings.min_participants IS 'Минимум участников для проведения (если меньше - автоотмена в 22:00)';
+COMMENT ON COLUMN kuliga_bookings.participants_names IS 'Массив имен участников для семейного бронирования (например: {"Иван", "Мария", "Петр"})';
+COMMENT ON COLUMN kuliga_transactions.tinkoff_payment_id IS 'ID платежа в системе Tinkoff Acquiring для отслеживания статуса';
