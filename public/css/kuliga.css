@@ -539,6 +539,209 @@
     color: var(--kuliga-gray-500);
 }
 
+.kuliga-booking-header {
+    padding: 32px 16px 16px;
+    text-align: center;
+    background: var(--kuliga-white);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.kuliga-booking-header h1 {
+    margin: 12px 0;
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
+    color: var(--kuliga-navy);
+}
+
+.kuliga-booking-header p {
+    margin: 0 auto;
+    max-width: 720px;
+    color: var(--kuliga-gray-500);
+    line-height: 1.5;
+}
+
+.kuliga-booking-header__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+}
+
+.kuliga-booking-main {
+    padding: 32px 16px 80px;
+}
+
+.kuliga-booking-form {
+    max-width: 960px;
+    margin: 0 auto;
+    display: grid;
+    gap: 32px;
+    background: var(--kuliga-white);
+    border-radius: 20px;
+    padding: 32px 24px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.kuliga-booking-section {
+    display: grid;
+    gap: 18px;
+}
+
+.kuliga-booking-section h2 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.kuliga-field {
+    display: grid;
+    gap: 8px;
+}
+
+.kuliga-field span {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--kuliga-gray-700);
+}
+
+.kuliga-field input,
+.kuliga-field select {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    padding: 12px 14px;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kuliga-field input:focus,
+.kuliga-field select:focus {
+    outline: none;
+    border-color: var(--kuliga-primary);
+    box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.18);
+}
+
+.kuliga-radio {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: var(--kuliga-gray-100);
+}
+
+.kuliga-radio input {
+    margin-top: 4px;
+}
+
+.kuliga-radio strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.kuliga-radio small {
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-radio input:disabled + span {
+    opacity: 0.6;
+}
+
+.kuliga-checkbox {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-700);
+}
+
+.kuliga-checkbox input {
+    margin-top: 4px;
+}
+
+.kuliga-hint {
+    margin-top: 10px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+    display: flex;
+    gap: 10px;
+}
+
+.kuliga-participants-list {
+    display: grid;
+    gap: 12px;
+}
+
+.kuliga-participant-input {
+    display: grid;
+    gap: 6px;
+}
+
+.kuliga-participant-input label {
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-booking-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.kuliga-booking-summary > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 18px;
+    background: rgba(30, 144, 255, 0.08);
+    border-radius: 14px;
+    font-size: 1.1rem;
+    color: var(--kuliga-navy);
+    font-weight: 600;
+}
+
+.kuliga-summary__label {
+    font-weight: 500;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-message {
+    min-height: 24px;
+    font-size: 0.95rem;
+}
+
+.kuliga-message--error {
+    color: var(--kuliga-red);
+}
+
+.kuliga-message--success {
+    color: var(--kuliga-green-dark);
+}
+
+@media (min-width: 640px) {
+    .kuliga-booking-summary {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .kuliga-booking-summary > div {
+        flex: 1;
+    }
+
+    .kuliga-booking-summary .kuliga-button {
+        flex: 0 0 auto;
+        min-width: 220px;
+    }
+}
+
 @media (min-width: 768px) {
     .kuliga-hero {
         padding-top: 100px;

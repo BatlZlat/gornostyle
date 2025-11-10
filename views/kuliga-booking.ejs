@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Бронирование тренировки на Кулиге | Горностайл72</title>
+    <meta name="description" content="Забронируйте тренировку по горным лыжам или сноуборду на базе отдыха Кулига. Укажите данные, внесите предоплату через Tinkoff и получайте уведомления в Telegram." />
+    <meta name="robots" content="noindex, follow">
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="/css/kuliga.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body class="kuliga-body">
+    <header class="kuliga-booking-header">
+        <a class="kuliga-booking-header__back" href="/instruktora-kuliga">
+            <i class="fa-solid fa-arrow-left"></i>
+            Вернуться на страницу Кулиги
+        </a>
+        <h1>Бронирование тренировки</h1>
+        <p>Заполните данные участников, выберите занятие и внесите предоплату. После успешной оплаты мы предложим подключить Telegram-бота для уведомлений.</p>
+    </header>
+
+    <main class="kuliga-booking-main">
+        <form id="kuligaBookingForm" class="kuliga-booking-form" novalidate>
+            <section class="kuliga-booking-section">
+                <h2>Данные клиента</h2>
+                <div class="kuliga-form-grid">
+                    <label class="kuliga-field">
+                        <span>ФИО основного участника *</span>
+                        <input type="text" name="fullName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
+                    </label>
+                    <label class="kuliga-field">
+                        <span>Телефон для связи *</span>
+                        <input type="tel" name="phone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
+                    </label>
+                    <label class="kuliga-field">
+                        <span>Email (для чеков и уведомлений)</span>
+                        <input type="email" name="email" maxlength="255" placeholder="name@example.com" autocomplete="email">
+                    </label>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>Тип тренировки</h2>
+                <div class="kuliga-booking-type">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="bookingType" value="individual" disabled>
+                        <span>
+                            <strong>Индивидуальная</strong>
+                            <small>Скоро появится. Напишите администратору для индивидуальной записи.</small>
+                        </span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="bookingType" value="group" checked>
+                        <span>
+                            <strong>Групповая</strong>
+                            <small>Мини-группы до 4 человек. Выберите удобную дату и время.</small>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="kuliga-field">
+                    <span>Выберите групповое занятие *</span>
+                    <select name="groupTrainingId" id="kuligaGroupSelect" required>
+                        <option value="" disabled selected>Загрузка доступных занятий...</option>
+                    </select>
+                </div>
+
+                <div class="kuliga-field">
+                    <span>Количество участников *</span>
+                    <input type="number" name="participantsCount" id="kuligaParticipantsCount" min="1" max="4" value="1" required>
+                </div>
+
+                <div id="kuligaParticipantsList" class="kuliga-participants-list"></div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>Дополнительно</h2>
+                <label class="kuliga-checkbox">
+                    <input type="checkbox" name="consentConfirmed" required>
+                    <span>
+                        Я подтверждаю согласие на обработку персональных данных (ФИО, телефон, email) и разрешаю использование фото и видео с тренировки в социальных сетях и мессенджерах Горностайл72. <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
+                    </span>
+                </label>
+                <div class="kuliga-hint">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Если группа не наберёт минимальное количество участников до 22:00 накануне, тренировка будет автоматически отменена, а предоплата возвращена на ваш счёт в течение 1-3 рабочих дней.
+                </div>
+            </section>
+
+            <div class="kuliga-booking-summary">
+                <div>
+                    <span class="kuliga-summary__label">Предоплата</span>
+                    <strong id="kuligaTotalPrice">—</strong>
+                </div>
+                <button type="submit" class="kuliga-button kuliga-button--primary">Перейти к оплате</button>
+            </div>
+            <div id="kuligaBookingMessage" class="kuliga-message" role="status" aria-live="polite"></div>
+        </form>
+    </main>
+
+    <footer class="kuliga-footer">
+        <div class="kuliga-footer__content">
+            <div class="kuliga-footer__brand">
+                <img src="/images/logo.png" alt="Логотип Горностайл72" loading="lazy">
+                <p>Горностайл72 — обучение горным лыжам и сноуборду круглый год. На Кулиге обучают инструкторы нашей школы.</p>
+            </div>
+            <div class="kuliga-footer__links">
+                <a href="tel:+79123924956"><i class="fa-solid fa-phone"></i> +7 912 392-49-56</a>
+                <a href="mailto:batl-zlat@yandex.ru"><i class="fa-solid fa-envelope"></i> batl-zlat@yandex.ru</a>
+                <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
+                <a href="https://t.me/<%= botUsername %>" target="_blank" rel="noopener"><i class="fa-solid fa-robot"></i> Telegram-бот Горностайл72</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        window.KULIGA_ANALYTICS = {
+            yandexMetrikaId: '<%= yandexMetrikaId || '' %>',
+            googleAnalyticsId: '<%= googleAnalyticsId || '' %>'
+        };
+    </script>
+    <script src="/js/kuliga-booking.js" defer></script>
+    <%- include('partials/analytics'); %>
+</body>
+</html>
