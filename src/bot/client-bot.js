@@ -7361,42 +7361,21 @@ bot.on('callback_query', async (callbackQuery) => {
                     design_id: parseInt(designId)
                 };
                 
-                // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
-                const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
+                // Генерируем превью (получаем base64 и HTML)
+                const previewPayload = await certificateJpgGenerator.generateCertificatePreview(certificateData);
                 
-                if (jpgRelativePath) {
-                    // Преобразуем относительный путь в абсолютный
-                    const path = require('path');
-                    const fs = require('fs');
-                    const publicPath = path.join(__dirname, '../../public');
-                    const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
-                    
-                    console.log(`[preview_design] Путь к изображению: ${jpgAbsolutePath}`);
-                    
-                    // Проверяем существование файла
-                    if (!fs.existsSync(jpgAbsolutePath)) {
-                        throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
-                    }
-                    
-                    // Читаем файл и отправляем как фото
-                    const photoBuffer = fs.readFileSync(jpgAbsolutePath);
-                    
-                    // Удаляем временный файл
-                    try {
-                        fs.unlinkSync(jpgAbsolutePath);
-                    } catch (unlinkError) {
-                        console.error('[preview_design] Ошибка при удалении временного файла:', unlinkError);
-                    }
-                    
-                    console.log(`[preview_design] Отправка изображения дизайна "${designName}"`);
-                    
-                    return bot.sendPhoto(chatId, photoBuffer, {
-                        caption: `🎨 **Дизайн "${designName}"**\n\nНоминал: ${nominalValue} руб.`,
-                        parse_mode: 'Markdown'
-                    });
+                if (!previewPayload || !previewPayload.imageBase64) {
+                    throw new Error('Не удалось сгенерировать изображение: получен пустой результат');
                 }
                 
-                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+                const photoBuffer = Buffer.from(previewPayload.imageBase64, 'base64');
+                
+                console.log(`[preview_design] Превью дизайна "${designName}" сгенерировано`);
+                
+                return bot.sendPhoto(chatId, photoBuffer, {
+                    caption: `🎨 **Дизайн "${designName}"**\n\nНоминал: ${nominalValue} руб.`,
+                    parse_mode: 'Markdown'
+                });
                 
             } catch (error) {
                 console.error('[preview_design] Ошибка при показе превью:', error);
@@ -8860,42 +8839,20 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
                 design_id: purchaseData.design_id
             };
             
-            // Генерируем JPG (используем уникальное имя для файла, но в сертификате будет отображаться "PREVIEW")
-            const jpgRelativePath = await certificateJpgGenerator.generateCertificateJpgFromHTML(previewNumberForFile, certificateData);
+            const previewPayload = await certificateJpgGenerator.generateCertificatePreview(certificateData);
             
-            if (jpgRelativePath) {
-                // Преобразуем относительный путь в абсолютный
-                const path = require('path');
-                const fs = require('fs');
-                const publicPath = path.join(__dirname, '../../public');
-                const jpgAbsolutePath = path.join(publicPath, jpgRelativePath);
-                
-                console.log(`[showPurchaseConfirmation] Путь к изображению: ${jpgAbsolutePath}`);
-                
-                // Проверяем существование файла
-                if (!fs.existsSync(jpgAbsolutePath)) {
-                    throw new Error(`Файл не найден: ${jpgAbsolutePath}`);
-                }
-                
-                // Читаем файл и отправляем как фото
-                const photoBuffer = fs.readFileSync(jpgAbsolutePath);
-                
-                // Удаляем временный файл
-                try {
-                    fs.unlinkSync(jpgAbsolutePath);
-                } catch (unlinkError) {
-                    console.error('[showPurchaseConfirmation] Ошибка при удалении временного файла:', unlinkError);
-                }
-                
-                await bot.sendPhoto(chatId, photoBuffer, {
-                    caption: '👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**',
-                    parse_mode: 'Markdown'
-                });
-                
-                console.log(`[showPurchaseConfirmation] Предпросмотр отправлен`);
-            } else {
-                throw new Error('Не удалось сгенерировать изображение: функция вернула пустое значение');
+            if (!previewPayload || !previewPayload.imageBase64) {
+                throw new Error('Не удалось сгенерировать изображение: получен пустой результат');
             }
+            
+            const photoBuffer = Buffer.from(previewPayload.imageBase64, 'base64');
+            
+            await bot.sendPhoto(chatId, photoBuffer, {
+                caption: '👁 **ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР**',
+                parse_mode: 'Markdown'
+            });
+            
+            console.log(`[showPurchaseConfirmation] Предпросмотр отправлен`);
         } catch (previewError) {
             console.error('[showPurchaseConfirmation] Ошибка при генерации превью:', previewError);
             // Продолжаем дальше, даже если превью не удалось

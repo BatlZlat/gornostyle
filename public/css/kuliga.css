@@ -1,0 +1,780 @@
+:root {
+    --kuliga-primary: #1e90ff;
+    --kuliga-primary-dark: #0f5db6;
+    --kuliga-navy: #003d82;
+    --kuliga-green: #27ae60;
+    --kuliga-green-dark: #1f8c4c;
+    --kuliga-red: #e74c3c;
+    --kuliga-gray-100: #f2f5f9;
+    --kuliga-gray-200: #e2e8f0;
+    --kuliga-gray-300: #cbd5e1;
+    --kuliga-gray-500: #64748b;
+    --kuliga-gray-700: #334155;
+    --kuliga-white: #ffffff;
+    --kuliga-gradient: linear-gradient(135deg, #1e90ff 0%, #003d82 100%);
+}
+
+.kuliga-body {
+    background: var(--kuliga-gray-100);
+    color: var(--kuliga-gray-700);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.kuliga-main {
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+}
+
+.kuliga-section {
+    padding: 48px 16px;
+}
+
+.kuliga-section--light {
+    background: var(--kuliga-white);
+}
+
+.kuliga-section--accent {
+    background: var(--kuliga-gradient);
+    color: var(--kuliga-white);
+}
+
+.kuliga-section__header,
+.kuliga-section__subheader {
+    margin: 0 auto 32px;
+    max-width: 960px;
+    text-align: center;
+}
+
+.kuliga-section__header h2,
+.kuliga-section__subheader h3 {
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.kuliga-section__header p,
+.kuliga-section__subheader p {
+    margin: 0;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-section--accent .kuliga-section__header p {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.kuliga-hero {
+    position: relative;
+    min-height: 560px;
+    display: flex;
+    align-items: center;
+    padding: 80px 16px 64px;
+    overflow: hidden;
+    background: radial-gradient(circle at 20% 20%, rgba(30, 144, 255, 0.35) 0%, rgba(30, 144, 255, 0) 65%),
+                radial-gradient(circle at 80% 20%, rgba(0, 61, 130, 0.35) 0%, rgba(0, 61, 130, 0) 70%),
+                linear-gradient(160deg, #0f172a 0%, #1e293b 100%);
+    color: var(--kuliga-white);
+}
+
+.kuliga-hero__bg {
+    position: absolute;
+    inset: 0;
+    background-image: url('/images/photo_trenagor.webp');
+    background-size: cover;
+    background-position: center;
+    opacity: 0.15;
+    filter: saturate(0.8);
+}
+
+.kuliga-hero__content {
+    position: relative;
+    z-index: 1;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.kuliga-hero__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+}
+
+.kuliga-hero h1 {
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    margin-bottom: 16px;
+    font-weight: 700;
+}
+
+.kuliga-hero p {
+    margin: 0 auto 24px;
+    max-width: 640px;
+    font-size: 1.08rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.kuliga-hero__actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+
+.kuliga-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.kuliga-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.35);
+}
+
+.kuliga-button--primary {
+    background: var(--kuliga-primary);
+    color: var(--kuliga-white);
+    box-shadow: 0 12px 30px rgba(30, 144, 255, 0.25);
+}
+
+.kuliga-button--primary:hover {
+    background: var(--kuliga-primary-dark);
+    transform: translateY(-1px);
+}
+
+.kuliga-button--ghost {
+    border-color: rgba(255, 255, 255, 0.6);
+    color: var(--kuliga-white);
+    background: transparent;
+}
+
+.kuliga-button--ghost:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.kuliga-button--wide {
+    width: 100%;
+}
+
+.kuliga-hero__details {
+    display: grid;
+    gap: 10px;
+    font-size: 0.95rem;
+    justify-content: center;
+}
+
+.kuliga-hero__details i {
+    color: var(--kuliga-primary);
+    margin-right: 8px;
+}
+
+.kuliga-price-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    max-width: 1080px;
+    margin: 0 auto;
+}
+
+.kuliga-price-card {
+    background: var(--kuliga-white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.kuliga-price-card__type {
+    font-weight: 600;
+    color: var(--kuliga-primary-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+}
+
+.kuliga-price-card__value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-price-card__meta {
+    display: grid;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-group-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 18px;
+    max-width: 1080px;
+    margin: 0 auto 32px;
+}
+
+.kuliga-group-card {
+    background: var(--kuliga-white);
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.kuliga-group-card h3 {
+    margin: 0;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-group-card p {
+    margin: 0;
+    color: var(--kuliga-gray-500);
+    font-size: 0.98rem;
+}
+
+.kuliga-group-card__meta {
+    display: grid;
+    gap: 8px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-group-card__meta i {
+    color: var(--kuliga-primary);
+    margin-right: 8px;
+}
+
+.kuliga-groups__hint {
+    max-width: 960px;
+    margin: 0 auto 32px;
+    background: rgba(14, 116, 144, 0.08);
+    color: var(--kuliga-navy);
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 0.95rem;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.kuliga-group-list {
+    display: grid;
+    gap: 12px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.kuliga-group-item {
+    background: var(--kuliga-white);
+    border-radius: 14px;
+    padding: 18px 20px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: grid;
+    gap: 8px;
+}
+
+.kuliga-group-item__top {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kuliga-group-item__date {
+    font-weight: 600;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-group-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-group-item__meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kuliga-instructors {
+    display: grid;
+    gap: 24px;
+    max-width: 1160px;
+    margin: 0 auto;
+}
+
+.kuliga-instructor-card {
+    display: grid;
+    gap: 20px;
+    padding: 24px;
+    background: var(--kuliga-white);
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.kuliga-instructor__header {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.kuliga-instructor__photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 18px;
+    background: var(--kuliga-gray-200);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.kuliga-instructor__info h3 {
+    margin: 0 0 6px;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-instructor__sport {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.kuliga-instructor__description {
+    margin: 0;
+    font-size: 0.97rem;
+    color: var(--kuliga-gray-500);
+    line-height: 1.58;
+}
+
+.kuliga-schedule {
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    padding-top: 18px;
+}
+
+.kuliga-schedule__days {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+}
+
+.kuliga-schedule__day {
+    flex: 0 0 110px;
+    padding: 12px 10px;
+    border-radius: 12px;
+    background: var(--kuliga-gray-100);
+    text-align: center;
+}
+
+.kuliga-schedule__day-active {
+    background: rgba(30, 144, 255, 0.12);
+    border: 1px solid rgba(30, 144, 255, 0.4);
+}
+
+.kuliga-schedule__weekday {
+    font-size: 0.85rem;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.kuliga-slot-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 60px;
+}
+
+.kuliga-slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.kuliga-slot--available {
+    background: rgba(39, 174, 96, 0.12);
+    color: var(--kuliga-green-dark);
+}
+
+.kuliga-slot--group {
+    background: rgba(30, 144, 255, 0.15);
+    color: var(--kuliga-primary-dark);
+}
+
+.kuliga-slot--booked {
+    background: rgba(231, 76, 60, 0.15);
+    color: var(--kuliga-red);
+}
+
+.kuliga-slot--blocked {
+    background: rgba(148, 163, 184, 0.2);
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-booking {
+    max-width: 960px;
+    margin: 0 auto;
+    display: grid;
+    gap: 24px;
+}
+
+.kuliga-booking__content h2 {
+    margin-bottom: 12px;
+    font-size: 1.8rem;
+}
+
+.kuliga-booking__content p {
+    margin: 0 0 16px;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.kuliga-booking__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+}
+
+.kuliga-booking__list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kuliga-booking__list i {
+    font-size: 1.1rem;
+}
+
+.kuliga-booking__policy {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.92rem;
+    text-align: center;
+}
+
+.kuliga-footer {
+    background: var(--kuliga-navy);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 36px 16px;
+}
+
+.kuliga-footer__content {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: grid;
+    gap: 24px;
+}
+
+.kuliga-footer__brand {
+    display: grid;
+    gap: 12px;
+}
+
+.kuliga-footer__brand img {
+    width: 160px;
+    height: auto;
+}
+
+.kuliga-footer__links {
+    display: grid;
+    gap: 10px;
+}
+
+.kuliga-footer__links a {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.kuliga-footer__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+}
+
+.kuliga-empty {
+    padding: 20px;
+    background: rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    text-align: center;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-booking-header {
+    padding: 32px 16px 16px;
+    text-align: center;
+    background: var(--kuliga-white);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.kuliga-booking-header h1 {
+    margin: 12px 0;
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
+    color: var(--kuliga-navy);
+}
+
+.kuliga-booking-header p {
+    margin: 0 auto;
+    max-width: 720px;
+    color: var(--kuliga-gray-500);
+    line-height: 1.5;
+}
+
+.kuliga-booking-header__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+}
+
+.kuliga-booking-main {
+    padding: 32px 16px 80px;
+}
+
+.kuliga-booking-form {
+    max-width: 960px;
+    margin: 0 auto;
+    display: grid;
+    gap: 32px;
+    background: var(--kuliga-white);
+    border-radius: 20px;
+    padding: 32px 24px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.kuliga-booking-section {
+    display: grid;
+    gap: 18px;
+}
+
+.kuliga-booking-section h2 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.kuliga-field {
+    display: grid;
+    gap: 8px;
+}
+
+.kuliga-field span {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--kuliga-gray-700);
+}
+
+.kuliga-field input,
+.kuliga-field select {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    padding: 12px 14px;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kuliga-field input:focus,
+.kuliga-field select:focus {
+    outline: none;
+    border-color: var(--kuliga-primary);
+    box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.18);
+}
+
+.kuliga-radio {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: var(--kuliga-gray-100);
+}
+
+.kuliga-radio input {
+    margin-top: 4px;
+}
+
+.kuliga-radio strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.kuliga-radio small {
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-radio input:disabled + span {
+    opacity: 0.6;
+}
+
+.kuliga-checkbox {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-700);
+}
+
+.kuliga-checkbox input {
+    margin-top: 4px;
+}
+
+.kuliga-hint {
+    margin-top: 10px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+    display: flex;
+    gap: 10px;
+}
+
+.kuliga-participants-list {
+    display: grid;
+    gap: 12px;
+}
+
+.kuliga-participant-input {
+    display: grid;
+    gap: 6px;
+}
+
+.kuliga-participant-input label {
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-booking-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.kuliga-booking-summary > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 18px;
+    background: rgba(30, 144, 255, 0.08);
+    border-radius: 14px;
+    font-size: 1.1rem;
+    color: var(--kuliga-navy);
+    font-weight: 600;
+}
+
+.kuliga-summary__label {
+    font-weight: 500;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-message {
+    min-height: 24px;
+    font-size: 0.95rem;
+}
+
+.kuliga-message--error {
+    color: var(--kuliga-red);
+}
+
+.kuliga-message--success {
+    color: var(--kuliga-green-dark);
+}
+
+@media (min-width: 640px) {
+    .kuliga-booking-summary {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .kuliga-booking-summary > div {
+        flex: 1;
+    }
+
+    .kuliga-booking-summary .kuliga-button {
+        flex: 0 0 auto;
+        min-width: 220px;
+    }
+}
+
+@media (min-width: 768px) {
+    .kuliga-hero {
+        padding-top: 100px;
+    }
+
+    .kuliga-hero__details {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        max-width: 720px;
+    }
+
+    .kuliga-instructor-card {
+        grid-template-columns: 1.2fr 1fr;
+        align-items: start;
+    }
+
+    .kuliga-instructor__header {
+        grid-column: 1 / -1;
+    }
+
+    .kuliga-booking {
+        grid-template-columns: 1.1fr 0.9fr;
+        align-items: center;
+    }
+
+    .kuliga-footer__content {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition: none !important;
+        animation-duration: 0.01ms !important;
+    }
+}
