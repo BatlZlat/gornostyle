@@ -35,6 +35,7 @@ const winterScheduleRouter = require('./routes/winter-schedule');
 const kuligaPublicRouter = require('./routes/kuliga-public');
 const kuligaBookingRouter = require('./routes/kuliga-booking');
 const kuligaPaymentRouter = require('./routes/kuliga-payment');
+const kuligaAdminRouter = require('./routes/kuliga-admin');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const cron = require('node-cron');
@@ -412,6 +413,7 @@ app.use('/api/winter-trainings', verifyToken, winterTrainingsRouter);
 app.use('/api/winter-schedule', verifyToken, winterScheduleRouter);
 app.use('/api/kuliga', kuligaBookingRouter);
 app.use('/api/kuliga/payment', kuligaPaymentRouter);
+app.use('/api/kuliga/admin', kuligaAdminRouter);
 app.use(kuligaPublicRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
