@@ -103,18 +103,43 @@
                 items.forEach((price) => {
                     const card = document.createElement('article');
                     card.className = 'kuliga-price-card';
+                    
+                    // Для индивидуальных тренировок добавляем зеленый класс
+                    if (type === 'individual') {
+                        card.classList.add('kuliga-price-card--highlight');
+                    }
+
+                    // Для групповых тренировок показываем цену за человека
+                    const displayPrice = (type === 'group' || type === 'sport_group') && price.participants
+                        ? Math.round(price.price / price.participants)
+                        : price.price;
+                    
+                    const priceLabel = (type === 'group' || type === 'sport_group') && price.participants
+                        ? 'за человека'
+                        : '';
 
                     card.innerHTML = `
                         <div class="kuliga-price-card__type">
                             <i class="fa-solid ${priceTypeIcons[type] || 'fa-ticket'}"></i>
                             ${priceTypeLabels[type] || 'Тренировка'}
                         </div>
-                        <div class="kuliga-price-card__value">${Number(price.price).toLocaleString('ru-RU')} ₽</div>
+                        <div class="kuliga-price-card__value">
+                            ${Number(displayPrice).toLocaleString('ru-RU')} ₽ ${priceLabel ? `<small>${priceLabel}</small>` : ''}
+                        </div>
                         <div class="kuliga-price-card__meta">
                             <span><i class="fa-regular fa-clock"></i> ${price.duration} мин.</span>
-                            ${price.participants ? `<span><i class="fa-solid fa-users-line"></i> ${price.participants} участника</span>` : ''}
+                            ${price.participants ? `<span><i class="fa-solid fa-users-line"></i> ${price.participants} участников</span>` : ''}
                             ${price.description ? `<span><i class="fa-regular fa-note-sticky"></i> ${price.description}</span>` : ''}
                         </div>
+                        <button class="kuliga-button kuliga-button--secondary kuliga-button--small" 
+                                data-booking-trigger
+                                data-price-id="${price.id}"
+                                data-price-type="${type}"
+                                data-price-value="${price.price}"
+                                data-price-duration="${price.duration}"
+                                data-price-participants="${price.participants || 1}">
+                            Записаться
+                        </button>
                     `;
 
                     fragment.appendChild(card);

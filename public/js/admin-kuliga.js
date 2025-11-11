@@ -3,6 +3,8 @@
 // Глобальные переменные
 let kuligaInstructors = [];
 let kuligaCurrentTab = 'instructors';
+let kuligaPendingPhotoFile = null;
+let kuligaRemovePhoto = false;
 
 // API endpoints
 const KULIGA_API = {
@@ -11,48 +13,43 @@ const KULIGA_API = {
     finances: '/api/kuliga/admin/finances',
 };
 
+const KULIGA_PLACEHOLDER = '/images/gornosyle72_logo.webp';
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     initKuligaAdminPage();
 });
 
 function initKuligaAdminPage() {
-    // Переключение вкладок
     document.querySelectorAll('.kuliga-tab').forEach((tab) => {
         tab.addEventListener('click', () => switchKuligaTab(tab.dataset.tab));
     });
 
-    // Кнопка добавления инструктора
     const addBtn = document.getElementById('kuliga-add-instructor');
     if (addBtn) {
         addBtn.addEventListener('click', () => openKuligaInstructorModal());
     }
 
-    // Форма инструктора
     const form = document.getElementById('kuliga-instructor-form');
     if (form) {
         form.addEventListener('submit', handleKuligaInstructorSubmit);
     }
 
-    // Фильтры инструкторов
     const statusFilter = document.getElementById('kuliga-filter-status');
     const sportFilter = document.getElementById('kuliga-filter-sport');
     if (statusFilter) statusFilter.addEventListener('change', loadKuligaInstructors);
     if (sportFilter) sportFilter.addEventListener('change', loadKuligaInstructors);
 
-    // Сохранение настроек
     const saveSettingsBtn = document.getElementById('kuliga-save-settings');
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', saveKuligaSettings);
     }
 
-    // Финансовая отчётность
     const financeRefreshBtn = document.getElementById('kuliga-finance-refresh');
     if (financeRefreshBtn) {
         financeRefreshBtn.addEventListener('click', loadKuligaFinances);
     }
 
-    // Загружаем данные при переключении на страницу
     const kuligaMenuItem = document.querySelector('[data-page="kuliga-admin"]');
     if (kuligaMenuItem) {
         kuligaMenuItem.addEventListener('click', () => {
@@ -72,18 +69,15 @@ function initKuligaAdminPage() {
 function switchKuligaTab(tabName) {
     kuligaCurrentTab = tabName;
 
-    // Переключаем активность кнопок
     document.querySelectorAll('.kuliga-tab').forEach((tab) => {
         tab.classList.toggle('active', tab.dataset.tab === tabName);
     });
 
-    // Переключаем видимость секций
     document.querySelectorAll('.kuliga-tab-content').forEach((content) => {
         const contentId = `kuliga-tab-${tabName}`;
         content.style.display = content.id === contentId ? 'block' : 'none';
     });
 
-    // Загружаем данные для вкладки
     if (tabName === 'instructors') {
         loadKuligaInstructors();
     } else if (tabName === 'settings') {
@@ -92,6 +86,15 @@ function switchKuligaTab(tabName) {
         loadKuligaFinances();
     }
 }
+
+const mapSportLabel = (type) => {
+    const sportLabels = {
+        ski: 'Горные лыжи',
+        snowboard: 'Сноуборд',
+        both: 'Лыжи и сноуборд',
+    };
+    return sportLabels[type] || type;
+};
 
 // ========== ИНСТРУКТОРЫ ==========
 
@@ -109,13 +112,16 @@ async function loadKuligaInstructors() {
             headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
         });
 
-        if (!response.ok) throw new Error('Ошибка загрузки инструкторов');
+        if (!response.ok) {
+            throw new Error(`Ошибка загрузки (${response.status})`);
+        }
 
         const data = await response.json();
         kuligaInstructors = data.data || [];
 
         if (kuligaInstructors.length === 0) {
-            container.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Инструкторы не найдены. Добавьте первого инструктора!</p>';
+            container.innerHTML =
+                '<p style="text-align:center;color:#999;padding:40px;">Инструкторы не найдены. Добавьте первого инструктора!</p>';
             return;
         }
 
@@ -130,36 +136,32 @@ function renderKuligaInstructors() {
     const container = document.getElementById('kuliga-instructors-list');
     if (!container) return;
 
-    const sportLabels = {
-        ski: 'Горные лыжи',
-        snowboard: 'Сноуборд',
-        both: 'Лыжи и сноуборд',
-    };
-
     container.innerHTML = kuligaInstructors
         .map((instructor) => {
             const statusClass = instructor.is_active ? 'success' : 'secondary';
             const statusText = instructor.is_active ? 'Активен' : 'Неактивен';
-            const photoUrl = instructor.photo_url || 'https://via.placeholder.com/80x80/1e293b/ffffff?text=?';
+            const photoUrl = instructor.photo_url || KULIGA_PLACEHOLDER;
             const description = instructor.description || 'Описание отсутствует';
 
             return `
             <div class="kuliga-instructor-item" data-id="${instructor.id}">
                 <div class="kuliga-instructor-photo">
-                    <img src="${photoUrl}" alt="${instructor.full_name}" onerror="this.src='https://via.placeholder.com/80x80/1e293b/ffffff?text=?'">
+                    <img src="${photoUrl}" alt="${instructor.full_name}" onerror="this.onerror=null;this.src='${KULIGA_PLACEHOLDER}';">
                 </div>
                 <div class="kuliga-instructor-info">
                     <h4>${instructor.full_name}</h4>
-                    <p><strong>Вид спорта:</strong> ${sportLabels[instructor.sport_type] || instructor.sport_type}</p>
+                    <p><strong>Вид спорта:</strong> ${mapSportLabel(instructor.sport_type)}</p>
                     <p><strong>Телефон:</strong> ${instructor.phone}</p>
                     ${instructor.email ? `<p><strong>Email:</strong> ${instructor.email}</p>` : ''}
-                    <p><strong>Процент администратора:</strong> ${instructor.admin_percentage}%</p>
+                    <p><strong>Процент администратора:</strong> ${Number(instructor.admin_percentage).toFixed(2)}%</p>
                     <p class="kuliga-instructor-description">${description}</p>
                 </div>
                 <div class="kuliga-instructor-actions">
                     <span class="badge badge-${statusClass}">${statusText}</span>
                     <button class="btn-icon" onclick="editKuligaInstructor(${instructor.id})" title="Редактировать">✏️</button>
-                    <button class="btn-icon" onclick="toggleKuligaInstructorStatus(${instructor.id}, ${!instructor.is_active})" title="${instructor.is_active ? 'Деактивировать' : 'Активировать'}">
+                    <button class="btn-icon" onclick="toggleKuligaInstructorStatus(${instructor.id}, ${!instructor.is_active})" title="${
+                        instructor.is_active ? 'Деактивировать' : 'Активировать'
+                    }">
                         ${instructor.is_active ? '🔒' : '🔓'}
                     </button>
                 </div>
@@ -169,13 +171,74 @@ function renderKuligaInstructors() {
         .join('');
 }
 
+function resetKuligaPhotoState() {
+    kuligaPendingPhotoFile = null;
+    kuligaRemovePhoto = false;
+}
+
+function updateKuligaPhotoPreview(photoUrl, { persist = true } = {}) {
+    const preview = document.getElementById('kuliga-instructor-photo-preview');
+    const placeholder = document.getElementById('kuliga-instructor-photo-placeholder');
+    const hiddenInput = document.getElementById('kuliga-instructor-photo-url');
+
+    if (!preview || !placeholder || !hiddenInput) return;
+
+    if (photoUrl) {
+        preview.src = photoUrl;
+        preview.style.display = 'block';
+        placeholder.style.display = 'none';
+        if (persist) {
+            hiddenInput.value = photoUrl;
+        }
+    } else {
+        preview.style.display = 'none';
+        placeholder.style.display = 'flex';
+        hiddenInput.value = '';
+    }
+}
+
+function setupKuligaPhotoHandlers() {
+    const uploadBtn = document.getElementById('kuliga-instructor-upload-btn');
+    const removeBtn = document.getElementById('kuliga-instructor-remove-photo');
+    const fileInput = document.getElementById('kuliga-instructor-photo-file');
+
+    if (uploadBtn && fileInput) {
+        uploadBtn.onclick = () => fileInput.click();
+    }
+
+    if (fileInput) {
+        fileInput.onchange = (event) => {
+            const [file] = event.target.files;
+            if (!file) return;
+            kuligaPendingPhotoFile = file;
+            kuligaRemovePhoto = false;
+
+            const reader = new FileReader();
+            reader.onload = (e) => updateKuligaPhotoPreview(e.target.result, { persist: false });
+            reader.readAsDataURL(file);
+        };
+    }
+
+    if (removeBtn) {
+        removeBtn.onclick = () => {
+            kuligaPendingPhotoFile = null;
+            kuligaRemovePhoto = true;
+            updateKuligaPhotoPreview('');
+        };
+    }
+}
+
 function openKuligaInstructorModal(instructorId = null) {
     const modal = document.getElementById('kuliga-instructor-modal');
     const form = document.getElementById('kuliga-instructor-form');
     const title = document.getElementById('kuliga-instructor-modal-title');
     const submitBtn = document.getElementById('kuliga-instructor-submit');
 
+    if (!modal || !form) return;
+
     form.reset();
+    resetKuligaPhotoState();
+    updateKuligaPhotoPreview('');
 
     if (instructorId) {
         const instructor = kuligaInstructors.find((i) => i.id === instructorId);
@@ -188,50 +251,85 @@ function openKuligaInstructorModal(instructorId = null) {
         document.getElementById('kuliga-instructor-name').value = instructor.full_name;
         document.getElementById('kuliga-instructor-phone').value = instructor.phone;
         document.getElementById('kuliga-instructor-email').value = instructor.email || '';
-        document.getElementById('kuliga-instructor-photo').value = instructor.photo_url || '';
         document.getElementById('kuliga-instructor-description').value = instructor.description || '';
         document.getElementById('kuliga-instructor-sport').value = instructor.sport_type;
-        document.getElementById('kuliga-instructor-percentage').value = instructor.admin_percentage;
+        document.getElementById('kuliga-instructor-percentage').value = Number(instructor.admin_percentage).toFixed(2);
         document.getElementById('kuliga-instructor-hire-date').value = instructor.hire_date || '';
         document.getElementById('kuliga-instructor-active').checked = instructor.is_active;
+
+        updateKuligaPhotoPreview(instructor.photo_url || '');
     } else {
         title.textContent = 'Добавить инструктора';
         submitBtn.textContent = 'Создать';
         document.getElementById('kuliga-instructor-id').value = '';
-        
-        // Устанавливаем текущую дату найма
+
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('kuliga-instructor-hire-date').value = today;
     }
 
+    setupKuligaPhotoHandlers();
     modal.style.display = 'flex';
 }
 
 function closeKuligaInstructorModal() {
     const modal = document.getElementById('kuliga-instructor-modal');
-    modal.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'none';
+    }
 }
 
 window.openKuligaInstructorModal = openKuligaInstructorModal;
 window.closeKuligaInstructorModal = closeKuligaInstructorModal;
 
+async function uploadKuligaInstructorPhoto(instructorId) {
+    if (!kuligaPendingPhotoFile) return null;
+
+    const formData = new FormData();
+    formData.append('photo', kuligaPendingPhotoFile);
+
+    const response = await fetch(`${KULIGA_API.instructors}/${instructorId}/upload-photo`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+        },
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Не удалось загрузить фото');
+    }
+
+    const data = await response.json();
+    kuligaPendingPhotoFile = null;
+    return data.photoUrl;
+}
+
 async function handleKuligaInstructorSubmit(event) {
     event.preventDefault();
 
     const instructorId = document.getElementById('kuliga-instructor-id').value;
-    const isEdit = !!instructorId;
+    const isEdit = Boolean(instructorId);
+
+    const percentageRaw = document.getElementById('kuliga-instructor-percentage').value;
+    const percentageValue = Number.isFinite(parseFloat(percentageRaw)) ? parseFloat(percentageRaw) : 20.0;
 
     const payload = {
         fullName: document.getElementById('kuliga-instructor-name').value.trim(),
         phone: document.getElementById('kuliga-instructor-phone').value.trim(),
         email: document.getElementById('kuliga-instructor-email').value.trim() || null,
-        photoUrl: document.getElementById('kuliga-instructor-photo').value.trim() || null,
+        photoUrl: kuligaRemovePhoto ? null : document.getElementById('kuliga-instructor-photo-url').value || null,
         description: document.getElementById('kuliga-instructor-description').value.trim() || null,
         sportType: document.getElementById('kuliga-instructor-sport').value,
-        adminPercentage: parseFloat(document.getElementById('kuliga-instructor-percentage').value) || 20.0,
+        adminPercentage: percentageValue,
         hireDate: document.getElementById('kuliga-instructor-hire-date').value || null,
         isActive: document.getElementById('kuliga-instructor-active').checked,
     };
+
+    if (!payload.fullName || !payload.phone || !payload.sportType) {
+        alert('Пожалуйста, заполните обязательные поля');
+        return;
+    }
 
     try {
         const url = isEdit ? `${KULIGA_API.instructors}/${instructorId}` : KULIGA_API.instructors;
@@ -246,9 +344,25 @@ async function handleKuligaInstructorSubmit(event) {
             body: JSON.stringify(payload),
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка сохранения');
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Ошибка сохранения инструктора');
+        }
+
+        const savedInstructor = data.data;
+
+        if (kuligaPendingPhotoFile) {
+            try {
+                const photoUrl = await uploadKuligaInstructorPhoto(savedInstructor.id);
+                if (photoUrl) {
+                    updateKuligaPhotoPreview(photoUrl);
+                    kuligaRemovePhoto = false;
+                }
+            } catch (uploadError) {
+                console.error(uploadError);
+                alert(uploadError.message || 'Фото не загружено');
+            }
         }
 
         alert(isEdit ? 'Инструктор успешно обновлён' : 'Инструктор успешно добавлен');
@@ -277,7 +391,7 @@ async function toggleKuligaInstructorStatus(instructorId, newStatus) {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
             },
-            body: JSON.stringify({ isActive: newStatus }),
+            body: JSON.stringify({ isActive: Boolean(newStatus) }),
         });
 
         if (!response.ok) throw new Error('Ошибка изменения статуса');

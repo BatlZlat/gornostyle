@@ -1,8 +1,77 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const sharp = require('sharp');
 const { pool } = require('../db');
 const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
+
+const normalizePhone = (value = '') => value.replace(/[^0-9+]/g, '');
+const normalizeDate = (value) => (value ? value : new Date().toISOString().split('T')[0]);
+const normalizePercentage = (value, fallback = 20) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const transliterateToFilename = (fullName) => {
+    const translitMap = {
+        а: 'a',
+        б: 'b',
+        в: 'v',
+        г: 'g',
+        д: 'd',
+        е: 'e',
+        ё: 'e',
+        ж: 'zh',
+        з: 'z',
+        и: 'i',
+        й: 'y',
+        к: 'k',
+        л: 'l',
+        м: 'm',
+        н: 'n',
+        о: 'o',
+        п: 'p',
+        р: 'r',
+        с: 's',
+        т: 't',
+        у: 'u',
+        ф: 'f',
+        х: 'h',
+        ц: 'ts',
+        ч: 'ch',
+        ш: 'sh',
+        щ: 'sch',
+        ъ: '',
+        ы: 'y',
+        ь: '',
+        э: 'e',
+        ю: 'yu',
+        я: 'ya',
+    };
+
+    return fullName
+        .toLowerCase()
+        .split('')
+        .map((char) => translitMap[char] || char)
+        .join('')
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+};
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Можно загружать только изображения'), false);
+        }
+    },
+});
 
 // Все маршруты защищены авторизацией админа
 router.use(verifyToken);
@@ -53,7 +122,9 @@ router.post('/instructors', async (req, res) => {
     } = req.body;
 
     if (!fullName || !phone || !sportType) {
-        return res.status(400).json({ success: false, error: 'Укажите обязательные поля: ФИО, телефон, вид спорта' });
+        return res
+            .status(400)
+            .json({ success: false, error: 'Укажите обязательные поля: ФИО, телефон, вид спорта' });
     }
 
     if (!['ski', 'snowboard', 'both'].includes(sportType)) {
@@ -61,13 +132,27 @@ router.post('/instructors', async (req, res) => {
     }
 
     try {
+        const normalizedHireDate = normalizeDate(hireDate);
+        const normalizedPhone = normalizePhone(phone);
+        const percentage = normalizePercentage(adminPercentage);
+
         const { rows } = await pool.query(
             `INSERT INTO kuliga_instructors (
                 full_name, phone, email, photo_url, description, sport_type, 
                 admin_percentage, hire_date, is_active
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *`,
-            [fullName, phone, email || null, photoUrl || null, description || null, sportType, adminPercentage, hireDate || new Date(), isActive]
+            [
+                fullName,
+                normalizedPhone,
+                email || null,
+                photoUrl || null,
+                description || null,
+                sportType,
+                percentage,
+                normalizedHireDate,
+                isActive,
+            ]
         );
 
         res.json({ success: true, data: rows[0] });
@@ -100,15 +185,41 @@ router.put('/instructors/:id', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Укажите обязательные поля' });
     }
 
+    if (!['ski', 'snowboard', 'both'].includes(sportType)) {
+        return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+
     try {
+        const normalizedPhone = normalizePhone(phone);
+        const percentage = normalizePercentage(adminPercentage);
+        const normalizedHireDate = hireDate ? hireDate : null;
+
         const { rows } = await pool.query(
             `UPDATE kuliga_instructors
-             SET full_name = $1, phone = $2, email = $3, photo_url = $4, description = $5,
-                 sport_type = $6, admin_percentage = $7, hire_date = $8, is_active = $9,
+             SET full_name = $1,
+                 phone = $2,
+                 email = $3,
+                 photo_url = $4,
+                 description = $5,
+                 sport_type = $6,
+                 admin_percentage = $7,
+                 hire_date = COALESCE($8, hire_date),
+                 is_active = $9,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = $10
              RETURNING *`,
-            [fullName, phone, email || null, photoUrl || null, description || null, sportType, adminPercentage, hireDate, isActive, id]
+            [
+                fullName,
+                normalizedPhone,
+                email || null,
+                photoUrl === undefined ? null : photoUrl,
+                description || null,
+                sportType,
+                percentage,
+                normalizedHireDate,
+                typeof isActive === 'boolean' ? isActive : true,
+                id,
+            ]
         );
 
         if (rows.length === 0) {
@@ -152,6 +263,55 @@ router.patch('/instructors/:id', async (req, res) => {
     } catch (error) {
         console.error('Ошибка изменения статуса инструктора Кулиги:', error);
         res.status(500).json({ success: false, error: 'Не удалось изменить статус инструктора' });
+    }
+});
+
+// Загрузка фото инструктора
+router.post('/instructors/:id/upload-photo', upload.single('photo'), async (req, res) => {
+    const { id } = req.params;
+
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Файл не загружен' });
+    }
+
+    try {
+        const instructorResult = await pool.query(
+            'SELECT full_name FROM kuliga_instructors WHERE id = $1',
+            [id]
+        );
+
+        if (instructorResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Инструктор не найден' });
+        }
+
+        const instructor = instructorResult.rows[0];
+        const filename = `${transliterateToFilename(instructor.full_name)}.webp`;
+        const outputDir = path.join(__dirname, '../../public/images/kuliga');
+        const outputPath = path.join(outputDir, filename);
+
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        await sharp(req.file.buffer)
+            .resize({ height: 400, fit: 'cover', position: 'centre' })
+            .webp({ quality: 85, effort: 6 })
+            .toFile(outputPath);
+
+        const timestamp = Date.now();
+        const photoUrl = `/images/kuliga/${filename}?v=${timestamp}`;
+
+        await pool.query(
+            `UPDATE kuliga_instructors
+             SET photo_url = $1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [photoUrl, id]
+        );
+
+        res.json({ success: true, photoUrl });
+    } catch (error) {
+        console.error('Ошибка загрузки фото инструктора Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось загрузить фото' });
     }
 });
 

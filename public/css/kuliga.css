@@ -201,6 +201,13 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    transition: all 0.3s ease;
+}
+
+.kuliga-price-card--highlight {
+    background: linear-gradient(135deg, rgba(39, 174, 96, 0.08) 0%, rgba(39, 174, 96, 0.15) 100%);
+    border: 2px solid var(--kuliga-green);
+    box-shadow: 0 16px 45px rgba(39, 174, 96, 0.15);
 }
 
 .kuliga-price-card__type {
@@ -218,6 +225,14 @@
     font-size: 1.6rem;
     font-weight: 700;
     color: var(--kuliga-navy);
+}
+
+.kuliga-price-card__value small {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--kuliga-gray-500);
+    margin-top: 4px;
 }
 
 .kuliga-price-card__meta {

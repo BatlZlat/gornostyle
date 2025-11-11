@@ -23,6 +23,9 @@
 --      - kuliga_bookings: Бронирования (индивидуальные и групповые)
 --      - kuliga_transactions: Транзакции через Tinkoff Acquiring
 --      - kuliga_admin_settings: Настройки администратора
+-- 028: РЕГУЛЯРНЫЕ ГРУППОВЫЕ ПРОГРАММЫ КУЛИГИ (2 таблицы)
+--      - kuliga_programs: Шаблоны регулярных программ с привязкой к дням недели
+--      - kuliga_program_bookings: Записи клиентов на регулярные программы
 -- ============================================================================
 
 -- ============================================================================
@@ -1518,6 +1521,52 @@ CREATE TABLE IF NOT EXISTS kuliga_admin_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица регулярных групповых программ (МИГРАЦИЯ 028)
+-- Программы = шаблоны для регулярных групповых тренировок с привязкой к дням недели
+CREATE TABLE IF NOT EXISTS kuliga_programs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard', 'both')),
+    
+    -- Параметры тренировки
+    max_participants INTEGER NOT NULL CHECK (max_participants BETWEEN 2 AND 8),
+    training_duration INTEGER NOT NULL CHECK (training_duration IN (60, 90, 120)),
+    warmup_duration INTEGER NOT NULL CHECK (warmup_duration IN (15, 20, 30)),
+    practice_duration INTEGER GENERATED ALWAYS AS (training_duration - warmup_duration) STORED,
+    
+    -- Дни недели (массив: 0=ВС, 1=ПН, ... 6=СБ)
+    weekdays INTEGER[] NOT NULL CHECK (array_length(weekdays, 1) > 0),
+    
+    -- Временные слоты для занятий (массив времен начала, например: {"10:00", "14:00"})
+    time_slots TIME[] NOT NULL CHECK (array_length(time_slots, 1) > 0),
+    
+    -- Дополнительные услуги
+    equipment_provided BOOLEAN DEFAULT FALSE,
+    skipass_provided BOOLEAN DEFAULT FALSE,
+    
+    -- Финансы
+    price DECIMAL(10,2) NOT NULL DEFAULT 1700.00 CHECK (price > 0),
+    
+    -- Статус
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Таблица записей на регулярные программы
+CREATE TABLE IF NOT EXISTS kuliga_program_bookings (
+    id SERIAL PRIMARY KEY,
+    program_id INTEGER NOT NULL REFERENCES kuliga_programs(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES kuliga_clients(id) ON DELETE CASCADE,
+    participant_name VARCHAR(100) NOT NULL,
+    participant_birth_year INTEGER NOT NULL CHECK (participant_birth_year >= 1900 AND participant_birth_year <= EXTRACT(YEAR FROM CURRENT_DATE)),
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'completed')),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Индексы для таблиц Кулиги
 CREATE INDEX IF NOT EXISTS idx_kuliga_clients_phone ON kuliga_clients(phone);
 CREATE INDEX IF NOT EXISTS idx_kuliga_clients_telegram ON kuliga_clients(telegram_id);
@@ -1550,6 +1599,14 @@ CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_status ON kuliga_transactions
 CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_tinkoff ON kuliga_transactions(tinkoff_payment_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_created ON kuliga_transactions(created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_kuliga_programs_active ON kuliga_programs(is_active);
+CREATE INDEX IF NOT EXISTS idx_kuliga_programs_sport ON kuliga_programs(sport_type);
+CREATE INDEX IF NOT EXISTS idx_kuliga_programs_weekdays ON kuliga_programs USING GIN(weekdays);
+
+CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_program ON kuliga_program_bookings(program_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_client ON kuliga_program_bookings(client_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_status ON kuliga_program_bookings(status);
+
 -- Комментарии для таблиц Кулиги
 COMMENT ON TABLE kuliga_clients IS 'Клиенты службы инструкторов Кулиги (упрощенная регистрация: ФИО + телефон)';
 COMMENT ON TABLE kuliga_instructors IS 'Инструкторы Кулиги (добавляются администратором, могут регистрироваться в Telegram-боте)';
@@ -1558,9 +1615,15 @@ COMMENT ON TABLE kuliga_group_trainings IS 'Групповые трениров�
 COMMENT ON TABLE kuliga_bookings IS 'Бронирования клиентов (поддержка семейного бронирования participants_names[])';
 COMMENT ON TABLE kuliga_transactions IS 'Транзакции через Tinkoff Acquiring (платежи, возвраты, выплаты инструкторам)';
 COMMENT ON TABLE kuliga_admin_settings IS 'Настройки системы Кулиги (глобальный процент админа, время проверки групп)';
+COMMENT ON TABLE kuliga_programs IS 'Регулярные групповые программы (шаблоны с привязкой к дням недели, клиенты записываются индивидуально)';
+COMMENT ON TABLE kuliga_program_bookings IS 'Записи клиентов на регулярные программы (один клиент = один участник)';
 
 COMMENT ON COLUMN kuliga_instructors.admin_percentage IS 'Процент администратора от заработка инструктора (индивидуальный, по умолчанию из kuliga_admin_settings)';
 COMMENT ON COLUMN kuliga_instructors.telegram_registered IS 'Зарегистрирован ли в Telegram-боте для получения уведомлений (уволенные не получают)';
 COMMENT ON COLUMN kuliga_group_trainings.min_participants IS 'Минимум участников для проведения (если меньше - автоотмена в 22:00)';
 COMMENT ON COLUMN kuliga_bookings.participants_names IS 'Массив имен участников для семейного бронирования (например: {"Иван", "Мария", "Петр"})';
 COMMENT ON COLUMN kuliga_transactions.tinkoff_payment_id IS 'ID платежа в системе Tinkoff Acquiring для отслеживания статуса';
+COMMENT ON COLUMN kuliga_programs.weekdays IS 'Массив дней недели (0=ВС, 1=ПН, ..., 6=СБ), когда проводятся тренировки';
+COMMENT ON COLUMN kuliga_programs.time_slots IS 'Массив временных слотов (например: {10:00, 14:00, 18:00})';
+COMMENT ON COLUMN kuliga_programs.practice_duration IS 'Время чистой практики (вычисляется автоматически = training_duration - warmup_duration)';
+COMMENT ON COLUMN kuliga_program_bookings.participant_birth_year IS 'Год рождения участника (для расчета возраста)';
