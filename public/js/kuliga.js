@@ -3,7 +3,7 @@
 (function () {
     const API_ENDPOINTS = {
         prices: '/api/kuliga/prices',
-        groupTrainings: '/api/kuliga/group-trainings',
+        programs: '/api/kuliga/programs',
         instructors: '/api/kuliga/instructors',
     };
 
@@ -61,24 +61,6 @@
             weekday: 'short',
             ...options,
         }).format(date);
-    };
-
-    const formatDateTime = (dateString, timeString) => {
-        const date = new Date(`${dateString}T${timeString}`);
-        const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
-            day: 'numeric',
-            month: 'long',
-            weekday: 'long',
-        });
-        const timeFormatter = new Intl.DateTimeFormat('ru-RU', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        });
-        return {
-            date: dateFormatter.format(date),
-            time: timeFormatter.format(date),
-        };
     };
 
     const renderPriceList = async () => {
@@ -148,58 +130,152 @@
 
             container.innerHTML = '';
             container.appendChild(fragment);
+            initPriceBookingButtons();
         } catch (error) {
             console.error('Не удалось загрузить прайс:', error);
             container.innerHTML = '<div class="kuliga-empty">Не удалось загрузить прайс. Пожалуйста, попробуйте позже.</div>';
         }
     };
 
-    const renderGroupTrainings = async () => {
-        const container = document.getElementById('kuligaGroupList');
-        if (!container) return;
+    const renderProgramsAndSchedule = async () => {
+        const programContainer = document.getElementById('kuligaProgramList');
+        const scheduleContainer = document.getElementById('kuligaGroupList');
+
+        if (!programContainer && !scheduleContainer) return;
 
         try {
-            const response = await fetchJson(API_ENDPOINTS.groupTrainings);
+            const response = await fetchJson(API_ENDPOINTS.programs);
             if (!response.success) {
                 throw new Error('API вернуло ошибку');
             }
 
-            if (!response.data.length) {
-                container.innerHTML = '<div class="kuliga-empty">Сейчас нет открытых групповых тренировок. Подпишитесь на бота, чтобы узнать о новых наборах.</div>';
-                return;
+            const programs = response.data.programs || [];
+            const schedule = response.data.schedule || [];
+
+            if (programContainer) {
+                if (!programs.length) {
+                    programContainer.innerHTML =
+                        '<div class="kuliga-empty">Программы ещё не добавлены. Следите за обновлениями в Telegram.</div>';
+                } else {
+                    programContainer.innerHTML = programs
+                        .map((program) => {
+                            const nextSession = (program.schedule || [])[0];
+                            const nextHint = nextSession
+                                ? `<div class="kuliga-program-next"><i class="fa-solid fa-calendar-days"></i> Ближайшее занятие: ${nextSession.date_label} (${nextSession.weekday_short}) в ${nextSession.time}</div>`
+                                : '';
+                            return `
+                                <article class="kuliga-group-card">
+                                    <h3>${program.name}</h3>
+                                    ${program.description ? `<p>${program.description}</p>` : '<p>Описание появится в ближайшее время.</p>'}
+                                    <div class="kuliga-group-card__meta">
+                                        <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[program.sport_type] || 'Инструктор'}</span>
+                                        <span><i class="fa-solid fa-users"></i> До ${program.max_participants} человек</span>
+                                        <span><i class="fa-solid fa-clock"></i> ${program.training_duration} мин. (практика ${program.practice_duration} мин.)</span>
+                                        <span><i class="fa-solid fa-coins"></i> ${Number(program.price).toLocaleString('ru-RU')} ₽</span>
+                                    </div>
+                                    <ul class="kuliga-program-options">
+                                        <li><i class="fa-solid fa-person-snowboarding"></i> Снаряжение: ${program.equipment_provided ? 'предоставляем' : 'берёте самостоятельно'}</li>
+                                        <li><i class="fa-solid fa-ticket"></i> Скипас: ${program.skipass_provided ? 'предоставляем' : 'берёте самостоятельно'}</li>
+                                    </ul>
+                                    ${nextHint}
+                                    <button 
+                                        class="kuliga-button kuliga-button--secondary kuliga-button--wide"
+                                        data-program-book
+                                        data-program-id="${program.id}">
+                                        Записаться
+                                    </button>
+                                </article>
+                            `;
+                        })
+                        .join('');
+                }
             }
 
-            const fragment = document.createDocumentFragment();
+            if (scheduleContainer) {
+                if (!schedule.length) {
+                    scheduleContainer.innerHTML =
+                        '<div class="kuliga-empty">В ближайшие две недели регулярных занятий нет. Оформите подписку на уведомления в Telegram.</div>';
+                } else {
+                    scheduleContainer.innerHTML = schedule
+                        .map(
+                            (item) => `
+                            <article class="kuliga-group-item">
+                                <div class="kuliga-group-item__top">
+                                    <span class="kuliga-group-item__date">${item.date_label} (${item.weekday_short})</span>
+                                    <strong>${item.program_name}</strong>
+                                </div>
+                                <div class="kuliga-group-item__meta">
+                                    <span><i class="fa-regular fa-clock"></i> ${item.time}</span>
+                                    <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[item.sport_type] || 'Инструктор'}</span>
+                                    <span><i class="fa-solid fa-seat-airline"></i> Свободно ${item.available_slots} мест</span>
+                                </div>
+                                <div class="kuliga-group-item__actions">
+                                    <button 
+                                        class="kuliga-button kuliga-button--ghost"
+                                        data-program-book
+                                        data-program-id="${item.program_id}"
+                                        data-program-date="${item.date_iso}"
+                                        data-program-time="${item.time}">
+                                        Записаться
+                                    </button>
+                                </div>
+                            </article>
+                        `
+                        )
+                        .join('');
+                }
+            }
 
-            response.data.forEach((training) => {
-                const { date, time } = formatDateTime(training.date, training.start_time);
-                const endTime = formatTime(training.end_time);
-
-                const item = document.createElement('article');
-                item.className = 'kuliga-group-item';
-                item.innerHTML = `
-                    <div class="kuliga-group-item__top">
-                        <span class="kuliga-group-item__date">${date}</span>
-                        <strong>${training.level}</strong>
-                    </div>
-                    <div class="kuliga-group-item__meta">
-                        <span><i class="fa-regular fa-clock"></i> ${time} – ${endTime}</span>
-                        <span><i class="fa-solid fa-person-chalkboard"></i> ${sportLabels[training.sport_type] || 'Инструктор'}</span>
-                        <span><i class="fa-solid fa-users"></i> ${training.current_participants}/${training.max_participants}</span>
-                        <span><i class="fa-solid fa-coins"></i> ${Number(training.price_per_person).toLocaleString('ru-RU')} ₽</span>
-                    </div>
-                    ${training.description ? `<p>${training.description}</p>` : ''}
-                `;
-
-                fragment.appendChild(item);
-            });
-
-            container.innerHTML = '';
-            container.appendChild(fragment);
+            initProgramBookingButtons();
         } catch (error) {
-            console.error('Не удалось загрузить групповые тренировки:', error);
-            container.innerHTML = '<div class="kuliga-empty">Не удалось загрузить список групповых тренировок.</div>';
+            console.error('Не удалось загрузить программы Кулиги:', error);
+            if (programContainer) {
+                programContainer.innerHTML =
+                    '<div class="kuliga-empty">Не удалось загрузить программы. Попробуйте обновить страницу позже.</div>';
+            }
+            if (scheduleContainer) {
+                scheduleContainer.innerHTML =
+                    '<div class="kuliga-empty">Не удалось загрузить расписание. Попробуйте обновить страницу позже.</div>';
+            }
         }
+    };
+
+    const initProgramBookingButtons = () => {
+        document.querySelectorAll('[data-program-book]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const programId = button.getAttribute('data-program-id');
+                const date = button.getAttribute('data-program-date');
+                const time = button.getAttribute('data-program-time');
+
+                const url = new URL('/instruktora-kuliga/booking', window.location.origin);
+                if (programId) url.searchParams.set('programId', programId);
+                if (date) url.searchParams.set('date', date);
+                if (time) url.searchParams.set('time', time);
+
+                window.location.href = url.toString();
+            });
+        });
+    };
+
+    const initPriceBookingButtons = () => {
+        document.querySelectorAll('[data-booking-trigger]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const priceId = button.getAttribute('data-price-id');
+                const priceType = button.getAttribute('data-price-type');
+                const priceValue = button.getAttribute('data-price-value');
+                const duration = button.getAttribute('data-price-duration');
+                const participants = button.getAttribute('data-price-participants');
+
+                const url = new URL('/instruktora-kuliga/booking', window.location.origin);
+                if (priceId) url.searchParams.set('priceId', priceId);
+                if (priceType) url.searchParams.set('type', priceType);
+                if (priceValue) url.searchParams.set('price', priceValue);
+                if (duration) url.searchParams.set('duration', duration);
+                if (participants) url.searchParams.set('participants', participants);
+
+                window.location.href = url.toString();
+            });
+        });
     };
 
     const renderInstructors = async () => {
@@ -278,7 +354,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         renderPriceList();
-        renderGroupTrainings();
+        renderProgramsAndSchedule();
         renderInstructors();
         initBookingButton();
     });

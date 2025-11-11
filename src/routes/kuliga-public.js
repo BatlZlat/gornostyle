@@ -2,6 +2,8 @@ const express = require('express');
 const moment = require('moment-timezone');
 const { pool } = require('../db');
 
+moment.locale('ru');
+
 const router = express.Router();
 const TIMEZONE = 'Asia/Yekaterinburg';
 
@@ -141,6 +143,99 @@ router.get('/api/kuliga/instructors', async (_req, res) => {
     } catch (error) {
         console.error('Ошибка получения инструкторов Кулиги:', error);
         res.status(500).json({ success: false, error: 'Не удалось получить список инструкторов' });
+    }
+});
+
+router.get('/api/kuliga/programs', async (_req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, name, description, sport_type, max_participants,
+                    training_duration, warmup_duration, practice_duration,
+                    weekdays, time_slots, equipment_provided,
+                    skipass_provided, price, is_active, created_at
+             FROM kuliga_programs
+             WHERE is_active = TRUE
+             ORDER BY created_at DESC`
+        );
+
+        const now = moment().tz(TIMEZONE);
+        const end = now.clone().add(14, 'days').endOf('day');
+
+        const programs = rows.map((program) => ({
+            ...program,
+            price: Number(program.price),
+            practice_duration:
+                program.practice_duration !== null
+                    ? Number(program.practice_duration)
+                    : Number(program.training_duration) - Number(program.warmup_duration),
+        }));
+
+        const schedule = [];
+
+        programs.forEach((program, index) => {
+            const programSchedule = [];
+            const weekdaysArray = Array.isArray(program.weekdays) ? program.weekdays : [];
+            const weekdays = weekdaysArray.map((day) => Number(day)).filter((day) => !Number.isNaN(day));
+            const timeSlots = Array.isArray(program.time_slots) ? program.time_slots : [];
+
+            if (weekdays.length && timeSlots.length) {
+                const cursor = now.clone().startOf('day');
+                while (cursor.isSameOrBefore(end, 'day')) {
+                    const weekday = cursor.day(); // 0=Sunday
+                    if (weekdays.includes(weekday)) {
+                        timeSlots.forEach((slot) => {
+                            const [hours = '00', minutes = '00'] = slot.split(':');
+                            const startMoment = cursor.clone().hour(Number(hours)).minute(Number(minutes)).second(0);
+                            if (startMoment.isAfter(now)) {
+                                const scheduleItem = {
+                                    program_id: program.id,
+                                    program_name: program.name,
+                                    sport_type: program.sport_type,
+                                    date_iso: startMoment.format('YYYY-MM-DD'),
+                                    date_label: startMoment.format('D MMMM'),
+                                    weekday_short: startMoment.format('dd'),
+                                    weekday_full: startMoment.format('dddd'),
+                                    time: startMoment.format('HH:mm'),
+                                    available_slots: program.max_participants,
+                                    max_participants: program.max_participants,
+                                    sort_key: startMoment.valueOf(),
+                                };
+                                schedule.push(scheduleItem);
+                                const { sort_key, ...programItem } = scheduleItem;
+                                programSchedule.push(programItem);
+                            }
+                        });
+                    }
+                    cursor.add(1, 'day');
+                }
+            }
+
+            programs[index] = {
+                ...program,
+                schedule: programSchedule,
+                weekdays,
+                time_slots: timeSlots,
+            };
+        });
+
+        schedule.sort((a, b) => a.sort_key - b.sort_key);
+
+        const responseSchedule = schedule.map(({ sort_key, ...rest }) => rest);
+
+        res.json({
+            success: true,
+            data: {
+                programs: programs.map(({ weekdays, time_slots, ...rest }) => ({
+                    ...rest,
+                    weekdays,
+                    time_slots,
+                })),
+                schedule: responseSchedule,
+            },
+        });
+    } catch (error) {
+        console.error('Ошибка получения программ Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить список программ' });
     }
 });
 

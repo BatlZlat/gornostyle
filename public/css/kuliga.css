@@ -284,6 +284,42 @@
     margin-right: 8px;
 }
 
+.kuliga-program-options {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-program-options li i {
+    color: var(--kuliga-primary);
+    margin-right: 8px;
+}
+
+.kuliga-program-next {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--kuliga-primary-dark);
+    padding: 10px 14px;
+    background: rgba(30, 144, 255, 0.08);
+    border-radius: 12px;
+}
+
+.kuliga-program-next i {
+    color: var(--kuliga-primary-dark);
+}
+
+.kuliga-group-item__actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+}
+
 .kuliga-groups__hint {
     max-width: 960px;
     margin: 0 auto 32px;

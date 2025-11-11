@@ -15,6 +15,49 @@ const normalizePercentage = (value, fallback = 20) => {
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const normalizeWeekdays = (value) => {
+    const arrayValue = Array.isArray(value) ? value : value !== undefined ? [value] : [];
+    const weekdays = arrayValue
+        .map((item) => parseInt(item, 10))
+        .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
+    const unique = Array.from(new Set(weekdays));
+    if (unique.length === 0) {
+        throw new Error('Укажите хотя бы один день недели');
+    }
+    return unique;
+};
+
+const normalizeTimeSlots = (value) => {
+    const arrayValue = Array.isArray(value) ? value : value !== undefined ? [value] : [];
+    const slots = arrayValue
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .map((time) => {
+            if (!/^\d{2}:\d{2}(:\d{2})?$/.test(time)) {
+                throw new Error(`Некорректное время: ${time}`);
+            }
+            const [hours, minutes] = time.split(':');
+            const h = parseInt(hours, 10);
+            const m = parseInt(minutes, 10);
+            if (h < 0 || h > 23 || m < 0 || m > 59) {
+                throw new Error(`Некорректное время: ${time}`);
+            }
+            return time.length === 5 ? `${time}:00` : time;
+        });
+
+    if (slots.length === 0) {
+        throw new Error('Добавьте хотя бы один временной слот');
+    }
+    return Array.from(new Set(slots)).sort();
+};
+
+const normalizeBool = (value, fallback = false) => {
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === '1') return true;
+    if (value === 'false' || value === '0') return false;
+    return fallback;
+};
+
 const transliterateToFilename = (fullName) => {
     const translitMap = {
         а: 'a',
@@ -452,6 +495,258 @@ router.get('/finances', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения финансов Кулиги:', error);
         res.status(500).json({ success: false, error: 'Не удалось получить финансовую отчётность' });
+    }
+});
+
+// ============ ПРОГРАММЫ ============
+
+router.get('/programs', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT * FROM kuliga_programs ORDER BY is_active DESC, created_at DESC`
+        );
+        res.json({ success: true, data: rows });
+    } catch (error) {
+        console.error('Ошибка получения программ Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить список программ' });
+    }
+});
+
+router.post('/programs', async (req, res) => {
+    const {
+        name,
+        description,
+        sportType,
+        maxParticipants,
+        trainingDuration,
+        warmupDuration,
+        weekdays,
+        timeSlots,
+        equipmentProvided,
+        skipassProvided,
+        price,
+        isActive = true,
+    } = req.body;
+
+    if (!name || !sportType) {
+        return res.status(400).json({ success: false, error: 'Укажите название и вид спорта' });
+    }
+
+    if (!['ski', 'snowboard', 'both'].includes(sportType)) {
+        return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+
+    const maxParticipantsValue = parseInt(maxParticipants, 10);
+    if (!Number.isInteger(maxParticipantsValue) || maxParticipantsValue < 2 || maxParticipantsValue > 8) {
+        return res.status(400).json({ success: false, error: 'Максимум участников должен быть от 2 до 8' });
+    }
+
+    const trainingValue = parseInt(trainingDuration, 10);
+    if (![60, 90, 120].includes(trainingValue)) {
+        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 90 или 120 минут' });
+    }
+
+    const warmupValue = parseInt(warmupDuration, 10);
+    if (![15, 20, 30].includes(warmupValue)) {
+        return res.status(400).json({ success: false, error: 'Разминка должна быть 15, 20 или 30 минут' });
+    }
+
+    if (warmupValue > trainingValue) {
+        return res.status(400).json({ success: false, error: 'Разминка не может превышать время тренировки' });
+    }
+
+    const priceValue = parseFloat(price);
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+        return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
+    }
+
+    try {
+        const normalizedWeekdays = normalizeWeekdays(weekdays);
+        const normalizedTimeSlots = normalizeTimeSlots(timeSlots);
+
+        const { rows } = await pool.query(
+            `INSERT INTO kuliga_programs (
+                name,
+                description,
+                sport_type,
+                max_participants,
+                training_duration,
+                warmup_duration,
+                weekdays,
+                time_slots,
+                equipment_provided,
+                skipass_provided,
+                price,
+                is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING *`,
+            [
+                name,
+                description || null,
+                sportType,
+                maxParticipantsValue,
+                trainingValue,
+                warmupValue,
+                normalizedWeekdays,
+                normalizedTimeSlots,
+                normalizeBool(equipmentProvided),
+                normalizeBool(skipassProvided),
+                priceValue,
+                normalizeBool(isActive, true),
+            ]
+        );
+
+        res.json({ success: true, data: rows[0] });
+    } catch (error) {
+        console.error('Ошибка создания программы Кулиги:', error);
+        res.status(500).json({ success: false, error: error.message || 'Не удалось создать программу' });
+    }
+});
+
+router.put('/programs/:id', async (req, res) => {
+    const { id } = req.params;
+    const {
+        name,
+        description,
+        sportType,
+        maxParticipants,
+        trainingDuration,
+        warmupDuration,
+        weekdays,
+        timeSlots,
+        equipmentProvided,
+        skipassProvided,
+        price,
+        isActive = true,
+    } = req.body;
+
+    if (!name || !sportType) {
+        return res.status(400).json({ success: false, error: 'Укажите название и вид спорта' });
+    }
+
+    if (!['ski', 'snowboard', 'both'].includes(sportType)) {
+        return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+
+    const maxParticipantsValue = parseInt(maxParticipants, 10);
+    if (!Number.isInteger(maxParticipantsValue) || maxParticipantsValue < 2 || maxParticipantsValue > 8) {
+        return res.status(400).json({ success: false, error: 'Максимум участников должен быть от 2 до 8' });
+    }
+
+    const trainingValue = parseInt(trainingDuration, 10);
+    if (![60, 90, 120].includes(trainingValue)) {
+        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 90 или 120 минут' });
+    }
+
+    const warmupValue = parseInt(warmupDuration, 10);
+    if (![15, 20, 30].includes(warmupValue)) {
+        return res.status(400).json({ success: false, error: 'Разминка должна быть 15, 20 или 30 минут' });
+    }
+
+    if (warmupValue > trainingValue) {
+        return res.status(400).json({ success: false, error: 'Разминка не может превышать время тренировки' });
+    }
+
+    const priceValue = parseFloat(price);
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+        return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
+    }
+
+    try {
+        const normalizedWeekdays = normalizeWeekdays(weekdays);
+        const normalizedTimeSlots = normalizeTimeSlots(timeSlots);
+
+        const { rows } = await pool.query(
+            `UPDATE kuliga_programs
+             SET name = $1,
+                 description = $2,
+                 sport_type = $3,
+                 max_participants = $4,
+                 training_duration = $5,
+                 warmup_duration = $6,
+                 weekdays = $7,
+                 time_slots = $8,
+                 equipment_provided = $9,
+                 skipass_provided = $10,
+                 price = $11,
+                 is_active = $12,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $13
+             RETURNING *`,
+            [
+                name,
+                description || null,
+                sportType,
+                maxParticipantsValue,
+                trainingValue,
+                warmupValue,
+                normalizedWeekdays,
+                normalizedTimeSlots,
+                normalizeBool(equipmentProvided),
+                normalizeBool(skipassProvided),
+                priceValue,
+                normalizeBool(isActive, true),
+                id,
+            ]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Программа не найдена' });
+        }
+
+        res.json({ success: true, data: rows[0] });
+    } catch (error) {
+        console.error('Ошибка обновления программы Кулиги:', error);
+        res.status(500).json({ success: false, error: error.message || 'Не удалось обновить программу' });
+    }
+});
+
+router.patch('/programs/:id', async (req, res) => {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'Укажите статус активности' });
+    }
+
+    try {
+        const { rows } = await pool.query(
+            `UPDATE kuliga_programs
+             SET is_active = $1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2
+             RETURNING *`,
+            [isActive, id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Программа не найдена' });
+        }
+
+        res.json({ success: true, data: rows[0] });
+    } catch (error) {
+        console.error('Ошибка изменения статуса программы Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось изменить статус программы' });
+    }
+});
+
+router.delete('/programs/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const { rowCount } = await pool.query(
+            `DELETE FROM kuliga_programs WHERE id = $1`,
+            [id]
+        );
+
+        if (rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'Программа не найдена' });
+        }
+
+        res.json({ success: true, message: 'Программа удалена' });
+    } catch (error) {
+        console.error('Ошибка удаления программы Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось удалить программу' });
     }
 });
 

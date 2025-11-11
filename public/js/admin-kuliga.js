@@ -2,13 +2,16 @@
 
 // Глобальные переменные
 let kuligaInstructors = [];
+let kuligaPrograms = [];
 let kuligaCurrentTab = 'instructors';
 let kuligaPendingPhotoFile = null;
 let kuligaRemovePhoto = false;
+let kuligaProgramFormInitialized = false;
 
 // API endpoints
 const KULIGA_API = {
     instructors: '/api/kuliga/admin/instructors',
+    programs: '/api/kuliga/admin/programs',
     settings: '/api/kuliga/admin/settings',
     finances: '/api/kuliga/admin/finances',
 };
@@ -30,10 +33,22 @@ function initKuligaAdminPage() {
         addBtn.addEventListener('click', () => openKuligaInstructorModal());
     }
 
+    const addProgramBtn = document.getElementById('kuliga-add-program');
+    if (addProgramBtn) {
+        addProgramBtn.addEventListener('click', () => openKuligaProgramModal());
+    }
+
     const form = document.getElementById('kuliga-instructor-form');
     if (form) {
         form.addEventListener('submit', handleKuligaInstructorSubmit);
     }
+
+    const programForm = document.getElementById('kuliga-program-form');
+    if (programForm) {
+        programForm.addEventListener('submit', handleKuligaProgramSubmit);
+    }
+
+    setupKuligaProgramFormInteractions();
 
     const statusFilter = document.getElementById('kuliga-filter-status');
     const sportFilter = document.getElementById('kuliga-filter-sport');
@@ -80,6 +95,8 @@ function switchKuligaTab(tabName) {
 
     if (tabName === 'instructors') {
         loadKuligaInstructors();
+    } else if (tabName === 'programs') {
+        loadKuligaPrograms();
     } else if (tabName === 'settings') {
         loadKuligaSettings();
     } else if (tabName === 'finances') {
@@ -405,6 +422,410 @@ async function toggleKuligaInstructorStatus(instructorId, newStatus) {
 }
 
 window.toggleKuligaInstructorStatus = toggleKuligaInstructorStatus;
+
+// ========== ПРОГРАММЫ ==========
+
+const WEEKDAY_LABELS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+
+function setupKuligaProgramFormInteractions() {
+    if (kuligaProgramFormInitialized) {
+        const durationEl = document.getElementById('kuliga-program-training-duration');
+        const warmupEl = document.getElementById('kuliga-program-warmup-duration');
+        const practiceLabel = document.getElementById('kuliga-program-practice-duration');
+        const updatePracticeDuration = () => {
+            const total = parseInt(durationEl?.value || '0', 10);
+            const warmup = parseInt(warmupEl?.value || '0', 10);
+            const practice = Math.max(total - warmup, 0);
+            if (practiceLabel) {
+                practiceLabel.textContent = `${practice} мин`;
+            }
+        };
+        updatePracticeDuration();
+        return;
+    }
+
+    const durationEl = document.getElementById('kuliga-program-training-duration');
+    const warmupEl = document.getElementById('kuliga-program-warmup-duration');
+    const practiceLabel = document.getElementById('kuliga-program-practice-duration');
+    const addTimeslotBtn = document.getElementById('kuliga-add-timeslot');
+    const timeslotContainer = document.getElementById('kuliga-program-timeslots');
+
+    const updatePracticeDuration = () => {
+        const total = parseInt(durationEl?.value || '0', 10);
+        const warmup = parseInt(warmupEl?.value || '0', 10);
+        const practice = Math.max(total - warmup, 0);
+        if (practiceLabel) {
+            practiceLabel.textContent = `${practice} мин`;
+        }
+    };
+
+    if (durationEl) {
+        durationEl.addEventListener('change', updatePracticeDuration);
+    }
+    if (warmupEl) {
+        warmupEl.addEventListener('change', updatePracticeDuration);
+    }
+    updatePracticeDuration();
+
+    if (addTimeslotBtn && timeslotContainer) {
+        addTimeslotBtn.addEventListener('click', () => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'timeslot-item';
+            wrapper.innerHTML = `
+                <input type="time" class="form-control timeslot-input" value="12:00" required>
+                <button type="button" class="btn-danger btn-sm remove-timeslot">×</button>
+            `;
+            timeslotContainer.appendChild(wrapper);
+        });
+
+        timeslotContainer.addEventListener('click', (event) => {
+            if (event.target.classList.contains('remove-timeslot')) {
+                const item = event.target.closest('.timeslot-item');
+                if (!item) return;
+                if (timeslotContainer.querySelectorAll('.timeslot-item').length > 1) {
+                    item.remove();
+                } else {
+                    const input = item.querySelector('input[type="time"]');
+                    if (input) input.value = '10:00';
+                }
+            }
+        });
+    }
+
+    kuligaProgramFormInitialized = true;
+}
+
+function getSelectedWeekdays() {
+    return Array.from(document.querySelectorAll('#kuliga-program-form input[name="weekday"]:checked')).map((input) =>
+        parseInt(input.value, 10)
+    );
+}
+
+function setSelectedWeekdays(weekdays = []) {
+    const checkboxList = document.querySelectorAll('#kuliga-program-form input[name="weekday"]');
+    checkboxList.forEach((input) => {
+        input.checked = weekdays.includes(parseInt(input.value, 10));
+    });
+}
+
+function getProgramTimeslots() {
+    const inputs = Array.from(document.querySelectorAll('#kuliga-program-timeslots .timeslot-input'));
+    return inputs
+        .map((input) => input.value)
+        .filter((value) => !!value)
+        .map((value) => (value.length === 5 ? `${value}:00` : value));
+}
+
+function setProgramTimeslots(timeSlots = []) {
+    const container = document.getElementById('kuliga-program-timeslots');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const slots = timeSlots.length > 0 ? timeSlots : ['10:00:00'];
+    slots.forEach((slot, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'timeslot-item';
+        const value = slot.length === 5 ? slot : slot.slice(0, 5);
+        wrapper.innerHTML = `
+            <input type="time" class="form-control timeslot-input" value="${value}" required>
+            <button type="button" class="btn-danger btn-sm remove-timeslot">×</button>
+        `;
+        container.appendChild(wrapper);
+    });
+}
+
+function formatWeekdays(weekdays = []) {
+    if (!Array.isArray(weekdays) || weekdays.length === 0) {
+        return 'Дни не указаны';
+    }
+
+    const sorted = [...new Set(weekdays)].sort((a, b) => {
+        const order = [1, 2, 3, 4, 5, 6, 0];
+        return order.indexOf(a) - order.indexOf(b);
+    });
+
+    return sorted.map((day) => WEEKDAY_LABELS[day] || day).join(', ');
+}
+
+function formatTimeslots(timeSlots = []) {
+    if (!Array.isArray(timeSlots) || timeSlots.length === 0) {
+        return 'Без времени';
+    }
+    return timeSlots
+        .map((slot) => slot.slice(0, 5))
+        .sort()
+        .join(', ');
+}
+
+async function loadKuligaPrograms() {
+    const container = document.getElementById('kuliga-programs-list');
+    if (!container) return;
+
+    try {
+        container.innerHTML = '<p>Загрузка программ...</p>';
+
+        const response = await fetch(KULIGA_API.programs, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ошибка загрузки (${response.status})`);
+        }
+
+        const data = await response.json();
+        kuligaPrograms = data.data || [];
+
+        if (kuligaPrograms.length === 0) {
+            container.innerHTML =
+                '<p style="text-align:center;color:#999;padding:40px;">Программы не найдены. Создайте первую программу!</p>';
+            return;
+        }
+
+        renderKuligaPrograms();
+    } catch (error) {
+        console.error('Ошибка загрузки программ Кулиги:', error);
+        container.innerHTML = '<p style="color:red;">Не удалось загрузить список программ</p>';
+    }
+}
+
+function renderKuligaPrograms() {
+    const container = document.getElementById('kuliga-programs-list');
+    if (!container) return;
+
+    container.innerHTML = kuligaPrograms
+        .map((program) => {
+            const statusClass = program.is_active ? 'success' : 'secondary';
+            const statusText = program.is_active ? 'Активна' : 'Неактивна';
+            const weekdays = formatWeekdays(program.weekdays);
+            const timeSlots = formatTimeslots(program.time_slots);
+
+            return `
+            <div class="kuliga-program-card" data-id="${program.id}">
+                <div class="kuliga-program-header">
+                    <h4>${program.name}</h4>
+                    <span class="badge badge-${statusClass}">${statusText}</span>
+                </div>
+                <p class="kuliga-program-description">${program.description || 'Описание отсутствует'}</p>
+                <div class="kuliga-program-meta">
+                    <span class="tag">${mapSportLabel(program.sport_type)}</span>
+                    <span class="tag">До ${program.max_participants} чел.</span>
+                    <span class="tag">${program.training_duration} мин.</span>
+                    <span class="tag">Практика ${Math.max(program.practice_duration || 0, 0)} мин.</span>
+                    <span class="tag">${Number(program.price).toLocaleString('ru-RU')} ₽</span>
+                </div>
+                <div class="kuliga-program-details">
+                    <p><strong>Дни недели:</strong> ${weekdays}</p>
+                    <p><strong>Время:</strong> ${timeSlots}</p>
+                    <p><strong>Снаряжение:</strong> ${program.equipment_provided ? 'Предоставляем' : 'Самостоятельно'}</p>
+                    <p><strong>Скипас:</strong> ${program.skipass_provided ? 'Предоставляем' : 'Самостоятельно'}</p>
+                </div>
+                <div class="kuliga-program-actions">
+                    <button class="btn-secondary" onclick="openKuligaProgramModal(${program.id})">✏️ Редактировать</button>
+                    <button class="btn-secondary" onclick="toggleKuligaProgramStatus(${program.id}, ${program.is_active ? 'false' : 'true'})">
+                        ${program.is_active ? '🙈 Скрыть' : '👁️ Показать'}
+                    </button>
+                    <button class="btn-danger" onclick="deleteKuligaProgram(${program.id})">🗑️ Удалить</button>
+                </div>
+            </div>
+        `;
+        })
+        .join('');
+}
+
+function resetKuligaProgramForm() {
+    const form = document.getElementById('kuliga-program-form');
+    if (!form) return;
+    form.reset();
+    setSelectedWeekdays([6, 0]);
+    setProgramTimeslots(['10:00:00']);
+    const practiceLabel = document.getElementById('kuliga-program-practice-duration');
+    if (practiceLabel) {
+        practiceLabel.textContent = '60 мин';
+    }
+}
+
+function openKuligaProgramModal(programId = null) {
+    const modal = document.getElementById('kuliga-program-modal');
+    const title = document.getElementById('kuliga-program-modal-title');
+    const submitBtn = document.getElementById('kuliga-program-submit');
+
+    if (!modal) return;
+
+    resetKuligaProgramForm();
+
+    if (programId) {
+        const program = kuligaPrograms.find((item) => item.id === programId);
+        if (!program) return;
+
+        title.textContent = 'Редактировать программу';
+        submitBtn.textContent = 'Сохранить';
+
+        document.getElementById('kuliga-program-id').value = program.id;
+        document.getElementById('kuliga-program-name').value = program.name || '';
+        document.getElementById('kuliga-program-description').value = program.description || '';
+        document.getElementById('kuliga-program-sport').value = program.sport_type || 'ski';
+        document.getElementById('kuliga-program-max-participants').value = program.max_participants || 4;
+        document.getElementById('kuliga-program-training-duration').value = program.training_duration || 90;
+        document.getElementById('kuliga-program-warmup-duration').value = program.warmup_duration || 30;
+        document.getElementById('kuliga-program-equipment').checked = Boolean(program.equipment_provided);
+        document.getElementById('kuliga-program-skipass').checked = Boolean(program.skipass_provided);
+        document.getElementById('kuliga-program-price').value = Number(program.price || 1700).toFixed(0);
+        document.getElementById('kuliga-program-active').checked = Boolean(program.is_active);
+
+        setSelectedWeekdays(program.weekdays || []);
+        setProgramTimeslots(program.time_slots || []);
+    } else {
+        title.textContent = 'Создать программу';
+        submitBtn.textContent = 'Создать';
+        document.getElementById('kuliga-program-id').value = '';
+    }
+
+    modal.style.display = 'flex';
+    setupKuligaProgramFormInteractions();
+}
+
+function closeKuligaProgramModal() {
+    const modal = document.getElementById('kuliga-program-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+window.openKuligaProgramModal = openKuligaProgramModal;
+window.closeKuligaProgramModal = closeKuligaProgramModal;
+
+async function handleKuligaProgramSubmit(event) {
+    event.preventDefault();
+
+    const programId = document.getElementById('kuliga-program-id').value;
+    const isEdit = Boolean(programId);
+
+    const weekdays = getSelectedWeekdays();
+    const timeSlots = getProgramTimeslots();
+
+    if (!weekdays.length) {
+        alert('Выберите хотя бы один день недели');
+        return;
+    }
+
+    if (!timeSlots.length) {
+        alert('Добавьте хотя бы один временной слот');
+        return;
+    }
+
+    const trainingDuration = parseInt(document.getElementById('kuliga-program-training-duration').value, 10);
+    const warmupDuration = parseInt(document.getElementById('kuliga-program-warmup-duration').value, 10);
+
+    if (warmupDuration > trainingDuration) {
+        alert('Время разминки не может превышать время тренировки');
+        return;
+    }
+
+    const payload = {
+        name: document.getElementById('kuliga-program-name').value.trim(),
+        description: document.getElementById('kuliga-program-description').value.trim(),
+        sportType: document.getElementById('kuliga-program-sport').value,
+        maxParticipants: parseInt(document.getElementById('kuliga-program-max-participants').value, 10),
+        trainingDuration,
+        warmupDuration,
+        weekdays,
+        timeSlots,
+        equipmentProvided: document.getElementById('kuliga-program-equipment').checked,
+        skipassProvided: document.getElementById('kuliga-program-skipass').checked,
+        price: parseFloat(document.getElementById('kuliga-program-price').value) || 1700,
+        isActive: document.getElementById('kuliga-program-active').checked,
+    };
+
+    if (!payload.name) {
+        alert('Укажите название программы');
+        return;
+    }
+
+    if (!['ski', 'snowboard', 'both'].includes(payload.sportType)) {
+        alert('Выберите корректный вид спорта');
+        return;
+    }
+
+    try {
+        const url = isEdit ? `${KULIGA_API.programs}/${programId}` : KULIGA_API.programs;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось сохранить программу');
+        }
+
+        alert(isEdit ? 'Программа успешно обновлена' : 'Программа успешно создана');
+        closeKuligaProgramModal();
+        loadKuligaPrograms();
+    } catch (error) {
+        console.error('Ошибка сохранения программы Кулиги:', error);
+        alert(error.message || 'Не удалось сохранить программу');
+    }
+}
+
+async function toggleKuligaProgramStatus(programId, nextStatus) {
+    const isActive = nextStatus === 'true';
+    const action = isActive ? 'активировать' : 'деактивировать';
+
+    if (!confirm(`Вы уверены, что хотите ${action} эту программу?`)) return;
+
+    try {
+        const response = await fetch(`${KULIGA_API.programs}/${programId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+            },
+            body: JSON.stringify({ isActive }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось обновить статус программы');
+        }
+
+        loadKuligaPrograms();
+    } catch (error) {
+        console.error('Ошибка изменения статуса программы Кулиги:', error);
+        alert(error.message || 'Не удалось изменить статус программы');
+    }
+}
+
+window.toggleKuligaProgramStatus = toggleKuligaProgramStatus;
+
+async function deleteKuligaProgram(programId) {
+    if (!confirm('Удалить программу? Это действие нельзя отменить.')) return;
+
+    try {
+        const response = await fetch(`${KULIGA_API.programs}/${programId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось удалить программу');
+        }
+
+        loadKuligaPrograms();
+    } catch (error) {
+        console.error('Ошибка удаления программы Кулиги:', error);
+        alert(error.message || 'Не удалось удалить программу');
+    }
+}
+
+window.deleteKuligaProgram = deleteKuligaProgram;
 
 // ========== НАСТРОЙКИ ==========
 

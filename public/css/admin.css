@@ -2134,6 +2134,117 @@ body {
     align-items: flex-end;
 }
 
+.kuliga-programs-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.kuliga-program-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 10px 25px rgba(52, 152, 219, 0.08);
+}
+
+.kuliga-program-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.kuliga-program-header h4 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.kuliga-program-description {
+    margin: 0;
+    color: var(--text-muted);
+    min-height: 48px;
+}
+
+.kuliga-program-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.kuliga-program-meta .tag {
+    background: rgba(52, 152, 219, 0.08);
+    color: #2c3e50;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.kuliga-program-details p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-color);
+}
+
+.kuliga-program-details p + p {
+    margin-top: 4px;
+}
+
+.kuliga-program-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.kuliga-program-actions .btn-secondary,
+.kuliga-program-actions .btn-danger {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.weekdays-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 8px 12px;
+    background: rgba(236, 240, 241, 0.6);
+    border-radius: 8px;
+    border: 1px solid rgba(189, 195, 199, 0.6);
+}
+
+.weekdays-selector label {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.timeslot-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.timeslot-item:last-child {
+    margin-bottom: 0;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    line-height: 1;
+}
+
 .badge {
     display: inline-block;
     padding: 4px 10px;
