@@ -73,59 +73,75 @@
                 throw new Error('API вернуло ошибку');
             }
 
-            const grouped = response.data.reduce((acc, price) => {
-                if (!acc[price.type]) acc[price.type] = [];
-                acc[price.type].push(price);
-                return acc;
-            }, {});
+            const sanitizeDescription = (text = '') =>
+                text.replace(/-?\s*\d+\s*человек\s*-\s*общая\s*цена\.?/gi, '').trim();
+
+            const individuals = response.data
+                .filter((price) => price.type === 'individual')
+                .sort((a, b) => Number(a.price) - Number(b.price));
+
+            const groups = response.data
+                .filter((price) => price.type !== 'individual')
+                .map((price) => {
+                    const participants = Math.max(1, Number(price.participants) || 1);
+                    const perPerson = Number(price.price) / participants;
+                    return { ...price, participants, perPerson };
+                })
+                .sort((a, b) => a.perPerson - b.perPerson);
+
+            const ordered = [...individuals, ...groups];
 
             const fragment = document.createDocumentFragment();
 
-            Object.entries(grouped).forEach(([type, items]) => {
-                items.forEach((price) => {
-                    const card = document.createElement('article');
-                    card.className = 'kuliga-price-card';
-                    
-                    // Для индивидуальных тренировок добавляем зеленый класс
-                    if (type === 'individual') {
-                        card.classList.add('kuliga-price-card--highlight');
+            ordered.forEach((price) => {
+                const card = document.createElement('article');
+                card.className = 'kuliga-price-card';
+
+                const isGroup = price.type !== 'individual';
+                const participants = Math.max(1, Number(price.participants) || 1);
+                const priceValue = Number(price.price) || 0;
+                const pricePerPerson = isGroup ? priceValue / participants : priceValue;
+                const totalPrice = isGroup ? pricePerPerson * participants : priceValue;
+
+                if (!isGroup) {
+                    card.classList.add('kuliga-price-card--highlight');
+                }
+
+                const description = sanitizeDescription(price.description || '');
+                const participantsLabel = participants === 1 ? '1 участник' : `${participants} участников`;
+
+                card.innerHTML = `
+                    <div class="kuliga-price-card__type">
+                        <i class="fa-solid ${priceTypeIcons[price.type] || 'fa-ticket'}"></i>
+                        ${priceTypeLabels[price.type] || 'Тренировка'}
+                    </div>
+                    <div class="kuliga-price-card__value">
+                        ${Number(pricePerPerson).toLocaleString('ru-RU')} ₽ ${isGroup ? '<small>за человека</small>' : ''}
+                    </div>
+                    ${
+                        isGroup
+                            ? `
+                                <div class="kuliga-price-card__participants">${participantsLabel}</div>
+                                <div class="kuliga-price-card__total">Общая стоимость: ${Number(totalPrice).toLocaleString('ru-RU')} ₽</div>
+                            `
+                            : ''
                     }
+                    <div class="kuliga-price-card__meta">
+                        <span><i class="fa-regular fa-clock"></i> ${price.duration} мин.</span>
+                        ${description ? `<span><i class="fa-regular fa-note-sticky"></i> ${description}</span>` : ''}
+                    </div>
+                    <button class="kuliga-button kuliga-button--secondary kuliga-button--small" 
+                            data-booking-trigger
+                            data-price-id="${price.id}"
+                            data-price-type="${price.type}"
+                            data-price-value="${priceValue}"
+                            data-price-duration="${price.duration}"
+                            data-price-participants="${participants}">
+                        Записаться
+                    </button>
+                `;
 
-                    // Для групповых тренировок показываем цену за человека
-                    const displayPrice = (type === 'group' || type === 'sport_group') && price.participants
-                        ? Math.round(price.price / price.participants)
-                        : price.price;
-                    
-                    const priceLabel = (type === 'group' || type === 'sport_group') && price.participants
-                        ? 'за человека'
-                        : '';
-
-                    card.innerHTML = `
-                        <div class="kuliga-price-card__type">
-                            <i class="fa-solid ${priceTypeIcons[type] || 'fa-ticket'}"></i>
-                            ${priceTypeLabels[type] || 'Тренировка'}
-                        </div>
-                        <div class="kuliga-price-card__value">
-                            ${Number(displayPrice).toLocaleString('ru-RU')} ₽ ${priceLabel ? `<small>${priceLabel}</small>` : ''}
-                        </div>
-                        <div class="kuliga-price-card__meta">
-                            <span><i class="fa-regular fa-clock"></i> ${price.duration} мин.</span>
-                            ${price.participants ? `<span><i class="fa-solid fa-users-line"></i> ${price.participants} участников</span>` : ''}
-                            ${price.description ? `<span><i class="fa-regular fa-note-sticky"></i> ${price.description}</span>` : ''}
-                        </div>
-                        <button class="kuliga-button kuliga-button--secondary kuliga-button--small" 
-                                data-booking-trigger
-                                data-price-id="${price.id}"
-                                data-price-type="${type}"
-                                data-price-value="${price.price}"
-                                data-price-duration="${price.duration}"
-                                data-price-participants="${price.participants || 1}">
-                            Записаться
-                        </button>
-                    `;
-
-                    fragment.appendChild(card);
-                });
+                fragment.appendChild(card);
             });
 
             container.innerHTML = '';

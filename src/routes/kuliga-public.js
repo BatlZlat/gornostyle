@@ -8,6 +8,8 @@ const router = express.Router();
 const TIMEZONE = 'Asia/Yekaterinburg';
 
 const formatDate = (date) => moment(date).tz(TIMEZONE).format('YYYY-MM-DD');
+const getKuligaClientBotUsername = () =>
+    process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || '';
 
 const buildWeekContext = (days = 7) => {
     const start = moment().tz(TIMEZONE).startOf('day');
@@ -28,6 +30,7 @@ router.get('/instruktora-kuliga', (req, res) => {
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
+        kuligaClientBotUsername: getKuligaClientBotUsername(),
         telegramGroup: process.env.TELEGRAM_GROUP,
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
@@ -42,6 +45,7 @@ router.get('/instruktora-kuliga/booking', (req, res) => {
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
+        kuligaClientBotUsername: getKuligaClientBotUsername(),
         telegramGroup: process.env.TELEGRAM_GROUP,
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,

@@ -1483,11 +1483,15 @@ CREATE TABLE IF NOT EXISTS kuliga_bookings (
     sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard')),
     participants_count INTEGER DEFAULT 1 CHECK (participants_count > 0),
     participants_names TEXT[],
+        participants_birth_years INTEGER[],
+        price_id INTEGER REFERENCES winter_prices(id),
     price_total DECIMAL(10,2) NOT NULL CHECK (price_total > 0),
     price_per_person DECIMAL(10,2) NOT NULL CHECK (price_per_person > 0),
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed', 'refunded')),
     cancellation_reason TEXT,
     cancelled_at TIMESTAMP,
+        notification_method VARCHAR(20),
+        payer_rides BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT valid_booking_type CHECK (
@@ -1615,6 +1619,10 @@ COMMENT ON TABLE kuliga_group_trainings IS 'Групповые трениров�
 COMMENT ON TABLE kuliga_bookings IS 'Бронирования клиентов (поддержка семейного бронирования participants_names[])';
 COMMENT ON TABLE kuliga_transactions IS 'Транзакции через Tinkoff Acquiring (платежи, возвраты, выплаты инструкторам)';
 COMMENT ON TABLE kuliga_admin_settings IS 'Настройки системы Кулиги (глобальный процент админа, время проверки групп)';
+COMMENT ON COLUMN kuliga_bookings.participants_birth_years IS 'Годы рождения участников (рассчитаны из возраста на момент бронирования)';
+COMMENT ON COLUMN kuliga_bookings.notification_method IS 'Канал уведомлений: email, telegram, both';
+COMMENT ON COLUMN kuliga_bookings.price_id IS 'ID записи прайса winter_prices, по которой рассчитана стоимость';
+COMMENT ON COLUMN kuliga_bookings.payer_rides IS 'true, если заказчик участвует в тренировке';
 COMMENT ON TABLE kuliga_programs IS 'Регулярные групповые программы (шаблоны с привязкой к дням недели, клиенты записываются индивидуально)';
 COMMENT ON TABLE kuliga_program_bookings IS 'Записи клиентов на регулярные программы (один клиент = один участник)';
 

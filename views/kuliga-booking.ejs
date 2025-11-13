@@ -27,74 +27,123 @@
     <main class="kuliga-booking-main">
         <form id="kuligaBookingForm" class="kuliga-booking-form" novalidate>
             <section class="kuliga-booking-section">
-                <h2>Данные клиента</h2>
+                <h2>1. Параметры тренировки</h2>
+                <div id="kuligaSelectionSummary" class="kuliga-selection-card">
+                    <div class="kuliga-selection-card__title" data-selection-title>Загрузка параметров...</div>
+                    <ul class="kuliga-selection-card__details" data-selection-details></ul>
+                    <p class="kuliga-selection-card__note">
+                        Чтобы изменить параметры тренировки, вернитесь к прайсу и выберите другую карточку.
+                    </p>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>2. Данные заказчика</h2>
                 <div class="kuliga-form-grid">
                     <label class="kuliga-field">
-                        <span>ФИО основного участника *</span>
-                        <input type="text" name="fullName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
+                        <span>ФИО заказчика *</span>
+                        <input type="text" id="kuligaClientName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
                     </label>
                     <label class="kuliga-field">
                         <span>Телефон для связи *</span>
-                        <input type="tel" name="phone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
+                        <input type="tel" id="kuligaClientPhone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
                     </label>
                     <label class="kuliga-field">
                         <span>Email (для чеков и уведомлений)</span>
-                        <input type="email" name="email" maxlength="255" placeholder="name@example.com" autocomplete="email">
+                        <input type="email" id="kuligaClientEmail" maxlength="255" placeholder="name@example.com" autocomplete="email">
                     </label>
+                </div>
+                <div class="kuliga-choice kuliga-choice--inline">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaPayerParticipation" value="self" checked>
+                        <span>Я буду кататься</span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaPayerParticipation" value="other">
+                        <span>Кататься будет другой человек</span>
+                    </label>
+                </div>
+                <p class="kuliga-section-hint" id="kuligaParticipantsHint"></p>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>3. Участники тренировки</h2>
+                <div id="kuligaParticipantsContainer" class="kuliga-participants-grid"></div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>4. Дата и время</h2>
+                <div class="kuliga-choice kuliga-choice--inline">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="ski" checked>
+                        <span>Горные лыжи</span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="snowboard">
+                        <span>Сноуборд</span>
+                    </label>
+                </div>
+                <div class="kuliga-form-grid kuliga-form-grid--compact">
+                    <label class="kuliga-field">
+                        <span>Дата тренировки *</span>
+                        <input type="date" id="kuligaDate" required>
+                    </label>
+                    <label class="kuliga-field kuliga-field--full">
+                        <span>Свободные слоты *</span>
+                        <div id="kuligaTimeSlots" class="kuliga-timeslots" role="radiogroup" aria-live="polite"></div>
+                    </label>
+                </div>
+                <div id="kuligaAvailabilityMessage" class="kuliga-inline-message" aria-live="polite"></div>
+                <div id="kuligaInstructorCard" class="kuliga-instructor-preview" hidden>
+                    <div class="kuliga-instructor-preview__photo">
+                        <img id="kuligaInstructorPhoto" src="" alt="">
+                    </div>
+                    <div class="kuliga-instructor-preview__info">
+                        <h3 id="kuligaInstructorName"></h3>
+                        <p id="kuligaInstructorSport"></p>
+                        <p id="kuligaInstructorDescription"></p>
+                    </div>
                 </div>
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>Тип тренировки</h2>
-                <div class="kuliga-booking-type">
-                    <label class="kuliga-radio">
-                        <input type="radio" name="bookingType" value="individual" disabled>
-                        <span>
-                            <strong>Индивидуальная</strong>
-                            <small>Скоро появится. Напишите администратору для индивидуальной записи.</small>
-                        </span>
-                    </label>
-                    <label class="kuliga-radio">
-                        <input type="radio" name="bookingType" value="group" checked>
-                        <span>
-                            <strong>Групповая</strong>
-                            <small>Мини-группы до 4 человек. Выберите удобную дату и время.</small>
-                        </span>
-                    </label>
-                </div>
-
-                <div class="kuliga-field">
-                    <span>Выберите групповое занятие *</span>
-                    <select name="groupTrainingId" id="kuligaGroupSelect" required>
-                        <option value="" disabled selected>Загрузка доступных занятий...</option>
-                    </select>
-                </div>
-
-                <div class="kuliga-field">
-                    <span>Количество участников *</span>
-                    <input type="number" name="participantsCount" id="kuligaParticipantsCount" min="1" max="4" value="1" required>
-                </div>
-
-                <div id="kuligaParticipantsList" class="kuliga-participants-list"></div>
-            </section>
-
-            <section class="kuliga-booking-section">
-                <h2>Дополнительно</h2>
+                <h2>5. Уведомления</h2>
+                <p class="kuliga-section-hint">Выберите, как получать подтверждение, изменения расписания и чек.</p>
                 <label class="kuliga-checkbox">
-                    <input type="checkbox" name="consentConfirmed" required>
+                    <input type="checkbox" id="kuligaNotifyEmail" checked>
+                    <span>Отправлять уведомления и чек на email</span>
+                </label>
+                <label class="kuliga-checkbox">
+                    <input type="checkbox" id="kuligaNotifyTelegram">
+                    <span>Получать уведомления в Telegram</span>
+                </label>
+                <div id="kuligaTelegramHint" class="kuliga-notify-hint" hidden>
+                    <i class="fa-brands fa-telegram"></i>
+                    <p>
+                        Для уведомлений запустите бота <a id="kuligaTelegramLink" href="#" target="_blank" rel="noopener"></a> и нажмите «Старт».
+                        После этого вернитесь к оплате. Форма сохранит введённые данные автоматически.
+                    </p>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>6. Согласие</h2>
+                <label class="kuliga-checkbox">
+                    <input type="checkbox" id="kuligaConsent" required>
                     <span>
-                        Я подтверждаю согласие на обработку персональных данных (ФИО, телефон, email) и разрешаю использование фото и видео с тренировки в социальных сетях и мессенджерах Горностайл72. <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
+                        Я подтверждаю согласие на обработку персональных данных (ФИО, телефон, email) и разрешаю использование фото и видео с тренировки в социальных сетях и мессенджерах Горностайл72.
+                        <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
                     </span>
                 </label>
                 <div class="kuliga-hint">
                     <i class="fa-solid fa-circle-info"></i>
-                    Если группа не наберёт минимальное количество участников до 22:00 накануне, тренировка будет автоматически отменена, а предоплата возвращена на ваш счёт в течение 1-3 рабочих дней.
+                    Если тренировка не набирает минимальное количество участников до 22:00 накануне, мы автоматически отменим её и вернём предоплату на ваш счёт в течение 1-3 рабочих дней.
                 </div>
             </section>
 
             <div class="kuliga-booking-summary">
                 <div>
-                    <span class="kuliga-summary__label">Предоплата</span>
+                    <span class="kuliga-summary__label">К оплате</span>
                     <strong id="kuligaTotalPrice">—</strong>
                 </div>
                 <button type="submit" class="kuliga-button kuliga-button--primary">Перейти к оплате</button>
@@ -122,6 +171,11 @@
         window.KULIGA_ANALYTICS = {
             yandexMetrikaId: '<%= yandexMetrikaId || '' %>',
             googleAnalyticsId: '<%= googleAnalyticsId || '' %>'
+        };
+    </script>
+    <script>
+        window.KULIGA_BOOKING_CONFIG = {
+            botUsername: '<%= kuligaClientBotUsername || '' %>'
         };
     </script>
     <script src="/js/kuliga-booking.js" defer></script>

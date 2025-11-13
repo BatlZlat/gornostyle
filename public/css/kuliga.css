@@ -235,6 +235,17 @@
     margin-top: 4px;
 }
 
+.kuliga-price-card__participants {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-price-card__total {
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-500);
+}
+
 .kuliga-price-card__meta {
     display: grid;
     gap: 8px;
@@ -319,6 +330,178 @@
     display: flex;
     justify-content: flex-end;
 }
+
+.kuliga-selection-card {
+    background: var(--kuliga-white);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.kuliga-selection-card__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-selection-card__details {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-selection-card__details span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kuliga-selection-card__details i {
+    color: var(--kuliga-primary);
+}
+
+.kuliga-selection-card__note {
+    font-size: 0.88rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-choice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.kuliga-choice--inline {
+    align-items: center;
+}
+
+.kuliga-radio span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kuliga-section-hint {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-form-grid--compact {
+    display: grid;
+    gap: 12px;
+}
+
+.kuliga-participants-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.kuliga-participant-card {
+    background: var(--kuliga-white);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+}
+
+.kuliga-participant-card__header {
+    font-weight: 700;
+    color: var(--kuliga-navy);
+    margin-bottom: 12px;
+}
+
+.kuliga-timeslots {
+    display: grid;
+    gap: 10px;
+}
+
+.kuliga-timeslot-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    background: rgba(241, 245, 249, 0.6);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.kuliga-timeslot-option:hover {
+    border-color: var(--kuliga-primary);
+    background: rgba(30, 144, 255, 0.08);
+}
+
+.kuliga-timeslot-option strong {
+    color: var(--kuliga-navy);
+    font-size: 1.05rem;
+}
+
+.kuliga-timeslot-option em {
+    font-style: normal;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-inline-message {
+    margin-top: 8px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-instructor-preview {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    background: rgba(241, 245, 249, 0.5);
+}
+
+.kuliga-instructor-preview__photo img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+.kuliga-instructor-preview__info h3 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-instructor-preview__info p {
+    margin: 0 0 6px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-notify-hint {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(30, 144, 255, 0.08);
+    color: var(--kuliga-navy);
+    display: flex;
+    gap: 10px;
+    font-size: 0.9rem;
+}
+
+.kuliga-notify-hint i {
+    color: var(--kuliga-primary);
+    font-size: 1.2rem;
+}
+
 
 .kuliga-groups__hint {
     max-width: 960px;
