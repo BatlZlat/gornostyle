@@ -1,8 +1,8 @@
 # Сервер `gornostyle72.ru` — инфраструктурная памятка
 
-Последнее обновление: 2025‑11‑12 (MSK)  
-Хост: `90.156.210.24` (Timeweb VPS)  
-ОС: Ubuntu 24.04.1 LTS (kernel 6.8.0-52-generic)
+Последнее обновление: 2025‑11‑13 (MSK)  
+Хост: `5.129.248.187` (Timeweb VPS, зона NSK-1)  
+ОС: Ubuntu 24.04.3 LTS (kernel 6.8.0-87-generic)
 
 ## 1. Структура и доступ
 - Основной пользователь: `root`.
@@ -33,19 +33,16 @@
 - Сервис `nginx` активен и в автозапуске (`systemctl status nginx`).
 
 ## 4. База данных и бэкапы
-- Используется PostgreSQL (`DB_HOST=90.156.210.24`, база `skisimulator`, пользователь `batl-zlat`).
-- Прямой доступ и пароли заданы:
-  - В `.env` проекта (`/root/project/gornostyle/.env`).
-  - В скрипте бэкапа `scripts/backup_database.sh` (содержит plaintext-пароль, требуется ревизия при миграции).
-- Бэкап выполняется ежедневно в 02:00 MSK cron-задачей `0 2 * * * /root/scripts/backup_database.sh`. **Внимание:** фактический рабочий скрипт лежит в `/root/project/gornostyle/scripts/backup_database.sh`, поэтому путь в cron стоит обновить.
-- Ручной запуск: `bash scripts/backup_database.sh`.
-- Файл формируется как `skisimulator_YYYY-MM-DD_HH-MM-SS.sql.gz`, хранится в `/root/gornostyle-backups`, retention = 30 дней.
-- Проверено: актуальный дамп (`skisimulator_2025-11-12_22-05-39.sql.gz`) содержит таблицы `kuliga_*` и прочие новые сущности.
+- Используется PostgreSQL 16, установлен локально (`DB_HOST=127.0.0.1`, база `skisimulator`, пользователь `batl-zlat`).
+- Учётные данные лежат в `.env` (не коммитим); для служебных задач пароль экспортируется в `scripts/backup_database.sh`.
+- Скрипт `scripts/backup_database.sh` создаёт архив `skisimulator_YYYY-MM-DD_HH-MM-SS.sql.gz` в `/root/gornostyle-backups`, хранение 30 дней (очистка через `find` внутри скрипта).
+- Дополнительный скрипт `scripts/upload_backup_to_yadisk.sh` копирует последний архив на Яндекс.Диск (`yadisk:gornostyle-backups`) и удаляет в облаке файлы старше 10 дней.
+- Для аварийного восстановления используется `pg_restore`/`psql` с локального дампа или дампа из облака (см. ниже).
 
-## 5. Автоматизация и фоновые задачи
-- `crontab -l`:
-  - `0 3 * * * /usr/bin/certbot renew --quiet && systemctl reload nginx`
-  - `0 2 * * * /root/scripts/backup_database.sh >> /root/gornostyle-backups/backup.log 2>&1` (фактический путь к скрипту — `/root/project/gornostyle/scripts/backup_database.sh`).
+- `cron` (`/etc/cron.d/gornostyle-backups`):
+  - `0 2 * * * root /root/project/gornostyle/scripts/backup_database.sh >> /root/gornostyle-backups/backup.log 2>&1`
+  - `30 2 * * * root /root/project/gornostyle/scripts/upload_backup_to_yadisk.sh >> /root/gornostyle-backups/backup.log 2>&1`
+  - `0 3 * * * root /usr/bin/certbot renew --quiet && systemctl reload nginx`
 - Systemd:
   - `pm2-root.service` — управляет приложением.
   - `nginx.service` — reverse-proxy.
@@ -81,9 +78,8 @@
    - Убедиться, что бэкап создаётся и содержит актуальные таблицы (`gunzip -c ... | head`).
 
 ## 8. Рекомендации по улучшению
-- Обновить cron-задание на корректный путь к скрипту бэкапа.
+- Секреты (`DB_PASSWORD`, OAuth токен Яндекс.Диска) вынести в vault или отдельные конфигурационные файлы с ограниченным доступом.
 - Рассмотреть включение `ufw` (разрешить 22/80/443) и ограничить SSH по IP.
-- Перевести пароли из скриптов в `.env`/`pass` или секретный vault.
 - Настроить оповещение при сбое бэкапа (например, через Telegram/Email).
 
 ---
