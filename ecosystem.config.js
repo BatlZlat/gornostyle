@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 module.exports = {
   apps: [
     {
@@ -5,6 +7,7 @@ module.exports = {
       script: './src/app.js',
       instances: 1,
       exec_mode: 'fork',
+      env_file: '.env',
       env: {
         NODE_ENV: 'production'
       },

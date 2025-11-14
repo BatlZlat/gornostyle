@@ -4,15 +4,16 @@
  * для проверки завершенных тренировок и начисления бонусов
  */
 
+require('dotenv').config();
 const { Pool } = require('pg');
 const { updateReferralStatusOnTraining } = require('../services/referral-service');
 
 const pool = new Pool({
-    host: process.env.DB_HOST || '90.156.210.24',
-    port: process.env.DB_PORT || 5432,
-    database: process.env.DB_NAME || 'skisimulator',
-    user: process.env.DB_USER || 'batl-zlat',
-    password: process.env.DB_PASSWORD || 'Nemezida2324%)',
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
     ssl: false
 });
 
