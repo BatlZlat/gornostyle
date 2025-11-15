@@ -100,8 +100,8 @@
                 const isGroup = price.type !== 'individual';
                 const participants = Math.max(1, Number(price.participants) || 1);
                 const priceValue = Number(price.price) || 0;
-                const pricePerPerson = isGroup ? priceValue / participants : priceValue;
-                const totalPrice = isGroup ? pricePerPerson * participants : priceValue;
+                const pricePerPerson = isGroup ? Math.ceil(priceValue / participants) : priceValue;
+                const totalPrice = isGroup ? Math.ceil(pricePerPerson * participants) : priceValue;
 
                 if (!isGroup) {
                     card.classList.add('kuliga-price-card--highlight');
