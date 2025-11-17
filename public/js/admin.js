@@ -168,7 +168,7 @@ function initializeEventListeners() {
                     loadTrainers();
                 } else if (type === 'kuliga') {
                     console.log('[trainer-tab] Загрузка инструкторов Кулиги...');
-                    loadKuligaInstructors();
+                    loadKuligaInstructorsForTrainersPage();
                 } else {
                     console.warn('[trainer-tab] Неизвестный тип тренера:', type);
                 }
@@ -1225,7 +1225,7 @@ async function loadPageContent(page) {
             // При открытии страницы "Тренера" по умолчанию загружаем тренеров тренажёра
             const activeTab = document.querySelector('.trainer-tab.active');
             if (activeTab && activeTab.dataset.trainerType === 'kuliga') {
-                await loadKuligaInstructors();
+                await loadKuligaInstructorsForTrainersPage();
             } else {
                 await loadTrainers();
             }
@@ -1714,32 +1714,60 @@ async function loadTrainers() {
     }
 }
 
-// Загрузка инструкторов Кулиги
-async function loadKuligaInstructors() {
-    console.log('[loadKuligaInstructors] Начало загрузки инструкторов Кулиги...');
+// Загрузка инструкторов Кулиги для страницы "Тренера"
+async function loadKuligaInstructorsForTrainersPage() {
+    console.log('==========================================');
+    console.log('[loadKuligaInstructorsForTrainersPage] ✅ ФУНКЦИЯ ВЫЗВАНА!');
+    console.log('==========================================');
+    console.log('[loadKuligaInstructorsForTrainersPage] Начало загрузки инструкторов Кулиги...');
+    
+    const trainersList = document.querySelector('.trainers-list');
+    console.log('[loadKuligaInstructorsForTrainersPage] trainersList элемент:', trainersList ? 'найден' : 'НЕ НАЙДЕН');
+    
     try {
         const token = localStorage.getItem('token');
+        console.log('[loadKuligaInstructorsForTrainersPage] Токен:', token ? 'есть' : 'НЕТ');
         if (!token) {
-            console.error('[loadKuligaInstructors] Токен не найден');
+            console.error('[loadKuligaInstructorsForTrainersPage] Токен не найден');
             showError('Необходима авторизация');
             return;
         }
         
+        console.log('[loadKuligaInstructorsForTrainersPage] Отправка запроса на /api/kuliga/admin/instructors?status=active');
         const response = await fetch('/api/kuliga/admin/instructors?status=active', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
         
+        console.log('[loadKuligaInstructorsForTrainersPage] Получен ответ:', response.status, response.statusText);
+        
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[loadKuligaInstructors] Ошибка ответа:', response.status, errorText);
+            console.error('[loadKuligaInstructorsForTrainersPage] Ошибка ответа:', response.status, errorText);
             throw new Error(`Ошибка загрузки инструкторов: ${response.status}`);
         }
         
         const result = await response.json();
-        console.log('[loadKuligaInstructors] Получены данные:', result);
-        const instructors = result.data || result || [];
+        console.log('[loadKuligaInstructorsForTrainersPage] Получены данные из API (raw):', result);
+        console.log('[loadKuligaInstructorsForTrainersPage] Тип данных:', typeof result, 'isArray:', Array.isArray(result));
+        
+        // Проверяем формат ответа - API возвращает { success: true, data: [...] }
+        let instructors = [];
+        if (result && result.success && Array.isArray(result.data)) {
+            instructors = result.data;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные извлечены из result.data');
+        } else if (Array.isArray(result)) {
+            instructors = result;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные - массив напрямую');
+        } else if (result && Array.isArray(result.data)) {
+            instructors = result.data;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные извлечены из result.data (без success)');
+        } else {
+            console.warn('[loadKuligaInstructorsForTrainersPage] Неожиданный формат ответа:', result);
+        }
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Извлечено инструкторов:', instructors.length);
         
         // Маппинг значений для вида спорта
         const sportTypeMapping = {
@@ -1754,11 +1782,11 @@ async function loadKuligaInstructors() {
         
         const trainersList = document.querySelector('.trainers-list');
         if (!trainersList) {
-            console.error('[loadKuligaInstructors] Элемент .trainers-list не найден');
+            console.error('[loadKuligaInstructorsForTrainersPage] Элемент .trainers-list не найден');
             return;
         }
         
-        console.log('[loadKuligaInstructors] Найдено инструкторов:', activeInstructors.length, 'активных,', dismissedInstructors.length, 'уволенных');
+        console.log('[loadKuligaInstructorsForTrainersPage] Найдено инструкторов:', activeInstructors.length, 'активных,', dismissedInstructors.length, 'уволенных');
         
         // Очищаем список
         trainersList.innerHTML = '';
@@ -1810,9 +1838,9 @@ async function loadKuligaInstructors() {
             });
         }
         
-        console.log('[loadKuligaInstructors] Загрузка завершена успешно');
+        console.log('[loadKuligaInstructorsForTrainersPage] Загрузка завершена успешно');
     } catch (error) {
-        console.error('[loadKuligaInstructors] Ошибка при загрузке инструкторов Кулиги:', error);
+        console.error('[loadKuligaInstructorsForTrainersPage] Ошибка при загрузке инструкторов Кулиги:', error);
         showError('Не удалось загрузить инструкторов Кулиги: ' + error.message);
     }
 }
@@ -1854,7 +1882,7 @@ async function dismissKuligaInstructor(id) {
         if (!response.ok) throw new Error('Ошибка увольнения инструктора');
         
         showSuccess('Инструктор уволен');
-        loadKuligaInstructors();
+        loadKuligaInstructorsForTrainersPage();
     } catch (error) {
         console.error('Ошибка увольнения инструктора:', error);
         showError('Не удалось уволить инструктора');
@@ -1923,7 +1951,7 @@ async function restoreKuligaInstructor(id) {
         
         showSuccess('Инструктор восстановлен');
         closeModal('dismissed-kuliga-instructors-modal');
-        loadKuligaInstructors();
+        loadKuligaInstructorsForTrainersPage();
     } catch (error) {
         console.error('Ошибка восстановления инструктора:', error);
         showError('Не удалось восстановить инструктора');
