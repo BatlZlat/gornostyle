@@ -131,6 +131,50 @@ function initializeEventListeners() {
             window.location.href = 'create-trainer.html';
         });
     }
+    
+    // Обработчик для кнопки создания инструктора Кулиги
+    const createKuligaInstructorBtn = document.getElementById('create-kuliga-instructor');
+    if (createKuligaInstructorBtn) {
+        createKuligaInstructorBtn.addEventListener('click', () => {
+            showCreateKuligaInstructorModal();
+        });
+    }
+    
+    // Обработчики переключения вкладок тренеров
+    // Используем делегирование событий только для страницы тренеров
+    const trainersPage = document.getElementById('trainers-page');
+    if (trainersPage) {
+        trainersPage.addEventListener('click', (e) => {
+            // Проверяем, что клик именно на вкладке, а не на дочернем элементе
+            const tab = e.target.closest('.trainer-tab');
+            if (tab) {
+                e.preventDefault();
+                e.stopPropagation();
+                const type = tab.dataset.trainerType;
+                console.log('[trainer-tab] Переключение на вкладку:', type);
+                
+                // Обновляем активную вкладку
+                const trainerTabs = document.querySelectorAll('.trainer-tab');
+                trainerTabs.forEach(t => {
+                    t.classList.remove('active');
+                    t.style.borderBottom = '3px solid transparent';
+                });
+                tab.classList.add('active');
+                tab.style.borderBottom = '3px solid #007bff';
+                
+                // Загружаем соответствующий тип тренеров
+                if (type === 'simulator') {
+                    console.log('[trainer-tab] Загрузка тренеров тренажёра...');
+                    loadTrainers();
+                } else if (type === 'kuliga') {
+                    console.log('[trainer-tab] Загрузка инструкторов Кулиги...');
+                    loadKuligaInstructors();
+                } else {
+                    console.warn('[trainer-tab] Неизвестный тип тренера:', type);
+                }
+            }
+        });
+    }
 
     // Обработчики для страницы расписания
     const createScheduleBtn = document.getElementById('create-schedule');
@@ -1178,7 +1222,13 @@ async function loadPageContent(page) {
             await loadSimulators();
             break;
         case 'trainers':
-            await loadTrainers();
+            // При открытии страницы "Тренера" по умолчанию загружаем тренеров тренажёра
+            const activeTab = document.querySelector('.trainer-tab.active');
+            if (activeTab && activeTab.dataset.trainerType === 'kuliga') {
+                await loadKuligaInstructors();
+            } else {
+                await loadTrainers();
+            }
             break;
         case 'clients':
             await loadClients();
@@ -1582,7 +1632,7 @@ async function loadSimulators() {
     }
 }
 
-// Загрузка тренеров
+// Загрузка тренеров тренажёра
 async function loadTrainers() {
     try {
         const response = await fetch('/api/trainers');
@@ -1599,56 +1649,285 @@ async function loadTrainers() {
         const dismissedTrainers = trainers.filter(trainer => !trainer.is_active);
         
         const trainersList = document.querySelector('.trainers-list');
-        if (trainersList) {
-            // Добавляем кнопку для просмотра уволенных тренеров
+        if (!trainersList) {
+            console.error('[loadTrainers] Элемент .trainers-list не найден');
+            return;
+        }
+        
+        console.log('[loadTrainers] Найдено тренеров:', activeTrainers.length, 'активных,', dismissedTrainers.length, 'уволенных');
+        
+        // Очищаем список
+        trainersList.innerHTML = '';
+        
+        // Добавляем кнопку для просмотра уволенных тренеров
+        if (dismissedTrainers.length > 0) {
             const dismissedButton = document.createElement('button');
             dismissedButton.className = 'btn-secondary';
             dismissedButton.style.marginBottom = '20px';
             dismissedButton.innerHTML = `Уволенные тренеры (${dismissedTrainers.length})`;
-            console.log('[loadTrainers] Кнопка "Уволенные тренеры" создана, dismissedTrainers:', dismissedTrainers);
             dismissedButton.onclick = () => {
                 console.log('[loadTrainers] Кнопка "Уволенные тренеры" нажата');
                 showDismissedTrainersModal(dismissedTrainers);
             };
-            
-            // Очищаем список и добавляем кнопку
-            trainersList.innerHTML = '';
             trainersList.appendChild(dismissedButton);
-            
-            // Отображаем только активных тренеров
-            if (activeTrainers.length === 0) {
-                trainersList.innerHTML += '<div class="alert alert-info">Нет активных тренеров</div>';
-            } else {
-                trainersList.innerHTML += activeTrainers.map(trainer => `
-                    <div class="trainer-item">
-                        <div class="trainer-photo">
-                            ${trainer.photo_url ? 
-                                `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
-                                `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
-                            }
-                        </div>
-                        <div class="trainer-info">
-                            <h3>${trainer.full_name}</h3>
-                            <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
-                            <p>Телефон: ${trainer.phone}</p>
-                            <p>Статус: Работает</p>
-                        </div>
-                        <div class="trainer-actions">
-                            <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
-                            <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
-                            <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
-                        </div>
-                    </div>
-                `).join('');
-            }
         }
+        
+        // Отображаем только активных тренеров
+        if (activeTrainers.length === 0) {
+            const noTrainersMsg = document.createElement('div');
+            noTrainersMsg.className = 'alert alert-info';
+            noTrainersMsg.textContent = 'Нет активных тренеров';
+            trainersList.appendChild(noTrainersMsg);
+        } else {
+            activeTrainers.forEach(trainer => {
+                const trainerCard = document.createElement('div');
+                trainerCard.className = 'trainer-item';
+                trainerCard.innerHTML = `
+                    <div class="trainer-photo">
+                        ${trainer.photo_url ? 
+                            `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                            `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                        }
+                    </div>
+                    <div class="trainer-info">
+                        <h3>${trainer.full_name}</h3>
+                        <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                        <p>Телефон: ${trainer.phone}</p>
+                        <p>Статус: Работает</p>
+                    </div>
+                    <div class="trainer-actions">
+                        <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                        <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
+                        <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
+                    </div>
+                `;
+                trainersList.appendChild(trainerCard);
+            });
+        }
+        
+        // В loadTrainers сохраняем dismissedTrainers глобально для диагностики
+        window.lastDismissedTrainers = dismissedTrainers;
+        console.log('[loadTrainers] Загрузка завершена успешно');
     } catch (error) {
-        console.error('Ошибка при загрузке тренеров:', error);
-        showError('Не удалось загрузить тренеров');
+        console.error('[loadTrainers] Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить тренеров: ' + error.message);
     }
+}
 
-    // В loadTrainers сохраняем dismissedTrainers глобально для диагностики
-    window.lastDismissedTrainers = dismissedTrainers;
+// Загрузка инструкторов Кулиги
+async function loadKuligaInstructors() {
+    console.log('[loadKuligaInstructors] Начало загрузки инструкторов Кулиги...');
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('[loadKuligaInstructors] Токен не найден');
+            showError('Необходима авторизация');
+            return;
+        }
+        
+        const response = await fetch('/api/kuliga/admin/instructors?status=active', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[loadKuligaInstructors] Ошибка ответа:', response.status, errorText);
+            throw new Error(`Ошибка загрузки инструкторов: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('[loadKuligaInstructors] Получены данные:', result);
+        const instructors = result.data || result || [];
+        
+        // Маппинг значений для вида спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Лыжи и сноуборд'
+        };
+        
+        // Разделяем на активных и уволенных
+        const activeInstructors = instructors.filter(instructor => instructor.is_active);
+        const dismissedInstructors = instructors.filter(instructor => !instructor.is_active);
+        
+        const trainersList = document.querySelector('.trainers-list');
+        if (!trainersList) {
+            console.error('[loadKuligaInstructors] Элемент .trainers-list не найден');
+            return;
+        }
+        
+        console.log('[loadKuligaInstructors] Найдено инструкторов:', activeInstructors.length, 'активных,', dismissedInstructors.length, 'уволенных');
+        
+        // Очищаем список
+        trainersList.innerHTML = '';
+        
+        // Добавляем кнопку для просмотра уволенных
+        if (dismissedInstructors.length > 0) {
+            const dismissedButton = document.createElement('button');
+            dismissedButton.className = 'btn-secondary';
+            dismissedButton.style.marginBottom = '20px';
+            dismissedButton.innerHTML = `Уволенные инструкторы (${dismissedInstructors.length})`;
+            dismissedButton.onclick = () => {
+                showDismissedKuligaInstructorsModal(dismissedInstructors);
+            };
+            trainersList.appendChild(dismissedButton);
+        }
+            
+        // Отображаем активных инструкторов
+        if (activeInstructors.length === 0) {
+            const noInstructorsMsg = document.createElement('div');
+            noInstructorsMsg.className = 'alert alert-info';
+            noInstructorsMsg.textContent = 'Нет активных инструкторов Кулиги';
+            trainersList.appendChild(noInstructorsMsg);
+        } else {
+            activeInstructors.forEach(instructor => {
+                const instructorCard = document.createElement('div');
+                instructorCard.className = 'trainer-item';
+                instructorCard.innerHTML = `
+                    <div class="trainer-photo">
+                        ${instructor.photo_url ? 
+                            `<img src="${instructor.photo_url}" alt="${instructor.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                            `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                        }
+                    </div>
+                    <div class="trainer-info">
+                        <h3>${instructor.full_name}</h3>
+                        <p>Вид спорта: ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                        <p>Телефон: ${instructor.phone}</p>
+                        ${instructor.email ? `<p>Email: ${instructor.email}</p>` : ''}
+                        ${instructor.username ? `<p>Логин: ${instructor.username}</p>` : '<p style="color: #999;">Логин не задан</p>'}
+                        <p>Статус: ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
+                    </div>
+                    <div class="trainer-actions">
+                        <button class="btn-secondary" onclick="editKuligaInstructor(${instructor.id})">Редактировать</button>
+                        <button class="btn-secondary" onclick="viewKuligaInstructorSchedule(${instructor.id})">Расписание</button>
+                        <button class="btn-danger" onclick="dismissKuligaInstructor(${instructor.id})">Уволить</button>
+                    </div>
+                `;
+                trainersList.appendChild(instructorCard);
+            });
+        }
+        
+        console.log('[loadKuligaInstructors] Загрузка завершена успешно');
+    } catch (error) {
+        console.error('[loadKuligaInstructors] Ошибка при загрузке инструкторов Кулиги:', error);
+        showError('Не удалось загрузить инструкторов Кулиги: ' + error.message);
+    }
+}
+
+// Показать модальное окно создания инструктора Кулиги
+function showCreateKuligaInstructorModal() {
+    // TODO: Создать модальное окно аналогично create-trainer.html
+    // Пока используем существующий модал из admin-kuliga.js или создаём новый
+    alert('Функция создания инструктора Кулиги будет реализована');
+}
+
+// Редактировать инструктора Кулиги
+function editKuligaInstructor(id) {
+    // TODO: Открыть модальное окно редактирования
+    alert(`Редактирование инструктора ${id} будет реализовано`);
+}
+
+// Просмотреть расписание инструктора
+function viewKuligaInstructorSchedule(id) {
+    // TODO: Открыть личный кабинет инструктора или страницу расписания
+    window.location.href = `/instructor-kuliga-schedule.html?instructor=${id}`;
+}
+
+// Уволить инструктора Кулиги
+async function dismissKuligaInstructor(id) {
+    if (!confirm('Вы уверены, что хотите уволить этого инструктора?')) return;
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ isActive: false })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка увольнения инструктора');
+        
+        showSuccess('Инструктор уволен');
+        loadKuligaInstructors();
+    } catch (error) {
+        console.error('Ошибка увольнения инструктора:', error);
+        showError('Не удалось уволить инструктора');
+    }
+}
+
+// Модальное окно уволенных инструкторов Кулиги
+function showDismissedKuligaInstructorsModal(dismissedInstructors) {
+    const sportTypeMapping = {
+        'ski': 'Горные лыжи',
+        'snowboard': 'Сноуборд',
+        'both': 'Лыжи и сноуборд'
+    };
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <h3>Уволенные инструкторы Кулиги</h3>
+            <div class="dismissed-trainers-list">
+                ${dismissedInstructors.length === 0 ? 
+                    '<div class="alert alert-info">Нет уволенных инструкторов</div>' :
+                    dismissedInstructors.map(instructor => `
+                        <div class="trainer-item">
+                            <div class="trainer-photo">
+                                ${instructor.photo_url ? 
+                                    `<img src="${instructor.photo_url}" alt="${instructor.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                                    '<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px;">Нет фото</div>'
+                                }
+                            </div>
+                            <div class="trainer-info">
+                                <h3>${instructor.full_name}</h3>
+                                <p>Вид спорта: ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                                <p>Телефон: ${instructor.phone}</p>
+                                <p style="color: #999;">Уволен ${instructor.dismissal_date ? new Date(instructor.dismissal_date).toLocaleDateString('ru-RU') : ''}</p>
+                            </div>
+                            <div class="trainer-actions">
+                                <button class="btn-secondary" onclick="restoreKuligaInstructor(${instructor.id})">Восстановить</button>
+                            </div>
+                        </div>
+                    `).join('')
+                }
+            </div>
+            <button class="btn-secondary" onclick="closeModal('dismissed-kuliga-instructors-modal')" style="margin-top: 20px;">Закрыть</button>
+        </div>
+    `;
+    modal.id = 'dismissed-kuliga-instructors-modal';
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+
+// Восстановить инструктора Кулиги
+async function restoreKuligaInstructor(id) {
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ isActive: true })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка восстановления инструктора');
+        
+        showSuccess('Инструктор восстановлен');
+        closeModal('dismissed-kuliga-instructors-modal');
+        loadKuligaInstructors();
+    } catch (error) {
+        console.error('Ошибка восстановления инструктора:', error);
+        showError('Не удалось восстановить инструктора');
+    }
 }
 
 // Функция для отображения модального окна с уволенными тренерами

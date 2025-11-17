@@ -1415,6 +1415,7 @@ CREATE TABLE IF NOT EXISTS kuliga_clients (
 );
 
 -- Таблица инструкторов Кулиги (управляются администратором)
+-- МИГРАЦИЯ 030: Добавлены поля username и password_hash для авторизации в личном кабинете
 CREATE TABLE IF NOT EXISTS kuliga_instructors (
     id SERIAL PRIMARY KEY,
     full_name VARCHAR(100) NOT NULL,
@@ -1430,6 +1431,8 @@ CREATE TABLE IF NOT EXISTS kuliga_instructors (
     telegram_username VARCHAR(100),
     telegram_registered BOOLEAN DEFAULT FALSE,
     admin_percentage DECIMAL(5,2) DEFAULT 20.00 CHECK (admin_percentage >= 0 AND admin_percentage <= 100),
+    username VARCHAR(50) UNIQUE, -- МИГРАЦИЯ 030: Логин для входа в личный кабинет
+    password_hash VARCHAR(255), -- МИГРАЦИЯ 030: Хеш пароля (bcrypt) для авторизации
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
