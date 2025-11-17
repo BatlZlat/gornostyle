@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const sharp = require('sharp');
+const bcrypt = require('bcrypt');
 const { pool } = require('../db');
 const { verifyToken } = require('../middleware/auth');
 
@@ -150,6 +151,24 @@ router.get('/instructors', async (req, res) => {
     }
 });
 
+// Получить одного инструктора по ID
+router.get('/instructors/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const { rows } = await pool.query('SELECT * FROM kuliga_instructors WHERE id = $1', [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Инструктор не найден' });
+        }
+
+        res.json(rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения инструктора Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить инструктора' });
+    }
+});
+
 // Создать нового инструктора
 router.post('/instructors', async (req, res) => {
     const {
@@ -222,6 +241,8 @@ router.put('/instructors/:id', async (req, res) => {
         adminPercentage,
         hireDate,
         isActive,
+        username,
+        password,
     } = req.body;
 
     if (!fullName || !phone || !sportType) {
@@ -237,33 +258,66 @@ router.put('/instructors/:id', async (req, res) => {
         const percentage = normalizePercentage(adminPercentage);
         const normalizedHireDate = hireDate ? hireDate : null;
 
-        const { rows } = await pool.query(
-            `UPDATE kuliga_instructors
-             SET full_name = $1,
-                 phone = $2,
-                 email = $3,
-                 photo_url = $4,
-                 description = $5,
-                 sport_type = $6,
-                 admin_percentage = $7,
-                 hire_date = COALESCE($8, hire_date),
-                 is_active = $9,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $10
-             RETURNING *`,
-            [
-                fullName,
-                normalizedPhone,
-                email || null,
-                photoUrl === undefined ? null : photoUrl,
-                description || null,
-                sportType,
-                percentage,
-                normalizedHireDate,
-                typeof isActive === 'boolean' ? isActive : true,
-                id,
-            ]
-        );
+        // Подготовка обновляемых полей
+        const updateFields = [
+            'full_name = $1',
+            'phone = $2',
+            'email = $3',
+            'photo_url = $4',
+            'description = $5',
+            'sport_type = $6',
+            'admin_percentage = $7',
+            'hire_date = COALESCE($8, hire_date)',
+            'is_active = $9',
+            'updated_at = CURRENT_TIMESTAMP',
+        ];
+        
+        const updateValues = [
+            fullName,
+            normalizedPhone,
+            email || null,
+            photoUrl === undefined ? null : photoUrl,
+            description || null,
+            sportType,
+            percentage,
+            normalizedHireDate,
+            typeof isActive === 'boolean' ? isActive : true,
+        ];
+        
+        let paramIndex = updateValues.length + 1; // Следующий индекс для параметров
+        
+        // Обработка username
+        if (username !== undefined) {
+            if (username && username.trim()) {
+                updateFields.push(`username = $${paramIndex}`);
+                updateValues.push(username.trim());
+                paramIndex++;
+            } else {
+                // Если username пустой, обнуляем его
+                updateFields.push('username = NULL');
+            }
+        }
+        
+        // Обработка password (хешируем только если указан)
+        if (password && password.trim()) {
+            const saltRounds = 10;
+            const passwordHash = await bcrypt.hash(password.trim(), saltRounds);
+            updateFields.push(`password_hash = $${paramIndex}`);
+            updateValues.push(passwordHash);
+            paramIndex++;
+        }
+        
+        // Добавляем ID в конец для WHERE условия
+        updateValues.push(id);
+        
+        const query = `
+            UPDATE kuliga_instructors
+            SET ${updateFields.join(', ')}
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `;
+
+        const { rows } = await pool.query(query, updateValues);
 
         if (rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Инструктор не найден' });
@@ -277,6 +331,38 @@ router.put('/instructors/:id', async (req, res) => {
         } else {
             res.status(500).json({ success: false, error: 'Не удалось обновить инструктора' });
         }
+    }
+});
+
+// Получить расписание инструктора
+router.get('/schedule', async (req, res) => {
+    const { instructor_id, start_date, end_date } = req.query;
+
+    if (!instructor_id) {
+        return res.status(400).json({ success: false, error: 'Укажите ID инструктора' });
+    }
+
+    try {
+        let query = 'SELECT * FROM kuliga_schedule_slots WHERE instructor_id = $1';
+        const params = [instructor_id];
+
+        if (start_date) {
+            params.push(start_date);
+            query += ` AND date >= $${params.length}`;
+        }
+
+        if (end_date) {
+            params.push(end_date);
+            query += ` AND date <= $${params.length}`;
+        }
+
+        query += ' ORDER BY date ASC, start_time ASC';
+
+        const { rows } = await pool.query(query, params);
+        res.json({ success: true, data: rows });
+    } catch (error) {
+        console.error('Ошибка получения расписания инструктора:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить расписание' });
     }
 });
 
