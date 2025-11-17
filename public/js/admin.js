@@ -1725,10 +1725,10 @@ async function loadKuligaInstructorsForTrainersPage() {
     console.log('[loadKuligaInstructorsForTrainersPage] trainersList элемент:', trainersList ? 'найден' : 'НЕ НАЙДЕН');
     
     try {
-        const token = localStorage.getItem('token');
+        const token = getCookie('adminToken');
         console.log('[loadKuligaInstructorsForTrainersPage] Токен:', token ? 'есть' : 'НЕТ');
         if (!token) {
-            console.error('[loadKuligaInstructorsForTrainersPage] Токен не найден');
+            console.error('[loadKuligaInstructorsForTrainersPage] Токен не найден в cookie');
             showError('Необходима авторизация');
             return;
         }
@@ -1869,7 +1869,7 @@ async function dismissKuligaInstructor(id) {
     if (!confirm('Вы уверены, что хотите уволить этого инструктора?')) return;
     
     try {
-        const token = localStorage.getItem('token');
+        const token = getCookie('adminToken');
         const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
             method: 'PATCH',
             headers: {
@@ -1937,7 +1937,7 @@ function showDismissedKuligaInstructorsModal(dismissedInstructors) {
 // Восстановить инструктора Кулиги
 async function restoreKuligaInstructor(id) {
     try {
-        const token = localStorage.getItem('token');
+        const token = getCookie('adminToken');
         const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
             method: 'PATCH',
             headers: {
