@@ -36,8 +36,11 @@ const kuligaPublicRouter = require('./routes/kuliga-public');
 const kuligaBookingRouter = require('./routes/kuliga-booking');
 const kuligaPaymentRouter = require('./routes/kuliga-payment');
 const kuligaAdminRouter = require('./routes/kuliga-admin');
+const kuligaInstructorAuthRouter = require('./routes/kuliga-instructor-auth');
+const kuligaInstructorScheduleRouter = require('./routes/kuliga-instructor-schedule');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
+const { verifyKuligaInstructorAuth } = require('./middleware/kuligaInstructorAuth');
 const cron = require('node-cron');
 const fs = require('fs');
 const EmailQueueProcessor = require('./services/emailQueueProcessor');
@@ -78,9 +81,10 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Middleware для проверки аутентификации админов и тренеров
+// Middleware для проверки аутентификации админов, тренеров и инструкторов Кулиги
 app.use(verifyAuth);
 app.use(verifyTrainerAuth);
+app.use(verifyKuligaInstructorAuth);
 
 // Главная страница с EJS (только для корня)
 app.get('/', (req, res) => {
@@ -414,6 +418,8 @@ app.use('/api/winter-schedule', verifyToken, winterScheduleRouter);
 app.use('/api/kuliga', kuligaBookingRouter);
 app.use('/api/kuliga/payment', kuligaPaymentRouter);
 app.use('/api/kuliga/admin', kuligaAdminRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorAuthRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorScheduleRouter);
 app.use(kuligaPublicRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)

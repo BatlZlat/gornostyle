@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Личный кабинет инструктора Кулиги</title>
+    <link rel="stylesheet" href="css/admin.css" />
+    <style>
+        .schedule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .instructor-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .instructor-info h3 {
+            margin: 0 0 10px 0;
+            color: #27ae60;
+        }
+
+        .schedule-grid {
+            display: grid;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .schedule-slot {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+        }
+
+        .schedule-slot.available {
+            border-left: 4px solid #27ae60;
+        }
+
+        .schedule-slot.booked {
+            border-left: 4px solid #e74c3c;
+            background: #fee;
+        }
+
+        .schedule-slot.blocked {
+            border-left: 4px solid #95a5a6;
+            background: #ecf0f1;
+        }
+
+        .slot-info {
+            flex-grow: 1;
+        }
+
+        .slot-time {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .slot-status {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .slot-actions button {
+            margin-left: 5px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #27ae60;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>🏔️ Личный кабинет инструктора Кулиги</h1>
+            <button class="btn-secondary" id="logout-btn">Выход</button>
+        </header>
+
+        <main class="admin-main" style="padding:20px;">
+            <!-- Информация об инструкторе -->
+            <div class="instructor-info">
+                <h3 id="instructor-name">Загрузка...</h3>
+                <p id="instructor-details"></p>
+            </div>
+
+            <!-- Статистика -->
+            <div class="stats-grid" id="stats-container">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-slots">0</div>
+                    <div class="stat-label">Всего слотов</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-available-slots">0</div>
+                    <div class="stat-label">Свободных слотов</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-booked-slots">0</div>
+                    <div class="stat-label">Забронированных</div>
+                </div>
+            </div>
+
+            <!-- Создание расписания на дату -->
+            <section style="margin-bottom:30px;">
+                <div class="schedule-header">
+                    <h2>Управление расписанием</h2>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" id="day-date" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Временные слоты (HH:MM, через запятую)</label>
+                    <input type="text" id="day-times" class="form-control" placeholder="10:00, 12:00, 14:00, 16:00" />
+                    <small style="color: #666; display: block; margin-top: 5px;">Каждый слот длится 1 час</small>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-slots-btn">Создать слоты</button>
+                    <button class="btn-secondary" id="load-slots-btn">Показать слоты</button>
+                </div>
+                <div id="day-result" style="margin-top:10px;"></div>
+            </section>
+
+            <!-- Отображение слотов на выбранную дату -->
+            <section id="slots-section" style="display: none;">
+                <h3>Слоты на <span id="selected-date"></span></h3>
+                <div id="day-slots" class="schedule-grid"></div>
+            </section>
+
+            <!-- Массовое создание слотов -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>Массовое создание слотов</h2>
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="bulk-from" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="bulk-to" class="form-control" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Дни недели</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="weekday" value="0" /> Вс</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Временные слоты (HH:MM, через запятую)</label>
+                    <input type="text" id="bulk-times" class="form-control" placeholder="10:00, 12:00, 14:00, 16:00" />
+                    <small style="color: #666; display: block; margin-top: 5px;">Каждый слот длится 1 час</small>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-bulk-btn">Создать массово</button>
+                </div>
+                <div id="bulk-result" style="margin-top:10px;"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/kuliga-instructor-schedule.js"></script>
+</body>
+</html>
+

@@ -1857,7 +1857,7 @@ async function loadKuligaInstructorsForTrainersPage() {
                         <p>Статус: ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
                     </div>
                     <div class="trainer-actions">
-                        <button class="btn-secondary" onclick="editKuligaInstructor(${instructor.id})">Редактировать</button>
+                        <button class="btn-secondary" onclick="editKuligaInstructorForTrainersPage(${instructor.id})">Редактировать</button>
                         <button class="btn-secondary" onclick="viewKuligaInstructorSchedule(${instructor.id})">Расписание</button>
                         <button class="btn-danger" onclick="dismissKuligaInstructor(${instructor.id})">Уволить</button>
                     </div>
@@ -1880,8 +1880,8 @@ function showCreateKuligaInstructorModal() {
     alert('Функция создания инструктора Кулиги будет реализована');
 }
 
-// Редактировать инструктора Кулиги
-async function editKuligaInstructor(id) {
+// Редактировать инструктора Кулиги (для страницы "Тренера")
+async function editKuligaInstructorForTrainersPage(id) {
     try {
         const token = getCookie('adminToken');
         const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
@@ -2243,8 +2243,8 @@ async function dismissKuligaInstructor(id) {
     }
 }
 
-// Просмотреть информацию об инструкторе Кулиги
-async function viewKuligaInstructor(id) {
+// Просмотреть информацию об инструкторе Кулиги (для страницы "Тренера")
+async function viewKuligaInstructorForTrainersPage(id) {
     try {
         const token = getCookie('adminToken');
         const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
@@ -2416,7 +2416,7 @@ function showDismissedTrainersModal(dismissedTrainers = [], dismissedKuligaInstr
                                     <p style="margin: 5px 0; color: #999;"><strong>Дата увольнения:</strong> ${instructor.dismissal_date ? new Date(instructor.dismissal_date).toLocaleDateString('ru-RU') : 'Не указана'}</p>
                                 </div>
                                 <div class="trainer-actions" style="display: flex; flex-direction: column; gap: 10px; justify-content: center;">
-                                    <button class="btn-secondary" onclick="viewKuligaInstructor(${instructor.id})">Просмотр</button>
+                                    <button class="btn-secondary" onclick="viewKuligaInstructorForTrainersPage(${instructor.id})">Просмотр</button>
                                     <button class="btn-primary" onclick="restoreKuligaInstructor(${instructor.id}); this.closest('#dismissed-trainers-modal').remove();">Восстановить</button>
                                 </div>
                             </div>
