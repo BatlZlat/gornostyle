@@ -437,5 +437,25 @@ router.delete('/slots/:id', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/kuliga/instructor/bot-info
+ * Получение информации о Telegram боте для инструктора
+ */
+router.get('/bot-info', async (req, res) => {
+    try {
+        // Получаем username из переменной окружения, убираем символ @ если есть, и приводим к нижнему регистру
+        let botUsername = process.env.BOT_INSTRUKTORS_KULIGA || 'kuliga_instruktor_bot';
+        // Убираем @ если есть
+        botUsername = botUsername.replace(/^@/, '').trim();
+        // Приводим к нижнему регистру (username в Telegram всегда в нижнем регистре)
+        botUsername = botUsername.toLowerCase();
+        
+        res.json({ botUsername });
+    } catch (error) {
+        console.error('Ошибка при получении информации о боте:', error);
+        res.status(500).json({ error: 'Ошибка при получении информации о боте' });
+    }
+});
+
 module.exports = router;
 

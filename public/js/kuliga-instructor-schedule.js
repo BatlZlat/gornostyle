@@ -168,6 +168,38 @@ async function loadInstructorInfo() {
         
         document.getElementById('instructor-details').textContent = 
             `Вид спорта: ${sportTypeMapping[instructor.sportType] || instructor.sportType} • Телефон: ${instructor.phone}`;
+        
+        // Получаем имя бота из API и формируем Deep Link
+        const token = getToken();
+        if (token) {
+            try {
+                const botInfoResponse = await fetch('/api/kuliga/instructor/bot-info', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (botInfoResponse.ok) {
+                    const botInfo = await botInfoResponse.json();
+                    // Нормализуем username: убираем @ и приводим к нижнему регистру
+                    let botUsername = botInfo.botUsername || 'kuliga_instruktor_bot';
+                    botUsername = botUsername.replace(/^@/, '').trim().toLowerCase();
+                    const deepLink = `https://t.me/${botUsername}?start=instructor_${instructor.id}`;
+                    const telegramBotLink = document.getElementById('telegram-bot-link');
+                    if (telegramBotLink) {
+                        telegramBotLink.href = deepLink;
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при получении информации о боте:', error);
+                // Используем fallback значение
+                const deepLink = `https://t.me/kuliga_instruktor_bot?start=instructor_${instructor.id}`;
+                const telegramBotLink = document.getElementById('telegram-bot-link');
+                if (telegramBotLink) {
+                    telegramBotLink.href = deepLink;
+                }
+            }
+        }
     } catch (error) {
         console.error('Ошибка загрузки данных инструктора:', error);
     }

@@ -1,7 +1,12 @@
 const TelegramBot = require('node-telegram-bot-api');
 
-// Создаем экземпляр бота для уведомлений
+// Создаем экземпляр бота для уведомлений администратора
 const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
+
+// Создаем экземпляр бота для уведомлений инструкторов Кулиги
+const instructorBot = process.env.KULIGA_INSTRUKTOR_BOT 
+    ? new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false })
+    : null;
 
 // Функция для форматирования даты
 function formatDate(dateStr) {
@@ -580,6 +585,7 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
             `👤 *Участник:* ${trainingData.participant_name}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || 'Не указан'}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
             `🏔️ *Место:* Кулига Парк\n` +
@@ -590,6 +596,41 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления о записи на тренировку естественного склона:', error);
+    }
+}
+
+// Функция для отправки уведомления инструктору о новой записи
+async function notifyInstructorKuligaTrainingBooking(trainingData) {
+    try {
+        if (!instructorBot) {
+            console.log('Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            return;
+        }
+
+        if (!trainingData.instructor_telegram_id) {
+            console.log(`Инструктор ${trainingData.instructor_name} не зарегистрирован в Telegram боте`);
+            return;
+        }
+
+        // Рассчитываем сумму для инструктора (за вычетом процента админа)
+        const totalPrice = Number(trainingData.price);
+        const adminPercentage = Number(trainingData.admin_percentage || 20);
+        const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+
+        const message = 
+            '🎉 *Новая запись на вашу тренировку!*\n\n' +
+            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `📱 *Телефон:* ${trainingData.client_phone}\n` +
+            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `⏰ *Время:* ${trainingData.time}\n` +
+            `🏔️ *Место:* Кулига Парк\n\n` +
+            `💰 *Стоимость:* ${totalPrice.toFixed(2)} руб.\n` +
+            `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб. (${100 - adminPercentage}%)`;
+
+        await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (ID: ${trainingData.instructor_telegram_id})`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору:', error);
     }
 }
 
@@ -1378,6 +1419,7 @@ module.exports = {
     notifyAdminIndividualTrainingDeleted,
     notifyAdminNaturalSlopeTrainingCancellation,
     notifyAdminNaturalSlopeTrainingBooking,
+    notifyInstructorKuligaTrainingBooking,
     notifyAdminWinterGroupTrainingCreated,
     notifyAdminWinterGroupTrainingCreatedByAdmin,
     notifyAdminSubscriptionPurchase

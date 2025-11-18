@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { Pool } = require('pg');
-const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient, notifyAdminNaturalSlopeTrainingCancellation, notifyAdminNaturalSlopeTrainingBooking } = require('./admin-notify');
+const { notifyNewTrainingRequest, notifyNewIndividualTraining, notifyAdminGroupTrainingCancellation, notifyAdminIndividualTrainingCancellation, notifyNewClient, notifyAdminNaturalSlopeTrainingCancellation, notifyAdminNaturalSlopeTrainingBooking, notifyInstructorKuligaTrainingBooking } = require('./admin-notify');
 const { Booking } = require('../models/Booking');
 const jwt = require('jsonwebtoken');
 const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
@@ -7533,15 +7533,39 @@ async function handleTextMessage(msg) {
                     );
                     const client = clientRes.rows[0];
                     
+                    // Получаем данные инструктора для уведомления
+                    const instructorRes = await pool.query(
+                        `SELECT full_name, telegram_id, admin_percentage
+                        FROM kuliga_instructors
+                        WHERE id = $1`,
+                        [instructorId]
+                    );
+                    const instructor = instructorRes.rows[0];
+                    
                     // Уведомляем админа
                     await notifyAdminNaturalSlopeTrainingBooking({
                         client_name: client.full_name,
                         participant_name: state.data.participant_name,
                         client_phone: client.phone,
+                        instructor_name: instructor?.full_name || state.data.selected_instructor_name || 'Не указан',
                         date: state.data.selected_date,
                         time: state.data.selected_time,
                         price: price
                     });
+                    
+                    // Уведомляем инструктора
+                    if (instructor) {
+                        await notifyInstructorKuligaTrainingBooking({
+                            participant_name: state.data.participant_name,
+                            client_phone: client.phone,
+                            instructor_name: instructor.full_name,
+                            instructor_telegram_id: instructor.telegram_id,
+                            admin_percentage: instructor.admin_percentage,
+                            date: state.data.selected_date,
+                            time: state.data.selected_time,
+                            price: price
+                        });
+                    }
                     
                     // Очищаем состояние
                     userStates.delete(chatId);
