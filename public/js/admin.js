@@ -2016,6 +2016,12 @@ async function editKuligaInstructorForTrainersPage(id) {
                 }
                 
                 // Обновляем остальные данные инструктора
+                const adminPercentageValue = formData.get('admin_percentage');
+                const parsedPercentage = adminPercentageValue !== null && adminPercentageValue !== '' 
+                    ? parseFloat(adminPercentageValue) 
+                    : 20;
+                const adminPercentage = isNaN(parsedPercentage) ? 20 : parsedPercentage;
+                
                 const updateData = {
                     fullName: formData.get('full_name'),
                     phone: formData.get('phone'),
@@ -2023,7 +2029,7 @@ async function editKuligaInstructorForTrainersPage(id) {
                     photoUrl: photoUrl || null,
                     description: formData.get('description') || null,
                     sportType: formData.get('sport_type'),
-                    adminPercentage: parseFloat(formData.get('admin_percentage')) || 20,
+                    adminPercentage: adminPercentage,
                     hireDate: formData.get('hire_date'),
                     isActive: formData.get('is_active') === 'true'
                 };

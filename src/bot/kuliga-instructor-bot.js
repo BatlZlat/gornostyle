@@ -20,10 +20,57 @@ if (!process.env.KULIGA_INSTRUKTOR_BOT) {
     process.exit(1);
 }
 
-// Создаем экземпляр бота
-const bot = new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: true });
+// Создаем экземпляр бота с обработкой ошибок
+let bot;
 
-console.log('🤖 Бот инструкторов Кулиги запущен...');
+try {
+    // Создаем бота с отложенным запуском polling для избежания падения при сетевых ошибках
+    bot = new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false });
+    
+    // Глобальные обработчики ошибок бота
+    bot.on('polling_error', (error) => {
+        console.error('❌ Ошибка polling бота инструкторов:', error.code || 'EFATAL', error.message);
+        // Не падаем, просто логируем ошибку
+        // Бот автоматически попытается переподключиться
+    });
+    
+    bot.on('error', (error) => {
+        console.error('❌ Ошибка бота инструкторов:', error.code || 'ERROR', error.message);
+    });
+    
+    // Запускаем polling с обработкой ошибок асинхронно
+    // Это предотвращает падение приложения при проблемах с сетью
+    setTimeout(() => {
+        bot.startPolling().catch((error) => {
+            console.error('❌ Ошибка при запуске polling бота инструкторов:', error.message);
+            console.log('⚠️ Бот инструкторов будет перезапущен через 30 секунд...');
+            
+            // Retry через 30 секунд
+            setTimeout(() => {
+                bot.startPolling().catch((retryError) => {
+                    console.error('❌ Ошибка при повторном подключении:', retryError.message);
+                    console.log('⚠️ Бот инструкторов будет работать в ограниченном режиме');
+                });
+            }, 30000);
+        });
+    }, 1000); // Небольшая задержка для инициализации
+    
+    console.log('🤖 Бот инструкторов Кулиги запущен...');
+} catch (error) {
+    console.error('❌ Критическая ошибка при создании бота инструкторов:', error.message);
+    console.log('⚠️ Приложение продолжит работу, но бот инструкторов недоступен');
+    // Создаем заглушку, чтобы не падало приложение
+    bot = {
+        sendMessage: async () => {
+            console.warn('⚠️ Бот инструкторов недоступен, сообщение не отправлено');
+            return Promise.resolve();
+        },
+        onText: () => {},
+        on: () => {},
+        onMessage: () => {},
+        startPolling: () => Promise.resolve()
+    };
+}
 
 // Хранилище состояний пользователей
 const userStates = new Map();
@@ -88,11 +135,13 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                 kb.participants_names,
                 kb.price_total,
                 kb.sport_type,
-                kc.phone as client_phone,
+                kb.payer_rides,
+                c.full_name as client_name,
+                c.phone as client_phone,
                 ki.admin_percentage
             FROM kuliga_schedule_slots ks
             LEFT JOIN kuliga_bookings kb ON ks.id = kb.slot_id AND kb.status IN ('pending', 'confirmed')
-            LEFT JOIN kuliga_clients kc ON kb.client_id = kc.id
+            LEFT JOIN clients c ON kb.client_id = c.id
             LEFT JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
             WHERE ks.instructor_id = $1
               AND ks.date >= $2
@@ -145,13 +194,24 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                     const participantName = slot.participants_names && slot.participants_names[0] 
                         ? slot.participants_names[0] 
                         : 'Участник';
+                    const clientName = slot.client_name || 'Клиент';
+                    const payerRides = slot.payer_rides !== false; // по умолчанию true
                     const sportType = slot.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
                     const totalPrice = parseFloat(slot.price_total || 0);
                     const adminPercentage = parseFloat(slot.admin_percentage || 20);
                     const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
 
                     message += `${timeRange} - 📋 Индивидуальное\n`;
-                    message += `  👤 ${participantName}\n`;
+                    
+                    // Если клиент не является участником, показываем обоих
+                    if (!payerRides) {
+                        message += `  👨‍💼 Клиент: ${clientName}\n`;
+                        message += `  👤 Участник: ${participantName}\n`;
+                    } else {
+                        // Если клиент является участником, показываем только участника
+                        message += `  👤 Участник: ${participantName}\n`;
+                    }
+                    
                     message += `  ${sportType}\n`;
                     message += `  📱 ${slot.client_phone || 'не указан'}\n`;
                     message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
@@ -288,17 +348,89 @@ async function showFinances(chatId, instructorId) {
             }
         });
 
+        // Получаем информацию о выплатах
+        // Выплаты за текущий месяц
+        const monthPayoutsRes = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total_payouts
+             FROM kuliga_transactions kt
+             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
+             WHERE kb.instructor_id = $1
+               AND kt.type = 'payout'
+               AND kt.status = 'completed'
+               AND TO_CHAR(kt.created_at, 'YYYY-MM') = $2`,
+            [instructorId, currentMonth]
+        );
+        const monthPayouts = parseFloat(monthPayoutsRes.rows[0]?.total_payouts || 0);
+        
+        // Выплаты за текущий год
+        const currentYear = moment().tz('Asia/Yekaterinburg').format('YYYY');
+        const yearPayoutsRes = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total_payouts
+             FROM kuliga_transactions kt
+             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
+             WHERE kb.instructor_id = $1
+               AND kt.type = 'payout'
+               AND kt.status = 'completed'
+               AND TO_CHAR(kt.created_at, 'YYYY') = $2`,
+            [instructorId, currentYear]
+        );
+        const yearPayouts = parseFloat(yearPayoutsRes.rows[0]?.total_payouts || 0);
+        
+        // Выплаты за все время
+        const totalPayoutsRes = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) as total_payouts
+             FROM kuliga_transactions kt
+             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
+             WHERE kb.instructor_id = $1
+               AND kt.type = 'payout'
+               AND kt.status = 'completed'`,
+            [instructorId]
+        );
+        const totalPayouts = parseFloat(totalPayoutsRes.rows[0]?.total_payouts || 0);
+        
+        // Рассчитываем долги
+        const monthDebt = monthEarnings - monthPayouts;
+        const totalDebt = totalEarnings - totalPayouts;
+        
+        // Получаем последние транзакции выплат
+        const recentPayoutsRes = await pool.query(
+            `SELECT kt.amount, kt.created_at, kt.description
+             FROM kuliga_transactions kt
+             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
+             WHERE kb.instructor_id = $1
+               AND kt.type = 'payout'
+               AND kt.status = 'completed'
+             ORDER BY kt.created_at DESC
+             LIMIT 10`,
+            [instructorId]
+        );
+        
+        let payoutsList = '';
+        if (recentPayoutsRes.rows.length > 0) {
+            payoutsList = '\n*📋 Последние выплаты:*\n';
+            recentPayoutsRes.rows.forEach(payout => {
+                const date = moment(payout.created_at).tz('Asia/Yekaterinburg').format('DD.MM.YYYY');
+                payoutsList += `• ${date} — ${parseFloat(payout.amount).toFixed(2)} руб.\n`;
+            });
+        }
+        
         const message =
             '💰 *Финансовая статистика*\n\n' +
             '*За текущий месяц:*\n' +
             `👤 Индивидуальных: ${monthIndividualTrainings}\n` +
             `👥 Групповых: ${monthGroupTrainings}\n` +
-            `💵 Ваш заработок: ${monthEarnings.toFixed(2)} руб.\n\n` +
+            `💵 Ваш заработок: ${monthEarnings.toFixed(2)} руб.\n` +
+            `💳 Выплачено: ${monthPayouts.toFixed(2)} руб.\n` +
+            `📊 Долг Gornostyle72: ${monthDebt.toFixed(2)} руб.\n\n` +
+            '*За текущий год:*\n' +
+            `💳 Выплачено: ${yearPayouts.toFixed(2)} руб.\n\n` +
             '*За все время:*\n' +
             `👤 Индивидуальных: ${totalIndividualTrainings}\n` +
             `👥 Групповых: ${totalGroupTrainings}\n` +
-            `💵 Ваш заработок: ${totalEarnings.toFixed(2)} руб.\n\n` +
-            '_💡 Подробная информация о выплатах доступна в вашем личном кабинете_';
+            `💵 Общий заработок: ${totalEarnings.toFixed(2)} руб.\n` +
+            `💳 Всего выплачено: ${totalPayouts.toFixed(2)} руб.\n` +
+            `📊 Общий долг Gornostyle72: ${totalDebt.toFixed(2)} руб.` +
+            payoutsList;
 
         return bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',

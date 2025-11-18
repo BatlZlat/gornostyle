@@ -617,20 +617,97 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
         const adminPercentage = Number(trainingData.admin_percentage || 20);
         const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
 
+        // Определяем тип тренировки
+        const trainingType = trainingData.booking_type === 'group' ? 'Групповая' : 'Индивидуальная';
+
+        // Форматируем дату с днем недели
+        const date = new Date(trainingData.date);
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+        const formattedDateWithDay = `${formatDate(trainingData.date)} (${dayOfWeek})`;
+
         const message = 
             '🎉 *Новая запись на вашу тренировку!*\n\n' +
+            `*${trainingType}*\n\n` +
+            `👨‍💼 *Клиент:* ${trainingData.client_name || trainingData.participant_name}\n` +
             `👤 *Участник:* ${trainingData.participant_name}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
-            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
             `🏔️ *Место:* Кулига Парк\n\n` +
-            `💰 *Стоимость:* ${totalPrice.toFixed(2)} руб.\n` +
-            `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб. (${100 - adminPercentage}%)`;
+            `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
         await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
         console.log(`✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (ID: ${trainingData.instructor_telegram_id})`);
     } catch (error) {
         console.error('Ошибка при отправке уведомления инструктору:', error);
+    }
+}
+
+// Функция для отправки уведомления инструктору об отмене тренировки
+async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
+    try {
+        if (!instructorBot) {
+            console.log('Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            return;
+        }
+
+        // Получаем telegram_id инструктора по имени (если не передан напрямую)
+        if (!cancellationData.instructor_telegram_id && cancellationData.instructor_name) {
+            // Используем Pool напрямую, так как файла pool.js может не быть
+            const { Pool } = require('pg');
+            const pool = new Pool({
+                host: process.env.DB_HOST || '127.0.0.1',
+                port: process.env.DB_PORT || 6432,
+                database: process.env.DB_NAME,
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD,
+            });
+            
+            try {
+                const instructorRes = await pool.query(
+                    'SELECT telegram_id FROM kuliga_instructors WHERE full_name = $1',
+                    [cancellationData.instructor_name]
+                );
+                
+                if (instructorRes.rows.length > 0) {
+                    cancellationData.instructor_telegram_id = instructorRes.rows[0].telegram_id;
+                }
+            } finally {
+                await pool.end();
+            }
+        }
+
+        if (!cancellationData.instructor_telegram_id) {
+            console.log(`Инструктор ${cancellationData.instructor_name} не зарегистрирован в Telegram боте`);
+            return;
+        }
+
+        // Форматируем дату с днем недели
+        const date = new Date(cancellationData.date);
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+        const formattedDateWithDay = `${formatDate(cancellationData.date)} (${dayOfWeek})`;
+        
+        // Форматируем время в формат HH:MM (убираем секунды)
+        let formattedTime = cancellationData.time;
+        if (formattedTime && formattedTime.includes(':')) {
+            const timeParts = formattedTime.split(':');
+            formattedTime = `${timeParts[0]}:${timeParts[1]}`;
+        }
+
+        const message = 
+            '❌ *Отмена тренировки*\n\n' +
+            `👨‍💼 *Клиент:* ${cancellationData.client_name}\n` +
+            `👤 *Участник:* ${cancellationData.participant_name}\n` +
+            `📱 *Телефон:* ${cancellationData.client_phone || 'не указан'}\n` +
+            `📅 *Дата:* ${formattedDateWithDay}\n` +
+            `⏰ *Время:* ${formattedTime}\n` +
+            `🏔️ *Место:* Кулига Парк\n\n` +
+            `Тренировка была отменена клиентом.`;
+
+        await instructorBot.sendMessage(cancellationData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление об отмене отправлено инструктору ${cancellationData.instructor_name} (ID: ${cancellationData.instructor_telegram_id})`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору об отмене:', error);
     }
 }
 
@@ -1420,6 +1497,7 @@ module.exports = {
     notifyAdminNaturalSlopeTrainingCancellation,
     notifyAdminNaturalSlopeTrainingBooking,
     notifyInstructorKuligaTrainingBooking,
+    notifyInstructorKuligaTrainingCancellation,
     notifyAdminWinterGroupTrainingCreated,
     notifyAdminWinterGroupTrainingCreatedByAdmin,
     notifyAdminSubscriptionPurchase

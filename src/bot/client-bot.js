@@ -5625,13 +5625,29 @@ async function handleTextMessage(msg) {
                 // Формируем список тренировок для отмены
                 let message = 'Выберите тренировку для отмены:\n\n';
                 state.data.sessions.forEach((session, index) => {
-                    const date = new Date(session.session_date);
+                    // Для kuliga тренировок используется поле 'date', для остальных 'session_date'
+                    const dateStr = session.date || session.session_date;
+                    if (!dateStr) {
+                        console.error('Ошибка: дата не найдена в сессии', session);
+                        return;
+                    }
+                    
+                    const date = new Date(dateStr);
+                    if (isNaN(date.getTime())) {
+                        console.error('Ошибка: некорректная дата', dateStr);
+                        return;
+                    }
+                    
                     const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                    const [hours, minutes] = session.start_time.split(':');
-                    const formattedTime = `${hours}:${minutes}`;
-
-                    message += `${index + 1}. ${session.participant_name} - ${formattedDate} (${dayOfWeek}) ${formattedTime}\n`;
+                    
+                    // Для kuliga тренировок используется поле 'start_time', для остальных тоже 'start_time'
+                    const timeStr = session.start_time || '';
+                    const [hours, minutes] = timeStr ? timeStr.split(':') : ['', ''];
+                    const formattedTime = hours && minutes ? `${hours}:${minutes}` : '';
+                    
+                    const participantName = session.participant_name || 'Участник';
+                    message += `${index + 1}. ${participantName} - ${formattedDate} (${dayOfWeek})${formattedTime ? ' ' + formattedTime : ''}\n`;
                 });
 
                 state.step = 'cancel_training_selection';
@@ -6218,7 +6234,10 @@ async function handleTextMessage(msg) {
 
                     // Получаем информацию о бронировании
                     const bookingRes = await pool.query(
-                        'SELECT * FROM kuliga_bookings WHERE id = $1',
+                        `SELECT kb.*, ki.telegram_id as instructor_telegram_id, ki.full_name as instructor_name, ki.admin_percentage 
+                         FROM kuliga_bookings kb
+                         LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+                         WHERE kb.id = $1`,
                         [selectedSession.id]
                     );
                     const booking = bookingRes.rows[0];
@@ -6239,9 +6258,27 @@ async function handleTextMessage(msg) {
                         client_phone: kuligaClient.phone,
                         date: selectedSession.date,
                         time: selectedSession.start_time,
-                        trainer_name: selectedSession.instructor_name || 'Не указан',
+                        trainer_name: booking.instructor_name || 'Не указан',
                         refund: selectedSession.price_total
                     });
+
+                    // Уведомляем инструктора об отмене
+                    if (booking.instructor_telegram_id) {
+                        try {
+                            const { notifyInstructorKuligaTrainingCancellation } = require('./admin-notify');
+                            await notifyInstructorKuligaTrainingCancellation({
+                                participant_name: selectedSession.participant_name,
+                                client_name: kuligaClient.full_name,
+                                client_phone: kuligaClient.phone,
+                                date: selectedSession.date,
+                                time: selectedSession.start_time,
+                                instructor_name: booking.instructor_name,
+                                instructor_telegram_id: booking.instructor_telegram_id
+                            });
+                        } catch (error) {
+                            console.error('Ошибка при уведомлении инструктора об отмене:', error);
+                        }
+                    }
 
                     // Освобождаем слот в kuliga_schedule_slots
                     if (selectedSession.slot_id) {
@@ -6257,18 +6294,24 @@ async function handleTextMessage(msg) {
                         ['cancelled', selectedSession.id]
                     );
 
-                    // Инициируем возврат через Tinkoff (если был платеж)
-                    const transactionRes = await pool.query(
-                        'SELECT * FROM kuliga_transactions WHERE booking_id = $1 AND type = $2 AND status = $3',
-                        [selectedSession.id, 'payment', 'completed']
+                    // Возвращаем средства на баланс кошелька
+                    await pool.query(
+                        'UPDATE wallets SET balance = balance + $1 WHERE client_id = $2',
+                        [selectedSession.price_total, kuligaClient.id]
                     );
-                    
-                    if (transactionRes.rows.length > 0) {
-                        // Здесь можно добавить логику возврата через Tinkoff API
-                        // Пока просто помечаем транзакцию как возвращенную
+
+                    // Получаем id кошелька и создаем транзакцию
+                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [kuligaClient.id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    if (walletId) {
                         await pool.query(
-                            'UPDATE kuliga_transactions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE booking_id = $2 AND type = $3',
-                            ['cancelled', selectedSession.id, 'payment']
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [
+                                walletId,
+                                selectedSession.price_total,
+                                'amount',
+                                `Возврат: Индивидуальная тренировка Кулига, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}`
+                            ]
                         );
                     }
 
@@ -6280,7 +6323,7 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${formattedTime}\n` +
                         `🏔️ *Место:* Кулига Парк\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price_total).toFixed(2)} руб.\n\n` +
-                        'Средства будут возвращены на вашу карту в течение 3-5 рабочих дней.';
+                        'Средства возвращены на ваш баланс.';
 
                     userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
@@ -6317,9 +6360,12 @@ async function handleTextMessage(msg) {
                         });
                     }
 
-                    // Получаем информацию о групповой тренировке
+                    // Получаем информацию о групповой тренировке с данными инструктора
                     const groupTrainingRes = await pool.query(
-                        'SELECT * FROM kuliga_group_trainings WHERE id = $1',
+                        `SELECT kgt.*, ki.telegram_id as instructor_telegram_id, ki.full_name as instructor_name, ki.admin_percentage 
+                         FROM kuliga_group_trainings kgt
+                         LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                         WHERE kgt.id = $1`,
                         [selectedSession.group_training_id]
                     );
                     const groupTraining = groupTrainingRes.rows[0];
@@ -6331,6 +6377,24 @@ async function handleTextMessage(msg) {
                                 resize_keyboard: true
                             }
                         });
+                    }
+
+                    // Уведомляем инструктора об отмене
+                    if (groupTraining.instructor_telegram_id) {
+                        try {
+                            const { notifyInstructorKuligaTrainingCancellation } = require('./admin-notify');
+                            await notifyInstructorKuligaTrainingCancellation({
+                                participant_name: selectedSession.participant_name,
+                                client_name: kuligaClient.full_name,
+                                client_phone: kuligaClient.phone,
+                                date: selectedSession.date,
+                                time: selectedSession.start_time,
+                                instructor_name: groupTraining.instructor_name,
+                                instructor_telegram_id: groupTraining.instructor_telegram_id
+                            });
+                        } catch (error) {
+                            console.error('Ошибка при уведомлении инструктора об отмене:', error);
+                        }
                     }
 
                     // Уменьшаем количество участников в групповой тренировке
@@ -6345,17 +6409,24 @@ async function handleTextMessage(msg) {
                         ['cancelled', selectedSession.id]
                     );
 
-                    // Инициируем возврат через Tinkoff (если был платеж)
-                    const transactionRes = await pool.query(
-                        'SELECT * FROM kuliga_transactions WHERE booking_id = $1 AND type = $2 AND status = $3',
-                        [selectedSession.id, 'payment', 'completed']
+                    // Возвращаем средства на баланс кошелька
+                    await pool.query(
+                        'UPDATE wallets SET balance = balance + $1 WHERE client_id = $2',
+                        [selectedSession.price_per_person, kuligaClient.id]
                     );
-                    
-                    if (transactionRes.rows.length > 0) {
-                        // Здесь можно добавить логику возврата через Tinkoff API
+
+                    // Получаем id кошелька и создаем транзакцию
+                    const walletRes = await pool.query('SELECT id FROM wallets WHERE client_id = $1', [kuligaClient.id]);
+                    const walletId = walletRes.rows[0]?.id;
+                    if (walletId) {
                         await pool.query(
-                            'UPDATE kuliga_transactions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE booking_id = $2 AND type = $3',
-                            ['cancelled', selectedSession.id, 'payment']
+                            'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                            [
+                                walletId,
+                                selectedSession.price_per_person,
+                                'amount',
+                                `Возврат: Групповая тренировка Кулига, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}`
+                            ]
                         );
                     }
 
@@ -6367,7 +6438,7 @@ async function handleTextMessage(msg) {
                         `⏰ *Время:* ${formattedTime}\n` +
                         `🏔️ *Место:* Кулига Парк\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price_per_person).toFixed(2)} руб.\n\n` +
-                        'Средства будут возвращены на вашу карту в течение 3-5 рабочих дней.';
+                        'Средства возвращены на ваш баланс.';
 
                     userStates.delete(chatId);
                     return bot.sendMessage(chatId, clientMessage, {
@@ -7636,27 +7707,22 @@ async function handleTextMessage(msg) {
                     const sportType = state.data.selected_sport_type || 'ski';
                     const participantName = state.data.participant_name || 'Участник';
                     
-                    // МИГРАЦИЯ 033: Создаем или находим клиента в clients (не kuliga_clients)
-                    const clientPhone = state.data.client_phone || '';
-                    const normalizedPhone = clientPhone.replace(/[^0-9+]/g, '');
+                    // МИГРАЦИЯ 033: Используем client_id из состояния (клиент уже зарегистрирован в боте)
+                    // При записи через бота клиент всегда должен быть зарегистрирован
+                    let kuligaClientId = state.data.client_id;
                     
-                    let kuligaClientId;
-                    const clientCheck = await dbClient.query(
-                        `SELECT id FROM clients WHERE phone = $1 LIMIT 1`,
-                        [normalizedPhone]
-                    );
-                    
-                    if (clientCheck.rows.length > 0) {
-                        kuligaClientId = clientCheck.rows[0].id;
-                    } else {
-                        // Создаем нового клиента с временной датой рождения
-                        const newClientResult = await dbClient.query(
-                            `INSERT INTO clients (full_name, phone, telegram_id, birth_date)
-                             VALUES ($1, $2, $3, '1900-01-01')
-                             RETURNING id`,
-                            [participantName, normalizedPhone, state.data.client_id?.toString() || null]
+                    if (!kuligaClientId) {
+                        // Fallback: ищем клиента по telegram_id
+                        const clientCheck = await dbClient.query(
+                            `SELECT id FROM clients WHERE telegram_id = $1 LIMIT 1`,
+                            [chatId.toString()]
                         );
-                        kuligaClientId = newClientResult.rows[0].id;
+                        
+                        if (clientCheck.rows.length > 0) {
+                            kuligaClientId = clientCheck.rows[0].id;
+                        } else {
+                            throw new Error('Клиент не найден. Пожалуйста, зарегистрируйтесь в боте через /start');
+                        }
                     }
                     
                     // Получаем информацию о слоте для создания бронирования
@@ -7794,6 +7860,8 @@ async function handleTextMessage(msg) {
                     // Уведомляем инструктора
                     if (instructor) {
                         await notifyInstructorKuligaTrainingBooking({
+                            booking_type: 'individual',
+                            client_name: client.full_name,
                             participant_name: state.data.participant_name,
                             client_phone: client.phone,
                             instructor_name: instructor.full_name,
@@ -10439,8 +10507,16 @@ function getSportTypeDisplay(sportType) {
 async function showNaturalSlopeAvailableDates(chatId, filters = {}) {
     const conditions = [
         "ks.status = 'available'",
-        'ks.date >= CURRENT_DATE',
-        'ki.is_active = TRUE'
+        'ks.date >= (NOW() AT TIME ZONE \'Asia/Yekaterinburg\')::date',
+        'ki.is_active = TRUE',
+        // Для текущей даты показываем только если есть слоты, которые еще не начались
+        `(
+            ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+            OR (
+                ks.date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                AND ks.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+            )
+        )`
     ];
     const params = [];
     if (filters.selected_instructor_id) {
@@ -10502,6 +10578,16 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
             'ki.is_active = TRUE'
         ];
         const params = [selectedDate];
+        
+        // Добавляем проверку времени: если дата сегодня, то показываем только те слоты, которые еще не начались
+        conditions.push(`(
+            ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+            OR (
+                ks.date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                AND ks.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+            )
+        )`);
+        
         if (data?.selected_instructor_id) {
             conditions.push(`ks.instructor_id = $${params.length + 1}`);
             params.push(data.selected_instructor_id);
