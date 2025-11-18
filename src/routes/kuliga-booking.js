@@ -25,28 +25,38 @@ const isDateWithinRange = (dateString) => {
     return !day.isBefore(today) && !day.isAfter(max);
 };
 
+// МИГРАЦИЯ 033: Теперь используем таблицу clients вместо kuliga_clients
 const upsertClient = async (client, trx) => {
     const phone = normalizePhone(client.phone);
+    
+    // Нормализуем телефон для поиска (убираем все кроме цифр и +)
+    const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // Ищем клиента в clients по нормализованному телефону
     const { rows } = await trx.query(
-        `SELECT id, telegram_id FROM kuliga_clients WHERE phone = $1 LIMIT 1`,
-        [phone]
+        `SELECT id, telegram_id, birth_date FROM clients 
+         WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1 
+         LIMIT 1`,
+        [normalizedPhone]
     );
 
     if (rows.length) {
+        // Клиент найден, обновляем только email (если его нет)
         await trx.query(
-            `UPDATE kuliga_clients
-             SET full_name = $1,
-                 email = $2,
+            `UPDATE clients
+             SET email = COALESCE(email, $1),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $3`,
-            [client.fullName, client.email || null, rows[0].id]
+             WHERE id = $2`,
+            [client.email || null, rows[0].id]
         );
         return { id: rows[0].id, telegram_id: rows[0].telegram_id };
     }
 
+    // Клиент не найден, создаем нового с временной датой рождения
+    // Дата будет обновлена при первом /start в боте
     const insertResult = await trx.query(
-        `INSERT INTO kuliga_clients (full_name, phone, email)
-         VALUES ($1, $2, $3)
+        `INSERT INTO clients (full_name, phone, email, birth_date, created_at, updated_at)
+         VALUES ($1, $2, $3, '1900-01-01', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id, telegram_id`,
         [client.fullName, phone, client.email || null]
     );

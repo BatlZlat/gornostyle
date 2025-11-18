@@ -31,6 +31,14 @@
 --      - Все слоты мигрированы в kuliga_schedule_slots
 --      - Единая система расписания для всех инструкторов (включая Тебякина Данила)
 --      - Скрипт миграции: scripts/migrate-winter-schedule-to-kuliga.js
+-- 033: УНИФИКАЦИЯ ТАБЛИЦ КЛИЕНТОВ (18 ноября 2025)
+--      - kuliga_clients УДАЛЕНА
+--      - Все бронирования Кулиги теперь используют таблицу clients
+--      - kuliga_bookings.client_id -> clients.id
+--      - kuliga_transactions.client_id -> clients.id
+--      - kuliga_program_bookings.client_id -> clients.id
+--      - Участники (дети) хранятся в таблице children с parent_id
+--      - Автоматическая регистрация клиентов в боте по телефону при /start
 -- ============================================================================
 
 -- ============================================================================
@@ -1403,26 +1411,16 @@ CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_s
 CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active';
 
 -- ============================================================================
--- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027)
+-- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027, обновлено в МИГРАЦИИ 033)
 -- ============================================================================
 -- Создано: 9 ноября 2025
+-- Обновлено: 18 ноября 2025 (МИГРАЦИЯ 033)
 -- Описание: Служба инструкторов Кулиги Горностайл72 для базы отдыха
 -- Домен: gornostyle.ru/instruktora-kuliga
+--
+-- ВАЖНО: Клиенты хранятся в основной таблице clients (не в отдельной kuliga_clients)
+-- Участники-дети хранятся в таблице children с parent_id -> clients.id
 -- ============================================================================
-
--- Таблица клиентов системы Кулиги (упрощенная регистрация)
--- Клиенты заполняют только ФИО + телефон при бронировании
-CREATE TABLE IF NOT EXISTS kuliga_clients (
-    id SERIAL PRIMARY KEY,
-    full_name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) NOT NULL UNIQUE,
-    email VARCHAR(255),
-    telegram_id BIGINT UNIQUE,
-    telegram_username VARCHAR(100),
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- Таблица инструкторов Кулиги (управляются администратором)
 -- МИГРАЦИЯ 030: Добавлены поля username и password_hash для авторизации в личном кабинете
@@ -1483,9 +1481,10 @@ CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
 );
 
 -- Таблица бронирований (индивидуальные и групповые)
+-- МИГРАЦИЯ 033: client_id теперь ссылается на clients.id (не kuliga_clients)
 CREATE TABLE IF NOT EXISTS kuliga_bookings (
     id SERIAL PRIMARY KEY,
-    client_id INTEGER NOT NULL REFERENCES kuliga_clients(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     booking_type VARCHAR(20) NOT NULL CHECK (booking_type IN ('individual', 'group')),
     instructor_id INTEGER REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
     slot_id INTEGER REFERENCES kuliga_schedule_slots(id) ON DELETE CASCADE,
@@ -1514,9 +1513,10 @@ CREATE TABLE IF NOT EXISTS kuliga_bookings (
 );
 
 -- Таблица транзакций через Tinkoff Acquiring
+-- МИГРАЦИЯ 033: client_id теперь ссылается на clients.id (не kuliga_clients)
 CREATE TABLE IF NOT EXISTS kuliga_transactions (
     id SERIAL PRIMARY KEY,
-    client_id INTEGER REFERENCES kuliga_clients(id) ON DELETE SET NULL,
+    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
     booking_id INTEGER REFERENCES kuliga_bookings(id) ON DELETE SET NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('payment', 'refund', 'payout')),
     amount DECIMAL(10,2) NOT NULL,
@@ -1572,10 +1572,11 @@ CREATE TABLE IF NOT EXISTS kuliga_programs (
 );
 
 -- Таблица записей на регулярные программы
+-- МИГРАЦИЯ 033: client_id теперь ссылается на clients.id (не kuliga_clients)
 CREATE TABLE IF NOT EXISTS kuliga_program_bookings (
     id SERIAL PRIMARY KEY,
     program_id INTEGER NOT NULL REFERENCES kuliga_programs(id) ON DELETE CASCADE,
-    client_id INTEGER NOT NULL REFERENCES kuliga_clients(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     participant_name VARCHAR(100) NOT NULL,
     participant_birth_year INTEGER NOT NULL CHECK (participant_birth_year >= 1900 AND participant_birth_year <= EXTRACT(YEAR FROM CURRENT_DATE)),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'completed')),
@@ -1585,9 +1586,8 @@ CREATE TABLE IF NOT EXISTS kuliga_program_bookings (
 );
 
 -- Индексы для таблиц Кулиги
-CREATE INDEX IF NOT EXISTS idx_kuliga_clients_phone ON kuliga_clients(phone);
-CREATE INDEX IF NOT EXISTS idx_kuliga_clients_telegram ON kuliga_clients(telegram_id);
-CREATE INDEX IF NOT EXISTS idx_kuliga_clients_created ON kuliga_clients(created_at DESC);
+-- МИГРАЦИЯ 033: Индексы для kuliga_clients удалены (таблица больше не существует)
+-- Клиенты используют основные индексы таблицы clients
 
 CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_active ON kuliga_instructors(is_active);
 CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_telegram ON kuliga_instructors(telegram_id);
@@ -1624,20 +1624,19 @@ CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_program ON kuliga_program
 CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_client ON kuliga_program_bookings(client_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_status ON kuliga_program_bookings(status);
 
--- Комментарии для таблиц Кулиги
-COMMENT ON TABLE kuliga_clients IS 'Клиенты службы инструкторов Кулиги (упрощенная регистрация: ФИО + телефон)';
+-- Комментарии для таблиц Кулиги (обновлено в МИГРАЦИИ 033)
 COMMENT ON TABLE kuliga_instructors IS 'Инструкторы Кулиги (добавляются администратором, могут регистрироваться в Telegram-боте)';
 COMMENT ON TABLE kuliga_schedule_slots IS 'Временные слоты инструкторов (available=свободен, booked=индивидуальная, group=групповая, blocked=не работает)';
 COMMENT ON TABLE kuliga_group_trainings IS 'Групповые тренировки (автопроверка в 22:00, отмена при недоборе min_participants)';
-COMMENT ON TABLE kuliga_bookings IS 'Бронирования клиентов (поддержка семейного бронирования participants_names[])';
-COMMENT ON TABLE kuliga_transactions IS 'Транзакции через Tinkoff Acquiring (платежи, возвраты, выплаты инструкторам)';
+COMMENT ON TABLE kuliga_bookings IS 'Бронирования клиентов (поддержка семейного бронирования participants_names[], client_id -> clients.id)';
+COMMENT ON TABLE kuliga_transactions IS 'Транзакции через Tinkoff Acquiring (платежи, возвраты, выплаты инструкторам, client_id -> clients.id)';
 COMMENT ON TABLE kuliga_admin_settings IS 'Настройки системы Кулиги (глобальный процент админа, время проверки групп)';
 COMMENT ON COLUMN kuliga_bookings.participants_birth_years IS 'Годы рождения участников (рассчитаны из возраста на момент бронирования)';
 COMMENT ON COLUMN kuliga_bookings.notification_method IS 'Канал уведомлений: email, telegram, both';
 COMMENT ON COLUMN kuliga_bookings.price_id IS 'ID записи прайса winter_prices, по которой рассчитана стоимость';
 COMMENT ON COLUMN kuliga_bookings.payer_rides IS 'true, если заказчик участвует в тренировке';
 COMMENT ON TABLE kuliga_programs IS 'Регулярные групповые программы (шаблоны с привязкой к дням недели, клиенты записываются индивидуально)';
-COMMENT ON TABLE kuliga_program_bookings IS 'Записи клиентов на регулярные программы (один клиент = один участник)';
+COMMENT ON TABLE kuliga_program_bookings IS 'Записи клиентов на регулярные программы (один клиент = один участник, client_id -> clients.id)';
 
 COMMENT ON COLUMN kuliga_instructors.admin_percentage IS 'Процент администратора от заработка инструктора (индивидуальный, по умолчанию из kuliga_admin_settings)';
 COMMENT ON COLUMN kuliga_instructors.telegram_registered IS 'Зарегистрирован ли в Telegram-боте для получения уведомлений (уволенные не получают)';
