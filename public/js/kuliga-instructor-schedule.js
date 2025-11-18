@@ -110,6 +110,56 @@ async function loadStats() {
     }
 }
 
+// Вспомогательная функция для проверки минимального времени (10:15)
+function isValidMinTime(time) {
+    const [hours, minutes] = time.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+    const minMinutes = 10 * 60 + 15; // 10:15
+    return totalMinutes >= minMinutes;
+}
+
+// Вспомогательная функция для вычисления разницы между временами в минутах
+function getTimeDifferenceInMinutes(time1, time2) {
+    const [h1, m1] = time1.split(':').map(Number);
+    const [h2, m2] = time2.split(':').map(Number);
+    const minutes1 = h1 * 60 + m1;
+    const minutes2 = h2 * 60 + m2;
+    return Math.abs(minutes2 - minutes1);
+}
+
+// Вспомогательная функция для проверки минимального интервала между слотами (1.5 часа = 90 минут)
+// Учитывает, что слот длится 1 час: если слот начинается в 10:00 (заканчивается в 11:00),
+// следующий должен начинаться не раньше 11:30 (10:00 + 1 час тренировки + 30 минут перерыва)
+function checkMinimumInterval(times) {
+    // Сортируем времена
+    const sortedTimes = [...times].sort();
+    
+    for (let i = 0; i < sortedTimes.length - 1; i++) {
+        const [h1, m1] = sortedTimes[i].split(':').map(Number);
+        const [h2, m2] = sortedTimes[i + 1].split(':').map(Number);
+        
+        // Время начала первого слота в минутах
+        const start1 = h1 * 60 + m1;
+        // Время окончания первого слота (длится 1 час) в минутах
+        const end1 = start1 + 60;
+        // Время начала второго слота в минутах
+        const start2 = h2 * 60 + m2;
+        
+        // Разница между окончанием первого и началом второго (перерыв)
+        const breakTime = start2 - end1;
+        
+        // Минимальный перерыв должен быть 30 минут (1.5 часа интервал - 1 час тренировки = 30 минут)
+        if (breakTime < 30) {
+            return {
+                valid: false,
+                error: `Минимальный интервал между слотами - 1.5 часа. Между ${sortedTimes[i]} и ${sortedTimes[i + 1]} недостаточно времени (нужно минимум 30 минут перерыва после окончания предыдущей тренировки).`
+            };
+        }
+    }
+    
+    return { valid: true };
+}
+
 // Создание слотов на дату
 async function createSlotsForDay() {
     const token = getToken();
@@ -132,6 +182,35 @@ async function createSlotsForDay() {
         return;
     }
 
+    // Валидация формата времени и минимального времени (10:15)
+    const validTimes = [];
+    for (const time of times) {
+        // Проверяем формат времени (HH:MM)
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+            continue;
+        }
+
+        // Проверяем, что время не раньше 10:15
+        if (!isValidMinTime(time)) {
+            resultDiv.innerHTML = `<div class="alert alert-error">Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.</div>`;
+            return;
+        }
+
+        validTimes.push(time);
+    }
+
+    if (validTimes.length === 0) {
+        resultDiv.innerHTML = '<div class="alert alert-error">Не найдено ни одного валидного времени в формате HH:MM</div>';
+        return;
+    }
+
+    // Проверяем минимальный интервал между слотами (1.5 часа)
+    const intervalCheck = checkMinimumInterval(validTimes);
+    if (!intervalCheck.valid) {
+        resultDiv.innerHTML = `<div class="alert alert-error">${intervalCheck.error}</div>`;
+        return;
+    }
+
     try {
         const response = await fetch('/api/kuliga/instructor/slots/create', {
             method: 'POST',
@@ -141,7 +220,7 @@ async function createSlotsForDay() {
             },
             body: JSON.stringify({
                 date,
-                times
+                times: validTimes
             })
         });
 
@@ -329,6 +408,35 @@ async function createBulkSlots() {
         return;
     }
 
+    // Валидация формата времени и минимального времени (10:15)
+    const validTimes = [];
+    for (const time of times) {
+        // Проверяем формат времени (HH:MM)
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+            continue;
+        }
+
+        // Проверяем, что время не раньше 10:15
+        if (!isValidMinTime(time)) {
+            resultDiv.innerHTML = `<div class="alert alert-error">Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.</div>`;
+            return;
+        }
+
+        validTimes.push(time);
+    }
+
+    if (validTimes.length === 0) {
+        resultDiv.innerHTML = '<div class="alert alert-error">Не найдено ни одного валидного времени в формате HH:MM</div>';
+        return;
+    }
+
+    // Проверяем минимальный интервал между слотами (1.5 часа)
+    const intervalCheck = checkMinimumInterval(validTimes);
+    if (!intervalCheck.valid) {
+        resultDiv.innerHTML = `<div class="alert alert-error">${intervalCheck.error}</div>`;
+        return;
+    }
+
     try {
         resultDiv.innerHTML = '<div class="alert alert-info">Создание слотов... Пожалуйста, подождите.</div>';
 
@@ -342,7 +450,7 @@ async function createBulkSlots() {
                 fromDate,
                 toDate,
                 weekdays,
-                times
+                times: validTimes
             })
         });
 

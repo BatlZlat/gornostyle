@@ -50,6 +50,62 @@ router.get('/slots', async (req, res) => {
 });
 
 /**
+ * Вспомогательная функция для проверки минимального времени (10:15)
+ */
+function isValidMinTime(time) {
+    const [hours, minutes] = time.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+    const minMinutes = 10 * 60 + 15; // 10:15
+    return totalMinutes >= minMinutes;
+}
+
+/**
+ * Вспомогательная функция для вычисления разницы между временами в минутах
+ */
+function getTimeDifferenceInMinutes(time1, time2) {
+    const [h1, m1] = time1.split(':').map(Number);
+    const [h2, m2] = time2.split(':').map(Number);
+    const minutes1 = h1 * 60 + m1;
+    const minutes2 = h2 * 60 + m2;
+    return Math.abs(minutes2 - minutes1);
+}
+
+/**
+ * Вспомогательная функция для проверки минимального интервала между слотами (1.5 часа = 90 минут)
+ * Учитывает, что слот длится 1 час: если слот начинается в 10:00 (заканчивается в 11:00),
+ * следующий должен начинаться не раньше 11:30 (10:00 + 1 час тренировки + 30 минут перерыва)
+ */
+function checkMinimumInterval(times) {
+    // Сортируем времена
+    const sortedTimes = [...times].sort();
+    
+    for (let i = 0; i < sortedTimes.length - 1; i++) {
+        const [h1, m1] = sortedTimes[i].split(':').map(Number);
+        const [h2, m2] = sortedTimes[i + 1].split(':').map(Number);
+        
+        // Время начала первого слота в минутах
+        const start1 = h1 * 60 + m1;
+        // Время окончания первого слота (длится 1 час) в минутах
+        const end1 = start1 + 60;
+        // Время начала второго слота в минутах
+        const start2 = h2 * 60 + m2;
+        
+        // Разница между окончанием первого и началом второго (перерыв)
+        const breakTime = start2 - end1;
+        
+        // Минимальный перерыв должен быть 30 минут (1.5 часа интервал - 1 час тренировки = 30 минут)
+        if (breakTime < 30) {
+            return {
+                valid: false,
+                error: `Минимальный интервал между слотами - 1.5 часа. Между ${sortedTimes[i]} и ${sortedTimes[i + 1]} недостаточно времени (нужно минимум 30 минут перерыва после окончания предыдущей тренировки).`
+            };
+        }
+    }
+    
+    return { valid: true };
+}
+
+/**
  * POST /api/kuliga/instructor/slots/create
  * Создание слотов на определенную дату
  * Body: { date, times: [] }
@@ -62,24 +118,61 @@ router.post('/slots/create', async (req, res) => {
         return res.status(400).json({ error: 'Необходимо указать date и times' });
     }
 
+    // Валидация формата времени и минимального времени (10:15)
+    const validTimes = [];
+    for (const time of times) {
+        // Проверяем формат времени (HH:MM)
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+            continue;
+        }
+
+        // Проверяем, что время не раньше 10:15
+        if (!isValidMinTime(time)) {
+            return res.status(400).json({ 
+                error: `Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.` 
+            });
+        }
+
+        validTimes.push(time);
+    }
+
+    if (validTimes.length === 0) {
+        return res.status(400).json({ error: 'Не найдено ни одного валидного времени' });
+    }
+
+    // Проверяем минимальный интервал между слотами (1.5 часа)
+    const intervalCheck = checkMinimumInterval(validTimes);
+    if (!intervalCheck.valid) {
+        return res.status(400).json({ error: intervalCheck.error });
+    }
+
     const client = await pool.connect();
     
     try {
         await client.query('BEGIN');
 
+        // Получаем существующие слоты на эту дату для проверки интервалов
+        const existingSlotsResult = await client.query(
+            `SELECT start_time FROM kuliga_schedule_slots 
+             WHERE instructor_id = $1 AND date = $2 
+             ORDER BY start_time ASC`,
+            [instructorId, date]
+        );
+        const existingTimes = existingSlotsResult.rows.map(row => row.start_time);
+
+        // Проверяем интервалы с существующими слотами
+        const allTimes = [...existingTimes, ...validTimes];
+        const allTimesCheck = checkMinimumInterval(allTimes);
+        if (!allTimesCheck.valid) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                error: `Временные слоты пересекаются с существующими. ${allTimesCheck.error}` 
+            });
+        }
+
         let created = 0;
 
-        for (const time of times) {
-            // Проверяем формат времени (HH:MM)
-            if (!/^\d{2}:\d{2}$/.test(time)) {
-                continue;
-            }
-
-            // Вычисляем время окончания (слот длится 1 час)
-            const [hours, minutes] = time.split(':').map(Number);
-            const endHours = (hours + 1) % 24;
-            const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-
+        for (const time of validTimes) {
             // Проверяем, существует ли уже такой слот
             const existingSlot = await client.query(
                 `SELECT id FROM kuliga_schedule_slots 
@@ -91,6 +184,11 @@ router.post('/slots/create', async (req, res) => {
                 // Слот уже существует, пропускаем
                 continue;
             }
+
+            // Вычисляем время окончания (слот длится 1 час)
+            const [hours, minutes] = time.split(':').map(Number);
+            const endHours = (hours + 1) % 24;
+            const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
             // Создаем новый слот
             await client.query(
@@ -136,6 +234,30 @@ router.post('/slots/create-bulk', async (req, res) => {
         return res.status(400).json({ error: 'Необходимо выбрать хотя бы один день недели и время' });
     }
 
+    // Валидация времен: формат и минимальное время (10:15)
+    const validTimes = [];
+    for (const time of times) {
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+            continue;
+        }
+        if (!isValidMinTime(time)) {
+            return res.status(400).json({ 
+                error: `Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.` 
+            });
+        }
+        validTimes.push(time);
+    }
+
+    if (validTimes.length === 0) {
+        return res.status(400).json({ error: 'Не найдено ни одного валидного времени' });
+    }
+
+    // Проверяем минимальный интервал между слотами (1.5 часа)
+    const intervalCheck = checkMinimumInterval(validTimes);
+    if (!intervalCheck.valid) {
+        return res.status(400).json({ error: intervalCheck.error });
+    }
+
     const client = await pool.connect();
     
     try {
@@ -156,18 +278,25 @@ router.post('/slots/create-bulk', async (req, res) => {
 
             const dateStr = date.toISOString().split('T')[0];
 
+            // Получаем существующие слоты на эту дату для проверки интервалов
+            const existingSlotsResult = await client.query(
+                `SELECT start_time FROM kuliga_schedule_slots 
+                 WHERE instructor_id = $1 AND date = $2 
+                 ORDER BY start_time ASC`,
+                [instructorId, dateStr]
+            );
+            const existingTimes = existingSlotsResult.rows.map(row => row.start_time);
+
+            // Проверяем интервалы с существующими слотами
+            const allTimes = [...existingTimes, ...validTimes];
+            const allTimesCheck = checkMinimumInterval(allTimes);
+            if (!allTimesCheck.valid) {
+                // Для массового создания просто пропускаем эту дату, не прерываем весь процесс
+                continue;
+            }
+
             // Создаем слоты для всех указанных времен
-            for (const time of times) {
-                // Проверяем формат времени (HH:MM)
-                if (!/^\d{2}:\d{2}$/.test(time)) {
-                    continue;
-                }
-
-                // Вычисляем время окончания (слот длится 1 час)
-                const [hours, minutes] = time.split(':').map(Number);
-                const endHours = (hours + 1) % 24;
-                const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-
+            for (const time of validTimes) {
                 // Проверяем, существует ли уже такой слот
                 const existingSlot = await client.query(
                     `SELECT id FROM kuliga_schedule_slots 
@@ -179,6 +308,11 @@ router.post('/slots/create-bulk', async (req, res) => {
                     // Слот уже существует, пропускаем
                     continue;
                 }
+
+                // Вычисляем время окончания (слот длится 1 час)
+                const [hours, minutes] = time.split(':').map(Number);
+                const endHours = (hours + 1) % 24;
+                const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
                 // Создаем новый слот
                 await client.query(
