@@ -7208,18 +7208,38 @@ async function handleTextMessage(msg) {
                 return bot.sendMessage(chatId, 'Пожалуйста, выберите время из предложенных вариантов или нажмите "🔙 Назад".');
             }
             
-            const selectedTime = msg.text.replace('⏰ ', '');
+            // Извлекаем время из формата "⏰ 10:30 (Инструктор)" или "⏰ 10:30"
+            const timeText = msg.text.replace('⏰ ', '').trim();
+            let selectedTime = timeText.includes('(') ? timeText.split('(')[0].trim() : timeText;
+            let instructorNameFromButton = null;
+            
+            // Извлекаем имя инструктора из скобок, если есть
+            const match = timeText.match(/\((.+)\)/);
+            if (match) {
+                instructorNameFromButton = match[1].trim();
+            }
+            
             const validTimes = (state && state.data && Array.isArray(state.data.available_times)) ? state.data.available_times : [];
             
             if (!validTimes.includes(selectedTime)) {
                 return bot.sendMessage(chatId, '❌ Неверное время. Пожалуйста, выберите из предложенных вариантов.');
             }
             
-            // Сохраняем выбранное время и находим slot_id из available_slots_info
+            // Сохраняем выбранное время
             state.data.selected_time = selectedTime;
             
             // Находим информацию о слоте из available_slots_info
-            const slotInfo = state.data.available_slots_info?.find(slot => slot.time === selectedTime);
+            // Сначала пытаемся найти по времени И имени инструктора (если указано)
+            let slotInfo = null;
+            if (instructorNameFromButton && state.data.available_slots_info) {
+                slotInfo = state.data.available_slots_info.find(slot => 
+                    slot.time === selectedTime && slot.instructor_name === instructorNameFromButton
+                );
+            }
+            // Если не нашли по имени, ищем просто по времени (первый подходящий)
+            if (!slotInfo && state.data.available_slots_info) {
+                slotInfo = state.data.available_slots_info.find(slot => slot.time === selectedTime);
+            }
             if (slotInfo) {
                 state.data.selected_slot_id = slotInfo.slot_id;
                 state.data.selected_instructor_id = slotInfo.instructor_id;
