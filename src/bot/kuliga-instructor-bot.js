@@ -224,54 +224,80 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
 // Показать финансы
 async function showFinances(chatId, instructorId) {
     try {
-        // Получаем статистику по заработку
+        // Получаем статистику по заработку за все время
         const statsRes = await pool.query(
             `SELECT 
-                COUNT(*) as total_trainings,
-                SUM(kb.price_total) as total_revenue,
-                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as total_earnings
+                kb.booking_type,
+                COUNT(*) as trainings_count,
+                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as earnings
             FROM kuliga_bookings kb
             JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
             WHERE kb.instructor_id = $1
-              AND kb.status IN ('pending', 'confirmed', 'completed')`,
+              AND kb.status IN ('pending', 'confirmed', 'completed')
+            GROUP BY kb.booking_type`,
             [instructorId]
         );
 
-        const stats = statsRes.rows[0];
-        const totalTrainings = parseInt(stats.total_trainings || 0);
-        const totalRevenue = parseFloat(stats.total_revenue || 0);
-        const totalEarnings = parseFloat(stats.total_earnings || 0);
+        let totalIndividualTrainings = 0;
+        let totalGroupTrainings = 0;
+        let totalEarnings = 0;
+
+        statsRes.rows.forEach(row => {
+            const count = parseInt(row.trainings_count || 0);
+            const earnings = parseFloat(row.earnings || 0);
+            
+            if (row.booking_type === 'individual') {
+                totalIndividualTrainings = count;
+                totalEarnings += earnings;
+            } else if (row.booking_type === 'group') {
+                totalGroupTrainings = count;
+                totalEarnings += earnings;
+            }
+        });
 
         // Получаем статистику за текущий месяц
         const currentMonth = moment().tz('Asia/Yekaterinburg').format('YYYY-MM');
         const monthStatsRes = await pool.query(
             `SELECT 
-                COUNT(*) as month_trainings,
-                SUM(kb.price_total) as month_revenue,
-                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as month_earnings
+                kb.booking_type,
+                COUNT(*) as trainings_count,
+                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as earnings
             FROM kuliga_bookings kb
             JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
             WHERE kb.instructor_id = $1
               AND kb.status IN ('pending', 'confirmed', 'completed')
-              AND TO_CHAR(kb.date, 'YYYY-MM') = $2`,
+              AND TO_CHAR(kb.date, 'YYYY-MM') = $2
+            GROUP BY kb.booking_type`,
             [instructorId, currentMonth]
         );
 
-        const monthStats = monthStatsRes.rows[0];
-        const monthTrainings = parseInt(monthStats.month_trainings || 0);
-        const monthRevenue = parseFloat(monthStats.month_revenue || 0);
-        const monthEarnings = parseFloat(monthStats.month_earnings || 0);
+        let monthIndividualTrainings = 0;
+        let monthGroupTrainings = 0;
+        let monthEarnings = 0;
+
+        monthStatsRes.rows.forEach(row => {
+            const count = parseInt(row.trainings_count || 0);
+            const earnings = parseFloat(row.earnings || 0);
+            
+            if (row.booking_type === 'individual') {
+                monthIndividualTrainings = count;
+                monthEarnings += earnings;
+            } else if (row.booking_type === 'group') {
+                monthGroupTrainings = count;
+                monthEarnings += earnings;
+            }
+        });
 
         const message =
             '💰 *Финансовая статистика*\n\n' +
             '*За текущий месяц:*\n' +
-            `📊 Проведено тренировок: ${monthTrainings}\n` +
-            `💵 Ваш заработок: ${monthEarnings.toFixed(2)} руб.\n` +
-            `💰 Общая выручка: ${monthRevenue.toFixed(2)} руб.\n\n` +
+            `👤 Индивидуальных: ${monthIndividualTrainings}\n` +
+            `👥 Групповых: ${monthGroupTrainings}\n` +
+            `💵 Ваш заработок: ${monthEarnings.toFixed(2)} руб.\n\n` +
             '*За все время:*\n' +
-            `📊 Проведено тренировок: ${totalTrainings}\n` +
-            `💵 Ваш заработок: ${totalEarnings.toFixed(2)} руб.\n` +
-            `💰 Общая выручка: ${totalRevenue.toFixed(2)} руб.\n\n` +
+            `👤 Индивидуальных: ${totalIndividualTrainings}\n` +
+            `👥 Групповых: ${totalGroupTrainings}\n` +
+            `💵 Ваш заработок: ${totalEarnings.toFixed(2)} руб.\n\n` +
             '_💡 Подробная информация о выплатах доступна в вашем личном кабинете_';
 
         return bot.sendMessage(chatId, message, {
@@ -370,10 +396,10 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
         });
 
         await bot.sendMessage(chatId,
-            `👋 Добро пожаловать, *${instructor.full_name}*!\n\n` +
-            'Это информационный бот для инструкторов Кулиги Горностайл72.\n\n' +
-            'Здесь вы можете:\n' +
-            '📅 Просматривать свое расписание\n' +
+            `👋 Добро пожаловать, ${instructor.full_name}!\n\n` +
+            'Это информационный бот для инструкторов Кулиги.\n\n' +
+            'Здесь вы можете:\n\n' +
+            '📅 Просматривать свое расписание\n\n' +
             '💰 Отслеживать заработок',
             { parse_mode: 'Markdown' }
         );
