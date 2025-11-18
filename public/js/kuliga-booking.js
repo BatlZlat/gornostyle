@@ -698,6 +698,7 @@
             payerParticipation: state.payerParticipation,
             pricePerPerson: state.selection.pricePerPerson,
             totalPrice,
+            consentConfirmed: consentCheckbox.checked,
         };
     }
 
