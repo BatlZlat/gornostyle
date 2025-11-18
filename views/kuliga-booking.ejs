@@ -45,6 +45,10 @@
                         <input type="text" id="kuligaClientName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
                     </label>
                     <label class="kuliga-field">
+                        <span>Дата рождения заказчика *</span>
+                        <input type="date" id="kuligaClientBirthDate" required autocomplete="bday">
+                    </label>
+                    <label class="kuliga-field">
                         <span>Телефон для связи *</span>
                         <input type="tel" id="kuligaClientPhone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
                     </label>
@@ -114,14 +118,14 @@
                     <span>Отправлять уведомления и чек на email</span>
                 </label>
                 <label class="kuliga-checkbox">
-                    <input type="checkbox" id="kuligaNotifyTelegram">
-                    <span>Получать уведомления в Telegram</span>
+                    <input type="checkbox" id="kuligaNotifyTelegram" checked>
+                    <span>Для полного управления записью в личном кабинете, а также напоминаний о тренировке, рекомендуем запустить нашего Телеграм бота</span>
                 </label>
-                <div id="kuligaTelegramHint" class="kuliga-notify-hint" hidden>
+                <div id="kuligaTelegramHint" class="kuliga-notify-hint">
                     <i class="fa-brands fa-telegram"></i>
                     <p>
-                        Для уведомлений запустите бота <a id="kuligaTelegramLink" href="#" target="_blank" rel="noopener"></a> и нажмите «Старт».
-                        После этого вернитесь к оплате. Форма сохранит введённые данные автоматически.
+                        Для получения уведомлений запустите бота <a id="kuligaTelegramLink" href="#" target="_blank" rel="noopener"></a> и нажмите «Старт».
+                        Вы можете сделать это до или после оплаты.
                     </p>
                 </div>
             </section>

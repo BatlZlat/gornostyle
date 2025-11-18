@@ -2,14 +2,17 @@ const express = require('express');
 const moment = require('moment-timezone');
 const { pool } = require('../db');
 const { initPayment } = require('../services/kuligaPaymentService');
+const { normalizePhone } = require('../utils/phone-normalizer');
+const { 
+    notifyAdminNaturalSlopeTrainingBooking, 
+    notifyInstructorKuligaTrainingBooking 
+} = require('../bot/admin-notify');
 
 const router = express.Router();
 const TIMEZONE = 'Asia/Yekaterinburg';
 
 const formatDate = (date) => moment.tz(date, TIMEZONE).format('DD.MM.YYYY');
 const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).format('HH:mm') : '');
-
-const normalizePhone = (value = '') => value.replace(/[^0-9+]/g, '');
 
 const minutesBetween = (date, startTime, endTime) => {
     const start = moment.tz(`${date}T${startTime}`, TIMEZONE);
@@ -41,24 +44,36 @@ const upsertClient = async (client, trx) => {
     );
 
     if (rows.length) {
-        // Клиент найден, обновляем только email (если его нет)
+        // Клиент найден, обновляем email (если его нет) и birth_date (если был временным)
+        const existingBirthDate = rows[0].birth_date;
+        const isTemporaryBirthDate = existingBirthDate && new Date(existingBirthDate).getFullYear() === 1900;
+        
         await trx.query(
             `UPDATE clients
              SET email = COALESCE(email, $1),
+                 birth_date = CASE 
+                     WHEN $2::date IS NOT NULL AND ($3::date IS NULL OR $3::date = '1900-01-01'::date) 
+                     THEN $2::date 
+                     ELSE birth_date 
+                 END,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2`,
-            [client.email || null, rows[0].id]
+             WHERE id = $4`,
+            [
+                client.email || null, 
+                client.birthDate || null,
+                existingBirthDate ? existingBirthDate.toISOString().split('T')[0] : null,
+                rows[0].id
+            ]
         );
         return { id: rows[0].id, telegram_id: rows[0].telegram_id };
     }
 
-    // Клиент не найден, создаем нового с временной датой рождения
-    // Дата будет обновлена при первом /start в боте
+    // Клиент не найден, создаем нового с датой рождения из формы или временной датой
     const insertResult = await trx.query(
         `INSERT INTO clients (full_name, phone, email, birth_date, created_at, updated_at)
-         VALUES ($1, $2, $3, '1900-01-01', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         VALUES ($1, $2, $3, COALESCE($4::date, '1900-01-01'::date), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id, telegram_id`,
-        [client.fullName, phone, client.email || null]
+        [client.fullName, phone, client.email || null, client.birthDate || null]
     );
 
     return { id: insertResult.rows[0].id, telegram_id: insertResult.rows[0].telegram_id };
@@ -91,6 +106,7 @@ const ensurePrivacyConsent = async (clientId, trx) => {
 const createGroupBooking = async (req, res) => {
     const {
         fullName,
+        birthDate,
         phone,
         email,
         groupTrainingId,
@@ -103,8 +119,8 @@ const createGroupBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Необходимо согласие на обработку персональных данных' });
     }
 
-    if (!fullName || !phone) {
-        return res.status(400).json({ success: false, error: 'Укажите ФИО и телефон' });
+    if (!fullName || !birthDate || !phone) {
+        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения и телефон' });
     }
 
     if (!groupTrainingId) {
@@ -146,7 +162,7 @@ const createGroupBooking = async (req, res) => {
         }
 
         const clientRecord = await upsertClient(
-            { fullName: fullName.trim(), phone: normalizedPhone, email: email?.trim() },
+            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email?.trim() },
             client
         );
         await ensurePrivacyConsent(clientRecord.id, client);
@@ -269,6 +285,7 @@ const createGroupBooking = async (req, res) => {
 const createIndividualBooking = async (req, res) => {
     const {
         fullName,
+        birthDate,
         phone,
         email,
         priceId,
@@ -286,8 +303,8 @@ const createIndividualBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Необходимо согласие на обработку персональных данных' });
     }
 
-    if (!fullName || !phone) {
-        return res.status(400).json({ success: false, error: 'Укажите ФИО и телефон' });
+    if (!fullName || !birthDate || !phone) {
+        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения и телефон' });
     }
 
     if (!priceId) {
@@ -374,16 +391,15 @@ const createIndividualBooking = async (req, res) => {
         });
 
         const clientRecord = await upsertClient(
-            { fullName: fullName.trim(), phone: normalizedPhone, email: email?.trim() },
+            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email?.trim() },
             client
         );
 
+        // Если выбран Telegram, но клиент еще не зарегистрирован в боте - это не критично
+        // Бот может быть запущен после оплаты, или клиент уже зарегистрирован
+        // Не блокируем создание бронирования, просто логируем
         if (notifyTelegram && !clientRecord.telegram_id) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({
-                success: false,
-                error: 'Запустите Telegram-бота и нажмите «Старт», затем повторите попытку оплаты.',
-            });
+            console.log(`⚠️ Клиент ${fullName} (${normalizedPhone}) выбрал Telegram уведомления, но еще не зарегистрирован в боте. Бронь создана, но уведомления в Telegram будут отправлены после регистрации в боте.`);
         }
 
         await ensurePrivacyConsent(clientRecord.id, client);
@@ -558,6 +574,49 @@ const createIndividualBooking = async (req, res) => {
             [payment.paymentId, `kuliga-${bookingId}`, payment.status, transactionId]
         );
 
+        // Отправляем уведомления (асинхронно, не блокируем ответ)
+        setImmediate(async () => {
+            try {
+                // Получаем данные инструктора для уведомления
+                const instructorResult = await pool.query(
+                    'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
+                    [slot.instructor_id]
+                );
+
+                // Уведомление администратору
+                await notifyAdminNaturalSlopeTrainingBooking({
+                    client_name: fullName,
+                    client_phone: normalizedPhone,
+                    participant_name: participantsNames[0] || fullName,
+                    date: slot.date,
+                    time: slot.start_time,
+                    sport_type: normalizedSport,
+                    instructor_name: slot.instructor_name,
+                    price: totalPrice,
+                    booking_source: 'website'
+                });
+
+                // Уведомление инструктору
+                if (instructorResult.rows.length > 0) {
+                    const instructor = instructorResult.rows[0];
+                    await notifyInstructorKuligaTrainingBooking({
+                        booking_type: 'individual',
+                        client_name: fullName,
+                        participant_name: participantsNames[0] || fullName,
+                        client_phone: normalizedPhone,
+                        instructor_name: instructor.full_name,
+                        instructor_telegram_id: instructor.telegram_id,
+                        admin_percentage: instructor.admin_percentage,
+                        date: slot.date,
+                        time: slot.start_time,
+                        price: totalPrice
+                    });
+                }
+            } catch (notifyError) {
+                console.error('Ошибка при отправке уведомлений о бронировании Кулиги:', notifyError);
+            }
+        });
+
         return res.json({ success: true, bookingId, paymentUrl: payment.paymentURL });
     } catch (error) {
         console.error('Ошибка бронирования Кулиги (индивидуальная):', error);
@@ -627,6 +686,57 @@ router.get('/availability', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения свободных слотов Кулиги:', error);
         return res.status(500).json({ success: false, error: 'Не удалось получить свободные слоты' });
+    }
+});
+
+// Предварительная регистрация клиента при клике на ссылку бота (до оплаты)
+router.post('/pre-register-client', async (req, res) => {
+    const { fullName, birthDate, phone, email } = req.body || {};
+
+    if (!fullName || !birthDate || !phone) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Укажите ФИО, дату рождения и телефон' 
+        });
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const clientRecord = await upsertClient(
+            { 
+                fullName: fullName.trim(), 
+                birthDate: birthDate, 
+                phone: normalizedPhone, 
+                email: email?.trim() || null 
+            },
+            client
+        );
+
+        await client.query('COMMIT');
+
+        return res.json({ 
+            success: true, 
+            message: 'Клиент предварительно зарегистрирован',
+            clientId: clientRecord.id,
+            hasTelegramId: !!clientRecord.telegram_id
+        });
+    } catch (error) {
+        console.error('Ошибка предварительной регистрации клиента:', error);
+        try {
+            await client.query('ROLLBACK');
+        } catch (rollbackError) {
+            console.error('Ошибка при откате транзакции предварительной регистрации:', rollbackError);
+        }
+        return res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Не удалось зарегистрировать клиента' 
+        });
+    } finally {
+        client.release();
     }
 });
 

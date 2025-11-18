@@ -5,6 +5,7 @@
         prices: '/api/kuliga/prices',
         availability: '/api/kuliga/availability',
         createBooking: '/api/kuliga/bookings',
+        preRegisterClient: '/api/kuliga/pre-register-client',
     };
 
     const STORAGE_KEY = 'kuligaBookingDraft';
@@ -20,6 +21,7 @@
     const totalPriceLabel = document.getElementById('kuligaTotalPrice');
     const messageBox = document.getElementById('kuligaBookingMessage');
     const clientNameInput = document.getElementById('kuligaClientName');
+    const clientBirthDateInput = document.getElementById('kuligaClientBirthDate');
     const clientPhoneInput = document.getElementById('kuligaClientPhone');
     const clientEmailInput = document.getElementById('kuligaClientEmail');
     const participationRadios = form.querySelectorAll('input[name="kuligaPayerParticipation"]');
@@ -74,6 +76,7 @@
         },
         client: {
             fullName: '',
+            birthDate: '',
             phone: '',
             email: '',
         },
@@ -85,7 +88,7 @@
         availability: [],
         notification: {
             email: true,
-            telegram: false,
+            telegram: true, // Теперь включено по умолчанию
         },
         syncMainParticipant: true,
     };
@@ -96,7 +99,46 @@
     let saveTimer = null;
     let availabilityRequestId = 0;
 
-    const normalizePhone = (value = '') => value.replace(/[^0-9+]/g, '');
+    /**
+     * Нормализует телефонный номер к единому формату +79XXXXXXXXX
+     * Синхронизировано с серверной версией в src/utils/phone-normalizer.js
+     */
+    const normalizePhone = (phone) => {
+        if (!phone || typeof phone !== 'string') {
+            return '';
+        }
+
+        // Убираем все символы кроме цифр и +
+        let cleaned = phone.replace(/[^\d+]/g, '');
+
+        // Если номер начинается с 8, заменяем на +7
+        if (cleaned.startsWith('8')) {
+            cleaned = '+7' + cleaned.substring(1);
+        }
+
+        // Если номер начинается с 7 (без +), добавляем +
+        if (cleaned.startsWith('7') && !cleaned.startsWith('+7')) {
+            cleaned = '+' + cleaned;
+        }
+
+        // Если номер начинается с 9 (мобильный без кода страны), добавляем +7
+        if (cleaned.startsWith('9') && cleaned.length === 10) {
+            cleaned = '+7' + cleaned;
+        }
+
+        // Если уже есть +7, оставляем как есть
+        // Если нет + в начале, но номер валидный, добавляем +
+        if (!cleaned.startsWith('+') && cleaned.length >= 10) {
+            // Предполагаем что это российский номер
+            if (cleaned.length === 10) {
+                cleaned = '+7' + cleaned;
+            } else if (cleaned.length === 11 && cleaned.startsWith('7')) {
+                cleaned = '+' + cleaned;
+            }
+        }
+
+        return cleaned;
+    };
     const formatCurrency = (value) => `${Number(value || 0).toLocaleString('ru-RU')} ₽`;
     const formatTime = (timeString = '') => timeString.slice(0, 5);
     const todayISO = () => new Date().toISOString().split('T')[0];
@@ -384,6 +426,7 @@
 
     function setClientFieldValues() {
         clientNameInput.value = state.client.fullName || '';
+        clientBirthDateInput.value = state.client.birthDate || '';
         clientPhoneInput.value = state.client.phone || '';
         clientEmailInput.value = state.client.email || '';
 
@@ -414,6 +457,11 @@
 
     function handleClientPhoneChange() {
         state.client.phone = clientPhoneInput.value.trim();
+        scheduleSaveState();
+    }
+
+    function handleClientBirthDateChange() {
+        state.client.birthDate = clientBirthDateInput.value;
         scheduleSaveState();
     }
 
@@ -514,7 +562,7 @@
             instructorCard.hidden = true;
             return;
         }
-        instructorPhoto.src = slot.instructor_photo_url || '/images/gornostyle72_logo.webp';
+        instructorPhoto.src = slot.instructor_photo_url || '/images/gornosyle72_logo.webp';
         instructorPhoto.alt = slot.instructor_name;
         instructorName.textContent = slot.instructor_name;
         instructorSport.textContent = sportLabels[slot.instructor_sport_type] || 'Инструктор';
@@ -560,6 +608,11 @@
         if (!form.checkValidity()) {
             form.reportValidity();
             setMessage('Проверьте корректность заполнения формы', 'error');
+            return false;
+        }
+
+        if (!state.client.fullName || !state.client.birthDate || !state.client.phone) {
+            setMessage('Заполните ФИО заказчика, дату рождения и телефон.', 'error');
             return false;
         }
 
@@ -624,6 +677,7 @@
         return {
             bookingType: 'individual',
             fullName: state.client.fullName.trim(),
+            birthDate: state.client.birthDate,
             phone: normalizePhone(state.client.phone),
             email: state.client.email.trim(),
             priceId: state.selection.priceId,
@@ -738,6 +792,7 @@
 
     function attachListeners() {
         clientNameInput.addEventListener('input', handleClientNameChange);
+        clientBirthDateInput.addEventListener('change', handleClientBirthDateChange);
         clientPhoneInput.addEventListener('input', handleClientPhoneChange);
         clientEmailInput.addEventListener('input', handleClientEmailChange);
         participantsContainer.addEventListener('input', handleParticipantInput);
@@ -756,6 +811,79 @@
 
         dateInput.addEventListener('change', handleDateChange);
         form.addEventListener('submit', handleSubmit);
+
+        // Обработчик клика на ссылку бота - создаем клиента заранее
+        telegramLink.addEventListener('click', handleTelegramLinkClick);
+    }
+
+    async function handleTelegramLinkClick(event) {
+        event.preventDefault();
+
+        // Проверяем, заполнены ли обязательные данные
+        if (!state.client.fullName || !state.client.birthDate || !state.client.phone) {
+            setMessage('Заполните ФИО заказчика, дату рождения и телефон перед переходом к боту.', 'error');
+            
+            // Скроллим к первому незаполненному полю
+            let targetField = null;
+            if (!state.client.fullName) {
+                targetField = clientNameInput;
+            } else if (!state.client.birthDate) {
+                targetField = clientBirthDateInput;
+            } else if (!state.client.phone) {
+                targetField = clientPhoneInput;
+            }
+            
+            if (targetField) {
+                targetField.focus();
+                targetField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            return false;
+        }
+
+        try {
+            setMessage('Регистрируем вас в системе...', 'neutral');
+
+            const response = await fetch(API.preRegisterClient, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify({
+                    fullName: state.client.fullName.trim(),
+                    birthDate: state.client.birthDate,
+                    phone: normalizePhone(state.client.phone),
+                    email: state.client.email?.trim() || null,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось зарегистрировать клиента');
+            }
+
+            // Сохраняем, что клиент предварительно зарегистрирован
+            state.client.preRegistered = true;
+            scheduleSaveState();
+
+            setMessage('Регистрация успешна. Открываем бота...', 'success');
+
+            // Открываем бота в новой вкладке
+            const botUrl = telegramLink.href;
+            window.open(botUrl, '_blank');
+
+            // Через небольшую задержку очищаем сообщение
+            setTimeout(() => {
+                clearMessage();
+            }, 3000);
+        } catch (error) {
+            console.error('Ошибка предварительной регистрации клиента:', error);
+            setMessage(error.message || 'Произошла ошибка. Попробуйте позже или обратитесь к администратору.', 'error');
+        }
+
+        return false;
     }
 
     (async function bootstrap() {

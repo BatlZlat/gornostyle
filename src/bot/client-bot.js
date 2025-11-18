@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { getClientWithSettings, updateClientSilentMode } = require('../services/silent-notification-helper');
 const axios = require('axios');
 const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscriptionUsage } = require('../services/subscription-helper');
+const { normalizePhone } = require('../utils/phone-normalizer');
 
 // Настройка подключения к БД
 const pool = new Pool({
