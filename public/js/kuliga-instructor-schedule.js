@@ -183,31 +183,51 @@ async function createSlotsForDay() {
     }
 
     // Валидация формата времени и минимального времени (10:15)
+    const invalidTimes = [];
+    const tooEarlyTimes = [];
     const validTimes = [];
+    
     for (const time of times) {
         // Проверяем формат времени (HH:MM)
         if (!/^\d{2}:\d{2}$/.test(time)) {
+            invalidTimes.push(time);
             continue;
         }
 
         // Проверяем, что время не раньше 10:15
         if (!isValidMinTime(time)) {
-            resultDiv.innerHTML = `<div class="alert alert-error">Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.</div>`;
-            return;
+            tooEarlyTimes.push(time);
+            continue;
         }
 
         validTimes.push(time);
     }
 
+    // Формируем детальное сообщение об ошибках
+    const errorMessages = [];
+    
+    if (invalidTimes.length > 0) {
+        errorMessages.push(`Неверный формат времени (требуется HH:MM): ${invalidTimes.join(', ')}`);
+    }
+    
+    if (tooEarlyTimes.length > 0) {
+        errorMessages.push(`Время слишком рано (первая тренировка начинается не раньше 10:15): ${tooEarlyTimes.join(', ')}`);
+    }
+
+    if (errorMessages.length > 0) {
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}</div>`;
+        return;
+    }
+
     if (validTimes.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Не найдено ни одного валидного времени в формате HH:MM</div>';
+        resultDiv.innerHTML = '<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.</div>';
         return;
     }
 
     // Проверяем минимальный интервал между слотами (1.5 часа)
     const intervalCheck = checkMinimumInterval(validTimes);
     if (!intervalCheck.valid) {
-        resultDiv.innerHTML = `<div class="alert alert-error">${intervalCheck.error}</div>`;
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}</div>`;
         return;
     }
 
@@ -227,7 +247,9 @@ async function createSlotsForDay() {
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error || 'Ошибка создания слотов');
+            // Детализируем ошибку от сервера
+            const errorMessage = result.error || 'Ошибка создания слотов';
+            throw new Error(errorMessage);
         }
 
         resultDiv.innerHTML = `<div class="alert alert-success">✓ Создано слотов: ${result.created}</div>`;
@@ -242,7 +264,8 @@ async function createSlotsForDay() {
         }
     } catch (error) {
         console.error('Ошибка создания слотов:', error);
-        resultDiv.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+        // Показываем детальное сообщение об ошибке
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка создания слотов:</strong><br/>${error.message}</div>`;
     }
 }
 
@@ -285,6 +308,17 @@ async function loadSlotsForDay() {
         // Сортируем слоты по времени
         slots.sort((a, b) => a.start_time.localeCompare(b.start_time));
 
+        // Функция для форматирования времени из формата HH:MM:SS в HH:MM
+        const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            // Если время в формате HH:MM:SS, берем только HH:MM
+            if (timeStr.includes(':')) {
+                const parts = timeStr.split(':');
+                return `${parts[0]}:${parts[1]}`;
+            }
+            return timeStr;
+        };
+
         // Отображаем слоты
         slotsContainer.innerHTML = slots.map(slot => {
             const statusText = {
@@ -296,10 +330,13 @@ async function loadSlotsForDay() {
 
             const canDelete = slot.status === 'available' || slot.status === 'blocked';
 
+            const startTime = formatTime(slot.start_time);
+            const endTime = formatTime(slot.end_time);
+
             return `
                 <div class="schedule-slot ${slot.status}">
                     <div class="slot-info">
-                        <div class="slot-time">${slot.start_time} - ${slot.end_time}</div>
+                        <div class="slot-time">${startTime} - ${endTime}</div>
                         <div class="slot-status">${statusText}</div>
                     </div>
                     <div class="slot-actions">
@@ -409,31 +446,51 @@ async function createBulkSlots() {
     }
 
     // Валидация формата времени и минимального времени (10:15)
+    const invalidTimes = [];
+    const tooEarlyTimes = [];
     const validTimes = [];
+    
     for (const time of times) {
         // Проверяем формат времени (HH:MM)
         if (!/^\d{2}:\d{2}$/.test(time)) {
+            invalidTimes.push(time);
             continue;
         }
 
         // Проверяем, что время не раньше 10:15
         if (!isValidMinTime(time)) {
-            resultDiv.innerHTML = `<div class="alert alert-error">Время ${time} недопустимо. База открывается в 10:00, первая тренировка может начаться не раньше 10:15.</div>`;
-            return;
+            tooEarlyTimes.push(time);
+            continue;
         }
 
         validTimes.push(time);
     }
 
+    // Формируем детальное сообщение об ошибках
+    const errorMessages = [];
+    
+    if (invalidTimes.length > 0) {
+        errorMessages.push(`Неверный формат времени (требуется HH:MM): ${invalidTimes.join(', ')}`);
+    }
+    
+    if (tooEarlyTimes.length > 0) {
+        errorMessages.push(`Время слишком рано (первая тренировка начинается не раньше 10:15): ${tooEarlyTimes.join(', ')}`);
+    }
+
+    if (errorMessages.length > 0) {
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}</div>`;
+        return;
+    }
+
     if (validTimes.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Не найдено ни одного валидного времени в формате HH:MM</div>';
+        resultDiv.innerHTML = '<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.</div>';
         return;
     }
 
     // Проверяем минимальный интервал между слотами (1.5 часа)
     const intervalCheck = checkMinimumInterval(validTimes);
     if (!intervalCheck.valid) {
-        resultDiv.innerHTML = `<div class="alert alert-error">${intervalCheck.error}</div>`;
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}</div>`;
         return;
     }
 
@@ -457,7 +514,9 @@ async function createBulkSlots() {
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error || 'Ошибка массового создания слотов');
+            // Детализируем ошибку от сервера
+            const errorMessage = result.error || 'Ошибка массового создания слотов';
+            throw new Error(errorMessage);
         }
 
         resultDiv.innerHTML = `<div class="alert alert-success">✓ Создано слотов: ${result.created}</div>`;
@@ -466,7 +525,8 @@ async function createBulkSlots() {
         await loadStats();
     } catch (error) {
         console.error('Ошибка массового создания слотов:', error);
-        resultDiv.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+        // Показываем детальное сообщение об ошибке
+        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка массового создания слотов:</strong><br/>${error.message}</div>`;
     }
 }
 
