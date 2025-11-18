@@ -1,5 +1,103 @@
 // Управление расписанием инструктора Кулиги
 
+// Функции для показа уведомлений (аналогично showSuccess из admin.js)
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #dc3545;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        min-width: 300px;
+        max-width: 90%;
+        max-width: min(500px, calc(100vw - 40px));
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        word-wrap: break-word;
+        line-height: 1.5;
+    `;
+    
+    // Поддержка HTML в сообщении (для многострочных ошибок)
+    if (message.includes('<br/>') || message.includes('<strong>')) {
+        errorDiv.innerHTML = '❌ ' + message;
+    } else {
+        errorDiv.textContent = '❌ ' + message;
+    }
+    
+    // Добавить на страницу
+    document.body.appendChild(errorDiv);
+    
+    // Анимация появления
+    setTimeout(() => {
+        errorDiv.style.opacity = '1';
+        errorDiv.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Автоматическое удаление через 8 секунд (чтобы пользователь успел прочитать)
+    setTimeout(() => {
+        errorDiv.style.opacity = '0';
+        errorDiv.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (errorDiv.parentNode) {
+                errorDiv.remove();
+            }
+        }, 300);
+    }, 8000);
+}
+
+function showSuccess(message) {
+    const successDiv = document.createElement('div');
+    successDiv.className = 'alert alert-success';
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        min-width: 300px;
+        max-width: 90%;
+        max-width: min(500px, calc(100vw - 40px));
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        word-wrap: break-word;
+    `;
+    successDiv.textContent = '✅ ' + message;
+    
+    // Добавить на страницу
+    document.body.appendChild(successDiv);
+    
+    // Анимация появления
+    setTimeout(() => {
+        successDiv.style.opacity = '1';
+        successDiv.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Автоматическое удаление через 5 секунд
+    setTimeout(() => {
+        successDiv.style.opacity = '0';
+        successDiv.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.remove();
+            }
+        }, 300);
+    }, 5000);
+}
+
 // Функции для работы с cookies
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -170,7 +268,7 @@ async function createSlotsForDay() {
     const resultDiv = document.getElementById('day-result');
 
     if (!date || !timesInput) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Заполните дату и время</div>';
+        showError('Заполните дату и время');
         return;
     }
 
@@ -178,7 +276,7 @@ async function createSlotsForDay() {
     const times = timesInput.split(',').map(t => t.trim()).filter(t => t);
     
     if (times.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Введите хотя бы один временной слот</div>';
+        showError('Введите хотя бы один временной слот');
         return;
     }
 
@@ -215,19 +313,19 @@ async function createSlotsForDay() {
     }
 
     if (errorMessages.length > 0) {
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}</div>`;
+        showError(`<strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}`);
         return;
     }
 
     if (validTimes.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.</div>';
+        showError('<strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.');
         return;
     }
 
     // Проверяем минимальный интервал между слотами (1.5 часа)
     const intervalCheck = checkMinimumInterval(validTimes);
     if (!intervalCheck.valid) {
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}</div>`;
+        showError(`<strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}`);
         return;
     }
 
@@ -252,7 +350,10 @@ async function createSlotsForDay() {
             throw new Error(errorMessage);
         }
 
-        resultDiv.innerHTML = `<div class="alert alert-success">✓ Создано слотов: ${result.created}</div>`;
+        showSuccess(`Создано слотов: ${result.created}`);
+        
+        // Очищаем поле ввода временных слотов
+        document.getElementById('day-times').value = '';
         
         // Обновляем статистику
         await loadStats();
@@ -265,7 +366,7 @@ async function createSlotsForDay() {
     } catch (error) {
         console.error('Ошибка создания слотов:', error);
         // Показываем детальное сообщение об ошибке
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка создания слотов:</strong><br/>${error.message}</div>`;
+        showError(`<strong>Ошибка создания слотов:</strong><br/>${error.message}`);
     }
 }
 
@@ -280,7 +381,7 @@ async function loadSlotsForDay() {
     const slotsContainer = document.getElementById('day-slots');
 
     if (!date) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Выберите дату</div>';
+        showError('Выберите дату');
         return;
     }
 
@@ -354,7 +455,7 @@ async function loadSlotsForDay() {
         resultDiv.innerHTML = '';
     } catch (error) {
         console.error('Ошибка загрузки слотов:', error);
-        resultDiv.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+        showError(`Ошибка загрузки слотов: ${error.message}`);
     }
 }
 
@@ -383,7 +484,7 @@ async function toggleSlotStatus(slotId, newStatus) {
         await loadStats();
     } catch (error) {
         console.error('Ошибка изменения статуса слота:', error);
-        alert(`Ошибка: ${error.message}`);
+        showError(`Ошибка: ${error.message}`);
     }
 }
 
@@ -414,7 +515,7 @@ async function deleteSlot(slotId) {
         await loadStats();
     } catch (error) {
         console.error('Ошибка удаления слота:', error);
-        alert(`Ошибка: ${error.message}`);
+        showError(`Ошибка удаления слота: ${error.message}`);
     }
 }
 
@@ -433,7 +534,7 @@ async function createBulkSlots() {
     const weekdays = Array.from(weekdaysCheckboxes).map(cb => parseInt(cb.value));
 
     if (!fromDate || !toDate || !timesInput || weekdays.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Заполните все поля</div>';
+        showError('Заполните все поля');
         return;
     }
 
@@ -441,7 +542,7 @@ async function createBulkSlots() {
     const times = timesInput.split(',').map(t => t.trim()).filter(t => t);
     
     if (times.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error">Введите хотя бы один временной слот</div>';
+        showError('Введите хотя бы один временной слот');
         return;
     }
 
@@ -478,24 +579,49 @@ async function createBulkSlots() {
     }
 
     if (errorMessages.length > 0) {
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}</div>`;
+        showError(`<strong>Ошибка валидации:</strong><br/>${errorMessages.join('<br/>')}`);
         return;
     }
 
     if (validTimes.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-error"><strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.</div>';
+        showError('<strong>Ошибка валидации:</strong><br/>Не найдено ни одного валидного времени. Проверьте формат (HH:MM) и убедитесь, что время не раньше 10:15.');
         return;
     }
 
     // Проверяем минимальный интервал между слотами (1.5 часа)
     const intervalCheck = checkMinimumInterval(validTimes);
     if (!intervalCheck.valid) {
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}</div>`;
+        showError(`<strong>Ошибка интервала между слотами:</strong><br/>${intervalCheck.error}`);
         return;
     }
 
     try {
-        resultDiv.innerHTML = '<div class="alert alert-info">Создание слотов... Пожалуйста, подождите.</div>';
+        // Показываем информационное сообщение о процессе
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'alert alert-info';
+        infoDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #17a2b8;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            min-width: 300px;
+            max-width: min(500px, calc(100vw - 40px));
+            font-weight: 500;
+        `;
+        infoDiv.textContent = '⏳ Создание слотов... Пожалуйста, подождите.';
+        document.body.appendChild(infoDiv);
+        
+        // Удалим информационное сообщение после завершения
+        const removeInfo = () => {
+            if (infoDiv.parentNode) {
+                infoDiv.remove();
+            }
+        };
 
         const response = await fetch('/api/kuliga/instructor/slots/create-bulk', {
             method: 'POST',
@@ -519,14 +645,19 @@ async function createBulkSlots() {
             throw new Error(errorMessage);
         }
 
-        resultDiv.innerHTML = `<div class="alert alert-success">✓ Создано слотов: ${result.created}</div>`;
+        removeInfo();
+        showSuccess(`Создано слотов: ${result.created}`);
+        
+        // Очищаем поле ввода временных слотов
+        document.getElementById('bulk-times').value = '';
         
         // Обновляем статистику
         await loadStats();
     } catch (error) {
+        removeInfo();
         console.error('Ошибка массового создания слотов:', error);
         // Показываем детальное сообщение об ошибке
-        resultDiv.innerHTML = `<div class="alert alert-error"><strong>Ошибка массового создания слотов:</strong><br/>${error.message}</div>`;
+        showError(`<strong>Ошибка массового создания слотов:</strong><br/>${error.message}`);
     }
 }
 
