@@ -4824,8 +4824,8 @@ async function handleTextMessage(msg) {
                             trainingDetails.end_time,
                             sportType,
                             1, // participants_count
-                            ARRAY[participantName], // participants_names
-                            ARRAY[null], // participants_birth_years (можно добавить позже)
+                            [participantName], // participants_names - передаем массив напрямую
+                            [null], // participants_birth_years (можно добавить позже) - передаем массив напрямую
                             pricePerPerson, // price_total
                             pricePerPerson, // price_per_person
                         ]
@@ -7460,8 +7460,8 @@ async function handleTextMessage(msg) {
                             slotData.end_time,
                             sportType,
                             1, // participants_count
-                            ARRAY[participantName], // participants_names
-                            ARRAY[null], // participants_birth_years (можно добавить позже)
+                            [participantName], // participants_names - передаем массив напрямую
+                            [null], // participants_birth_years (можно добавить позже) - передаем массив напрямую
                             price, // price_total
                             price, // price_per_person
                             priceId,
