@@ -33,6 +33,11 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
         throw new Error('Платежный шлюз не настроен (отсутствуют TERMINAL_KEY/PASSWORD)');
     }
 
+    // Валидация обязательных параметров
+    if (!orderId || !amount || !description) {
+        throw new Error('Отсутствуют обязательные параметры для создания платежа');
+    }
+
     const params = {
         TerminalKey: TERMINAL_KEY,
         Amount: normalizeAmount(amount),
@@ -41,27 +46,40 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
         NotificationURL: CALLBACK_URL,
         SuccessURL: SUCCESS_URL,
         FailURL: FAIL_URL,
-        DATA: {
-            Email: customerEmail,
-            Phone: customerPhone,
-        },
-        Receipt: {
-            Email: customerEmail,
-            Phone: customerPhone,
-            Taxation: 'usn_income',
-            Items: (items && items.length ? items : [
-                {
-                    Name: description,
-                    Price: normalizeAmount(amount),
-                    Quantity: 1,
-                    Amount: normalizeAmount(amount),
-                    Tax: 'none',
-                    PaymentMethod: 'full_payment',
-                    PaymentObject: 'service',
-                },
-            ]),
-        },
     };
+
+    // DATA необязательна, но если передана email или phone, добавляем
+    if (customerEmail || customerPhone) {
+        params.DATA = {};
+        if (customerEmail) params.DATA.Email = customerEmail;
+        if (customerPhone) params.DATA.Phone = customerPhone;
+    }
+
+    // Receipt обязателен для платежей с фискализацией
+    const receiptItems = items && items.length ? items : [
+        {
+            Name: description,
+            Price: normalizeAmount(amount),
+            Quantity: 1,
+            Amount: normalizeAmount(amount),
+            Tax: 'none',
+            PaymentMethod: 'full_payment',
+            PaymentObject: 'service',
+        },
+    ];
+
+    params.Receipt = {
+        Taxation: 'usn_income',
+        Items: receiptItems,
+    };
+
+    // Email и Phone в Receipt необязательны, но если есть - добавляем
+    if (customerEmail) {
+        params.Receipt.Email = customerEmail;
+    }
+    if (customerPhone) {
+        params.Receipt.Phone = customerPhone;
+    }
 
     params.Token = generateToken(params);
 
@@ -72,6 +90,19 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
 
     if (!data.Success) {
         const message = data.Message || data.Details || 'Tinkoff Init вернул ошибку';
+        console.error('Ошибка Tinkoff API:', {
+            message: data.Message,
+            details: data.Details,
+            errorCode: data.ErrorCode,
+            params: {
+                OrderId: params.OrderId,
+                Amount: params.Amount,
+                Description: params.Description,
+                hasEmail: !!params.Receipt.Email,
+                hasPhone: !!params.Receipt.Phone,
+                itemsCount: params.Receipt.Items.length,
+            }
+        });
         throw new Error(message);
     }
 

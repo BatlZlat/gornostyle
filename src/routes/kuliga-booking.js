@@ -15,8 +15,10 @@ const formatDate = (date) => moment.tz(date, TIMEZONE).format('DD.MM.YYYY');
 const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).format('HH:mm') : '');
 
 const minutesBetween = (date, startTime, endTime) => {
-    const start = moment.tz(`${date}T${startTime}`, TIMEZONE);
-    const end = moment.tz(`${date}T${endTime}`, TIMEZONE);
+    // Преобразуем date в строку формата YYYY-MM-DD
+    const dateStr = moment(date).format('YYYY-MM-DD');
+    const start = moment.tz(`${dateStr}T${startTime}`, 'YYYY-MM-DDTHH:mm:ss', TIMEZONE);
+    const end = moment.tz(`${dateStr}T${endTime}`, 'YYYY-MM-DDTHH:mm:ss', TIMEZONE);
     return end.diff(start, 'minutes');
 };
 
