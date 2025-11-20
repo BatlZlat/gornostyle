@@ -1080,6 +1080,36 @@ function showNaturalSlopeTrainingMenu(chatId) {
 async function handleTextMessage(msg) {
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
+    
+    console.log('📨 handleTextMessage вызван:', {
+        text: msg.text,
+        hasState: !!state,
+        step: state ? state.step : 'NO_STATE',
+        chatId,
+        textStartsWithChild: msg.text && (msg.text.startsWith('👶') || msg.text.startsWith('✅'))
+    });
+    
+    // Если state отсутствует, но это кнопка ребенка или "Себя", значит состояние потеряно
+    if (!state && msg.text && (msg.text.startsWith('👶') || msg.text.startsWith('✅') || msg.text === '👤 Себя' || msg.text === '✅ Себя')) {
+        console.error('⚠️ КРИТИЧЕСКОЕ: Состояние потеряно при нажатии на кнопку участника!', {
+            text: msg.text,
+            chatId
+        });
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Пожалуйста, начните запись заново через меню.',
+            {
+                reply_markup: {
+                    keyboard: [['📝 Записаться на тренировку'], ['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    }
+    
+    if (!state) {
+        // Если нет состояния, это может быть обычная команда или кнопка меню
+        // Продолжаем обработку через другие проверки
+    }
 
         // Обработка кнопки "Кошелек"
         if (msg.text === '💰 Кошелек') {
@@ -1492,7 +1522,9 @@ async function handleTextMessage(msg) {
     }
 
     // Обработка выбора участника для индивидуальной тренировки (естественный склон)
-    if (msg.text && msg.text.startsWith('👶 ')) {
+    // НЕ обрабатываем, если мы на шаге выбора участников для групповой тренировки
+    if (msg.text && msg.text.startsWith('👶 ') && 
+        (!state || state.step !== 'kuliga_group_own_participants' && state.step !== 'kuliga_group_existing_participants')) {
         const childName = msg.text.replace('👶 ', '');
         const client = await getClientByTelegramId(msg.from.id.toString());
         
@@ -1546,6 +1578,204 @@ async function handleTextMessage(msg) {
         return promptNaturalSlopeSport(chatId, newState);
     }
 
+    // Обработка кнопок участников ДО switch-case
+    // Обрабатываем кнопки "Себя" и детей, если состояние существует и мы на шаге выбора участников
+    console.log('🔍 Проверка состояния для обработки кнопок участников:', {
+        hasState: !!state,
+        step: state ? state.step : 'NO_STATE',
+        text: msg.text,
+        isCorrectStep: state && state.step === 'kuliga_group_own_participants'
+    });
+    
+    if (state && state.step === 'kuliga_group_own_participants') {
+        console.log('✅ Состояние найдено для kuliga_group_own_participants:', {
+            step: state.step,
+            hasClientId: !!state.data.client_id,
+            text: msg.text,
+            textStartsWithBaby: msg.text ? msg.text.startsWith('👶') : false,
+            textStartsWithCheck: msg.text ? msg.text.startsWith('✅') : false,
+            textFirstChar: msg.text ? msg.text.charAt(0) : 'NO_TEXT',
+            textFirstCharCode: msg.text ? msg.text.charCodeAt(0) : 'NO_TEXT'
+        });
+        // Обработка кнопки "Себя"
+        if (msg.text === '👤 Себя' || msg.text === '✅ Себя') {
+            console.log('🔍 Обработка "Себя" ДО switch-case');
+            // Получаем данные клиента если еще не получены
+            if (!state.data.client) {
+                const clientResult = await pool.query(
+                    'SELECT id, full_name, birth_date FROM clients WHERE id = $1',
+                    [state.data.client_id]
+                );
+                state.data.client = clientResult.rows[0] || {};
+            }
+
+            const client = state.data.client;
+            if (!client.full_name) {
+                return bot.sendMessage(chatId, '❌ Ошибка: данные клиента не найдены.');
+            }
+
+            // Инициализируем selected_participants если его нет
+            if (!state.data.selected_participants) {
+                state.data.selected_participants = [];
+            }
+
+            // Проверяем, выбран ли уже клиент
+            const existingIndex = state.data.selected_participants.findIndex(p => p.isSelf);
+            if (existingIndex >= 0) {
+                // Убираем из списка (повторное нажатие)
+                state.data.selected_participants.splice(existingIndex, 1);
+            } else {
+                // Добавляем к участникам
+                const age = moment().diff(moment(client.birth_date), 'years');
+                state.data.selected_participants.push({
+                    fullName: client.full_name,
+                    birthYear: moment(client.birth_date).year(),
+                    age: age,
+                    isSelf: true
+                });
+            }
+            userStates.set(chatId, state);
+            console.log('💾 Состояние сохранено после "Себя" (до switch):', {
+                step: state.step,
+                participantsCount: state.data.selected_participants.length,
+                hasChildren: !!state.data.children
+            });
+
+            // Показываем обновленный список участников
+            return await showParticipantsList(chatId, state);
+        }
+
+        // Обработка выбора ребенка ДО switch-case
+        // Формат кнопки: "👶 Имя (возраст)" или "✅ Имя (возраст)"
+        const isChildButton = msg.text && 
+            (msg.text.startsWith('👶') || msg.text.startsWith('✅')) && 
+            msg.text !== '✅ Себя' && 
+            msg.text !== '✅ Все указано, продолжить';
+        
+        console.log('🔍 Проверка кнопки ребенка ДО switch:', {
+            msgText: msg.text,
+            isChildButton: isChildButton,
+            startsWithBaby: msg.text ? msg.text.startsWith('👶') : false,
+            startsWithCheck: msg.text ? msg.text.startsWith('✅') : false,
+            isNotSelf: msg.text !== '✅ Себя',
+            isNotContinue: msg.text !== '✅ Все указано, продолжить',
+            firstChar: msg.text ? msg.text.charAt(0) : 'NO_TEXT',
+            firstCharCode: msg.text ? msg.text.charCodeAt(0) : 'NO_TEXT'
+        });
+        
+        if (isChildButton) {
+            console.log('🔍 ОБНАРУЖЕНА КНОПКА РЕБЕНКА ДО SWITCH:', {
+                msgText: msg.text,
+                step: state.step,
+                clientId: state.data.client_id,
+                msgTextLength: msg.text ? msg.text.length : 0,
+                msgTextBytes: msg.text ? Buffer.from(msg.text).toString('hex') : null
+            });
+
+            // Формат кнопки: "👶 Имя (возраст)" или "✅ Имя (возраст)"
+            const buttonText = msg.text.replace(/^(👶|✅)\s*/, '');
+            const match = buttonText.match(/^(.+?)\s*\((\d+)\)$/);
+            
+            if (!match) {
+                console.error('❌ Неверный формат кнопки:', { buttonText, msgText: msg.text });
+                return bot.sendMessage(chatId, '❌ Неверный формат кнопки. Выберите из списка.');
+            }
+
+            const childName = match[1].trim();
+            const buttonAge = parseInt(match[2]);
+            console.log('🔎 Ищем ребенка:', { childName, buttonAge });
+            
+            // Всегда загружаем свежий список детей из базы данных
+            const childrenResult = await pool.query(
+                'SELECT id, full_name, birth_date FROM children WHERE parent_id = $1 ORDER BY birth_date',
+                [state.data.client_id]
+            );
+            state.data.children = childrenResult.rows;
+            
+            console.log('📋 Загружено детей из БД:', {
+                count: state.data.children.length,
+                children: state.data.children.map(c => ({
+                    id: c.id,
+                    name: c.full_name,
+                    birth_date: c.birth_date,
+                    age: moment().diff(moment(c.birth_date), 'years')
+                }))
+            });
+            
+            // Инициализируем selected_participants если его нет
+            if (!state.data.selected_participants) {
+                state.data.selected_participants = [];
+            }
+            
+            userStates.set(chatId, state);
+            
+            // Ищем ребенка по имени и возрасту
+            const child = state.data.children.find(c => {
+                const dbName = c.full_name.trim();
+                const searchName = childName.trim();
+                const dbAge = moment().diff(moment(c.birth_date), 'years');
+                
+                console.log('🔍 Проверка ребенка:', {
+                    dbName,
+                    searchName,
+                    dbAge,
+                    buttonAge,
+                    nameMatch: dbName === searchName || dbName.toLowerCase() === searchName.toLowerCase(),
+                    ageMatch: Math.abs(dbAge - buttonAge) <= 1
+                });
+                
+                return (dbName === searchName || dbName.toLowerCase() === searchName.toLowerCase()) && 
+                       Math.abs(dbAge - buttonAge) <= 1;
+            });
+            
+            if (!child) {
+                console.error('❌ Ребенок не найден:', {
+                    childName,
+                    buttonAge,
+                    availableChildren: state.data.children.map(c => ({
+                        name: c.full_name,
+                        age: moment().diff(moment(c.birth_date), 'years'),
+                        id: c.id
+                    })),
+                    buttonText,
+                    msgText: msg.text,
+                    clientId: state.data.client_id
+                });
+                return bot.sendMessage(chatId, 
+                    '❌ Ребенок не найден. Попробуйте выбрать из списка еще раз или введите вручную через запятую.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            console.log('✅ Ребенок найден:', { id: child.id, name: child.full_name });
+
+            // Проверяем, выбран ли уже ребенок
+            const existingIndex = state.data.selected_participants.findIndex(p => p.childId === child.id);
+            if (existingIndex >= 0) {
+                // Убираем из списка (повторное нажатие)
+                state.data.selected_participants.splice(existingIndex, 1);
+            } else {
+                // Добавляем к участникам
+                const age = moment().diff(moment(child.birth_date), 'years');
+                state.data.selected_participants.push({
+                    fullName: child.full_name,
+                    birthYear: moment(child.birth_date).year(),
+                    age: age,
+                    childId: child.id
+                });
+            }
+            userStates.set(chatId, state);
+
+            // Показываем обновленный список участников
+            return await showParticipantsList(chatId, state);
+        }
+    }
+
     // Обработка состояний
     if (!state) return;
 
@@ -1576,6 +1806,33 @@ async function handleTextMessage(msg) {
         );
     }
 
+    if (!state) {
+        // Состояние отсутствует - обрабатываем только глобальные команды
+        // Но проверяем, не является ли это кнопкой участника, которая требует состояния
+        if (msg.text && (msg.text.startsWith('👶') || msg.text.startsWith('✅') || msg.text === '👤 Себя' || msg.text === '✅ Себя')) {
+            console.error('⚠️ Попытка обработать кнопку участника без состояния!', {
+                text: msg.text,
+                chatId
+            });
+            return bot.sendMessage(chatId,
+                '❌ Произошла ошибка: состояние потеряно. Пожалуйста, начните запись заново через меню.',
+                {
+                    reply_markup: {
+                        keyboard: [['📝 Записаться на тренировку'], ['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        // Switch будет пропущен, так как state.step недоступен
+        return;
+    }
+    
+    console.log('🎯 Переход к switch-case:', {
+        step: state.step,
+        text: msg.text
+    });
+    
     switch (state.step) {
         case 'select_location': {
             if (msg.text === '🎿 Горнолыжный тренажер') {
@@ -7527,7 +7784,13 @@ async function handleTextMessage(msg) {
             state.step = 'kuliga_group_own_participants';
             userStates.set(chatId, state);
 
-            // Получаем список детей клиента
+            // Получаем данные клиента и список детей
+            const clientResult = await pool.query(
+                'SELECT id, full_name, birth_date FROM clients WHERE id = $1',
+                [state.data.client_id]
+            );
+            const client = clientResult.rows[0] || {};
+
             const childrenResult = await pool.query(
                 'SELECT id, full_name, birth_date FROM children WHERE parent_id = $1 ORDER BY birth_date',
                 [state.data.client_id]
@@ -7538,49 +7801,64 @@ async function handleTextMessage(msg) {
             
             if (children.length > 0) {
                 message += 'Вы можете:\n';
-                message += '• Выбрать из зарегистрированных детей (кнопки ниже)\n';
+                message += '• Выбрать себя или зарегистрированных детей (кнопки ниже)\n';
                 message += '• Ввести имена и возрасты через запятую\n';
-                message += '  Например: Иван, 10 лет, Мария, 8 лет\n\n';
-                message += 'Ваши зарегистрированные дети:\n';
+                message += '  Например: Иван 10, Мария 8\n\n';
+                message += 'Доступные участники:\n';
+                message += `1. 👤 ${client.full_name || 'Вы'}\n`;
 
-                const childButtons = [];
+                const participantButtons = [];
+                // Добавляем кнопку "Себя" в начало
+                participantButtons.push(['👤 Себя']);
+
                 children.forEach((child, index) => {
                     const age = moment().diff(moment(child.birth_date), 'years');
-                    const buttonText = `👶 ${child.full_name} (${age} лет)`;
+                    // Формат кнопки: "👶 Имя (возраст)"
+                    const buttonText = `👶 ${child.full_name} (${age})`;
                     if (index % 2 === 0) {
-                        childButtons.push([buttonText]);
+                        participantButtons.push([buttonText]);
                     } else {
-                        childButtons[childButtons.length - 1].push(buttonText);
+                        participantButtons[participantButtons.length - 1].push(buttonText);
                     }
-                    message += `${index + 1}. ${child.full_name} (${age} лет)\n`;
+                    message += `${index + 2}. ${child.full_name} (${age})\n`;
                 });
 
-                childButtons.push(['✅ Все указано, продолжить']);
-                childButtons.push(['🔙 Назад']);
+                participantButtons.push(['✅ Все указано, продолжить']);
+                participantButtons.push(['🔙 Назад']);
 
                 state.data.children = children;
+                state.data.client = client;
                 state.data.selected_participants = [];
                 userStates.set(chatId, state);
 
                 return bot.sendMessage(chatId, message, {
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: childButtons,
+                        keyboard: participantButtons,
                         resize_keyboard: true
                     }
                 });
             } else {
-                message += 'Введите имена и возрасты участников через запятую.\n';
-                message += 'Например: Иван, 10 лет, Мария, 8 лет, Петр, 12 лет\n\n';
-                message += '⚠️ Укажите себя и всех участников, включая возраст каждого.';
+                message += 'Вы можете:\n';
+                message += '• Записать себя (кнопка ниже)\n';
+                message += '• Ввести имена и возрасты через запятую\n';
+                message += '  Например: Иван 10, Мария 8\n\n';
+                message += '⚠️ Укажите всех участников, включая возраст каждого.';
 
+                const participantButtons = [];
+                participantButtons.push(['👤 Себя']);
+                participantButtons.push(['✅ Все указано, продолжить']);
+                participantButtons.push(['🔙 Назад']);
+
+                state.data.children = [];
+                state.data.client = client;
                 state.data.selected_participants = [];
                 userStates.set(chatId, state);
 
                 return bot.sendMessage(chatId, message, {
                     parse_mode: 'Markdown',
                     reply_markup: {
-                        keyboard: [['🔙 Назад']],
+                        keyboard: participantButtons,
                         resize_keyboard: true
                     }
                 });
@@ -7840,47 +8118,181 @@ async function handleTextMessage(msg) {
         }
 
         case 'kuliga_group_own_participants': {
+            console.log('🎯 === CASE kuliga_group_own_participants ===');
+            console.log('📥 Входящее сообщение:', {
+                text: msg.text,
+                textLength: msg.text ? msg.text.length : 0,
+                textBytes: msg.text ? Buffer.from(msg.text).toString('hex') : null,
+                step: state.step,
+                clientId: state.data.client_id,
+                selectedParticipants: state.data.selected_participants ? state.data.selected_participants.length : 0
+            });
+            
             if (msg.text === '🔙 Назад') {
+                console.log('⬅️ Обработка "Назад"');
                 state.step = 'kuliga_group_own_time';
                 userStates.set(chatId, state);
                 return showKuligaTimeSlotsForOwnGroup(chatId, state.data.selected_date, state.data);
             }
 
             if (msg.text === '✅ Все указано, продолжить') {
+                console.log('✅ Обработка "Все указано, продолжить"');
                 if (!state.data.selected_participants || state.data.selected_participants.length === 0) {
-                    return bot.sendMessage(chatId,
-                        '❌ Пожалуйста, выберите хотя бы одного участника.',
-                        {
-                            reply_markup: {
-                                keyboard: [
-                                    ...(state.data.children || []).map(child => {
-                                        const age = moment().diff(moment(child.birth_date), 'years');
-                                        return [`👶 ${child.full_name} (${age} лет)`];
-                                    }),
-                                    ['✅ Все указано, продолжить'],
-                                    ['🔙 Назад']
-                                ],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
+                    return showParticipantsList(chatId, state, true);
                 }
 
                 // Переходим к расчету стоимости и подтверждению
                 return await calculateAndConfirmKuligaOwnGroupBooking(chatId, state);
             }
 
-            // Обработка выбора ребенка
-            if (msg.text && msg.text.startsWith('👶 ')) {
-                const childName = msg.text.replace('👶 ', '').split(' (')[0];
-                const child = state.data.children.find(c => c.full_name === childName);
-                
-                if (!child) {
-                    return bot.sendMessage(chatId, '❌ Ребенок не найден. Выберите из списка.');
+            // Обработка выбора "Себя" (включая повторное нажатие на уже выбранную кнопку)
+            if (msg.text === '👤 Себя' || msg.text === '✅ Себя') {
+                // Получаем данные клиента если еще не получены
+                if (!state.data.client) {
+                    const clientResult = await pool.query(
+                        'SELECT id, full_name, birth_date FROM clients WHERE id = $1',
+                        [state.data.client_id]
+                    );
+                    state.data.client = clientResult.rows[0] || {};
                 }
 
-                // Добавляем ребенка к участникам, если его еще нет
-                if (!state.data.selected_participants.find(p => p.childId === child.id)) {
+                const client = state.data.client;
+                if (!client.full_name) {
+                    return bot.sendMessage(chatId, '❌ Ошибка: данные клиента не найдены.');
+                }
+
+                // Проверяем, выбран ли уже клиент
+                const existingIndex = state.data.selected_participants.findIndex(p => p.isSelf);
+                if (existingIndex >= 0) {
+                    // Убираем из списка (повторное нажатие)
+                    state.data.selected_participants.splice(existingIndex, 1);
+                } else {
+                    // Добавляем к участникам
+                    const age = moment().diff(moment(client.birth_date), 'years');
+                    state.data.selected_participants.push({
+                        fullName: client.full_name,
+                        birthYear: moment(client.birth_date).year(),
+                        age: age,
+                        isSelf: true
+                    });
+                }
+                userStates.set(chatId, state);
+                console.log('💾 Состояние сохранено после "Себя":', {
+                    step: state.step,
+                    participantsCount: state.data.selected_participants.length,
+                    hasChildren: !!state.data.children
+                });
+
+                // Показываем обновленный список участников
+                const result = await showParticipantsList(chatId, state);
+                
+                // Дополнительно проверяем, что состояние сохранилось после показа списка
+                const stateAfter = userStates.get(chatId);
+                console.log('✅ Состояние после showParticipantsList:', {
+                    hasState: !!stateAfter,
+                    step: stateAfter ? stateAfter.step : 'NO_STATE'
+                });
+                
+                return result;
+            }
+
+            // Обработка выбора ребенка (включая повторное нажатие)
+            // Формат кнопки: "👶 Имя (возраст)" или "✅ Имя (возраст)"
+            if (msg.text && (msg.text.startsWith('👶') || msg.text.startsWith('✅')) && 
+                msg.text !== '✅ Себя' && 
+                msg.text !== '✅ Все указано, продолжить') {
+                
+                console.log('🔍 Обработка выбора ребенка в switch-case:', {
+                    msgText: msg.text,
+                    step: state.step,
+                    clientId: state.data.client_id
+                });
+
+                // Формат кнопки: "👶 Имя (возраст)" или "✅ Имя (возраст)"
+                const buttonText = msg.text.replace(/^(👶|✅)\s*/, '');
+                const match = buttonText.match(/^(.+?)\s*\((\d+)\)$/);
+                
+                if (!match) {
+                    console.error('❌ Неверный формат кнопки:', { buttonText, msgText: msg.text });
+                    return bot.sendMessage(chatId, '❌ Неверный формат кнопки. Выберите из списка.');
+                }
+
+                const childName = match[1].trim();
+                const buttonAge = parseInt(match[2]);
+                console.log('🔎 Ищем ребенка:', { childName, buttonAge });
+                
+                // Всегда загружаем свежий список детей из базы данных
+                const childrenResult = await pool.query(
+                    'SELECT id, full_name, birth_date FROM children WHERE parent_id = $1 ORDER BY birth_date',
+                    [state.data.client_id]
+                );
+                state.data.children = childrenResult.rows;
+                
+                console.log('📋 Загружено детей из БД:', {
+                    count: state.data.children.length,
+                    children: state.data.children.map(c => ({
+                        id: c.id,
+                        name: c.full_name,
+                        birth_date: c.birth_date,
+                        age: moment().diff(moment(c.birth_date), 'years')
+                    }))
+                });
+                
+                userStates.set(chatId, state);
+                
+                // Ищем ребенка по имени и возрасту (с учетом возможных различий в пробелах)
+                const child = state.data.children.find(c => {
+                    const dbName = c.full_name.trim();
+                    const searchName = childName.trim();
+                    const dbAge = moment().diff(moment(c.birth_date), 'years');
+                    
+                    console.log('🔍 Проверка ребенка:', {
+                        dbName,
+                        searchName,
+                        dbAge,
+                        buttonAge,
+                        nameMatch: dbName === searchName || dbName.toLowerCase() === searchName.toLowerCase(),
+                        ageMatch: Math.abs(dbAge - buttonAge) <= 1
+                    });
+                    
+                    // Проверяем по имени (регистронезависимо) и возрасту
+                    return (dbName === searchName || dbName.toLowerCase() === searchName.toLowerCase()) && 
+                           Math.abs(dbAge - buttonAge) <= 1; // Разница в возрасте не больше года (на случай если год прошел)
+                });
+                
+                if (!child) {
+                    console.error('❌ Ребенок не найден:', {
+                        childName,
+                        buttonAge,
+                        availableChildren: state.data.children.map(c => ({
+                            name: c.full_name,
+                            age: moment().diff(moment(c.birth_date), 'years'),
+                            id: c.id
+                        })),
+                        buttonText,
+                        msgText: msg.text,
+                        clientId: state.data.client_id
+                    });
+                    return bot.sendMessage(chatId, 
+                        '❌ Ребенок не найден. Попробуйте выбрать из списка еще раз или введите вручную через запятую.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                console.log('✅ Ребенок найден:', { id: child.id, name: child.full_name });
+
+                // Проверяем, выбран ли уже ребенок
+                const existingIndex = state.data.selected_participants.findIndex(p => p.childId === child.id);
+                if (existingIndex >= 0) {
+                    // Убираем из списка (повторное нажатие)
+                    state.data.selected_participants.splice(existingIndex, 1);
+                } else {
+                    // Добавляем к участникам
                     const age = moment().diff(moment(child.birth_date), 'years');
                     state.data.selected_participants.push({
                         fullName: child.full_name,
@@ -7888,53 +8300,22 @@ async function handleTextMessage(msg) {
                         age: age,
                         childId: child.id
                     });
-                    state.data.selected_participants.sort((a, b) => (a.childId || 0) - (b.childId || 0));
-                    userStates.set(chatId, state);
                 }
+                userStates.set(chatId, state);
 
                 // Показываем обновленный список участников
-                let message = '👥 *Участники групповой тренировки:*\n\n';
-                state.data.selected_participants.forEach((p, index) => {
-                    message += `${index + 1}. ${p.fullName} (${p.age} лет)\n`;
-                });
-                message += '\nВы можете добавить еще участников или нажмите "✅ Все указано, продолжить" для продолжения.';
-
-                const childButtons = [];
-                (state.data.children || []).forEach((child, index) => {
-                    const age = moment().diff(moment(child.birth_date), 'years');
-                    const isSelected = state.data.selected_participants.find(p => p.childId === child.id);
-                    const buttonText = isSelected 
-                        ? `✅ ${child.full_name} (${age} лет)` 
-                        : `👶 ${child.full_name} (${age} лет)`;
-                    
-                    if (index % 2 === 0) {
-                        childButtons.push([buttonText]);
-                    } else {
-                        childButtons[childButtons.length - 1].push(buttonText);
-                    }
-                });
-
-                childButtons.push(['✅ Все указано, продолжить']);
-                childButtons.push(['🔙 Назад']);
-
-                return bot.sendMessage(chatId, message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: childButtons,
-                        resize_keyboard: true
-                    }
-                });
+                return showParticipantsList(chatId, state);
             }
 
-            // Обработка ввода через запятую
+            // Обработка ввода через запятую (упрощенный формат: "Имя возраст, Имя возраст")
             const participantsText = msg.text.trim();
             if (participantsText.includes(',')) {
                 const parts = participantsText.split(',').map(p => p.trim()).filter(p => p);
                 
-                if (parts.length < 2) {
+                if (parts.length === 0) {
                     return bot.sendMessage(chatId,
                         '❌ Неверный формат. Введите имена и возрасты через запятую.\n' +
-                        'Например: Иван, 10 лет, Мария, 8 лет',
+                        'Например: Иван 10, Мария 8',
                         {
                             reply_markup: {
                                 keyboard: [['🔙 Назад']],
@@ -7945,16 +8326,29 @@ async function handleTextMessage(msg) {
                 }
 
                 const participants = [];
-                for (let i = 0; i < parts.length; i += 2) {
-                    if (i + 1 >= parts.length) break;
-                    const name = parts[i];
-                    const ageStr = parts[i + 1].replace(/лет|года|год/g, '').trim();
-                    const age = parseInt(ageStr);
+                for (const part of parts) {
+                    // Формат: "Имя возраст" - имя и возраст разделены пробелом
+                    const match = part.match(/^(.+?)\s+(\d+)$/);
+                    if (!match) {
+                        return bot.sendMessage(chatId,
+                            `❌ Неверный формат для "${part}".\n` +
+                            'Укажите в формате: Имя возраст\n' +
+                            'Например: Иван 10, Мария 8',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    const name = match[1].trim();
+                    const age = parseInt(match[2]);
                     
                     if (!name || isNaN(age) || age < 0 || age > 120) {
                         return bot.sendMessage(chatId,
-                            `❌ Неверный формат для "${name}, ${parts[i + 1]}".\n` +
-                            'Укажите имя и возраст через запятую. Например: Иван, 10 лет',
+                            `❌ Неверный возраст для "${name}". Возраст должен быть от 0 до 120 лет.`,
                             {
                                 reply_markup: {
                                     keyboard: [['🔙 Назад']],
@@ -7979,12 +8373,39 @@ async function handleTextMessage(msg) {
                 return await calculateAndConfirmKuligaOwnGroupBooking(chatId, state);
             }
 
+            // Если текст не содержит запятую и не является кнопкой, возможно это просто имя с возрастом
+            const singleMatch = msg.text.match(/^(.+?)\s+(\d+)$/);
+            if (singleMatch) {
+                const name = singleMatch[1].trim();
+                const age = parseInt(singleMatch[2]);
+                
+                if (!isNaN(age) && age >= 0 && age <= 120) {
+                    const currentYear = moment().year();
+                    state.data.selected_participants.push({
+                        fullName: name,
+                        birthYear: currentYear - age,
+                        age: age
+                    });
+                    userStates.set(chatId, state);
+                    return showParticipantsList(chatId, state);
+                }
+            }
+
             return bot.sendMessage(chatId,
                 '❌ Введите имена и возрасты участников через запятую.\n' +
-                'Например: Иван, 10 лет, Мария, 8 лет',
+                'Например: Иван 10, Мария 8\n\n' +
+                'Или выберите участников из списка кнопками.',
                 {
                     reply_markup: {
-                        keyboard: [['🔙 Назад']],
+                        keyboard: [
+                            ['👤 Себя'],
+                            ...(state.data.children || []).map(child => {
+                                const age = moment().diff(moment(child.birth_date), 'years');
+                                return [`👶 ${child.full_name} (${age})`];
+                            }),
+                            ['✅ Все указано, продолжить'],
+                            ['🔙 Назад']
+                        ],
                         resize_keyboard: true
                     }
                 }
@@ -12375,6 +12796,90 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
 }
 
 /**
+ * Показ списка участников с кнопками для выбора
+ */
+async function showParticipantsList(chatId, state, showError = false) {
+    // Всегда загружаем свежий список детей из базы данных
+    const childrenResult = await pool.query(
+        'SELECT id, full_name, birth_date FROM children WHERE parent_id = $1 ORDER BY birth_date',
+        [state.data.client_id]
+    );
+    state.data.children = childrenResult.rows;
+    
+    // Если данные клиента не загружены, загружаем их
+    if (!state.data.client) {
+        const clientResult = await pool.query(
+            'SELECT id, full_name, birth_date FROM clients WHERE id = $1',
+            [state.data.client_id]
+        );
+        state.data.client = clientResult.rows[0] || {};
+    }
+    
+    // Сохраняем обновленное состояние
+    userStates.set(chatId, state);
+
+    let message = '👥 *Участники групповой тренировки:*\n\n';
+    
+    if (state.data.selected_participants && state.data.selected_participants.length > 0) {
+        state.data.selected_participants.forEach((p, index) => {
+            message += `${index + 1}. ${p.fullName} (${p.age})\n`;
+        });
+        message += '\nВы можете добавить еще участников или нажмите "✅ Все указано, продолжить" для продолжения.';
+    } else {
+        message += 'Список пуст. Выберите участников из списка ниже или введите через запятую.\n';
+        message += 'Например: Иван 10, Мария 8';
+    }
+
+    if (showError) {
+        message = '❌ *Пожалуйста, выберите хотя бы одного участника.*\n\n' + message;
+    }
+
+    const participantButtons = [];
+    
+    // Кнопка "Себя"
+    const isSelfSelected = state.data.selected_participants && state.data.selected_participants.find(p => p.isSelf);
+    participantButtons.push([isSelfSelected ? '✅ Себя' : '👤 Себя']);
+
+    // Кнопки детей - формат: "👶 Имя (возраст)"
+    if (state.data.children && state.data.children.length > 0) {
+        state.data.children.forEach((child, index) => {
+            const age = moment().diff(moment(child.birth_date), 'years');
+            const isSelected = state.data.selected_participants && state.data.selected_participants.find(p => p.childId === child.id);
+            // Формат: "👶 Имя (возраст)"
+            const buttonText = isSelected 
+                ? `✅ ${child.full_name} (${age})` 
+                : `👶 ${child.full_name} (${age})`;
+            
+            if (index % 2 === 0) {
+                participantButtons.push([buttonText]);
+            } else {
+                participantButtons[participantButtons.length - 1].push(buttonText);
+            }
+        });
+    }
+
+    participantButtons.push(['✅ Все указано, продолжить']);
+    participantButtons.push(['🔙 Назад']);
+
+    // ВАЖНО: Сохраняем состояние перед отправкой сообщения с кнопками
+    userStates.set(chatId, state);
+    console.log('💾 Состояние сохранено в showParticipantsList:', {
+        step: state.step,
+        participantsCount: state.data.selected_participants ? state.data.selected_participants.length : 0,
+        hasChildren: !!state.data.children,
+        childrenCount: state.data.children ? state.data.children.length : 0
+    });
+
+    return bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            keyboard: participantButtons,
+            resize_keyboard: true
+        }
+    });
+}
+
+/**
  * Расчет стоимости и подтверждение бронирования для "У меня своя группа"
  */
 async function calculateAndConfirmKuligaOwnGroupBooking(chatId, state) {
@@ -12453,7 +12958,7 @@ async function calculateAndConfirmKuligaOwnGroupBooking(chatId, state) {
         message += `🏔️ *Место:* Кулига Парк\n\n`;
         message += `👥 *Участники (${participantsCount}):*\n`;
         participants.forEach((p, index) => {
-            message += `${index + 1}. ${p.fullName} (${p.age} лет)\n`;
+            message += `${index + 1}. ${p.fullName} (${p.age})\n`;
         });
         message += `\n💰 *Стоимость:*\n`;
         message += `• За человека: ${pricePerPerson.toFixed(2)} ₽\n`;
@@ -12757,8 +13262,11 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.day()];
         const timeStr = String(state.data.selected_start_time).substring(0, 5);
 
+        // Формируем список участников с возрастом
+        const participantsWithAge = state.data.selected_participants.map(p => `${p.fullName} (${p.age})`).join(', ');
+
         let message = '✅ *Групповая тренировка в Кулига Парке успешно забронирована!*\n\n';
-        message += `👤 *Участники:* ${participantsNames.join(', ')}\n`;
+        message += `👤 *Участники:* ${participantsWithAge}\n`;
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr}\n`;
         message += `🎿 *Вид спорта:* ${state.data.selected_sport === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
@@ -12947,8 +13455,11 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.day()];
         const timeStr = String(training.start_time).substring(0, 5);
 
+        // Формируем список участников с возрастом
+        const participantsWithAge = participants.map(p => `${p.fullName} (${p.age})`).join(', ');
+
         let message = '✅ *Групповая тренировка в Кулига Парке успешно забронирована!*\n\n';
-        message += `👤 *Участник:* ${participantsNames.join(', ')}\n`;
+        message += `👤 *Участник:* ${participantsWithAge}\n`;
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr}\n`;
         message += `🎿 *Вид спорта:* ${training.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
