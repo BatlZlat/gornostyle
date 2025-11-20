@@ -522,7 +522,7 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
         }
 
         // Определяем заголовок в зависимости от типа тренировки
-        const isGroupTraining = trainingData.trainer_name && trainingData.trainer_name !== 'Не указан';
+        const isGroupTraining = trainingData.booking_type === 'group' || (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан');
         const header = isGroupTraining 
             ? '❌ *Отмена групповой зимней тренировки!*\n\n'
             : '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n';
@@ -544,20 +544,31 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
         let message = header +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n`;
         
+        // Для групповых тренировок показываем количество участников
         if (trainingData.participant_name && trainingData.participant_name !== '—') {
-            message += `👤 *Участник:* ${trainingData.participant_name}\n`;
+            if (isGroupTraining && trainingData.participants_count > 1) {
+                message += `👥 *Участники (${trainingData.participants_count}):* ${trainingData.participant_name}\n`;
+            } else {
+                message += `👤 *Участник:* ${trainingData.participant_name}\n`;
+            }
         }
         
         message += `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
             `⏰ *Время:* ${trainingData.time}\n`;
         
+        // Для групповых тренировок показываем тип спорта
+        if (isGroupTraining && trainingData.sport_type) {
+            const sportTypeText = trainingData.sport_type === 'ski' ? 'лыжи' : 'сноуборд';
+            message += `🎿 *Вид спорта:* ${sportTypeText}\n`;
+        }
+        
         if (isGroupTraining && trainingData.group_name) {
             message += `👥 *Группа:* ${trainingData.group_name}\n`;
         }
         
-        if (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан') {
-            message += `👨‍🏫 *Тренер:* ${trainingData.trainer_name}\n`;
+        if (trainingData.instructor_name || (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан')) {
+            message += `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || trainingData.trainer_name}\n`;
         }
         
         message += `🏔️ *Место:* Кулига Парк\n` +
@@ -580,10 +591,16 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             return;
         }
 
+        // Определяем тип тренировки
+        const trainingType = trainingData.booking_type === 'group' ? 'групповую' : 'индивидуальную';
+        const participantsInfo = trainingData.booking_type === 'group' 
+            ? `👥 *Участники (${trainingData.participants_count || 1}):* ${trainingData.participant_name}`
+            : `👤 *Участник:* ${trainingData.participant_name}`;
+
         const message = 
-            '✅ *Новая запись на индивидуальную тренировку Кулига Парк!*\n\n' +
+            `✅ *Новая запись на ${trainingType} тренировку Кулига Парк!*\n\n` +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
-            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `${participantsInfo}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || 'Не указан'}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
@@ -625,11 +642,17 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
         const formattedDateWithDay = `${formatDate(trainingData.date)} (${dayOfWeek})`;
 
+        // Формируем строку с участниками
+        const participantsCount = trainingData.participants_count || (trainingData.participant_name ? trainingData.participant_name.split(',').length : 1);
+        const participantLine = trainingData.booking_type === 'group' && participantsCount > 1
+            ? `👤 *Участники (${participantsCount}):* ${trainingData.participant_name}`
+            : `👤 *Участник:* ${trainingData.participant_name}`;
+
         const message = 
             '🎉 *Новая запись на вашу тренировку!*\n\n' +
             `*${trainingType}*\n\n` +
             `👨‍💼 *Клиент:* ${trainingData.client_name || trainingData.participant_name}\n` +
-            `👤 *Участник:* ${trainingData.participant_name}\n` +
+            `${participantLine}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
