@@ -757,7 +757,95 @@ router.delete('/scheduled-messages/:id', async (req, res) => {
 // КОНЕЦ РОУТОВ ДЛЯ ОТЛОЖЕННЫХ СООБЩЕНИЙ
 // ==========================================
 
-// Получение тренировки по ID (должен быть после /active-groups и /scheduled-messages)
+// Получение доступных тренировок для переноса участника (должен быть ПЕРЕД /:id)
+router.get('/available-for-transfer', async (req, res) => {
+    const { slope_type, exclude_training_id } = req.query;
+    const client = await pool.connect();
+
+    try {
+        // Вычисляем дату начала (сегодня) и дату окончания (через 2 недели)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const twoWeeksLater = new Date(today);
+        twoWeeksLater.setDate(twoWeeksLater.getDate() + 14);
+        
+        const dateFrom = today.toISOString().split('T')[0];
+        const dateTo = twoWeeksLater.toISOString().split('T')[0];
+
+        let query = `
+            SELECT 
+                ts.id,
+                ts.session_date,
+                ts.start_time,
+                ts.end_time,
+                ts.skill_level,
+                ts.max_participants,
+                ts.price,
+                ts.slope_type,
+                COALESCE(g.name, 'Группа не указана') as group_name,
+                COALESCE(t.full_name, 'Тренер не назначен') as trainer_name,
+                COALESCE(s.name, 'Тренажер не указан') as simulator_name,
+                (SELECT COUNT(*) FROM session_participants sp 
+                 WHERE sp.session_id = ts.id 
+                 AND sp.status = 'confirmed') as current_participants,
+                NULL as min_age,
+                NULL as max_age
+            FROM training_sessions ts
+            LEFT JOIN groups g ON ts.group_id = g.id
+            LEFT JOIN trainers t ON ts.trainer_id = t.id
+            LEFT JOIN simulators s ON ts.simulator_id = s.id
+            WHERE ts.session_date >= $1 
+                AND ts.session_date <= $2
+                AND ts.status = 'scheduled'
+                AND ts.training_type = true
+                AND (SELECT COUNT(*) FROM session_participants sp 
+                     WHERE sp.session_id = ts.id 
+                     AND sp.status = 'confirmed') < ts.max_participants
+        `;
+
+        const params = [dateFrom, dateTo];
+
+        // Фильтр по slope_type
+        if (slope_type) {
+            if (slope_type === 'simulator') {
+                // Тренажер: либо slope_type = 'simulator', либо slope_type IS NULL и есть simulator_id
+                query += ` AND (ts.slope_type = $${params.length + 1} OR (ts.slope_type IS NULL AND ts.simulator_id IS NOT NULL))`;
+            } else if (slope_type === 'natural_slope') {
+                // Естественный склон: либо slope_type = 'natural_slope', либо slope_type IS NULL и нет simulator_id
+                query += ` AND (ts.slope_type = $${params.length + 1} OR (ts.slope_type IS NULL AND ts.simulator_id IS NULL AND ts.group_id IS NOT NULL))`;
+            } else {
+                // Если передан другой тип, используем точное совпадение
+                query += ` AND ts.slope_type = $${params.length + 1}`;
+            }
+            params.push(slope_type);
+        }
+
+        // Исключаем текущую тренировку
+        if (exclude_training_id) {
+            query += ` AND ts.id != $${params.length + 1}`;
+            params.push(exclude_training_id);
+        }
+
+        query += ` ORDER BY ts.session_date, ts.start_time`;
+
+        const result = await client.query(query, params);
+        
+        res.json({
+            success: true,
+            trainings: result.rows
+        });
+    } catch (error) {
+        console.error('Ошибка при получении доступных тренировок:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Внутренняя ошибка сервера' 
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// Получение тренировки по ID (должен быть после /active-groups и /scheduled-messages и /available-for-transfer)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -1178,6 +1266,202 @@ ${trainingInfo}
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Ошибка при удалении тренировки:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    } finally {
+        client.release();
+    }
+});
+
+// Перенос участника на другую тренировку
+router.post('/:id/participants/:participantId/transfer', async (req, res) => {
+    const { id: sourceTrainingId, participantId } = req.params;
+    const { target_training_id: targetTrainingId } = req.body;
+    const client = await pool.connect();
+
+    try {
+        if (!targetTrainingId) {
+            return res.status(400).json({ error: 'Необходимо указать ID целевой тренировки' });
+        }
+
+        await client.query('BEGIN');
+
+        // Получаем информацию об участнике
+        const participantResult = await client.query(`
+            SELECT sp.*, c.full_name, c.telegram_id, c.id as client_id, c.birth_date, c.phone,
+                   ch.full_name as child_full_name, ch.birth_date as child_birth_date
+            FROM session_participants sp
+            LEFT JOIN clients c ON sp.client_id = c.id
+            LEFT JOIN children ch ON sp.child_id = ch.id
+            WHERE sp.id = $1 AND sp.session_id = $2 AND sp.status = 'confirmed'
+        `, [participantId, sourceTrainingId]);
+
+        if (participantResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Участник не найден или не подтвержден' });
+        }
+
+        const participant = participantResult.rows[0];
+
+        // Получаем информацию об исходной тренировке
+        const sourceTrainingResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
+            [sourceTrainingId]
+        );
+
+        if (sourceTrainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Исходная тренировка не найдена' });
+        }
+
+        const sourceTraining = sourceTrainingResult.rows[0];
+
+        // Получаем информацию о целевой тренировке
+        const targetTrainingResult = await client.query(
+            `SELECT ts.*, g.name as group_name, t.full_name as trainer_name, s.name as simulator_name,
+                    (SELECT COUNT(*) FROM session_participants sp 
+                     WHERE sp.session_id = ts.id AND sp.status = 'confirmed') as current_participants
+             FROM training_sessions ts
+             LEFT JOIN groups g ON ts.group_id = g.id
+             LEFT JOIN trainers t ON ts.trainer_id = t.id
+             LEFT JOIN simulators s ON ts.simulator_id = s.id
+             WHERE ts.id = $1`,
+            [targetTrainingId]
+        );
+
+        if (targetTrainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Целевая тренировка не найдена' });
+        }
+
+        const targetTraining = targetTrainingResult.rows[0];
+
+        // Проверяем, что есть свободные места
+        if (targetTraining.current_participants >= targetTraining.max_participants) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'На целевой тренировке нет свободных мест' });
+        }
+
+        // Проверяем, что типы тренировок совпадают (slope_type)
+        const sourceSlopeType = sourceTraining.slope_type || (sourceTraining.simulator_id ? 'simulator' : 'natural_slope');
+        const targetSlopeType = targetTraining.slope_type || (targetTraining.simulator_id ? 'simulator' : 'natural_slope');
+
+        if (sourceSlopeType !== targetSlopeType) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                error: `Нельзя переносить участника между тренировками разных типов (${sourceSlopeType} → ${targetSlopeType})` 
+            });
+        }
+
+        // Обновляем session_id участника
+        await client.query(
+            'UPDATE session_participants SET session_id = $1 WHERE id = $2',
+            [targetTrainingId, participantId]
+        );
+
+        // Подсчитываем оставшихся участников на исходной тренировке
+        const remainingParticipantsSource = await client.query(
+            'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+            [sourceTrainingId, 'confirmed']
+        );
+        const remainingCountSource = parseInt(remainingParticipantsSource.rows[0].count);
+
+        // Подсчитываем участников на целевой тренировке
+        const newParticipantsTarget = await client.query(
+            'SELECT COUNT(*) FROM session_participants WHERE session_id = $1 AND status = $2',
+            [targetTrainingId, 'confirmed']
+        );
+        const newCountTarget = parseInt(newParticipantsTarget.rows[0].count);
+
+        await client.query('COMMIT');
+
+        // Формируем информацию для уведомлений
+        const participantName = participant.is_child ? participant.child_full_name : participant.full_name;
+        const birthDate = participant.is_child ? new Date(participant.child_birth_date) : new Date(participant.birth_date);
+        const age = Math.floor((new Date() - birthDate) / (365.25 * 24 * 60 * 60 * 1000));
+
+        // Формируем даты и время для уведомлений
+        const formatDate = (date) => {
+            const d = new Date(date);
+            return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+        };
+
+        const formatTime = (time) => {
+            return time ? time.slice(0, 5) : '';
+        };
+
+        const sourceDate = formatDate(sourceTraining.session_date);
+        const sourceTime = formatTime(sourceTraining.start_time);
+        const targetDate = formatDate(targetTraining.session_date);
+        const targetTime = formatTime(targetTraining.start_time);
+
+        // Отправляем уведомление клиенту
+        if (participant.telegram_id) {
+            const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+            const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+
+            const isWinterTraining = targetSlopeType === 'natural_slope';
+            const locationLine = isWinterTraining 
+                ? '🏔️ *Место:* Кулига Парк\n'
+                : `🎿 *Тренажер:* ${targetTraining.simulator_name || `Тренажер ${targetTraining.simulator_id}`}\n`;
+
+            const clientMessage = `🔄 *Ваше занятие перенесено администратором*\n\n` +
+                `👤 *Участник:* ${participantName}\n` +
+                `📅 *Было:* ${sourceDate} в ${sourceTime}\n` +
+                `📅 *Стало:* ${targetDate} в ${targetTime}\n` +
+                `👥 *Группа:* ${targetTraining.group_name || 'Не указана'}\n` +
+                `👨‍🏫 *Тренер:* ${targetTraining.trainer_name || 'Не назначен'}\n` +
+                locationLine +
+                `\nПо всем вопросам обращайтесь к администратору: ${ADMIN_PHONE}`;
+
+            try {
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: participant.telegram_id,
+                        text: clientMessage,
+                        parse_mode: 'Markdown'
+                    })
+                });
+            } catch (error) {
+                console.error('Ошибка при отправке уведомления клиенту:', error);
+            }
+        }
+
+        // Отправляем уведомление администратору
+        const { notifyAdminParticipantTransferred } = require('../bot/admin-notify');
+        await notifyAdminParticipantTransferred({
+            participant_name: participantName,
+            participant_age: age,
+            client_name: participant.full_name,
+            client_phone: participant.phone,
+            source_date: sourceDate,
+            source_time: sourceTime,
+            source_group_name: sourceTraining.group_name,
+            target_date: targetDate,
+            target_time: targetTime,
+            target_group_name: targetTraining.group_name,
+            target_trainer_name: targetTraining.trainer_name,
+            target_simulator_name: targetTraining.simulator_name,
+            slope_type: targetSlopeType,
+            remaining_seats_source: `${remainingCountSource}/${sourceTraining.max_participants}`,
+            new_seats_target: `${newCountTarget}/${targetTraining.max_participants}`
+        });
+
+        res.json({
+            success: true,
+            message: 'Участник успешно перемещен на новую тренировку',
+            remaining_participants_source: remainingCountSource,
+            new_participants_target: newCountTarget
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при переносе участника:', error);
         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     } finally {
         client.release();

@@ -1467,6 +1467,64 @@ async function notifyAdminIndividualTrainingDeleted(trainingData) {
     }
 }
 
+// Функция для отправки уведомления о переносе участника между тренировками
+async function notifyAdminParticipantTransferred(trainingData) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        // Определяем, является ли тренировка зимней (естественный склон)
+        const isWinterTraining = trainingData.slope_type === 'natural_slope';
+        
+        // Заголовок зависит от типа тренировки
+        const header = isWinterTraining 
+            ? '🔄 *Перенос участника между тренировками на естественном склоне в Кулига Парк!*'
+            : '🔄 *Перенос участника между тренировками!*';
+        
+        // Формируем строку с информацией о тренажере/месте
+        let locationLine = '';
+        if (isWinterTraining) {
+            locationLine = '🏔️ *Место:* Кулига Парк\n';
+        } else {
+            locationLine = `🎿 *Тренажер:* ${trainingData.target_simulator_name || 'Не указан'}\n`;
+        }
+
+        const message =
+            `${header}\n\n` +
+            `👤 *Клиент:* ${trainingData.client_name}\n` +
+            `👶 *Участник:* ${trainingData.participant_name} (${trainingData.participant_age} лет)\n` +
+            `📞 *Телефон:* ${trainingData.client_phone}\n\n` +
+            `📅 *Было:*\n` +
+            `   Дата: ${trainingData.source_date}\n` +
+            `   Время: ${trainingData.source_time}\n` +
+            `   Группа: ${trainingData.source_group_name || 'Не указана'}\n` +
+            `   Мест осталось: ${trainingData.remaining_seats_source}\n\n` +
+            `📅 *Стало:*\n` +
+            `   Дата: ${trainingData.target_date}\n` +
+            `   Время: ${trainingData.target_time}\n` +
+            `   Группа: ${trainingData.target_group_name || 'Не указана'}\n` +
+            `   Тренер: ${trainingData.target_trainer_name || 'Не назначен'}\n` +
+            locationLine +
+            `   Участников: ${trainingData.new_seats_target}\n\n` +
+            `_Перенесено администратором через админ-панель_`;
+
+        for (const adminId of adminIds) {
+            try {
+                await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error(`Ошибка при отправке уведомления администратору ${adminId}:`, error.message);
+            }
+        }
+        
+        console.log(`✓ Уведомление о переносе участника отправлено администраторам`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления о переносе участника:', error);
+    }
+}
+
 module.exports = {
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
@@ -1478,6 +1536,7 @@ module.exports = {
     notifyAdminGroupTrainingCancellationByAdmin,
     notifyAdminIndividualTrainingCancellation,
     notifyAdminParticipantRemoved,
+    notifyAdminParticipantTransferred,
     notifyAdminFailedPayment,
     notifyAdminWalletRefilled,
     notifyAdminCertificatePurchase,

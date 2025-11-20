@@ -3689,6 +3689,13 @@ async function viewScheduleDetails(trainingId, isIndividual, slopeType) {
                                                 <td>${participant.phone || '-'}</td>
                                                 <td>
                                                     <button 
+                                                        class="btn-primary btn-small" 
+                                                        onclick="moveParticipantToAnotherTraining(${training.id}, ${participant.id}, '${(participant.full_name || '').replace(/'/g, "\\'")}', ${participant.skill_level ? `'${participant.skill_level}'` : 'null'}, ${age}, '${participant.birth_date}', '${training.slope_type || (training.simulator_id ? 'simulator' : 'natural_slope')}')"
+                                                        title="Переместить участника на другую тренировку"
+                                                        style="margin-right: 5px;">
+                                                        🔄 Переместить
+                                                    </button>
+                                                    <button 
                                                         class="btn-danger btn-small" 
                                                         onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
                                                         title="Удалить участника с возвратом средств">
@@ -6039,6 +6046,211 @@ async function removeParticipantFromTraining(trainingId, participantId, particip
         showError(error.message);
     } finally {
         hideLoading();
+    }
+}
+
+// === ПЕРЕМЕЩЕНИЕ УЧАСТНИКА НА ДРУГУЮ ТРЕНИРОВКУ ===
+
+// Функция для перемещения участника на другую тренировку
+async function moveParticipantToAnotherTraining(trainingId, participantId, participantName, participantLevel, participantAge, participantBirthDate, slopeType) {
+    try {
+        showLoading('Загрузка доступных тренировок...');
+
+        // Получаем список доступных тренировок на 2 недели
+        const response = await fetch(
+            `/api/trainings/available-for-transfer?slope_type=${encodeURIComponent(slopeType)}&exclude_training_id=${trainingId}`
+        );
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить список тренировок');
+        }
+
+        const data = await response.json();
+        hideLoading();
+
+        if (!data.success || !data.trainings || data.trainings.length === 0) {
+            showError('Нет доступных тренировок для переноса на ближайшие 2 недели');
+            return;
+        }
+
+        // Создаем модальное окно с выбором тренировки
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.zIndex = '10001';
+        
+        const trainingsList = data.trainings.map(training => {
+            const trainingDate = new Date(training.session_date);
+            const formattedDate = trainingDate.toLocaleDateString('ru-RU', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+            });
+            const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
+            const endTime = training.end_time ? training.end_time.slice(0, 5) : '';
+            
+            // Проверка соответствия по уровню и возрасту
+            const participantLevelStr = participantLevel && participantLevel !== 'null' ? String(participantLevel) : null;
+            const trainingLevelStr = training.skill_level ? String(training.skill_level) : null;
+            
+            const levelMatch = !participantLevelStr || !trainingLevelStr || 
+                              participantLevelStr === trainingLevelStr || 
+                              parseInt(participantLevelStr) === parseInt(trainingLevelStr);
+            
+            const ageMatch = (!training.min_age || participantAge >= training.min_age) && 
+                            (!training.max_age || participantAge <= training.max_age);
+            
+            const hasWarning = !levelMatch || !ageMatch;
+            const warningMessages = [];
+            
+            if (!levelMatch && participantLevelStr && trainingLevelStr) {
+                warningMessages.push(`Уровень участника (${participantLevelStr}) не совпадает с уровнем группы (${trainingLevelStr})`);
+            }
+            
+            if (!ageMatch) {
+                if (training.min_age && participantAge < training.min_age) {
+                    warningMessages.push(`Возраст участника (${participantAge} лет) меньше минимального для группы (${training.min_age} лет)`);
+                }
+                if (training.max_age && participantAge > training.max_age) {
+                    warningMessages.push(`Возраст участника (${participantAge} лет) больше максимального для группы (${training.max_age} лет)`);
+                }
+            }
+
+            // Экранируем сообщения предупреждений для безопасной передачи в onclick
+            const warningMessagesStr = warningMessages.map(msg => msg.replace(/'/g, "\\'")).join('|');
+
+            return `
+                <div class="training-option" data-training-id="${training.id}" style="
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                    ${hasWarning ? 'border-color: #ff9800; background-color: #fff3cd;' : ''}
+                " onmouseover="this.style.backgroundColor='${hasWarning ? '#ffe69c' : '#f0f0f0'}'" 
+                   onmouseout="this.style.backgroundColor='${hasWarning ? '#fff3cd' : 'transparent'}'"
+                   onclick="selectTrainingForTransfer(${training.id}, ${trainingId}, ${participantId}, '${participantName.replace(/'/g, "\\'")}', ${hasWarning ? 'true' : 'false'}, '${warningMessagesStr}')">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <strong>${formattedDate} ${startTime} - ${endTime}</strong>
+                            <div style="margin-top: 5px; color: #666;">
+                                <div>${training.group_name || 'Группа не указана'}</div>
+                                <div>Тренер: ${training.trainer_name}</div>
+                                ${training.simulator_name ? `<div>Тренажер: ${training.simulator_name}</div>` : ''}
+                                <div>Уровень: ${training.skill_level || '-'}</div>
+                                <div>Участники: ${training.current_participants}/${training.max_participants}</div>
+                            </div>
+                            ${hasWarning ? `
+                                <div style="margin-top: 10px; padding: 10px; background-color: #fff; border-left: 3px solid #ff9800; border-radius: 4px;">
+                                    <strong style="color: #ff9800;">⚠️ Предупреждение:</strong>
+                                    <ul style="margin: 5px 0 0 0; padding-left: 20px;">
+                                        ${warningMessages.map(msg => `<li style="color: #856404;">${msg}</li>`).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <button class="btn-primary" style="margin-left: 15px; white-space: nowrap;" onclick="event.stopPropagation(); selectTrainingForTransfer(${training.id}, ${trainingId}, ${participantId}, '${participantName.replace(/'/g, "\\'")}', ${hasWarning ? 'true' : 'false'}, '${warningMessagesStr}')">
+                            Выбрать
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <h3>Переместить участника "${participantName}"</h3>
+                <p style="margin-bottom: 15px; color: #666;">
+                    Выберите тренировку из списка доступных на ближайшие 2 недели (только ${slopeType === 'simulator' ? 'тренажер' : 'естественный склон'}):
+                </p>
+                <div id="trainings-list" style="max-height: 60vh; overflow-y: auto;">
+                    ${trainingsList}
+                </div>
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке доступных тренировок:', error);
+        hideLoading();
+        showError('Не удалось загрузить список тренировок: ' + error.message);
+    }
+}
+
+// Функция для выбора тренировки и подтверждения переноса
+async function selectTrainingForTransfer(targetTrainingId, sourceTrainingId, participantId, participantName, hasWarning, warningMessages) {
+    // Если есть предупреждение, показываем подтверждение
+    if (hasWarning && warningMessages) {
+        // warningMessages передается как строка, разделенная символом |
+        const messages = typeof warningMessages === 'string' && warningMessages 
+            ? warningMessages.split('|').filter(msg => msg.trim()) 
+            : (Array.isArray(warningMessages) ? warningMessages : []);
+        
+        if (messages.length > 0) {
+            const confirmMessage = `⚠️ Внимание! Участник "${participantName}" не соответствует требованиям выбранной тренировки:\n\n` +
+                messages.map(msg => `• ${msg}`).join('\n') +
+                `\n\nВы всё равно хотите переместить участника на эту тренировку?`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+        }
+    } else {
+        // Обычное подтверждение
+        if (!confirm(`Вы уверены, что хотите переместить участника "${participantName}" на выбранную тренировку?`)) {
+            return;
+        }
+    }
+
+    try {
+        showLoading('Перемещение участника...');
+
+        const response = await fetch(
+            `/api/trainings/${sourceTrainingId}/participants/${participantId}/transfer`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    target_training_id: targetTrainingId
+                })
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при перемещении участника');
+        }
+
+        hideLoading();
+        showSuccess(`Участник "${participantName}" успешно перемещен на новую тренировку`);
+        
+        // Закрываем все модальные окна
+        document.querySelectorAll('.modal').forEach(modal => modal.remove());
+
+        // Обновляем список тренировок
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        } else if (typeof loadTrainings === 'function') {
+            loadTrainings();
+        }
+    } catch (error) {
+        console.error('Ошибка при перемещении участника:', error);
+        hideLoading();
+        showError(error.message);
     }
 }
 
