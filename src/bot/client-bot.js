@@ -8308,6 +8308,7 @@ async function handleTextMessage(msg) {
             }
 
             // Обработка ввода через запятую (упрощенный формат: "Имя возраст, Имя возраст")
+            // ВАЖНО: Добавляем к уже выбранным участникам, а не заменяем их
             const participantsText = msg.text.trim();
             if (participantsText.includes(',')) {
                 const parts = participantsText.split(',').map(p => p.trim()).filter(p => p);
@@ -8325,7 +8326,12 @@ async function handleTextMessage(msg) {
                     );
                 }
 
-                const participants = [];
+                // Инициализируем selected_participants если его нет
+                if (!state.data.selected_participants) {
+                    state.data.selected_participants = [];
+                }
+
+                const newParticipants = [];
                 for (const part of parts) {
                     // Формат: "Имя возраст" - имя и возраст разделены пробелом
                     const match = part.match(/^(.+?)\s+(\d+)$/);
@@ -8358,36 +8364,69 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    const currentYear = moment().year();
-                    participants.push({
-                        fullName: name,
-                        birthYear: currentYear - age,
-                        age: age
-                    });
+                    // Проверяем, не добавлен ли уже участник с таким именем и возрастом
+                    const isDuplicate = state.data.selected_participants.some(p => 
+                        p.fullName.trim().toLowerCase() === name.trim().toLowerCase() && 
+                        Math.abs(p.age - age) <= 1
+                    );
+
+                    if (!isDuplicate) {
+                        const currentYear = moment().year();
+                        newParticipants.push({
+                            fullName: name,
+                            birthYear: currentYear - age,
+                            age: age
+                        });
+                    }
                 }
 
-                state.data.selected_participants = participants;
+                // Добавляем новых участников к уже выбранным
+                state.data.selected_participants = [...state.data.selected_participants, ...newParticipants];
                 userStates.set(chatId, state);
 
-                // Переходим к расчету стоимости
-                return await calculateAndConfirmKuligaOwnGroupBooking(chatId, state);
+                // Показываем обновленный список участников
+                return showParticipantsList(chatId, state);
             }
 
             // Если текст не содержит запятую и не является кнопкой, возможно это просто имя с возрастом
+            // ВАЖНО: Добавляем к уже выбранным участникам
             const singleMatch = msg.text.match(/^(.+?)\s+(\d+)$/);
             if (singleMatch) {
                 const name = singleMatch[1].trim();
                 const age = parseInt(singleMatch[2]);
                 
                 if (!isNaN(age) && age >= 0 && age <= 120) {
-                    const currentYear = moment().year();
-                    state.data.selected_participants.push({
-                        fullName: name,
-                        birthYear: currentYear - age,
-                        age: age
-                    });
-                    userStates.set(chatId, state);
-                    return showParticipantsList(chatId, state);
+                    // Инициализируем selected_participants если его нет
+                    if (!state.data.selected_participants) {
+                        state.data.selected_participants = [];
+                    }
+
+                    // Проверяем, не добавлен ли уже участник с таким именем и возрастом
+                    const isDuplicate = state.data.selected_participants.some(p => 
+                        p.fullName.trim().toLowerCase() === name.trim().toLowerCase() && 
+                        Math.abs(p.age - age) <= 1
+                    );
+
+                    if (!isDuplicate) {
+                        const currentYear = moment().year();
+                        state.data.selected_participants.push({
+                            fullName: name,
+                            birthYear: currentYear - age,
+                            age: age
+                        });
+                        userStates.set(chatId, state);
+                        return showParticipantsList(chatId, state);
+                    } else {
+                        return bot.sendMessage(chatId,
+                            `⚠️ Участник "${name} (${age})" уже добавлен в список.`,
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
                 }
             }
 
