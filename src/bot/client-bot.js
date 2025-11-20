@@ -6688,17 +6688,41 @@ async function handleTextMessage(msg) {
                         }
                     }
 
-                    // Уменьшаем количество участников в групповой тренировке
-                    await pool.query(
-                        'UPDATE kuliga_group_trainings SET current_participants = current_participants - 1 WHERE id = $1',
-                        [selectedSession.group_training_id]
-                    );
-
-                    // Обновляем статус бронирования
+                    // Обновляем статус бронирования ПЕРЕД пересчетом участников
                     await pool.query(
                         'UPDATE kuliga_bookings SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
                         ['cancelled', selectedSession.id]
                     );
+
+                    // Пересчитываем количество участников на основе активных бронирований (более надежно, чем просто уменьшать на 1)
+                    const participantsCountRes = await pool.query(
+                        `SELECT COALESCE(SUM(participants_count), 0) as total_participants
+                         FROM kuliga_bookings
+                         WHERE group_training_id = $1 AND status = 'confirmed'`,
+                        [selectedSession.group_training_id]
+                    );
+                    const remainingParticipants = parseInt(participantsCountRes.rows[0].total_participants || 0);
+
+                    // Обновляем количество участников в групповой тренировке
+                    const updatedTrainingRes = await pool.query(
+                        `UPDATE kuliga_group_trainings 
+                         SET current_participants = $1, updated_at = CURRENT_TIMESTAMP 
+                         WHERE id = $2 
+                         RETURNING slot_id, current_participants`,
+                        [remainingParticipants, selectedSession.group_training_id]
+                    );
+                    const updatedTraining = updatedTrainingRes.rows[0];
+
+                    // Если участников не осталось, освобождаем слот
+                    if (remainingParticipants <= 0 && updatedTraining && updatedTraining.slot_id) {
+                        await pool.query(
+                            'UPDATE kuliga_schedule_slots SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                            ['available', updatedTraining.slot_id]
+                        );
+                        console.log(`✅ Слот ${updatedTraining.slot_id} освобожден, участников не осталось`);
+                    } else if (updatedTraining && updatedTraining.slot_id) {
+                        console.log(`ℹ️ Слот ${updatedTraining.slot_id} остается занятым, участников осталось: ${remainingParticipants}`);
+                    }
 
                     // ВАЖНО: Возвращаем price_total (общую стоимость), а не price_per_person
                     const refundAmount = Number(selectedSession.price_total || selectedSession.price_per_person || 0);
