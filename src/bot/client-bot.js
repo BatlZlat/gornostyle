@@ -7961,6 +7961,7 @@ async function handleTextMessage(msg) {
             }
 
             // Получаем групповые тренировки на выбранную дату
+            // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
             const trainingsResult = await pool.query(
                 `SELECT kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
                         kgt.price_per_person, kgt.max_participants, kgt.current_participants,
@@ -7969,6 +7970,7 @@ async function handleTextMessage(msg) {
                  JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
                  WHERE kgt.date = $1
                    AND kgt.status IN ('open', 'confirmed')
+                   AND kgt.is_private = FALSE
                    AND kgt.current_participants < kgt.max_participants
                    AND ki.is_active = TRUE
                    AND (
@@ -8511,6 +8513,7 @@ async function handleTextMessage(msg) {
                 state.step = 'kuliga_group_existing_time';
                 userStates.set(chatId, state);
                 // Показываем список тренировок на выбранную дату снова
+                // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE)
                 const trainingsResult = await pool.query(
                     `SELECT kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
                             kgt.price_per_person, kgt.max_participants, kgt.current_participants,
@@ -8519,6 +8522,7 @@ async function handleTextMessage(msg) {
                      JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
                      WHERE kgt.date = $1
                        AND kgt.status IN ('open', 'confirmed')
+                       AND kgt.is_private = FALSE
                        AND kgt.current_participants < kgt.max_participants
                        AND ki.is_active = TRUE
                      ORDER BY kgt.start_time`,
@@ -12118,6 +12122,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
             FROM kuliga_group_trainings kgt
             JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
             WHERE kgt.status IN ('open', 'confirmed')
+                AND kgt.is_private = FALSE
                 AND kgt.date >= $1::date
                 AND kgt.date <= $2::date
                 AND kgt.current_participants < kgt.max_participants
@@ -12816,6 +12821,7 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
         const endDate = now.clone().add(30, 'days');
 
         // Получаем уникальные даты с групповыми тренировками
+        // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
         const datesResult = await pool.query(
             `SELECT DISTINCT kgt.date
              FROM kuliga_group_trainings kgt
@@ -12823,6 +12829,7 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
              WHERE kgt.date >= $1
                AND kgt.date <= $2
                AND kgt.status IN ('open', 'confirmed')
+               AND kgt.is_private = FALSE
                AND kgt.current_participants < kgt.max_participants
                AND ki.is_active = TRUE
                AND (
@@ -13250,38 +13257,81 @@ async function createKuligaOwnGroupBooking(chatId, state) {
             );
         }
 
-        // Создаем групповую тренировку
-        const groupTrainingResult = await client.query(
-            `INSERT INTO kuliga_group_trainings (
-                instructor_id, slot_id, date, start_time, end_time,
-                sport_type, level, price_per_person,
-                min_participants, max_participants, current_participants, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'confirmed')
-            RETURNING id`,
-            [
-                state.data.selected_instructor_id,
-                state.data.selected_slot_id,
-                state.data.selected_date,
-                state.data.selected_start_time,
-                state.data.selected_end_time,
-                state.data.selected_sport,
-                'beginner',
-                state.data.price_per_person,
-                state.data.selected_participants.length,
-                state.data.selected_participants.length,
-                state.data.selected_participants.length,
-            ]
+        // Проверяем, не занят ли слот другой групповой тренировкой
+        const existingTrainingCheck = await client.query(
+            `SELECT id, status, current_participants, max_participants
+             FROM kuliga_group_trainings
+             WHERE slot_id = $1
+               AND date = $2
+               AND start_time = $3
+               AND status IN ('open', 'confirmed')
+             FOR UPDATE`,
+            [state.data.selected_slot_id, state.data.selected_date, state.data.selected_start_time]
         );
 
-        const groupTrainingId = groupTrainingResult.rows[0].id;
+        let groupTrainingId;
+        
+        if (existingTrainingCheck.rows.length > 0) {
+            // Слот уже занят групповой тренировкой - используем существующую
+            const existingTraining = existingTrainingCheck.rows[0];
+            groupTrainingId = existingTraining.id;
+            
+            // Проверяем, есть ли свободные места
+            const freePlaces = existingTraining.max_participants - existingTraining.current_participants;
+            if (freePlaces < state.data.selected_participants.length) {
+                await client.query('ROLLBACK');
+                return bot.sendMessage(chatId,
+                    `❌ В этой групповой тренировке недостаточно свободных мест.\n\n` +
+                    `Доступно: ${freePlaces} мест\n` +
+                    `Требуется: ${state.data.selected_participants.length} мест\n\n` +
+                    `Выберите другой слот или другую дату.`,
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            console.log(`ℹ️ Используем существующую групповую тренировку id=${groupTrainingId} для слота ${state.data.selected_slot_id}`);
+        } else {
+            // Создаем новую групповую тренировку (ЗАКРЫТУЮ для "У меня своя группа")
+            // is_private = TRUE означает, что к этой тренировке нельзя добавиться
+            const groupTrainingResult = await client.query(
+                `INSERT INTO kuliga_group_trainings (
+                    instructor_id, slot_id, date, start_time, end_time,
+                    sport_type, level, price_per_person,
+                    min_participants, max_participants, current_participants, status, is_private
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'confirmed', TRUE)
+                RETURNING id`,
+                [
+                    state.data.selected_instructor_id,
+                    state.data.selected_slot_id,
+                    state.data.selected_date,
+                    state.data.selected_start_time,
+                    state.data.selected_end_time,
+                    state.data.selected_sport,
+                    'beginner',
+                    state.data.price_per_person,
+                    state.data.selected_participants.length,
+                    state.data.selected_participants.length,
+                    state.data.selected_participants.length,
+                ]
+            );
 
-        // Обновляем статус слота
-        await client.query(
-            `UPDATE kuliga_schedule_slots
-             SET status = 'group', updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1`,
-            [state.data.selected_slot_id]
-        );
+            groupTrainingId = groupTrainingResult.rows[0].id;
+
+            // Обновляем статус слота
+            await client.query(
+                `UPDATE kuliga_schedule_slots
+                 SET status = 'group', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1`,
+                [state.data.selected_slot_id]
+            );
+            
+            console.log(`✅ Создана новая закрытая групповая тренировка id=${groupTrainingId} для слота ${state.data.selected_slot_id}`);
+        }
 
         // Создаем бронирование
         // ВАЖНО: Для "своя группа" мы создали групповую тренировку, поэтому используем только group_training_id

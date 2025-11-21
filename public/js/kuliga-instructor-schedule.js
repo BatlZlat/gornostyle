@@ -474,7 +474,8 @@ async function loadSlotsForDay() {
                     </div>
                     <div class="slot-actions">
                         ${slot.status === 'available' ? 
-                            `<button class="btn-secondary" onclick="toggleSlotStatus(${slot.id}, 'blocked')">Заблокировать</button>` : ''}
+                            `<button class="btn-primary" onclick="openGroupTrainingModal(${slot.id})" style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; margin-right: 5px;">👥 Создать групповую тренировку</button>
+                             <button class="btn-secondary" onclick="toggleSlotStatus(${slot.id}, 'blocked')">Заблокировать</button>` : ''}
                         ${slot.status === 'blocked' ? 
                             `<button class="btn-primary" onclick="toggleSlotStatus(${slot.id}, 'available')">Разблокировать</button>` : ''}
                         ${canDelete ? 
@@ -723,9 +724,107 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('load-slots-btn').addEventListener('click', loadSlotsForDay);
     document.getElementById('create-bulk-btn').addEventListener('click', createBulkSlots);
     document.getElementById('logout-btn').addEventListener('click', logout);
+    
+    // Обработчик формы создания групповой тренировки
+    const groupTrainingForm = document.getElementById('group-training-form');
+    if (groupTrainingForm) {
+        groupTrainingForm.addEventListener('submit', createGroupTraining);
+    }
+    
+    // Закрытие модального окна по клику вне его
+    const groupTrainingModal = document.getElementById('group-training-modal');
+    if (groupTrainingModal) {
+        groupTrainingModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeGroupTrainingModal();
+            }
+        });
+    }
 });
+
+// Открытие модального окна для создания групповой тренировки
+function openGroupTrainingModal(slotId) {
+    const modal = document.getElementById('group-training-modal');
+    const slotIdInput = document.getElementById('gt-slot-id');
+    slotIdInput.value = slotId;
+    
+    // Очищаем форму
+    document.getElementById('group-training-form').reset();
+    slotIdInput.value = slotId;
+    
+    modal.style.display = 'flex';
+}
+
+// Закрытие модального окна
+function closeGroupTrainingModal() {
+    const modal = document.getElementById('group-training-modal');
+    modal.style.display = 'none';
+}
+
+// Создание групповой тренировки из слота
+async function createGroupTraining(event) {
+    event.preventDefault();
+    
+    const token = getToken();
+    if (!token) return;
+    
+    const slotId = document.getElementById('gt-slot-id').value;
+    const sportType = document.getElementById('gt-sport-type').value;
+    const level = document.getElementById('gt-level').value;
+    const description = document.getElementById('gt-description').value;
+    const pricePerPerson = parseFloat(document.getElementById('gt-price').value);
+    const minParticipants = parseInt(document.getElementById('gt-min-participants').value, 10);
+    const maxParticipants = parseInt(document.getElementById('gt-max-participants').value, 10);
+    
+    // Валидация
+    if (!slotId || !sportType || !level || !pricePerPerson || !maxParticipants) {
+        showError('Заполните все обязательные поля');
+        return;
+    }
+    
+    if (minParticipants > maxParticipants) {
+        showError('Минимум участников не может быть больше максимума');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/kuliga/instructor/group-trainings', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                slot_id: parseInt(slotId, 10),
+                sport_type: sportType,
+                level: level,
+                description: description || null,
+                price_per_person: pricePerPerson,
+                min_participants: minParticipants,
+                max_participants: maxParticipants
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка создания групповой тренировки');
+        }
+        
+        showSuccess('Групповая тренировка успешно создана');
+        closeGroupTrainingModal();
+        
+        // Перезагружаем слоты и статистику
+        await loadSlotsForDay();
+        await loadStats();
+    } catch (error) {
+        console.error('Ошибка создания групповой тренировки:', error);
+        showError(`Ошибка создания групповой тренировки: ${error.message}`);
+    }
+}
 
 // Глобальные функции (вызываются из inline onclick)
 window.toggleSlotStatus = toggleSlotStatus;
 window.deleteSlot = deleteSlot;
+window.openGroupTrainingModal = openGroupTrainingModal;
+window.closeGroupTrainingModal = closeGroupTrainingModal;
 

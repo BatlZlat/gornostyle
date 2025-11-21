@@ -1481,6 +1481,7 @@ CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
     min_participants INTEGER NOT NULL CHECK (min_participants > 0 AND min_participants <= max_participants),
     current_participants INTEGER DEFAULT 0 CHECK (current_participants >= 0),
     status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'confirmed', 'cancelled', 'completed')),
+    is_private BOOLEAN NOT NULL DEFAULT FALSE,
     cancellation_reason TEXT,
     cancelled_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

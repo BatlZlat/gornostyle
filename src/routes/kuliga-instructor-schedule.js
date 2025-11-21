@@ -457,5 +457,149 @@ router.get('/bot-info', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/kuliga/instructor/group-trainings
+ * Создание групповой тренировки из своего слота
+ */
+router.post('/group-trainings', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const {
+            slot_id,
+            sport_type,
+            level,
+            description,
+            price_per_person,
+            min_participants,
+            max_participants
+        } = req.body;
+
+        // Валидация
+        if (!slot_id || !sport_type || !level || !price_per_person || !max_participants) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'Обязательные поля: slot_id, sport_type, level, price_per_person, max_participants'
+            });
+        }
+
+        if (!['ski', 'snowboard'].includes(sport_type)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'sport_type должен быть "ski" или "snowboard"' });
+        }
+
+        const pricePerPersonValue = parseFloat(price_per_person);
+        if (!Number.isFinite(pricePerPersonValue) || pricePerPersonValue <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Цена должна быть положительным числом' });
+        }
+
+        const maxParticipantsValue = parseInt(max_participants, 10);
+        if (!Number.isInteger(maxParticipantsValue) || maxParticipantsValue < 2) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Максимум участников должен быть не менее 2' });
+        }
+
+        const minParticipantsValue = parseInt(min_participants || 2, 10);
+        if (!Number.isInteger(minParticipantsValue) || minParticipantsValue < 1 || minParticipantsValue > maxParticipantsValue) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'Минимум участников должен быть от 1 и не больше максимума'
+            });
+        }
+
+        // Проверяем, что слот принадлежит инструктору и доступен
+        const slotCheck = await client.query(
+            `SELECT id, instructor_id, date, start_time, end_time, status
+             FROM kuliga_schedule_slots
+             WHERE id = $1 AND instructor_id = $2
+             FOR UPDATE`,
+            [slot_id, instructorId]
+        );
+
+        if (slotCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: 'Слот не найден или не принадлежит вам'
+            });
+        }
+
+        const slot = slotCheck.rows[0];
+
+        // Проверяем, что слот доступен (не занят)
+        if (slot.status !== 'available') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'Этот слот уже занят или заблокирован'
+            });
+        }
+
+        // Проверяем, что на этот слот еще не создана групповая тренировка
+        const existingTrainingCheck = await client.query(
+            `SELECT id FROM kuliga_group_trainings
+             WHERE slot_id = $1
+               AND status IN ('open', 'confirmed')`,
+            [slot_id]
+        );
+
+        if (existingTrainingCheck.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'На этот слот уже создана групповая тренировка'
+            });
+        }
+
+        // Создаем групповую тренировку (ОТКРЫТУЮ для записи через "Записаться в группу")
+        const trainingResult = await client.query(
+            `INSERT INTO kuliga_group_trainings (
+                instructor_id, slot_id, date, start_time, end_time,
+                sport_type, level, description, price_per_person,
+                min_participants, max_participants, current_participants, status, is_private
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 'open', FALSE)
+            RETURNING *`,
+            [
+                instructorId,
+                slot_id,
+                slot.date,
+                slot.start_time,
+                slot.end_time,
+                sport_type,
+                level,
+                description || null,
+                pricePerPersonValue,
+                minParticipantsValue,
+                maxParticipantsValue
+            ]
+        );
+
+        const training = trainingResult.rows[0];
+
+        // Обновляем статус слота на 'group'
+        await client.query(
+            `UPDATE kuliga_schedule_slots
+             SET status = 'group', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [slot_id]
+        );
+
+        await client.query('COMMIT');
+
+        console.log(`✅ Инструктор ${instructorId} создал групповую тренировку: ID=${training.id}, дата=${slot.date}, время=${slot.start_time}`);
+
+        res.status(201).json(training);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка создания групповой тренировки инструктором:', error);
+        res.status(500).json({
+            error: 'Ошибка создания групповой тренировки: ' + error.message
+        });
+    } finally {
+        client.release();
+    }
+});
+
 module.exports = router;
 
