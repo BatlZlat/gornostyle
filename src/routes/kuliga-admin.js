@@ -2071,6 +2071,7 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
             SELECT 
                 kb.*,
                 c.full_name as client_name,
+                c.phone as client_phone,
                 c.telegram_id as client_telegram_id,
                 kgt_old.id as old_training_id,
                 kgt_old.current_participants as old_current_participants,
@@ -2355,11 +2356,12 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
                         : null;
                     
                     if (instructorBot && instructorBot.sendMessage) {
+                        const clientPhone = booking.client_phone || 'Не указан';
                         const message = 
                             `🔄 *Перенос бронирования на вашу тренировку*\n\n` +
                             `👨‍💼 *Клиент:* ${booking.client_name}\n` +
                             `👥 *Участники:* ${participantName}\n` +
-                            `📱 *Телефон:* ${booking.client_phone}\n\n` +
+                            `📱 *Телефон:* ${clientPhone}\n\n` +
                             `*Было:*\n` +
                             `📅 Дата: ${oldFormattedDate} (${oldDayOfWeek})\n` +
                             `⏰ Время: ${oldTime}\n\n` +
