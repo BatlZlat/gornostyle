@@ -1238,6 +1238,7 @@ router.delete('/training/:id', async (req, res) => {
                     kb.*,
                     c.full_name as client_name,
                     c.phone as client_phone,
+                    c.telegram_id as client_telegram_id,
                     c.id as client_id,
                     w.id as wallet_id
                 FROM kuliga_bookings kb
@@ -1326,6 +1327,7 @@ router.delete('/training/:id', async (req, res) => {
             setImmediate(async () => {
                 try {
                     const { notifyAdminNaturalSlopeTrainingCancellation, notifyInstructorKuligaTrainingCancellation } = require('../bot/admin-notify');
+                    const { bot } = require('../bot/client-bot');
                     
                     // Уведомление администратору
                     await notifyAdminNaturalSlopeTrainingCancellation({
@@ -1352,6 +1354,21 @@ router.delete('/training/:id', async (req, res) => {
                             instructor_telegram_id: booking.instructor_telegram_id,
                             cancelled_by: 'admin' // Отменено администратором
                         });
+                    }
+                    
+                    // Уведомление клиенту
+                    if (booking.client_telegram_id) {
+                        const message = 
+                            `❌ *Отмена индивидуальной тренировки в Кулига Парке*\n\n` +
+                            `👤 *Участник:* ${participantName}\n` +
+                            `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                            `⏰ *Время:* ${formattedTime}\n` +
+                            `🏔️ *Место:* Кулига Парк\n` +
+                            `👨‍🏫 *Инструктор:* ${booking.instructor_name || 'Не указан'}\n\n` +
+                            `💰 *Возврат:* ${refundAmount.toFixed(2)} руб.\n` +
+                            `Средства возвращены на ваш баланс.`;
+                        
+                        await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
                     }
                 } catch (error) {
                     console.error('Ошибка при отправке уведомлений:', error);
@@ -1385,6 +1402,7 @@ router.delete('/training/:id', async (req, res) => {
                         kb.*,
                         c.full_name as client_name,
                         c.phone as client_phone,
+                        c.telegram_id as client_telegram_id,
                         c.id as client_id,
                         w.id as wallet_id
                     FROM kuliga_bookings kb
@@ -1463,6 +1481,7 @@ router.delete('/training/:id', async (req, res) => {
                             participant_name: participantsList,
                             participants_count: participantsCount,
                             client_phone: booking.client_phone,
+                            client_telegram_id: booking.client_telegram_id,
                             refund: refundAmount
                         });
                     }
@@ -1492,6 +1511,7 @@ router.delete('/training/:id', async (req, res) => {
                 setImmediate(async () => {
                     try {
                         const { notifyAdminNaturalSlopeTrainingCancellation, notifyInstructorKuligaTrainingCancellation } = require('../bot/admin-notify');
+                        const { bot } = require('../bot/client-bot');
 
                         // Уведомления администратору и инструктору для каждого клиента
                         for (const refundInfo of refundsInfo) {
@@ -1521,6 +1541,21 @@ router.delete('/training/:id', async (req, res) => {
                                     instructor_telegram_id: instructorData.telegram_id,
                                     cancelled_by: 'admin' // Отменено администратором
                                 });
+                            }
+                            
+                            // Уведомление клиенту
+                            if (refundInfo.client_telegram_id) {
+                                const message = 
+                                    `❌ *Отмена групповой тренировки в Кулига Парке*\n\n` +
+                                    `👥 *Участники (${refundInfo.participants_count}):* ${refundInfo.participant_name}\n` +
+                                    `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                                    `⏰ *Время:* ${formattedTime}\n` +
+                                    `🏔️ *Место:* Кулига Парк\n` +
+                                    `👨‍🏫 *Инструктор:* ${instructorData.full_name || 'Не указан'}\n\n` +
+                                    `💰 *Возврат:* ${refundInfo.refund.toFixed(2)} руб.\n` +
+                                    `Средства возвращены на ваш баланс.`;
+                                
+                                await bot.sendMessage(refundInfo.client_telegram_id, message, { parse_mode: 'Markdown' });
                             }
                         }
                     } catch (error) {
@@ -1904,10 +1939,15 @@ router.get('/available-slots', async (req, res) => {
                     i.sport_type AS instructor_sport_type
              FROM kuliga_schedule_slots s
              JOIN kuliga_instructors i ON s.instructor_id = i.id
+             LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id 
+                AND kgt.status IN ('open', 'confirmed')
+                AND kgt.date = s.date
+                AND kgt.start_time = s.start_time
              WHERE s.date = $1
                AND s.status = 'available'
                AND i.is_active = TRUE
                AND (i.sport_type = $2 OR i.sport_type = 'both')
+               AND kgt.id IS NULL  -- Исключаем слоты, которые уже заняты активными групповыми тренировками
              ORDER BY s.start_time ASC, i.full_name ASC`,
             [date, sport_type]
         );
@@ -2140,21 +2180,23 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
         }
         
         // Обновляем бронирование
+        // ВАЖНО: Для групповых бронирований (booking_type = 'group') с group_training_id
+        // должны быть instructor_id = NULL и slot_id = NULL согласно constraint valid_booking_type
         await client.query(`
             UPDATE kuliga_bookings
             SET 
                 group_training_id = $1,
-                instructor_id = $2,
-                date = $3,
-                start_time = $4,
-                end_time = $5,
-                price_per_person = $6,
-                price_total = $7,
+                instructor_id = NULL,
+                slot_id = NULL,
+                date = $2,
+                start_time = $3,
+                end_time = $4,
+                price_per_person = $5,
+                price_total = $6,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $8
+            WHERE id = $7
         `, [
             target_training_id,
-            targetTraining.instructor_id,
             targetTraining.date,
             targetTraining.start_time,
             targetTraining.end_time,
