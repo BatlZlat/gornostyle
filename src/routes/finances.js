@@ -71,6 +71,10 @@ router.get('/statistics', async (req, res) => {
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Групповая%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))
              AND EXISTS (
@@ -300,6 +304,10 @@ router.get('/export', async (req, res) => {
                 AND ts.start_time = SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1)::time
              WHERE t.type='payment'
              AND t.description LIKE '%Групповая%'
+             AND t.description LIKE '%Дата:%'
+             AND t.description LIKE '%Время:%'
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Дата: ', 2), ',', 1) != ''
+             AND SPLIT_PART(SPLIT_PART(t.description, 'Время: ', 2), ',', 1) != ''
              AND t.created_at BETWEEN $1 AND $2
              AND ((ts.session_date + ts.start_time)::timestamp + (ts.duration || ' minutes')::interval <= (NOW() AT TIME ZONE 'Asia/Yekaterinburg'))`,
             [start_date, end_date]
