@@ -604,11 +604,22 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             // Пытаемся распарсить дату в разных форматах
             let dateObj;
             if (trainingData.date) {
+                const dateStr = String(trainingData.date).trim();
+                
                 // Если это строка в формате YYYY-MM-DD
-                if (typeof trainingData.date === 'string' && trainingData.date.match(/^\d{4}-\d{2}-\d{2}/)) {
-                    dateObj = new Date(trainingData.date + 'T00:00:00');
-                } else {
-                    dateObj = new Date(trainingData.date);
+                if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+                    dateObj = new Date(dateStr + 'T00:00:00');
+                } 
+                // Если это строка в формате д.м.г (например, "22.11.2025" или "22.11.2025 (СБ)")
+                else if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}/)) {
+                    // Убираем день недели в скобках, если есть
+                    const datePart = dateStr.split(' (')[0];
+                    const [day, month, year] = datePart.split('.');
+                    dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                }
+                // Пытаемся распарсить как обычную дату
+                else {
+                    dateObj = new Date(dateStr);
                 }
                 
                 // Проверяем, что дата валидна
