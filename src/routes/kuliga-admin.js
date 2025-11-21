@@ -2257,33 +2257,45 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
             WHERE id = $2
         `, [newCountResult.rows[0].total, target_training_id]);
         
+        // Получаем данные инструктора старой тренировки (если есть) ДО COMMIT
+        let oldInstructorData = { telegram_id: null, full_name: null };
+        if (booking.old_training_id) {
+            const oldTrainingInstructorResult = await client.query(`
+                SELECT ki.telegram_id, ki.full_name
+                FROM kuliga_group_trainings kgt
+                JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                WHERE kgt.id = $1
+            `, [booking.old_training_id]);
+            
+            if (oldTrainingInstructorResult.rows.length > 0) {
+                oldInstructorData = oldTrainingInstructorResult.rows[0];
+            }
+        }
+        
         await client.query('COMMIT');
         
-        // Отправляем уведомление клиенту асинхронно
+        // Отправляем уведомления асинхронно
         setImmediate(async () => {
             try {
-                if (booking.client_telegram_id) {
-                    const { bot } = require('../bot/client-bot');
-                    
-                    if (!bot || !bot.sendMessage) {
-                        console.error('❌ Бот недоступен для отправки уведомления о переносе');
-                        return;
-                    }
-                    
-                    const oldDate = new Date(booking.date);
-                    const oldDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][oldDate.getDay()];
-                    const oldFormattedDate = `${oldDate.getDate().toString().padStart(2, '0')}.${(oldDate.getMonth() + 1).toString().padStart(2, '0')}.${oldDate.getFullYear()}`;
-                    const oldTime = String(booking.start_time).substring(0, 5);
-                    
-                    const newDate = new Date(targetTraining.date);
-                    const newDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][newDate.getDay()];
-                    const newFormattedDate = `${newDate.getDate().toString().padStart(2, '0')}.${(newDate.getMonth() + 1).toString().padStart(2, '0')}.${newDate.getFullYear()}`;
-                    const newTime = String(targetTraining.start_time).substring(0, 5);
-                    
-                    const participantName = booking.participants_names && Array.isArray(booking.participants_names) 
-                        ? booking.participants_names.join(', ') 
-                        : booking.participants_names || 'Участник';
-                    
+                const { bot } = require('../bot/client-bot');
+                const { notifyInstructorKuligaTrainingCancellation } = require('../bot/admin-notify');
+                
+                const oldDate = new Date(booking.date);
+                const oldDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][oldDate.getDay()];
+                const oldFormattedDate = `${oldDate.getDate().toString().padStart(2, '0')}.${(oldDate.getMonth() + 1).toString().padStart(2, '0')}.${oldDate.getFullYear()}`;
+                const oldTime = String(booking.start_time).substring(0, 5);
+                
+                const newDate = new Date(targetTraining.date);
+                const newDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][newDate.getDay()];
+                const newFormattedDate = `${newDate.getDate().toString().padStart(2, '0')}.${(newDate.getMonth() + 1).toString().padStart(2, '0')}.${newDate.getFullYear()}`;
+                const newTime = String(targetTraining.start_time).substring(0, 5);
+                
+                const participantName = booking.participants_names && Array.isArray(booking.participants_names) 
+                    ? booking.participants_names.join(', ') 
+                    : booking.participants_names || 'Участник';
+                
+                // Уведомление клиенту
+                if (booking.client_telegram_id && bot && bot.sendMessage) {
                     let message = `🔄 *Перенос групповой тренировки в Кулига Парке*\n\n`;
                     message += `👥 *Участники:* ${participantName}\n\n`;
                     message += `*Старая тренировка:*\n`;
@@ -2308,8 +2320,63 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
                     await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
                     console.log(`✅ Уведомление о переносе отправлено клиенту ${booking.client_name} (ID: ${booking.client_telegram_id})`);
                 }
+                
+                // Уведомление старому инструктору (если он есть и отличается от нового)
+                if (oldInstructorData.telegram_id && 
+                    oldInstructorData.telegram_id !== targetTraining.instructor_telegram_id &&
+                    oldInstructorData.full_name) {
+                    await notifyInstructorKuligaTrainingCancellation({
+                        participant_name: participantName,
+                        client_name: booking.client_name,
+                        client_phone: booking.client_phone,
+                        date: booking.date,
+                        time: oldTime,
+                        instructor_name: oldInstructorData.full_name,
+                        instructor_telegram_id: oldInstructorData.telegram_id,
+                        cancelled_by: 'admin',
+                        transfer_note: `Бронирование перенесено на другую тренировку`
+                    });
+                }
+                
+                // Уведомление новому инструктору о переносе
+                if (targetTraining.instructor_telegram_id) {
+                    // Получаем процент админа для нового инструктора
+                    const adminPercentageResult = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
+                        [targetTraining.instructor_id]
+                    );
+                    const adminPercentage = adminPercentageResult.rows[0]?.admin_percentage || 20;
+                    const instructorEarnings = newTotalPrice * (1 - adminPercentage / 100);
+                    
+                    // Используем instructorBot из admin-notify.js (он уже создан там)
+                    const TelegramBot = require('node-telegram-bot-api');
+                    const instructorBot = process.env.KULIGA_INSTRUKTOR_BOT 
+                        ? new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false })
+                        : null;
+                    
+                    if (instructorBot && instructorBot.sendMessage) {
+                        const message = 
+                            `🔄 *Перенос бронирования на вашу тренировку*\n\n` +
+                            `👨‍💼 *Клиент:* ${booking.client_name}\n` +
+                            `👥 *Участники:* ${participantName}\n` +
+                            `📱 *Телефон:* ${booking.client_phone}\n\n` +
+                            `*Было:*\n` +
+                            `📅 Дата: ${oldFormattedDate} (${oldDayOfWeek})\n` +
+                            `⏰ Время: ${oldTime}\n\n` +
+                            `*Стало:*\n` +
+                            `📅 Дата: ${newFormattedDate} (${newDayOfWeek})\n` +
+                            `⏰ Время: ${newTime}\n` +
+                            `🏔️ *Место:* Кулига Парк\n\n` +
+                            `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
+                        
+                        await instructorBot.sendMessage(targetTraining.instructor_telegram_id, message, { parse_mode: 'Markdown' });
+                        console.log(`✅ Уведомление о переносе отправлено инструктору ${targetTraining.instructor_name} (ID: ${targetTraining.instructor_telegram_id})`);
+                    } else {
+                        console.log(`⚠️ Бот инструкторов недоступен для отправки уведомления о переносе`);
+                    }
+                }
             } catch (error) {
-                console.error('Ошибка при отправке уведомления о переносе бронирования Kuliga:', error);
+                console.error('Ошибка при отправке уведомлений о переносе бронирования Kuliga:', error);
             }
         });
         
