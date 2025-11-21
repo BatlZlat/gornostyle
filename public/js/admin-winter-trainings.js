@@ -648,8 +648,8 @@ async function editWinterTraining(id, trainingSource, kuligaType) {
             const training = kuligaResult.data;
             console.log('📊 Данные тренировки Кулиги загружены:', training);
             
-            // Показываем сообщение, что редактирование через другой интерфейс
-            alert('Редактирование тренировок Кулиги выполняется через раздел "Служба инструкторов Кулига".\n\nВы можете использовать кнопку "Подробнее" для просмотра деталей.');
+            // Показываем модальное окно редактирования для тренировок Кулиги
+            showKuligaTrainingEditModal(training, kuligaType || 'individual', id);
             return;
         }
         
@@ -910,6 +910,174 @@ async function editWinterTraining(id, trainingSource, kuligaType) {
     }
 }
 
+// Показ модального окна редактирования тренировки Кулиги
+function showKuligaTrainingEditModal(training, type, id) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    
+    let modalContent = `
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+            <h2>Редактирование тренировки Кулиги</h2>
+            <form id="kuliga-edit-form">
+    `;
+    
+    if (type === 'individual') {
+        // Форма для индивидуальной тренировки
+        const date = training.date ? new Date(training.date).toISOString().split('T')[0] : '';
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
+        const participantsNames = training.participants_names && Array.isArray(training.participants_names) 
+            ? training.participants_names.join(', ') 
+            : training.participants_names || '';
+        
+        modalContent += `
+            <div class="form-group">
+                <label>Дата:</label>
+                <input type="date" name="date" value="${date}" required>
+            </div>
+            <div class="form-group">
+                <label>Время начала:</label>
+                <input type="time" name="start_time" value="${startTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Время окончания:</label>
+                <input type="time" name="end_time" value="${endTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Вид спорта:</label>
+                <select name="sport_type" required>
+                    <option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>Горные лыжи</option>
+                    <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Участники (через запятую):</label>
+                <input type="text" name="participants_names" value="${participantsNames}" placeholder="Иван 10, Мария 8">
+            </div>
+        `;
+    } else {
+        // Форма для групповой тренировки
+        const date = training.date ? new Date(training.date).toISOString().split('T')[0] : '';
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
+        
+        modalContent += `
+            <div class="form-group">
+                <label>Дата:</label>
+                <input type="date" name="date" value="${date}" required>
+            </div>
+            <div class="form-group">
+                <label>Время начала:</label>
+                <input type="time" name="start_time" value="${startTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Время окончания:</label>
+                <input type="time" name="end_time" value="${endTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Вид спорта:</label>
+                <select name="sport_type" required>
+                    <option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>Горные лыжи</option>
+                    <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Уровень:</label>
+                <input type="text" name="level" value="${training.level || ''}" placeholder="1 уровень (Начальный)">
+            </div>
+            <div class="form-group">
+                <label>Описание:</label>
+                <textarea name="description" rows="3">${training.description || ''}</textarea>
+            </div>
+            <div class="form-group">
+                <label>Цена за человека:</label>
+                <input type="number" name="price_per_person" value="${training.price_per_person || ''}" step="0.01" min="0">
+            </div>
+            <div class="form-group">
+                <label>Минимум участников:</label>
+                <input type="number" name="min_participants" value="${training.min_participants || ''}" min="1">
+            </div>
+            <div class="form-group">
+                <label>Максимум участников:</label>
+                <input type="number" name="max_participants" value="${training.max_participants || ''}" min="1">
+            </div>
+        `;
+    }
+    
+    modalContent += `
+                <div class="modal-actions">
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    modal.innerHTML = modalContent;
+    document.body.appendChild(modal);
+    
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+    
+    // Обработка отправки формы
+    const form = modal.querySelector('#kuliga-edit-form');
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+        const data = {};
+        for (const [key, value] of formData.entries()) {
+            if (value) {
+                if (key === 'participants_names') {
+                    // Преобразуем строку участников в массив
+                    data[key] = value.split(',').map(s => s.trim()).filter(s => s);
+                } else if (['min_participants', 'max_participants', 'price_per_person'].includes(key)) {
+                    data[key] = parseFloat(value);
+                } else {
+                    data[key] = value;
+                }
+            }
+        }
+        
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        try {
+            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${type}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при обновлении тренировки');
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('✅ Тренировка успешно обновлена!');
+                modal.remove();
+                loadWinterTrainings(); // Перезагружаем список
+            } else {
+                throw new Error(result.error || 'Ошибка при обновлении тренировки');
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении тренировки Кулиги:', error);
+            alert('❌ Ошибка: ' + error.message);
+        }
+    });
+}
+
 // Удаление зимней тренировки
 async function deleteWinterTraining(id, trainingSource, kuligaType) {
     console.log('🗑️ deleteWinterTraining вызвана:', { id, trainingSource, kuligaType, typeofId: typeof id });
@@ -923,8 +1091,32 @@ async function deleteWinterTraining(id, trainingSource, kuligaType) {
         console.log('🔍 Удаление тренировки Кулиги через API Кулиги');
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
         
-        // TODO: Добавить API endpoint для удаления тренировок Кулиги
-        alert('Удаление тренировок Кулиги пока выполняется через раздел "Служба инструкторов Кулига".');
+        try {
+            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'individual'}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при удалении тренировки');
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert(`✅ Тренировка успешно отменена!\n\n💰 Возвращено средств: ${Number(result.refund || 0).toFixed(2)} руб.`);
+                loadWinterTrainings(); // Перезагружаем список
+            } else {
+                throw new Error(result.error || 'Ошибка при удалении тренировки');
+            }
+        } catch (error) {
+            console.error('Ошибка при удалении тренировки Кулиги:', error);
+            alert('❌ Ошибка: ' + error.message);
+        }
         return;
     }
     
