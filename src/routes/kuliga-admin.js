@@ -1232,7 +1232,7 @@ router.delete('/training/:id', async (req, res) => {
 
         if (type === 'individual') {
             // Удаление индивидуального бронирования
-            // Сначала блокируем основную таблицу
+            // Сначала блокируем основную таблицу (используем FOR UPDATE OF kb, чтобы не блокировать nullable сторону LEFT JOIN)
             const bookingResult = await client.query(`
                 SELECT 
                     kb.*,
@@ -1244,7 +1244,7 @@ router.delete('/training/:id', async (req, res) => {
                 JOIN clients c ON kb.client_id = c.id
                 LEFT JOIN wallets w ON c.id = w.client_id
                 WHERE kb.id = $1 AND kb.booking_type = 'individual'
-                FOR UPDATE
+                FOR UPDATE OF kb
             `, [id]);
 
             if (bookingResult.rows.length === 0) {
