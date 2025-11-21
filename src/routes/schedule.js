@@ -181,10 +181,12 @@ router.get('/admin', async (req, res) => {
                     NULL::TEXT as simulator_name,
                     kgt.max_participants,
                     COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status IN ('pending', 'confirmed')), 0)::INTEGER as current_participants,
-                    CASE kgt.level
-                        WHEN 'beginner' THEN 1
-                        WHEN 'intermediate' THEN 2
-                        WHEN 'advanced' THEN 3
+                    -- Уровень может быть строкой от '1' до '10' или старыми значениями 'beginner', 'intermediate', 'advanced'
+                    CASE 
+                        WHEN kgt.level ~ '^[0-9]+$' THEN kgt.level::INTEGER
+                        WHEN kgt.level = 'beginner' THEN 1
+                        WHEN kgt.level = 'intermediate' THEN 2
+                        WHEN kgt.level = 'advanced' THEN 3
                         ELSE NULL
                     END::INTEGER as skill_level,
                     kgt.price_per_person * kgt.max_participants as price,

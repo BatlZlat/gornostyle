@@ -941,6 +941,7 @@ function showKuligaTrainingEditModal(training, type, id) {
         const participantsNames = training.participants_names && Array.isArray(training.participants_names) 
             ? training.participants_names.join(', ') 
             : training.participants_names || '';
+        const currentSportType = training.sport_type || 'ski';
         
         modalContent += `
             <div class="form-group">
@@ -1010,8 +1011,20 @@ function showKuligaTrainingEditModal(training, type, id) {
                 </select>
             </div>
             <div class="form-group">
-                <label>Уровень:</label>
-                <input type="text" name="level" value="${training.level || ''}" placeholder="1 уровень (Начальный)">
+                <label>Уровень (1-10):</label>
+                <select name="level" required>
+                    ${Array.from({ length: 10 }, (_, i) => {
+                        const levelNum = i + 1;
+                        // Преобразуем старое значение уровня (beginner/intermediate/advanced) в число
+                        let currentLevel = training.level;
+                        if (currentLevel === 'beginner') currentLevel = '1';
+                        else if (currentLevel === 'intermediate') currentLevel = '2';
+                        else if (currentLevel === 'advanced') currentLevel = '3';
+                        
+                        const isSelected = currentLevel == levelNum || (!training.level && levelNum === 1);
+                        return `<option value="${levelNum}" ${isSelected ? 'selected' : ''}>${levelNum} уровень</option>`;
+                    }).join('')}
+                </select>
             </div>
             <div class="form-group">
                 <label>Описание:</label>
@@ -1056,8 +1069,9 @@ function showKuligaTrainingEditModal(training, type, id) {
             instructorSelect.innerHTML = '<option value="">Загрузка...</option>';
             try {
                 const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-                // Используем текущую дату тренировки или сегодняшнюю
-                const trainingDate = date || new Date().toISOString().split('T')[0];
+                // Получаем дату из input поля или используем текущую дату тренировки
+                const dateInput = modal.querySelector('input[name="date"]');
+                const trainingDate = dateInput ? dateInput.value : (training.date ? new Date(training.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
                 const response = await fetch(`/api/kuliga/admin/instructors?date=${trainingDate}&sport_type=${sportType}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -1125,6 +1139,9 @@ function showKuligaTrainingEditModal(training, type, id) {
                         alert('Пожалуйста, выберите инструктора');
                         return;
                     }
+                } else if (key === 'level') {
+                    // Уровень храним как строку (от 1 до 10)
+                    data[key] = String(value);
                 } else {
                     data[key] = value;
                 }
