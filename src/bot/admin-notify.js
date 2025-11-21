@@ -522,7 +522,8 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
         }
 
         // Определяем заголовок в зависимости от типа тренировки
-        const isGroupTraining = trainingData.booking_type === 'group' || (trainingData.trainer_name && trainingData.trainer_name !== 'Не указан');
+        // Явно проверяем booking_type, а не наличие инструктора
+        const isGroupTraining = trainingData.booking_type === 'group';
         const header = isGroupTraining 
             ? '❌ *Отмена групповой зимней тренировки!*\n\n'
             : '❌ *Отмена индивидуальной тренировки на естественном склоне!*\n\n';
@@ -717,6 +718,9 @@ async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
             formattedTime = `${timeParts[0]}:${timeParts[1]}`;
         }
 
+        // Определяем, кто отменил тренировку (клиент или администратор)
+        const cancelledBy = cancellationData.cancelled_by === 'admin' ? 'администратором' : 'клиентом';
+        
         const message = 
             '❌ *Отмена тренировки*\n\n' +
             `👨‍💼 *Клиент:* ${cancellationData.client_name}\n` +
@@ -725,7 +729,7 @@ async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
             `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${formattedTime}\n` +
             `🏔️ *Место:* Кулига Парк\n\n` +
-            `Тренировка была отменена клиентом.`;
+            `Тренировка была отменена ${cancelledBy}.`;
 
         await instructorBot.sendMessage(cancellationData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
         console.log(`✅ Уведомление об отмене отправлено инструктору ${cancellationData.instructor_name} (ID: ${cancellationData.instructor_telegram_id})`);
