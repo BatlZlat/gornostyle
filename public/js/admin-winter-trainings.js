@@ -248,9 +248,43 @@ function renderWinterTrainingRow(training) {
         price = `${pricePerPerson.toFixed(2)} ₽`;
     }
     
-    // Статус
-    const status = statusLabels[training.status] || training.status || '—';
-    const statusColor = statusColors[training.status] || '#666';
+    // Статус - используем правильные метки на русском
+    let status = '—';
+    let statusColor = '#666';
+    
+    // Расширенные метки статусов для всех типов тренировок
+    const allStatusLabels = {
+        // Обычные тренировки
+        scheduled: 'Запланирована',
+        completed: 'Завершена',
+        cancelled: 'Отменена',
+        // Тренировки Кулиги (бронирования)
+        pending: 'Ожидание',      // Бронирование создано, но платеж не подтвержден
+        confirmed: 'Подтверждено', // Платеж подтвержден
+        refunded: 'Возврат',      // Средства возвращены
+        // Тренировки Кулиги (групповые тренировки)
+        open: 'Открыта',          // Групповая тренировка открыта для записи
+        confirmed: 'Подтверждена' // Групповая тренировка подтверждена
+    };
+    
+    const allStatusColors = {
+        // Обычные тренировки
+        scheduled: '#2196F3',
+        completed: '#4CAF50',
+        cancelled: '#f44336',
+        // Тренировки Кулиги (бронирования)
+        pending: '#FF9800',       // Оранжевый - ожидание оплаты
+        confirmed: '#4CAF50',     // Зеленый - подтверждено
+        refunded: '#9E9E9E',      // Серый - возврат
+        // Тренировки Кулиги (групповые тренировки)
+        open: '#2196F3',          // Синий - открыта для записи
+        confirmed: '#4CAF50'      // Зеленый - подтверждена
+    };
+    
+    // Определяем статус с учетом всех возможных значений
+    const trainingStatus = training.status || '—';
+    status = allStatusLabels[trainingStatus] || trainingStatus || '—';
+    statusColor = allStatusColors[trainingStatus] || '#666';
     
     // Уровень подготовки
     const skillLevel = training.skill_level || '—';
@@ -266,15 +300,21 @@ function renderWinterTrainingRow(training) {
             <td>${price}</td>
             <td><span style="color:${statusColor};font-weight:bold;">${status}</span></td>
             <td class="training-actions">
-                <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
+                <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id}, '${training.training_source || ''}', '${training.kuliga_type || ''}')">
                     Подробнее
                 </button>
-                <button class="btn-secondary" onclick="editWinterTraining(${training.id})">
-                    Редактировать
-                </button>
-                <button class="btn-danger" onclick="deleteWinterTraining(${training.id})">
-                    Удалить
-                </button>
+                ${training.training_source === 'kuliga' ? 
+                    '<button class="btn-secondary" disabled title="Редактирование тренировок Кулиги пока недоступно">Редактировать</button>' :
+                    `<button class="btn-secondary" onclick="editWinterTraining(${training.id}, '${training.training_source || ''}')">
+                        Редактировать
+                    </button>`
+                }
+                ${training.training_source === 'kuliga' ? 
+                    '<button class="btn-danger" disabled title="Удаление тренировок Кулиги пока недоступно">Удалить</button>' :
+                    `<button class="btn-danger" onclick="deleteWinterTraining(${training.id})">
+                        Удалить
+                    </button>`
+                }
             </td>
         </tr>
     `;
@@ -292,9 +332,45 @@ function openCreateWinterTraining() {
 }
 
 // Просмотр деталей зимней тренировки
-async function viewWinterTrainingDetails(id) {
+async function viewWinterTrainingDetails(id, trainingSource, kuligaType) {
     try {
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        // Если это тренировка Кулиги, используем другой API
+        if (trainingSource === 'kuliga') {
+            if (typeof viewKuligaTrainingDetails === 'function') {
+                viewKuligaTrainingDetails(id, kuligaType || 'group');
+                return;
+            } else {
+                // Fallback: используем API Кулиги напрямую
+                const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'group'}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || 'Ошибка получения данных');
+                }
+                
+                // Используем функцию из admin.js для отображения
+                if (typeof window.viewKuligaTrainingDetails === 'function') {
+                    window.viewKuligaTrainingDetails(id, kuligaType || 'group');
+                    return;
+                }
+                
+                // Если функция не найдена, показываем базовую информацию
+                alert('Детали тренировки Кулиги загружены, но функция отображения не найдена');
+                return;
+            }
+        }
+        
+        // Для обычных тренировок используем стандартный API
         const response = await fetch(`/api/winter-trainings/${id}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -433,8 +509,14 @@ async function viewWinterTrainingDetails(id) {
 }
 
 // Редактирование зимней тренировки
-async function editWinterTraining(id) {
+async function editWinterTraining(id, trainingSource) {
     try {
+        // Тренировки Кулиги пока не редактируются через эту функцию
+        if (trainingSource === 'kuliga') {
+            alert('Редактирование тренировок Кулиги пока недоступно. Используйте раздел "Служба инструкторов Кулига" для управления тренировками.');
+            return;
+        }
+        
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
         
         // Загружаем данные тренировки

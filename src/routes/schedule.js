@@ -196,12 +196,9 @@ router.get('/admin', async (req, res) => {
                     END as group_name,
                     'natural_slope' as slope_type,
                     'group' as winter_training_type,
-                    CASE kgt.status
-                        WHEN 'open' THEN 'scheduled'
-                        WHEN 'confirmed' THEN 'scheduled'
-                        WHEN 'cancelled' THEN 'cancelled'
-                        ELSE 'scheduled'
-                    END as status,
+                    -- Используем реальный статус групповой тренировки, но для совместимости маппим в формат для отображения
+                    -- В JS будем проверять training_source для правильного отображения
+                    kgt.status as status,
                     COALESCE(
                         STRING_AGG(
                             DISTINCT array_to_string(kb.participants_names, ', '), 
@@ -245,12 +242,8 @@ router.get('/admin', async (req, res) => {
                     NULL::TEXT as group_name,
                     'natural_slope' as slope_type,
                     'individual' as winter_training_type,
-                    CASE kb.status
-                        WHEN 'pending' THEN 'scheduled'
-                        WHEN 'confirmed' THEN 'scheduled'
-                        WHEN 'cancelled' THEN 'cancelled'
-                        ELSE 'scheduled'
-                    END as status,
+                    -- Используем реальный статус индивидуального бронирования
+                    kb.status as status,
                     COALESCE(array_to_string(kb.participants_names, ', '), '') as participant_names,
                     'kuliga' as training_source,
                     'individual' as kuliga_type

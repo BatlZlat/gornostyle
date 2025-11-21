@@ -9275,6 +9275,14 @@ async function handleTextMessage(msg) {
                         ]
                     );
                     
+                    // Обновляем статус бронирования на 'confirmed' после успешной оплаты из кошелька
+                    await dbClient.query(
+                        `UPDATE kuliga_bookings 
+                         SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [bookingId]
+                    );
+                    
                     await dbClient.query('COMMIT');
                     
                     // Получаем обновленный баланс после списания

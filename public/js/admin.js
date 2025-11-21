@@ -1685,7 +1685,7 @@ window.viewKuligaTrainingDetails = async function(id, type) {
                         <p><strong>Количество участников:</strong> ${training.participants_count || 1}</p>
                         <p><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? 'Горные лыжи' : training.sport_type === 'snowboard' ? 'Сноуборд' : training.sport_type}</p>
                         <p><strong>Цена:</strong> ${training.price_total ? parseFloat(training.price_total).toFixed(2) + ' ₽' : '—'}</p>
-                        <p><strong>Статус:</strong> <span style="color: ${training.status === 'confirmed' ? 'green' : 'orange'};">${training.status === 'confirmed' ? 'Подтверждено' : training.status === 'pending' ? 'Ожидание' : training.status}</span></p>
+                        <p><strong>Статус:</strong> <span style="color: ${training.status === 'confirmed' ? 'green' : training.status === 'pending' ? 'orange' : 'gray'};">${training.status === 'confirmed' ? 'Подтверждено' : training.status === 'pending' ? 'Ожидание' : training.status === 'cancelled' ? 'Отменено' : training.status || '—'}</span></p>
                     </div>
                     <div class="detail-group">
                         <h4>Информация о клиенте</h4>
