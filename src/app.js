@@ -47,7 +47,12 @@ const EmailQueueProcessor = require('./services/emailQueueProcessor');
 const scheduler = require('./services/scheduler');
 
 // Импортируем бота клиентов
-require('./bot/client-bot');
+try {
+    require('./bot/client-bot');
+    console.log('✅ Клиентский бот запущен');
+} catch (error) {
+    console.error('❌ Ошибка при запуске клиентского бота:', error.message);
+}
 
 // Импортируем бота инструкторов Кулиги (если токен настроен)
 if (process.env.KULIGA_INSTRUKTOR_BOT) {
