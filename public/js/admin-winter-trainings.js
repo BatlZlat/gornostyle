@@ -925,7 +925,17 @@ function showKuligaTrainingEditModal(training, type, id) {
     
     if (type === 'individual') {
         // Форма для индивидуальной тренировки
-        const date = training.date ? new Date(training.date).toISOString().split('T')[0] : '';
+        // Исправляем предзаполнение даты (учитываем часовой пояс)
+        let date = '';
+        if (training.date) {
+            // Если дата в формате строки, преобразуем в локальную дату
+            const dateObj = new Date(training.date);
+            // Используем локальное время для форматирования
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            date = `${year}-${month}-${day}`;
+        }
         const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
         const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
         const participantsNames = training.participants_names && Array.isArray(training.participants_names) 
@@ -947,9 +957,15 @@ function showKuligaTrainingEditModal(training, type, id) {
             </div>
             <div class="form-group">
                 <label>Вид спорта:</label>
-                <select name="sport_type" required>
-                    <option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>Горные лыжи</option>
-                    <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                <select name="sport_type" id="sport-type-select" required>
+                    <option value="ski" ${currentSportType === 'ski' ? 'selected' : ''}>Горные лыжи</option>
+                    <option value="snowboard" ${currentSportType === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Инструктор:</label>
+                <select name="instructor_id" id="instructor-select" required>
+                    <option value="">Загрузка...</option>
                 </select>
             </div>
             <div class="form-group">
@@ -959,7 +975,17 @@ function showKuligaTrainingEditModal(training, type, id) {
         `;
     } else {
         // Форма для групповой тренировки
-        const date = training.date ? new Date(training.date).toISOString().split('T')[0] : '';
+        // Исправляем предзаполнение даты (учитываем часовой пояс)
+        let date = '';
+        if (training.date) {
+            // Если дата в формате строки, преобразуем в локальную дату
+            const dateObj = new Date(training.date);
+            // Используем локальное время для форматирования
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            date = `${year}-${month}-${day}`;
+        }
         const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
         const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
         
@@ -1018,6 +1044,58 @@ function showKuligaTrainingEditModal(training, type, id) {
     modal.innerHTML = modalContent;
     document.body.appendChild(modal);
     
+    // Загрузка инструкторов для индивидуальной тренировки
+    if (type === 'individual') {
+        const sportTypeSelect = modal.querySelector('#sport-type-select');
+        const instructorSelect = modal.querySelector('#instructor-select');
+        const currentInstructorId = training.instructor_id || '';
+        let currentSportType = training.sport_type || 'ski';
+        
+        // Функция загрузки инструкторов
+        const loadInstructors = async (sportType, selectedInstructorId = null) => {
+            instructorSelect.innerHTML = '<option value="">Загрузка...</option>';
+            try {
+                const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+                // Используем текущую дату тренировки или сегодняшнюю
+                const trainingDate = date || new Date().toISOString().split('T')[0];
+                const response = await fetch(`/api/kuliga/admin/instructors?date=${trainingDate}&sport_type=${sportType}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success && result.data && result.data.length > 0) {
+                        instructorSelect.innerHTML = '<option value="">Выберите инструктора</option>';
+                        result.data.forEach(instructor => {
+                            const selected = instructor.id == selectedInstructorId ? 'selected' : '';
+                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name}</option>`;
+                        });
+                    } else {
+                        instructorSelect.innerHTML = '<option value="">Нет доступных инструкторов</option>';
+                    }
+                } else {
+                    instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки инструкторов:', error);
+                instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        };
+        
+        // Загружаем инструкторов при открытии модального окна
+        loadInstructors(currentSportType, currentInstructorId);
+        
+        // Обновляем список инструкторов при изменении вида спорта
+        if (sportTypeSelect) {
+            sportTypeSelect.addEventListener('change', (e) => {
+                currentSportType = e.target.value;
+                loadInstructors(currentSportType);
+            });
+        }
+    }
+    
     // Закрытие по клику вне окна
     modal.onclick = (e) => {
         if (e.target === modal) {
@@ -1037,12 +1115,26 @@ function showKuligaTrainingEditModal(training, type, id) {
                 if (key === 'participants_names') {
                     // Преобразуем строку участников в массив
                     data[key] = value.split(',').map(s => s.trim()).filter(s => s);
-                } else if (['min_participants', 'max_participants', 'price_per_person'].includes(key)) {
-                    data[key] = parseFloat(value);
+                } else if (['min_participants', 'max_participants', 'price_per_person', 'instructor_id'].includes(key)) {
+                    // Преобразуем в число
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue)) {
+                        data[key] = numValue;
+                    } else if (key === 'instructor_id' && type === 'individual') {
+                        // Для индивидуальных тренировок инструктор обязателен
+                        alert('Пожалуйста, выберите инструктора');
+                        return;
+                    }
                 } else {
                     data[key] = value;
                 }
             }
+        }
+        
+        // Для индивидуальных тренировок проверяем наличие инструктора
+        if (type === 'individual' && !data.instructor_id) {
+            alert('Пожалуйста, выберите инструктора');
+            return;
         }
         
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');

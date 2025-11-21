@@ -1196,17 +1196,15 @@ router.delete('/training/:id', async (req, res) => {
 
         if (type === 'individual') {
             // Удаление индивидуального бронирования
+            // Сначала блокируем основную таблицу
             const bookingResult = await client.query(`
                 SELECT 
                     kb.*,
-                    ki.telegram_id as instructor_telegram_id,
-                    ki.full_name as instructor_name,
                     c.full_name as client_name,
                     c.phone as client_phone,
                     c.id as client_id,
                     w.id as wallet_id
                 FROM kuliga_bookings kb
-                LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
                 JOIN clients c ON kb.client_id = c.id
                 LEFT JOIN wallets w ON c.id = w.client_id
                 WHERE kb.id = $1 AND kb.booking_type = 'individual'
@@ -1219,6 +1217,22 @@ router.delete('/training/:id', async (req, res) => {
             }
 
             const booking = bookingResult.rows[0];
+
+            // Получаем данные инструктора отдельно (не используем FOR UPDATE для LEFT JOIN)
+            let instructorData = { telegram_id: null, full_name: null };
+            if (booking.instructor_id) {
+                const instructorResult = await client.query(
+                    'SELECT telegram_id, full_name FROM kuliga_instructors WHERE id = $1',
+                    [booking.instructor_id]
+                );
+                if (instructorResult.rows.length > 0) {
+                    instructorData = instructorResult.rows[0];
+                }
+            }
+            
+            // Объединяем данные
+            booking.instructor_telegram_id = instructorData.telegram_id;
+            booking.instructor_name = instructorData.full_name;
 
             // Проверяем, что бронирование не отменено
             if (booking.status === 'cancelled') {
@@ -1315,25 +1329,23 @@ router.delete('/training/:id', async (req, res) => {
 
         } else if (type === 'group') {
             // Удаление группового бронирования
+            // Сначала блокируем основную таблицу бронирований
             const bookingResult = await client.query(`
                 SELECT 
                     kb.*,
                     kgt.slot_id,
                     kgt.is_private,
                     kgt.instructor_id,
-                    ki.telegram_id as instructor_telegram_id,
-                    ki.full_name as instructor_name,
                     c.full_name as client_name,
                     c.phone as client_phone,
                     c.id as client_id,
                     w.id as wallet_id
                 FROM kuliga_bookings kb
                 JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
-                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
                 JOIN clients c ON kb.client_id = c.id
                 LEFT JOIN wallets w ON c.id = w.client_id
                 WHERE kb.id = $1 AND kb.booking_type = 'group'
-                FOR UPDATE
+                FOR UPDATE OF kb
             `, [id]);
 
             if (bookingResult.rows.length === 0) {
@@ -1342,6 +1354,22 @@ router.delete('/training/:id', async (req, res) => {
             }
 
             const booking = bookingResult.rows[0];
+
+            // Получаем данные инструктора отдельно (не используем FOR UPDATE для LEFT JOIN)
+            let instructorData = { telegram_id: null, full_name: null };
+            if (booking.instructor_id) {
+                const instructorResult = await client.query(
+                    'SELECT telegram_id, full_name FROM kuliga_instructors WHERE id = $1',
+                    [booking.instructor_id]
+                );
+                if (instructorResult.rows.length > 0) {
+                    instructorData = instructorResult.rows[0];
+                }
+            }
+            
+            // Объединяем данные
+            booking.instructor_telegram_id = instructorData.telegram_id;
+            booking.instructor_name = instructorData.full_name;
 
             // Проверяем, что бронирование не отменено
             if (booking.status === 'cancelled') {

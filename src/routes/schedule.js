@@ -166,6 +166,7 @@ router.get('/admin', async (req, res) => {
             ]);
             
             // Запрос для групповых тренировок Кулиги
+            // Вычисляем current_participants динамически из активных бронирований
             const kuligaGroupQuery = `
                 SELECT 
                     kgt.id,
@@ -179,7 +180,7 @@ router.get('/admin', async (req, res) => {
                     NULL::INTEGER as simulator_id,
                     NULL::TEXT as simulator_name,
                     kgt.max_participants,
-                    kgt.current_participants,
+                    COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status IN ('pending', 'confirmed')), 0)::INTEGER as current_participants,
                     CASE kgt.level
                         WHEN 'beginner' THEN 1
                         WHEN 'intermediate' THEN 2
@@ -216,7 +217,7 @@ router.get('/admin', async (req, res) => {
                     AND kgt.date <= CURRENT_DATE + INTERVAL '60 days'
                     AND kgt.status IN ('open', 'confirmed')
                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
-                         kgt.max_participants, kgt.current_participants, kgt.level, kgt.price_per_person,
+                         kgt.max_participants, kgt.level, kgt.price_per_person,
                          kgt.sport_type, kgt.status, ki.full_name
             `;
             
