@@ -1416,26 +1416,40 @@ function getEquipmentTypeName(equipmentType) {
     }
 }
 
+// Текущий выбранный тип расписания (по умолчанию тренажер)
+let currentScheduleType = 'simulator';
+
+// Переключение типа расписания (делаем глобальной)
+window.switchScheduleType = function(slopeType) {
+    currentScheduleType = slopeType;
+    
+    // Обновляем активные вкладки
+    const tabs = document.querySelectorAll('.schedule-tab');
+    tabs.forEach(tab => {
+        if (tab.dataset.slopeType === slopeType) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Перезагружаем расписание для выбранного типа
+    loadSchedule();
+}
+
 // Загрузка расписания
 async function loadSchedule() {
     try {
-        // Загружаем данные для тренажера и естественного склона параллельно
-        const [simulatorResponse, naturalSlopeResponse] = await Promise.all([
-            fetch('/api/schedule/admin?slope_type=simulator'),
-            fetch('/api/schedule/admin?slope_type=natural_slope')
-        ]);
-
-        if (!simulatorResponse.ok || !naturalSlopeResponse.ok) {
-            throw new Error(`HTTP error! status: ${simulatorResponse.status} / ${naturalSlopeResponse.status}`);
+        // Загружаем данные только для выбранного типа расписания
+        const response = await fetch(`/api/schedule/admin?slope_type=${currentScheduleType}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const [simulatorData, naturalSlopeData] = await Promise.all([
-            simulatorResponse.json(),
-            naturalSlopeResponse.json()
-        ]);
+        const data = await response.json();
         
-        console.log('Полученные данные тренажера:', simulatorData);
-        console.log('Полученные данные естественного склона:', naturalSlopeData);
+        console.log(`Полученные данные для ${currentScheduleType}:`, data);
 
         const scheduleList = document.querySelector('.schedule-list');
         if (!scheduleList) {
@@ -1443,19 +1457,13 @@ async function loadSchedule() {
             return;
         }
 
-        // Формируем HTML для обеих секций
-        let html = '';
-
-        // Секция тренажера
-        html += '<div class="schedule-section">';
-        html += '<h3 class="schedule-section-title">🏔️ Горнолыжный тренажер</h3>';
-        html += await renderScheduleSection(simulatorData, 'simulator');
-        html += '</div>';
-
-        // Секция естественного склона
-        html += '<div class="schedule-section">';
-        html += '<h3 class="schedule-section-title">🎿 Естественный склон</h3>';
-        html += await renderScheduleSection(naturalSlopeData, 'natural_slope');
+        // Формируем HTML для выбранной секции
+        let html = '<div class="schedule-section">';
+        const title = currentScheduleType === 'simulator' 
+            ? '🏔️ Горнолыжный тренажер' 
+            : '🎿 Естественный склон';
+        html += `<h3 class="schedule-section-title">${title}</h3>`;
+        html += await renderScheduleSection(data, currentScheduleType);
         html += '</div>';
 
         scheduleList.innerHTML = html;

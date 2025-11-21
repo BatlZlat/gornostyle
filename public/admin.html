@@ -183,6 +183,15 @@
                             <button class="btn-success" onclick="openScheduleBlocks()">🔒 Управление блокировками слотов</button>
                         </div>
                     </div>
+                    <!-- Вкладки переключения между типами расписания -->
+                    <div class="schedule-tabs">
+                        <button class="schedule-tab active" data-slope-type="simulator" onclick="switchScheduleType('simulator')">
+                            🏔️ Горнолыжный тренажер
+                        </button>
+                        <button class="schedule-tab" data-slope-type="natural_slope" onclick="switchScheduleType('natural_slope')">
+                            🎿 Естественный склон
+                        </button>
+                    </div>
                     <div class="schedule-controls">
                         <div class="date-navigation">
                             <button class="btn-icon" id="prev-date">←</button>
