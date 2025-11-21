@@ -934,8 +934,16 @@ router.post('/group-trainings', async (req, res) => {
         }
 
         // Проверяем, что дата слота совпадает с указанной датой
-        if (slot.date.toISOString().split('T')[0] !== date) {
+        // Преобразуем дату слота в строку формата YYYY-MM-DD для сравнения
+        const slotDateStr = slot.date instanceof Date 
+            ? slot.date.toISOString().split('T')[0] 
+            : (typeof slot.date === 'string' ? slot.date.split('T')[0] : String(slot.date).split('T')[0]);
+        
+        const requestedDateStr = date.split('T')[0]; // Убираем время, если есть
+        
+        if (slotDateStr !== requestedDateStr) {
             await client.query('ROLLBACK');
+            console.error('Несовпадение дат:', { slotDate: slotDateStr, requestedDate: requestedDateStr });
             return res.status(400).json({
                 success: false,
                 error: 'Дата слота не совпадает с указанной датой'
@@ -1040,6 +1048,139 @@ router.get('/group-trainings', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения групповых тренировок:', error);
         res.status(500).json({ success: false, error: 'Не удалось получить список групповых тренировок' });
+    }
+});
+
+/**
+ * GET /api/kuliga/admin/available-dates
+ * Получение дат с расписанием инструкторов для указанного вида спорта
+ */
+router.get('/available-dates', async (req, res) => {
+    const { sport_type, from_date, to_date } = req.query;
+
+    if (!sport_type || !['ski', 'snowboard'].includes(sport_type)) {
+        return res.status(400).json({ success: false, error: 'Укажите sport_type (ski или snowboard)' });
+    }
+
+    try {
+        const from = from_date || new Date().toISOString().split('T')[0];
+        const to = to_date || (() => {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 2);
+            return d.toISOString().split('T')[0];
+        })();
+
+        // Получаем уникальные даты, на которые есть свободные слоты у инструкторов нужного вида спорта
+        const { rows } = await pool.query(
+            `SELECT DISTINCT s.date
+             FROM kuliga_schedule_slots s
+             JOIN kuliga_instructors i ON s.instructor_id = i.id
+             WHERE s.date BETWEEN $1 AND $2
+               AND s.status = 'available'
+               AND i.is_active = TRUE
+               AND (i.sport_type = $3 OR i.sport_type = 'both')
+             ORDER BY s.date ASC`,
+            [from, to, sport_type]
+        );
+
+        const dates = rows.map(row => row.date.toISOString().split('T')[0]);
+        res.json({ success: true, data: dates });
+    } catch (error) {
+        console.error('Ошибка получения дат с расписанием:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить даты с расписанием' });
+    }
+});
+
+/**
+ * GET /api/kuliga/admin/instructors
+ * Получение инструкторов, у которых есть расписание на указанную дату для указанного вида спорта
+ */
+router.get('/instructors', async (req, res) => {
+    const { date, sport_type } = req.query;
+
+    if (!date) {
+        return res.status(400).json({ success: false, error: 'Укажите date' });
+    }
+
+    if (!sport_type || !['ski', 'snowboard'].includes(sport_type)) {
+        return res.status(400).json({ success: false, error: 'Укажите sport_type (ski или snowboard)' });
+    }
+
+    try {
+        // Получаем инструкторов, у которых есть хотя бы один свободный слот на указанную дату
+        // Фильтруем строго по виду спорта: инструктор должен иметь sport_type = выбранный вид спорта ИЛИ 'both'
+        const { rows } = await pool.query(
+            `SELECT DISTINCT i.id, i.full_name, i.sport_type, i.photo_url
+             FROM kuliga_instructors i
+             JOIN kuliga_schedule_slots s ON s.instructor_id = i.id
+             WHERE s.date = $1
+               AND s.status = 'available'
+               AND i.is_active = TRUE
+               AND (i.sport_type = $2 OR i.sport_type = 'both')
+             ORDER BY i.full_name ASC`,
+            [date, sport_type]
+        );
+        
+        // Дополнительная фильтрация на случай если SQL не сработал правильно
+        const filteredRows = rows.filter(instructor => 
+            instructor.sport_type === sport_type || instructor.sport_type === 'both'
+        );
+
+        res.json({ success: true, data: filteredRows });
+    } catch (error) {
+        console.error('Ошибка получения инструкторов:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить список инструкторов' });
+    }
+});
+
+/**
+ * GET /api/kuliga/admin/available-slots
+ * Получение всех свободных слотов на указанную дату для указанного вида спорта (всех инструкторов)
+ */
+router.get('/available-slots', async (req, res) => {
+    const { date, sport_type } = req.query;
+
+    if (!date) {
+        return res.status(400).json({ success: false, error: 'Укажите date' });
+    }
+
+    if (!sport_type || !['ski', 'snowboard'].includes(sport_type)) {
+        return res.status(400).json({ success: false, error: 'Укажите sport_type (ski или snowboard)' });
+    }
+
+    try {
+        const { rows } = await pool.query(
+            `SELECT s.id AS slot_id,
+                    s.instructor_id,
+                    s.date,
+                    s.start_time,
+                    s.end_time,
+                    i.full_name AS instructor_name,
+                    i.sport_type AS instructor_sport_type
+             FROM kuliga_schedule_slots s
+             JOIN kuliga_instructors i ON s.instructor_id = i.id
+             WHERE s.date = $1
+               AND s.status = 'available'
+               AND i.is_active = TRUE
+               AND (i.sport_type = $2 OR i.sport_type = 'both')
+             ORDER BY s.start_time ASC, i.full_name ASC`,
+            [date, sport_type]
+        );
+
+        const slots = rows.map(row => ({
+            slot_id: row.slot_id,
+            instructor_id: row.instructor_id,
+            date: row.date.toISOString().split('T')[0],
+            start_time: row.start_time,
+            end_time: row.end_time,
+            instructor_name: row.instructor_name,
+            instructor_sport_type: row.instructor_sport_type
+        }));
+
+        res.json({ success: true, data: slots });
+    } catch (error) {
+        console.error('Ошибка получения свободных слотов:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить список слотов' });
     }
 });
 

@@ -282,7 +282,13 @@ function renderWinterTrainingRow(training) {
 
 // Открыть модальное окно создания зимней тренировки
 function openCreateWinterTraining() {
-    window.location.href = 'winter-training.html';
+    // Открываем модальное окно создания групповой тренировки Кулиги
+    if (typeof openKuligaGroupTrainingModal === 'function') {
+        openKuligaGroupTrainingModal();
+    } else {
+        // Если функция еще не загружена, переходим на старую страницу
+        window.location.href = 'winter-training.html';
+    }
 }
 
 // Просмотр деталей зимней тренировки

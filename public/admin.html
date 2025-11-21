@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Администратор Ski-instruktor</title>
     <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        .flatpickr-day.has-schedule {
+            background: rgba(46, 204, 113, 0.15);
+            box-shadow: inset 0 0 0 2px #2ecc71;
+        }
+        .flatpickr-day.has-schedule.free-none {
+            background: rgba(241, 196, 15, 0.15);
+            box-shadow: inset 0 0 0 2px #f1c40f;
+        }
+    </style>
 </head>
 <body>
     <div class="admin-container">
@@ -1173,13 +1184,104 @@
         </div>
     </div>
 
+    <!-- Модальное окно для создания групповой тренировки Кулиги -->
+    <div id="kuliga-group-training-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3>Создать групповую тренировку Кулига Парк</h3>
+                <button class="close-btn" onclick="closeKuligaGroupTrainingModal()">×</button>
+            </div>
+            <form id="kuliga-group-training-form">
+                <div class="form-group">
+                    <label for="kgt-sport-type">Вид спорта *</label>
+                    <select id="kgt-sport-type" class="form-control" required>
+                        <option value="">Выберите вид спорта</option>
+                        <option value="ski">⛷️ Горные лыжи</option>
+                        <option value="snowboard">🏂 Сноуборд</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-date">Дата *</label>
+                    <input type="date" id="kgt-date" class="form-control" required />
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Выберите дату (подсвечены только даты с расписанием)
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-instructor">Инструктор (по умолчанию - все с расписанием)</label>
+                    <select id="kgt-instructor" class="form-control">
+                        <option value="">Все инструкторы с расписанием</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-slot">Время *</label>
+                    <select id="kgt-slot" class="form-control" required>
+                        <option value="">Выберите время</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Все свободные слоты на выбранную дату
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-level">Уровень подготовки *</label>
+                    <select id="kgt-level" class="form-control" required>
+                        <option value="beginner">1 уровень (Начальный)</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Для групповых тренировок через админ-панель всегда 1 уровень
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-description">Описание (необязательно)</label>
+                    <textarea id="kgt-description" class="form-control" rows="3" placeholder="Описание тренировки"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-max-participants">Максимальное количество участников *</label>
+                    <select id="kgt-max-participants" class="form-control" required>
+                        <option value="">Выберите количество</option>
+                        <option value="2">2 человека</option>
+                        <option value="3">3 человека</option>
+                        <option value="4">4 человека</option>
+                        <option value="5">5 человек</option>
+                        <option value="6">6 человек</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-min-participants">Минимальное количество участников *</label>
+                    <input type="number" id="kgt-min-participants" class="form-control" min="1" value="2" required />
+                </div>
+
+                <div class="form-group">
+                    <div id="kgt-price-info" style="margin-top:10px;padding:10px;background:#f5f5f5;border-radius:4px;">
+                        <strong>💰 Стоимость:</strong> <span id="kgt-price-display">—</span>
+                    </div>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeKuligaGroupTrainingModal()">Отмена</button>
+                    <button type="submit" class="btn-primary" id="kgt-submit-btn">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr@4.6.13/dist/l10n/ru.js"></script>
     <script src="js/admin.js?v=20250930"></script>
     <script src="js/admin-kuliga.js?v=1"></script>
     <script src="js/admin-promotions.js?v=1"></script>
     <script src="js/admin-trainer-salary.js?v=1"></script>
     <script src="js/admin-winter-prices.js?v=1"></script>
     <script src="js/admin-winter-trainings.js?v=1"></script>
+    <script src="js/admin-kuliga-group-training.js?v=1"></script>
     <script src="js/admin-scheduled-messages.js?v=1"></script>
 </body>
 </html> 
