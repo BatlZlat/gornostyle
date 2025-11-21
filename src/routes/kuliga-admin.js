@@ -1090,26 +1090,15 @@ router.get('/training/:id', async (req, res) => {
 
     try {
         if (type === 'group') {
-            // Получаем групповую тренировку
+            // Получаем основную информацию о групповой тренировке
             const trainingResult = await pool.query(`
                 SELECT 
                     kgt.*,
                     ki.full_name as instructor_name,
-                    ki.phone as instructor_phone,
-                    STRING_AGG(
-                        DISTINCT CONCAT(c.full_name, COALESCE(' (тел: ' || c.phone || ')', '')),
-                        ', '
-                        ORDER BY c.full_name
-                    ) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as participant_names_list,
-                    COUNT(DISTINCT kb.id) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as bookings_count,
-                    SUM(kb.participants_count) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as total_participants_count
+                    ki.phone as instructor_phone
                 FROM kuliga_group_trainings kgt
                 LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
-                LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
-                    AND kb.status IN ('pending', 'confirmed')
-                LEFT JOIN clients c ON kb.client_id = c.id
                 WHERE kgt.id = $1
-                GROUP BY kgt.id, ki.full_name, ki.phone
             `, [id]);
 
             if (trainingResult.rows.length === 0) {
@@ -1124,7 +1113,7 @@ router.get('/training/:id', async (req, res) => {
                     kb.*,
                     c.full_name as client_name,
                     c.phone as client_phone,
-                    array_to_string(kb.participants_names, ', ') as participants_names_str
+                    COALESCE(array_to_string(kb.participants_names, ', '), '') as participants_names_str
                 FROM kuliga_bookings kb
                 JOIN clients c ON kb.client_id = c.id
                 WHERE kb.group_training_id = $1
@@ -1132,11 +1121,28 @@ router.get('/training/:id', async (req, res) => {
                 ORDER BY kb.created_at DESC
             `, [id]);
 
+            // Подсчитываем статистику
+            const bookingsCount = bookingsResult.rows.length;
+            const totalParticipantsCount = bookingsResult.rows.reduce((sum, b) => sum + (b.participants_count || 0), 0);
+            
+            // Формируем список имен участников
+            const participantNamesList = bookingsResult.rows
+                .map(b => {
+                    const name = b.client_name || '';
+                    const phone = b.client_phone ? ` (тел: ${b.client_phone})` : '';
+                    return name + phone;
+                })
+                .filter(Boolean)
+                .join(', ');
+
             res.json({
                 success: true,
                 data: {
                     ...training,
-                    bookings: bookingsResult.rows
+                    bookings: bookingsResult.rows,
+                    bookings_count: bookingsCount,
+                    total_participants_count: totalParticipantsCount,
+                    participant_names_list: participantNamesList
                 }
             });
         } else if (type === 'individual') {
