@@ -208,7 +208,9 @@ router.get('/admin', async (req, res) => {
                             ', '
                         ) FILTER (WHERE kb.status IN ('pending', 'confirmed') AND kb.participants_names IS NOT NULL),
                         ''
-                    ) as participant_names
+                    ) as participant_names,
+                    'kuliga' as training_source,
+                    'group' as kuliga_type
                 FROM kuliga_group_trainings kgt
                 LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
                 LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id
@@ -249,7 +251,9 @@ router.get('/admin', async (req, res) => {
                         WHEN 'cancelled' THEN 'cancelled'
                         ELSE 'scheduled'
                     END as status,
-                    COALESCE(array_to_string(kb.participants_names, ', '), '') as participant_names
+                    COALESCE(array_to_string(kb.participants_names, ', '), '') as participant_names,
+                    'kuliga' as training_source,
+                    'individual' as kuliga_type
                 FROM kuliga_bookings kb
                 LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
                 WHERE kb.booking_type = 'individual'

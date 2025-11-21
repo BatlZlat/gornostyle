@@ -1081,6 +1081,98 @@ router.get('/group-trainings', async (req, res) => {
 });
 
 /**
+ * GET /api/kuliga/admin/training/:id
+ * Получение деталей тренировки Кулиги (групповой или индивидуальной)
+ */
+router.get('/training/:id', async (req, res) => {
+    const { id } = req.params;
+    const { type } = req.query; // 'group' или 'individual'
+
+    try {
+        if (type === 'group') {
+            // Получаем групповую тренировку
+            const trainingResult = await pool.query(`
+                SELECT 
+                    kgt.*,
+                    ki.full_name as instructor_name,
+                    ki.phone as instructor_phone,
+                    STRING_AGG(
+                        DISTINCT CONCAT(c.full_name, COALESCE(' (тел: ' || c.phone || ')', '')),
+                        ', '
+                        ORDER BY c.full_name
+                    ) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as participant_names_list,
+                    COUNT(DISTINCT kb.id) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as bookings_count,
+                    SUM(kb.participants_count) FILTER (WHERE kb.status IN ('pending', 'confirmed')) as total_participants_count
+                FROM kuliga_group_trainings kgt
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
+                    AND kb.status IN ('pending', 'confirmed')
+                LEFT JOIN clients c ON kb.client_id = c.id
+                WHERE kgt.id = $1
+                GROUP BY kgt.id, ki.full_name, ki.phone
+            `, [id]);
+
+            if (trainingResult.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Групповая тренировка не найдена' });
+            }
+
+            const training = trainingResult.rows[0];
+
+            // Получаем список бронирований
+            const bookingsResult = await pool.query(`
+                SELECT 
+                    kb.*,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    array_to_string(kb.participants_names, ', ') as participants_names_str
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                WHERE kb.group_training_id = $1
+                    AND kb.status IN ('pending', 'confirmed')
+                ORDER BY kb.created_at DESC
+            `, [id]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...training,
+                    bookings: bookingsResult.rows
+                }
+            });
+        } else if (type === 'individual') {
+            // Получаем индивидуальную тренировку
+            const bookingResult = await pool.query(`
+                SELECT 
+                    kb.*,
+                    ki.full_name as instructor_name,
+                    ki.phone as instructor_phone,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    array_to_string(kb.participants_names, ', ') as participants_names_str
+                FROM kuliga_bookings kb
+                LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+                JOIN clients c ON kb.client_id = c.id
+                WHERE kb.id = $1
+            `, [id]);
+
+            if (bookingResult.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Индивидуальная тренировка не найдена' });
+            }
+
+            res.json({
+                success: true,
+                data: bookingResult.rows[0]
+            });
+        } else {
+            return res.status(400).json({ success: false, error: 'Необходимо указать type (group или individual)' });
+        }
+    } catch (error) {
+        console.error('Ошибка получения деталей тренировки:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить детали тренировки' });
+    }
+});
+
+/**
  * GET /api/kuliga/admin/available-dates
  * Получение дат с расписанием инструкторов для указанного вида спорта
  */

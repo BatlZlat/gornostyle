@@ -1549,7 +1549,11 @@ async function renderScheduleSection(data, slopeType) {
                                     <td>${formatNaturalSlopePricePerPerson(training)} ₽</td>`
                                 }
                                 <td class="training-actions">
-                                    ${slopeType === 'natural_slope' ? 
+                                    ${training.training_source === 'kuliga' ? 
+                                        `<button class="btn-secondary" onclick="viewKuligaTrainingDetails(${training.id}, '${training.kuliga_type}')">
+                                            Подробнее
+                                        </button>` :
+                                        slopeType === 'natural_slope' ? 
                                         `<button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
                                             Подробнее
                                         </button>` :
@@ -1578,6 +1582,138 @@ function getParticipantName(training) {
         return training.group_name || '-';
     }
 }
+
+// Просмотр деталей тренировки Кулиги
+window.viewKuligaTrainingDetails = async function(id, type) {
+    try {
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        const response = await fetch(`/api/kuliga/admin/training/${id}?type=${type}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка получения данных');
+        }
+        
+        const training = result.data;
+        
+        // Форматирование даты
+        function formatDate(dateString) {
+            if (!dateString) return '—';
+            const date = new Date(dateString);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '—';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '—';
+        const modalTitle = type === 'group' 
+            ? 'Детали групповой тренировки Кулига Парк' 
+            : 'Детали индивидуальной тренировки Кулига Парк';
+        
+        let modalContent = `
+            <div class="modal-content" style="max-width: 600px;">
+                <span class="close" onclick="this.closest('.modal').remove()" style="float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+                <h3>${modalTitle}</h3>
+                <div class="training-details">
+                    <div class="detail-group">
+                        <h4>Основная информация</h4>
+                        <p><strong>Дата:</strong> ${formatDate(training.date)}</p>
+                        <p><strong>Время:</strong> ${startTime} - ${endTime}</p>
+                        <p><strong>Тип тренировки:</strong> ${type === 'group' ? 'Групповая' : 'Индивидуальная'}</p>
+                        <p><strong>Инструктор:</strong> ${training.instructor_name || 'Не указан'}</p>
+        `;
+        
+        if (type === 'group') {
+            const sportTypeName = training.sport_type === 'ski' ? 'Горные лыжи' : training.sport_type === 'snowboard' ? 'Сноуборд' : training.sport_type;
+            const levelName = training.level === 'beginner' ? 'Начальный' : training.level === 'intermediate' ? 'Средний' : training.level === 'advanced' ? 'Продвинутый' : training.level;
+            
+            modalContent += `
+                        <p><strong>Вид спорта:</strong> ${sportTypeName}</p>
+                        <p><strong>Уровень подготовки:</strong> ${levelName || '—'}</p>
+                        <p><strong>Участников:</strong> ${training.current_participants || 0} / ${training.max_participants || 0}</p>
+                        <p><strong>Минимум участников:</strong> ${training.min_participants || 0}</p>
+                        <p><strong>Цена за человека:</strong> ${training.price_per_person ? parseFloat(training.price_per_person).toFixed(2) + ' ₽' : '—'}</p>
+                        <p><strong>Общая стоимость:</strong> ${training.price_per_person && training.max_participants ? (parseFloat(training.price_per_person) * training.max_participants).toFixed(2) + ' ₽' : '—'}</p>
+            `;
+            
+            if (training.description) {
+                modalContent += `<p><strong>Описание:</strong> ${training.description}</p>`;
+            }
+            
+            modalContent += `
+                    </div>
+                    <div class="detail-group">
+                        <h4>Бронирования (${training.bookings_count || 0})</h4>
+            `;
+            
+            if (training.bookings && training.bookings.length > 0) {
+                modalContent += '<ul style="list-style: none; padding: 0;">';
+                training.bookings.forEach((booking, index) => {
+                    modalContent += `
+                        <li style="padding: 10px; margin-bottom: 10px; background: #f5f5f5; border-radius: 4px;">
+                            <strong>${index + 1}. ${booking.client_name || 'Клиент'}</strong><br>
+                            <small>Телефон: ${booking.client_phone || '—'}</small><br>
+                            <small>Участники: ${booking.participants_names_str || '—'}</small><br>
+                            <small>Количество: ${booking.participants_count || 1}</small><br>
+                            <small>Сумма: ${booking.price_total ? parseFloat(booking.price_total).toFixed(2) + ' ₽' : '—'}</small><br>
+                            <small>Статус: <span style="color: ${booking.status === 'confirmed' ? 'green' : 'orange'};">${booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status}</span></small>
+                        </li>
+                    `;
+                });
+                modalContent += '</ul>';
+            } else {
+                modalContent += '<p>Нет бронирований</p>';
+            }
+        } else {
+            modalContent += `
+                        <p><strong>Участники:</strong> ${training.participants_names_str || '—'}</p>
+                        <p><strong>Количество участников:</strong> ${training.participants_count || 1}</p>
+                        <p><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? 'Горные лыжи' : training.sport_type === 'snowboard' ? 'Сноуборд' : training.sport_type}</p>
+                        <p><strong>Цена:</strong> ${training.price_total ? parseFloat(training.price_total).toFixed(2) + ' ₽' : '—'}</p>
+                        <p><strong>Статус:</strong> <span style="color: ${training.status === 'confirmed' ? 'green' : 'orange'};">${training.status === 'confirmed' ? 'Подтверждено' : training.status === 'pending' ? 'Ожидание' : training.status}</span></p>
+                    </div>
+                    <div class="detail-group">
+                        <h4>Информация о клиенте</h4>
+                        <p><strong>Имя:</strong> ${training.client_name || '—'}</p>
+                        <p><strong>Телефон:</strong> ${training.client_phone || '—'}</p>
+            `;
+        }
+        
+        modalContent += `
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        modal.innerHTML = modalContent;
+        document.body.appendChild(modal);
+        
+        // Закрытие по клику вне модального окна
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        alert('Ошибка при загрузке деталей тренировки: ' + error.message);
+    }
+};
 
 // Форматирование цены для естественного склона: показываем цену за человека
 function formatNaturalSlopePricePerPerson(training) {
