@@ -250,6 +250,7 @@ async function loadSlotsForDate(date) {
                 option.value = slot.slot_id;
                 option.textContent = `${timeStr} (${slot.instructor_name})`;
                 option.dataset.instructorId = slot.instructor_id;
+                option.dataset.slotDate = slot.date; // Сохраняем дату слота из базы данных
                 select.appendChild(option);
             });
         }
@@ -378,10 +379,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const maxParticipants = parseInt(document.getElementById('kgt-max-participants').value);
             const minParticipants = parseInt(document.getElementById('kgt-min-participants').value);
 
-            // Получаем instructor_id из выбранного слота
+            // Получаем instructor_id и дату слота из выбранного слота
             const slotSelect = document.getElementById('kgt-slot');
             const selectedOption = slotSelect.options[slotSelect.selectedIndex];
             const instructorId = selectedOption.dataset.instructorId;
+            const slotDate = selectedOption.dataset.slotDate; // Используем дату из слота (источник истины)
 
             if (!instructorId || !slotId) {
                 throw new Error('Необходимо выбрать время');
@@ -401,10 +403,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const totalPrice = parseFloat(priceObj.price);
             const pricePerPerson = totalPrice / maxParticipants;
 
+            // Используем дату из слота, так как это источник истины
+            // Если дата слота не указана, используем дату из формы
+            const normalizedDate = slotDate 
+                ? slotDate.split('T')[0].split(' ')[0] 
+                : date.split('T')[0].split(' ')[0];
+            
+            console.log('Отправка данных для создания тренировки:', {
+                instructor_id: parseInt(instructorId),
+                slot_id: parseInt(slotId),
+                date: normalizedDate,
+                slotDateFromData: slotDate,
+                formDate: date
+            });
+
             const data = {
                 instructor_id: parseInt(instructorId),
                 slot_id: parseInt(slotId),
-                date: date,
+                date: normalizedDate,
                 sport_type: sportType,
                 level: level,
                 description: description || null,

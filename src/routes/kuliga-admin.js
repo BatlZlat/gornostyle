@@ -933,20 +933,49 @@ router.post('/group-trainings', async (req, res) => {
             });
         }
 
-        // Проверяем, что дата слота совпадает с указанной датой
         // Преобразуем дату слота в строку формата YYYY-MM-DD для сравнения
-        const slotDateStr = slot.date instanceof Date 
-            ? slot.date.toISOString().split('T')[0] 
-            : (typeof slot.date === 'string' ? slot.date.split('T')[0] : String(slot.date).split('T')[0]);
+        // Используем локальные методы для избежания проблем с часовым поясом
+        const formatDateOnly = (date) => {
+            if (!date) return null;
+            if (typeof date === 'string') {
+                return date.split('T')[0].split(' ')[0];
+            }
+            if (date instanceof Date) {
+                // Используем локальные методы, чтобы избежать проблем с часовым поясом
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            return String(date).split('T')[0].split(' ')[0];
+        };
         
-        const requestedDateStr = date.split('T')[0]; // Убираем время, если есть
+        const slotDateStr = formatDateOnly(slot.date);
+        
+        // Нормализуем запрошенную дату (убираем время, если есть)
+        const requestedDateStr = date.split('T')[0].split(' ')[0];
+        
+        // Логируем для отладки
+        console.log('Сравнение дат:', {
+            slotDate: slot.date,
+            slotDateType: typeof slot.date,
+            slotDateStr,
+            requestedDate: date,
+            requestedDateStr,
+            match: slotDateStr === requestedDateStr
+        });
         
         if (slotDateStr !== requestedDateStr) {
             await client.query('ROLLBACK');
-            console.error('Несовпадение дат:', { slotDate: slotDateStr, requestedDate: requestedDateStr });
+            console.error('Несовпадение дат:', { 
+                slotDate: slot.date,
+                slotDateStr, 
+                requestedDate: date,
+                requestedDateStr 
+            });
             return res.status(400).json({
                 success: false,
-                error: 'Дата слота не совпадает с указанной датой'
+                error: `Дата слота не совпадает с указанной датой. Слот: ${slotDateStr}, Запрошено: ${requestedDateStr}`
             });
         }
 
@@ -1167,10 +1196,26 @@ router.get('/available-slots', async (req, res) => {
             [date, sport_type]
         );
 
+        // Вспомогательная функция для форматирования даты без учета часового пояса
+        const formatDateOnly = (date) => {
+            if (!date) return null;
+            if (typeof date === 'string') {
+                return date.split('T')[0].split(' ')[0];
+            }
+            if (date instanceof Date) {
+                // Используем локальные методы, чтобы избежать проблем с часовым поясом
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            return String(date).split('T')[0].split(' ')[0];
+        };
+
         const slots = rows.map(row => ({
             slot_id: row.slot_id,
             instructor_id: row.instructor_id,
-            date: row.date.toISOString().split('T')[0],
+            date: formatDateOnly(row.date),
             start_time: row.start_time,
             end_time: row.end_time,
             instructor_name: row.instructor_name,
