@@ -82,23 +82,18 @@ function updateDatePicker() {
 
     // Инициализируем flatpickr если еще не инициализирован
     if (!window.kgtDatePicker) {
-        // Убеждаемся, что русская локализация загружена
-        const ruLocale = (typeof flatpickr !== 'undefined' && flatpickr.l10ns && flatpickr.l10ns.ru) 
-            ? flatpickr.l10ns.ru 
-            : undefined;
-        
-        if (ruLocale) {
-            flatpickr.localize(ruLocale);
-        }
+        // Используем русскую локализацию как в других файлах
+        const fp = window.flatpickr || flatpickr;
+        const ruLocale = (fp && fp.l10ns && fp.l10ns.ru) ? fp.l10ns.ru : null;
 
-        window.kgtDatePicker = flatpickr(dateInput, {
+        const fpOptions = {
             dateFormat: 'Y-m-d',
             altInput: true,
             altFormat: 'd.m.Y',
-            locale: ruLocale || undefined,
-            firstDayOfWeek: 1, // Понедельник - первый день недели
             allowInput: true,
             minDate: 'today',
+            firstDayOfWeek: 1, // Понедельник - первый день недели
+            locale: ruLocale, // Русская локализация
             onChange: function(selectedDates, dateStr) {
                 if (dateStr) {
                     loadSlotsForDate(dateStr);
@@ -121,7 +116,9 @@ function updateDatePicker() {
                     return !availableDates.includes(dateStr);
                 }
             ]
-        });
+        };
+
+        window.kgtDatePicker = flatpickr(dateInput, fpOptions);
     } else {
         // Обновляем список отключенных дат
         window.kgtDatePicker.set('disable', [
@@ -174,7 +171,12 @@ async function loadInstructorsForDate(date) {
         const select = document.getElementById('kgt-instructor');
         select.innerHTML = '<option value="">Все инструкторы с расписанием</option>';
         
-        instructors.forEach(instructor => {
+        // Фильтруем инструкторов по виду спорта на клиенте (дополнительная проверка)
+        const filteredInstructors = instructors.filter(instructor => 
+            instructor.sport_type === sportType || instructor.sport_type === 'both'
+        );
+
+        filteredInstructors.forEach(instructor => {
             const option = document.createElement('option');
             option.value = instructor.id;
             option.textContent = instructor.full_name;
@@ -187,7 +189,7 @@ async function loadInstructorsForDate(date) {
             loadSlotsForDate(date);
         };
 
-        console.log(`✅ Загружено инструкторов для ${date}:`, instructors.length);
+        console.log(`✅ Отфильтровано инструкторов для ${sportType} на ${date}:`, filteredInstructors.length, 'из', instructors.length);
     } catch (error) {
         console.error('❌ Ошибка загрузки инструкторов:', error);
     }
@@ -320,16 +322,17 @@ function openKuligaGroupTrainingModal() {
     document.body.style.overflow = 'hidden';
 
     // Обработчик изменения вида спорта
-    document.getElementById('kgt-sport-type').onchange = function() {
+    document.getElementById('kgt-sport-type').onchange = async function() {
         const sportType = this.value;
         if (sportType) {
-            loadAvailableDates(sportType);
+            await loadAvailableDates(sportType);
             // Очищаем выбранную дату и слоты
             if (window.kgtDatePicker) {
                 window.kgtDatePicker.clear();
             }
             document.getElementById('kgt-slot').innerHTML = '<option value="">Выберите время</option>';
             document.getElementById('kgt-instructor').innerHTML = '<option value="">Все инструкторы с расписанием</option>';
+            selectedInstructorId = null;
         } else {
             availableDates = [];
             if (window.kgtDatePicker) {
