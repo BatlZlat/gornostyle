@@ -1658,24 +1658,68 @@ window.viewKuligaTrainingDetails = async function(id, type) {
             modalContent += `
                     </div>
                     <div class="detail-group">
-                        <h4>Бронирования (${training.bookings_count || 0})</h4>
+                        <h4>Участники и бронирования (${training.bookings_count || 0})</h4>
             `;
             
             if (training.bookings && training.bookings.length > 0) {
-                modalContent += '<ul style="list-style: none; padding: 0;">';
+                // Показываем таблицу с участниками по каждому бронированию
+                modalContent += `
+                    <table class="participants-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                        <thead>
+                            <tr style="background: #f0f0f0;">
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Клиент</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Участники</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Кол-во</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Сумма</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Статус</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
                 training.bookings.forEach((booking, index) => {
+                    const statusColor = booking.status === 'confirmed' ? 'green' : booking.status === 'pending' ? 'orange' : 'gray';
+                    const statusText = booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status;
+                    
                     modalContent += `
-                        <li style="padding: 10px; margin-bottom: 10px; background: #f5f5f5; border-radius: 4px;">
-                            <strong>${index + 1}. ${booking.client_name || 'Клиент'}</strong><br>
-                            <small>Телефон: ${booking.client_phone || '—'}</small><br>
-                            <small>Участники: ${booking.participants_names_str || '—'}</small><br>
-                            <small>Количество: ${booking.participants_count || 1}</small><br>
-                            <small>Сумма: ${booking.price_total ? parseFloat(booking.price_total).toFixed(2) + ' ₽' : '—'}</small><br>
-                            <small>Статус: <span style="color: ${booking.status === 'confirmed' ? 'green' : 'orange'};">${booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status}</span></small>
-                        </li>
+                        <tr style="border-bottom: 1px solid #eee;">
+                            <td style="padding: 8px;">
+                                <strong>${booking.client_name || 'Клиент'}</strong><br>
+                                <small style="color: #666;">${booking.client_phone || '—'}</small>
+                            </td>
+                            <td style="padding: 8px;">${booking.participants_names_str || '—'}</td>
+                            <td style="padding: 8px;">${booking.participants_count || 1}</td>
+                            <td style="padding: 8px;">${booking.price_total ? parseFloat(booking.price_total).toFixed(2) + ' ₽' : '—'}</td>
+                            <td style="padding: 8px;">
+                                <span style="color: ${statusColor}; font-weight: 500;">${statusText}</span>
+                            </td>
+                            <td style="padding: 8px;">
+                                ${booking.status !== 'cancelled' ? `
+                                    <button 
+                                        class="btn-primary btn-small" 
+                                        onclick="moveKuligaBookingToAnotherTraining(${training.id}, ${booking.id}, '${(booking.client_name || '').replace(/'/g, "\\'")}', '${training.sport_type}', '${training.level}')"
+                                        title="Переместить на другую тренировку"
+                                        style="font-size: 12px; padding: 4px 8px; margin-right: 5px;">
+                                        🔄 Переместить
+                                    </button>
+                                    <button 
+                                        class="btn-danger btn-small" 
+                                        onclick="removeKuligaBooking(${training.id}, ${booking.id}, '${(booking.client_name || '').replace(/'/g, "\\'")}', 'group')"
+                                        title="Удалить бронирование с возвратом средств"
+                                        style="font-size: 12px; padding: 4px 8px;">
+                                        ❌ Удалить
+                                    </button>
+                                ` : '—'}
+                            </td>
+                        </tr>
                     `;
                 });
-                modalContent += '</ul>';
+                
+                modalContent += `
+                        </tbody>
+                    </table>
+                `;
             } else {
                 modalContent += '<p>Нет бронирований</p>';
             }
@@ -6160,7 +6204,7 @@ async function sendClientNotification() {
     }
 }
 
-// Функция для удаления участника из тренировки
+// Функция для удаления участника из тренировки (тренажер)
 async function removeParticipantFromTraining(trainingId, participantId, participantName) {
     // Подтверждение удаления
     if (!confirm(`Вы уверены, что хотите удалить участника "${participantName}" из тренировки?\n\nДействия:\n✅ Статус участника будет изменен на "отменено"\n💰 Средства будут возвращены на счет клиента\n📨 Клиент получит уведомление об удалении\n📱 Администратор получит уведомление`)) {
@@ -6195,8 +6239,58 @@ async function removeParticipantFromTraining(trainingId, participantId, particip
         if (typeof loadTrainings === 'function') {
             loadTrainings();
         }
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        }
     } catch (error) {
         console.error('Ошибка при удалении участника:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Функция для удаления бронирования Kuliga (естественный склон)
+async function removeKuligaBooking(groupTrainingId, bookingId, clientName, type) {
+    // Подтверждение удаления
+    if (!confirm(`Вы уверены, что хотите удалить бронирование клиента "${clientName}"?\n\nДействия:\n✅ Бронирование будет отменено\n💰 Средства будут возвращены на счет клиента\n📨 Клиент и тренер получат уведомления`)) {
+        return;
+    }
+
+    try {
+        showLoading('Удаление бронирования...');
+
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        const response = await fetch(`/api/kuliga/admin/booking/${bookingId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при удалении бронирования');
+        }
+
+        showSuccess(`Бронирование клиента "${clientName}" успешно удалено\nВозврат: ${result.refund_amount ? result.refund_amount.toFixed(2) : '0.00'} руб.`);
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('.modal');
+        if (modal) {
+            modal.remove();
+        }
+
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        }
+    } catch (error) {
+        console.error('Ошибка при удалении бронирования Kuliga:', error);
         showError(error.message);
     } finally {
         hideLoading();

@@ -1945,5 +1945,515 @@ router.get('/available-slots', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/kuliga/admin/available-trainings-for-transfer
+ * Получение списка доступных групповых тренировок Kuliga для переноса бронирования
+ */
+router.get('/available-trainings-for-transfer', async (req, res) => {
+    try {
+        const { exclude_training_id, sport_type } = req.query;
+        
+        // Получаем тренировки на ближайшие 2 недели
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 14);
+        
+        const query = `
+            SELECT 
+                kgt.id,
+                kgt.date,
+                kgt.start_time,
+                kgt.end_time,
+                kgt.sport_type,
+                kgt.level,
+                kgt.price_per_person,
+                kgt.max_participants,
+                kgt.current_participants,
+                kgt.description,
+                ki.full_name as instructor_name,
+                ki.id as instructor_id
+            FROM kuliga_group_trainings kgt
+            JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+            WHERE kgt.status IN ('open', 'confirmed')
+              AND kgt.is_private = FALSE
+              AND kgt.date >= CURRENT_DATE
+              AND kgt.date <= $1
+              AND kgt.current_participants < kgt.max_participants
+              AND ki.is_active = TRUE
+              ${exclude_training_id ? 'AND kgt.id != $2' : ''}
+              ${sport_type ? `AND kgt.sport_type = $${exclude_training_id ? 3 : 2}` : ''}
+            ORDER BY kgt.date ASC, kgt.start_time ASC
+            LIMIT 50
+        `;
+        
+        const params = [endDate.toISOString().split('T')[0]];
+        if (exclude_training_id) params.push(exclude_training_id);
+        if (sport_type) params.push(sport_type);
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            success: true,
+            trainings: result.rows
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при получении доступных тренировок для переноса:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить список тренировок' });
+    }
+});
+
+/**
+ * POST /api/kuliga/admin/booking/:bookingId/transfer
+ * Перенос бронирования на другую групповую тренировку
+ */
+router.post('/booking/:bookingId/transfer', async (req, res) => {
+    const { bookingId } = req.params;
+    const { target_training_id } = req.body;
+    
+    if (!target_training_id) {
+        return res.status(400).json({ success: false, error: 'Необходимо указать target_training_id' });
+    }
+    
+    const client = await pool.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        // Получаем информацию о бронировании
+        const bookingResult = await client.query(`
+            SELECT 
+                kb.*,
+                c.full_name as client_name,
+                c.telegram_id as client_telegram_id,
+                kgt_old.id as old_training_id,
+                kgt_old.current_participants as old_current_participants,
+                kgt_old.is_private as old_is_private,
+                kgt_old.slot_id as old_slot_id
+            FROM kuliga_bookings kb
+            JOIN clients c ON kb.client_id = c.id
+            LEFT JOIN kuliga_group_trainings kgt_old ON kb.group_training_id = kgt_old.id
+            WHERE kb.id = $1 AND kb.status IN ('pending', 'confirmed') AND kb.booking_type = 'group'
+            FOR UPDATE OF kb
+        `, [bookingId]);
+        
+        if (bookingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Бронирование не найдено или его нельзя переместить' });
+        }
+        
+        const booking = bookingResult.rows[0];
+        const participantsCount = Number(booking.participants_count || 1);
+        
+        // Получаем информацию о целевой тренировке
+        const targetTrainingResult = await client.query(`
+            SELECT 
+                kgt.*,
+                ki.full_name as instructor_name,
+                ki.telegram_id as instructor_telegram_id
+            FROM kuliga_group_trainings kgt
+            JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+            WHERE kgt.id = $1 
+              AND kgt.status IN ('open', 'confirmed')
+              AND kgt.is_private = FALSE
+            FOR UPDATE
+        `, [target_training_id]);
+        
+        if (targetTrainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Целевая тренировка не найдена или недоступна' });
+        }
+        
+        const targetTraining = targetTrainingResult.rows[0];
+        
+        // Проверяем, хватает ли мест
+        const availableSpots = targetTraining.max_participants - targetTraining.current_participants;
+        if (availableSpots < participantsCount) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                success: false, 
+                error: `В целевой тренировке недостаточно мест. Требуется: ${participantsCount}, доступно: ${availableSpots}` 
+            });
+        }
+        
+        // Вычисляем разницу в цене
+        const oldPricePerPerson = Number(booking.price_per_person);
+        const newPricePerPerson = Number(targetTraining.price_per_person);
+        const oldTotalPrice = Number(booking.price_total);
+        const newTotalPrice = newPricePerPerson * participantsCount;
+        const priceDifference = newTotalPrice - oldTotalPrice;
+        
+        // Если новая цена больше, проверяем баланс клиента
+        if (priceDifference > 0) {
+            const walletResult = await client.query(
+                'SELECT id, balance FROM wallets WHERE client_id = $1',
+                [booking.client_id]
+            );
+            
+            if (walletResult.rows.length === 0 || Number(walletResult.rows[0].balance) < priceDifference) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Недостаточно средств на балансе клиента. Требуется доплата: ${priceDifference.toFixed(2)} ₽` 
+                });
+            }
+            
+            // Списываем разницу
+            await client.query(
+                'UPDATE wallets SET balance = balance - $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                [priceDifference, walletResult.rows[0].id]
+            );
+            
+            // Создаем транзакцию
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [
+                    walletResult.rows[0].id,
+                    priceDifference,
+                    'payment',
+                    `Доплата за перенос тренировки на ${targetTraining.date} ${String(targetTraining.start_time).substring(0, 5)}`
+                ]
+            );
+        } else if (priceDifference < 0) {
+            // Возвращаем разницу клиенту
+            const walletResult = await client.query(
+                'SELECT id FROM wallets WHERE client_id = $1',
+                [booking.client_id]
+            );
+            
+            if (walletResult.rows.length > 0) {
+                await client.query(
+                    'UPDATE wallets SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                    [Math.abs(priceDifference), walletResult.rows[0].id]
+                );
+                
+                // Создаем транзакцию
+                await client.query(
+                    'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                    [
+                        walletResult.rows[0].id,
+                        Math.abs(priceDifference),
+                        'refund',
+                        `Возврат разницы за перенос тренировки на ${targetTraining.date} ${String(targetTraining.start_time).substring(0, 5)}`
+                    ]
+                );
+            }
+        }
+        
+        // Обновляем бронирование
+        await client.query(`
+            UPDATE kuliga_bookings
+            SET 
+                group_training_id = $1,
+                instructor_id = $2,
+                date = $3,
+                start_time = $4,
+                end_time = $5,
+                price_per_person = $6,
+                price_total = $7,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $8
+        `, [
+            target_training_id,
+            targetTraining.instructor_id,
+            targetTraining.date,
+            targetTraining.start_time,
+            targetTraining.end_time,
+            newPricePerPerson,
+            newTotalPrice,
+            bookingId
+        ]);
+        
+        // Обновляем счетчик участников старой тренировки
+        if (booking.old_training_id) {
+            const oldCountResult = await client.query(`
+                SELECT COALESCE(SUM(participants_count), 0)::int as total
+                FROM kuliga_bookings
+                WHERE group_training_id = $1 AND status IN ('pending', 'confirmed')
+            `, [booking.old_training_id]);
+            
+            await client.query(`
+                UPDATE kuliga_group_trainings
+                SET current_participants = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `, [oldCountResult.rows[0].total, booking.old_training_id]);
+            
+            // Если старая тренировка была приватной и больше нет участников, освобождаем слот
+            if (booking.old_is_private && oldCountResult.rows[0].total === 0) {
+                if (booking.old_slot_id) {
+                    await client.query(`
+                        UPDATE kuliga_schedule_slots
+                        SET status = 'available', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [booking.old_slot_id]);
+                }
+                
+                await client.query(`
+                    UPDATE kuliga_group_trainings
+                    SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                `, [booking.old_training_id]);
+            }
+        }
+        
+        // Обновляем счетчик участников новой тренировки
+        const newCountResult = await client.query(`
+            SELECT COALESCE(SUM(participants_count), 0)::int as total
+            FROM kuliga_bookings
+            WHERE group_training_id = $1 AND status IN ('pending', 'confirmed')
+        `, [target_training_id]);
+        
+        await client.query(`
+            UPDATE kuliga_group_trainings
+            SET current_participants = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+        `, [newCountResult.rows[0].total, target_training_id]);
+        
+        await client.query('COMMIT');
+        
+        // Отправляем уведомление клиенту асинхронно
+        setImmediate(async () => {
+            try {
+                if (booking.client_telegram_id) {
+                    const { bot } = require('../bot/client-bot');
+                    
+                    const oldDate = new Date(booking.date);
+                    const oldFormattedDate = `${oldDate.getDate().toString().padStart(2, '0')}.${(oldDate.getMonth() + 1).toString().padStart(2, '0')}.${oldDate.getFullYear()}`;
+                    const oldTime = String(booking.start_time).substring(0, 5);
+                    
+                    const newDate = new Date(targetTraining.date);
+                    const newFormattedDate = `${newDate.getDate().toString().padStart(2, '0')}.${(newDate.getMonth() + 1).toString().padStart(2, '0')}.${newDate.getFullYear()}`;
+                    const newTime = String(targetTraining.start_time).substring(0, 5);
+                    
+                    let message = `🔄 *Перенос тренировки в Кулига Парке*\n\n`;
+                    message += `*Старая тренировка:*\n`;
+                    message += `📅 Дата: ${oldFormattedDate}\n`;
+                    message += `⏰ Время: ${oldTime}\n\n`;
+                    message += `*Новая тренировка:*\n`;
+                    message += `📅 Дата: ${newFormattedDate}\n`;
+                    message += `⏰ Время: ${newTime}\n`;
+                    message += `👨‍🏫 Инструктор: ${targetTraining.instructor_name}\n`;
+                    message += `🏔️ Место: Кулига Парк\n\n`;
+                    
+                    if (priceDifference > 0) {
+                        message += `💰 Доплата: ${priceDifference.toFixed(2)} ₽\n`;
+                    } else if (priceDifference < 0) {
+                        message += `💰 Возврат: ${Math.abs(priceDifference).toFixed(2)} ₽\n`;
+                    } else {
+                        message += `💰 Стоимость не изменилась\n`;
+                    }
+                    
+                    await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомления о переносе бронирования Kuliga:', error);
+            }
+        });
+        
+        res.json({
+            success: true,
+            message: 'Бронирование успешно перемещено',
+            price_difference: priceDifference
+        });
+        
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при переносе бронирования Kuliga:', error);
+        res.status(500).json({ success: false, error: 'Не удалось переместить бронирование: ' + error.message });
+    } finally {
+        client.release();
+    }
+});
+
+/**
+ * DELETE /api/kuliga/admin/booking/:bookingId
+ * Удаление конкретного бронирования из групповой или индивидуальной тренировки Kuliga
+ */
+router.delete('/booking/:bookingId', async (req, res) => {
+    const { bookingId } = req.params;
+    const client = await pool.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        // Получаем информацию о бронировании
+        const bookingResult = await client.query(`
+            SELECT 
+                kb.*,
+                c.full_name as client_name,
+                c.phone as client_phone,
+                c.telegram_id as client_telegram_id,
+                w.id as wallet_id,
+                ki.telegram_id as instructor_telegram_id,
+                ki.full_name as instructor_name,
+                kgt.id as group_training_id,
+                kgt.is_private,
+                kgt.slot_id as group_slot_id
+            FROM kuliga_bookings kb
+            JOIN clients c ON kb.client_id = c.id
+            LEFT JOIN wallets w ON c.id = w.client_id
+            LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            WHERE kb.id = $1 AND kb.status IN ('pending', 'confirmed')
+            FOR UPDATE OF kb
+        `, [bookingId]);
+        
+        if (bookingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Бронирование не найдено или уже отменено' });
+        }
+        
+        const booking = bookingResult.rows[0];
+        const refundAmount = Number(booking.price_total || 0);
+        const participantsCount = Number(booking.participants_count || 1);
+        
+        // Форматируем дату и время
+        const date = new Date(booking.date);
+        const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+        const [hours, minutes] = String(booking.start_time).split(':');
+        const formattedTime = `${hours}:${minutes}`;
+        const participantName = booking.participants_names && Array.isArray(booking.participants_names) 
+            ? booking.participants_names.join(', ') 
+            : booking.participants_names || 'Участник';
+        
+        // Обновляем статус бронирования на 'cancelled'
+        await client.query(`
+            UPDATE kuliga_bookings 
+            SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        `, [bookingId]);
+        
+        // Возвращаем средства на баланс
+        if (refundAmount > 0 && booking.wallet_id) {
+            await client.query(
+                'UPDATE wallets SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                [refundAmount, booking.wallet_id]
+            );
+            
+            // Создаем транзакцию возврата
+            await client.query(
+                'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                [
+                    booking.wallet_id,
+                    refundAmount,
+                    'refund',
+                    `Возврат: Тренировка Кулига, ${participantName}, Дата: ${formattedDate}, Время: ${formattedTime}`
+                ]
+            );
+        }
+        
+        // Если это групповое бронирование, обновляем счетчик участников
+        if (booking.booking_type === 'group' && booking.group_training_id) {
+            // Пересчитываем текущих участников (только confirmed и pending)
+            const countResult = await client.query(`
+                SELECT COALESCE(SUM(participants_count), 0)::int as total
+                FROM kuliga_bookings
+                WHERE group_training_id = $1 AND status IN ('pending', 'confirmed')
+            `, [booking.group_training_id]);
+            
+            const newParticipantsCount = countResult.rows[0].total;
+            
+            await client.query(`
+                UPDATE kuliga_group_trainings
+                SET current_participants = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `, [newParticipantsCount, booking.group_training_id]);
+            
+            // Если это была приватная группа и больше нет участников, освобождаем слот
+            if (booking.is_private && newParticipantsCount === 0) {
+                const slotId = booking.slot_id || booking.group_slot_id;
+                if (slotId) {
+                    await client.query(`
+                        UPDATE kuliga_schedule_slots
+                        SET status = 'available', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [slotId]);
+                }
+                
+                // Также обновляем статус групповой тренировки
+                await client.query(`
+                    UPDATE kuliga_group_trainings
+                    SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                `, [booking.group_training_id]);
+            }
+        } else if (booking.booking_type === 'individual' && booking.slot_id) {
+            // Освобождаем слот для индивидуальной тренировки
+            await client.query(`
+                UPDATE kuliga_schedule_slots
+                SET status = 'available', updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            `, [booking.slot_id]);
+        }
+        
+        await client.query('COMMIT');
+        
+        // Отправляем уведомления асинхронно
+        setImmediate(async () => {
+            try {
+                const { notifyAdminNaturalSlopeTrainingCancellation, notifyInstructorKuligaTrainingCancellation } = require('../bot/admin-notify');
+                const { bot } = require('../bot/client-bot');
+                
+                // Уведомление администратору
+                await notifyAdminNaturalSlopeTrainingCancellation({
+                    client_name: booking.client_name,
+                    participant_name: participantName,
+                    client_phone: booking.client_phone,
+                    date: booking.date,
+                    time: formattedTime,
+                    trainer_name: booking.instructor_name || 'Не указан',
+                    booking_type: booking.booking_type,
+                    refund: refundAmount,
+                    sport_type: booking.sport_type,
+                    participants_count: participantsCount
+                });
+                
+                // Уведомление инструктору
+                if (booking.instructor_telegram_id) {
+                    await notifyInstructorKuligaTrainingCancellation({
+                        participant_name: participantName,
+                        client_name: booking.client_name,
+                        client_phone: booking.client_phone,
+                        date: booking.date,
+                        time: formattedTime,
+                        instructor_name: booking.instructor_name,
+                        instructor_telegram_id: booking.instructor_telegram_id,
+                        cancelled_by: 'admin'
+                    });
+                }
+                
+                // Уведомление клиенту
+                if (booking.client_telegram_id) {
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const message = 
+                        `❌ *Отмена тренировки в Кулига Парке*\n\n` +
+                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ *Время:* ${formattedTime}\n` +
+                        `👤 *Участники:* ${participantName}\n` +
+                        `🏔️ *Место:* Кулига Парк\n\n` +
+                        `💰 *Возврат:* ${refundAmount.toFixed(2)} руб.\n` +
+                        `Средства возвращены на ваш баланс.`;
+                    
+                    await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений об отмене бронирования Kuliga:', error);
+            }
+        });
+        
+        res.json({
+            success: true,
+            message: 'Бронирование успешно отменено',
+            refund_amount: refundAmount
+        });
+        
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при удалении бронирования Kuliga:', error);
+        res.status(500).json({ success: false, error: 'Не удалось удалить бронирование: ' + error.message });
+    } finally {
+        client.release();
+    }
+});
+
 module.exports = router;
 
