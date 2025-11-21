@@ -598,13 +598,41 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             ? `👥 *Участники (${trainingData.participants_count || 1}):* ${trainingData.participant_name}`
             : `👤 *Участник:* ${trainingData.participant_name}`;
 
+        // Форматируем дату с днем недели
+        let formattedDateWithDay = 'Дата не указана';
+        try {
+            // Пытаемся распарсить дату в разных форматах
+            let dateObj;
+            if (trainingData.date) {
+                // Если это строка в формате YYYY-MM-DD
+                if (typeof trainingData.date === 'string' && trainingData.date.match(/^\d{4}-\d{2}-\d{2}/)) {
+                    dateObj = new Date(trainingData.date + 'T00:00:00');
+                } else {
+                    dateObj = new Date(trainingData.date);
+                }
+                
+                // Проверяем, что дата валидна
+                if (!isNaN(dateObj.getTime())) {
+                    const day = dateObj.getDate().toString().padStart(2, '0');
+                    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                    const year = dateObj.getFullYear();
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+                    formattedDateWithDay = `${day}.${month}.${year} (${dayOfWeek})`;
+                } else {
+                    console.error('❌ Неверный формат даты в notifyAdminNaturalSlopeTrainingBooking:', trainingData.date);
+                }
+            }
+        } catch (dateError) {
+            console.error('❌ Ошибка форматирования даты в notifyAdminNaturalSlopeTrainingBooking:', dateError, trainingData.date);
+        }
+
         const message = 
             `✅ *Новая запись на ${trainingType} тренировку Кулига Парк!*\n\n` +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
             `${participantsInfo}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || 'Не указан'}\n` +
-            `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
+            `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
             `🏔️ *Место:* Кулига Парк\n` +
             `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;

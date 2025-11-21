@@ -82,9 +82,10 @@ function updateDatePicker() {
 
     // Инициализируем flatpickr если еще не инициализирован
     if (!window.kgtDatePicker) {
-        // Используем русскую локализацию как в других файлах
-        const fp = window.flatpickr || flatpickr;
-        const ruLocale = (fp && fp.l10ns && fp.l10ns.ru) ? fp.l10ns.ru : null;
+        // Используем русскую локализацию напрямую из window.flatpickr
+        const ruLocale = window.flatpickr && window.flatpickr.l10ns && window.flatpickr.l10ns.ru 
+            ? window.flatpickr.l10ns.ru 
+            : null;
 
         const fpOptions = {
             dateFormat: 'Y-m-d',
@@ -93,7 +94,17 @@ function updateDatePicker() {
             allowInput: true,
             minDate: 'today',
             firstDayOfWeek: 1, // Понедельник - первый день недели
-            locale: ruLocale, // Русская локализация
+            locale: ruLocale || {
+                firstDayOfWeek: 1,
+                weekdays: {
+                    shorthand: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+                    longhand: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+                },
+                months: {
+                    shorthand: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'],
+                    longhand: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+                }
+            },
             onChange: function(selectedDates, dateStr) {
                 if (dateStr) {
                     loadSlotsForDate(dateStr);
@@ -119,6 +130,12 @@ function updateDatePicker() {
         };
 
         window.kgtDatePicker = flatpickr(dateInput, fpOptions);
+        
+        // Убеждаемся, что локаль и первый день недели применены
+        if (ruLocale && window.kgtDatePicker.config) {
+            window.kgtDatePicker.set('locale', ruLocale);
+            window.kgtDatePicker.set('firstDayOfWeek', 1);
+        }
     } else {
         // Обновляем список отключенных дат
         window.kgtDatePicker.set('disable', [
@@ -127,6 +144,14 @@ function updateDatePicker() {
                 return !availableDates.includes(dateStr);
             }
         ]);
+        // Убеждаемся, что локаль и первый день недели сохранены
+        const ruLocale = window.flatpickr && window.flatpickr.l10ns && window.flatpickr.l10ns.ru 
+            ? window.flatpickr.l10ns.ru 
+            : null;
+        if (ruLocale) {
+            window.kgtDatePicker.set('locale', ruLocale);
+        }
+        window.kgtDatePicker.set('firstDayOfWeek', 1);
         window.kgtDatePicker.redraw();
     }
 }
