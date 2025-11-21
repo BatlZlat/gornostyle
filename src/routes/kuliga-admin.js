@@ -1545,17 +1545,24 @@ router.delete('/training/:id', async (req, res) => {
                             
                             // Уведомление клиенту
                             if (refundInfo.client_telegram_id) {
-                                const message = 
-                                    `❌ *Отмена групповой тренировки в Кулига Парке*\n\n` +
-                                    `👥 *Участники (${refundInfo.participants_count}):* ${refundInfo.participant_name}\n` +
-                                    `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
-                                    `⏰ *Время:* ${formattedTime}\n` +
-                                    `🏔️ *Место:* Кулига Парк\n` +
-                                    `👨‍🏫 *Инструктор:* ${instructorData.full_name || 'Не указан'}\n\n` +
-                                    `💰 *Возврат:* ${refundInfo.refund.toFixed(2)} руб.\n` +
-                                    `Средства возвращены на ваш баланс.`;
+                                const { bot } = require('../bot/client-bot');
                                 
-                                await bot.sendMessage(refundInfo.client_telegram_id, message, { parse_mode: 'Markdown' });
+                                if (!bot || !bot.sendMessage) {
+                                    console.error(`❌ Бот недоступен для отправки уведомления об отмене клиенту ${refundInfo.client_name}`);
+                                } else {
+                                    const message = 
+                                        `❌ *Отмена групповой тренировки в Кулига Парке*\n\n` +
+                                        `👥 *Участники (${refundInfo.participants_count}):* ${refundInfo.participant_name}\n` +
+                                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                                        `⏰ *Время:* ${formattedTime}\n` +
+                                        `🏔️ *Место:* Кулига Парк\n` +
+                                        `👨‍🏫 *Инструктор:* ${instructorData.full_name || 'Не указан'}\n\n` +
+                                        `💰 *Возврат:* ${refundInfo.refund.toFixed(2)} руб.\n` +
+                                        `Средства возвращены на ваш баланс.`;
+                                    
+                                    await bot.sendMessage(refundInfo.client_telegram_id, message, { parse_mode: 'Markdown' });
+                                    console.log(`✅ Уведомление об отмене отправлено клиенту ${refundInfo.client_name} (ID: ${refundInfo.client_telegram_id})`);
+                                }
                             }
                         }
                     } catch (error) {
@@ -2258,33 +2265,48 @@ router.post('/booking/:bookingId/transfer', async (req, res) => {
                 if (booking.client_telegram_id) {
                     const { bot } = require('../bot/client-bot');
                     
+                    if (!bot || !bot.sendMessage) {
+                        console.error('❌ Бот недоступен для отправки уведомления о переносе');
+                        return;
+                    }
+                    
                     const oldDate = new Date(booking.date);
+                    const oldDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][oldDate.getDay()];
                     const oldFormattedDate = `${oldDate.getDate().toString().padStart(2, '0')}.${(oldDate.getMonth() + 1).toString().padStart(2, '0')}.${oldDate.getFullYear()}`;
                     const oldTime = String(booking.start_time).substring(0, 5);
                     
                     const newDate = new Date(targetTraining.date);
+                    const newDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][newDate.getDay()];
                     const newFormattedDate = `${newDate.getDate().toString().padStart(2, '0')}.${(newDate.getMonth() + 1).toString().padStart(2, '0')}.${newDate.getFullYear()}`;
                     const newTime = String(targetTraining.start_time).substring(0, 5);
                     
-                    let message = `🔄 *Перенос тренировки в Кулига Парке*\n\n`;
+                    const participantName = booking.participants_names && Array.isArray(booking.participants_names) 
+                        ? booking.participants_names.join(', ') 
+                        : booking.participants_names || 'Участник';
+                    
+                    let message = `🔄 *Перенос групповой тренировки в Кулига Парке*\n\n`;
+                    message += `👥 *Участники:* ${participantName}\n\n`;
                     message += `*Старая тренировка:*\n`;
-                    message += `📅 Дата: ${oldFormattedDate}\n`;
+                    message += `📅 Дата: ${oldFormattedDate} (${oldDayOfWeek})\n`;
                     message += `⏰ Время: ${oldTime}\n\n`;
                     message += `*Новая тренировка:*\n`;
-                    message += `📅 Дата: ${newFormattedDate}\n`;
+                    message += `📅 Дата: ${newFormattedDate} (${newDayOfWeek})\n`;
                     message += `⏰ Время: ${newTime}\n`;
                     message += `👨‍🏫 Инструктор: ${targetTraining.instructor_name}\n`;
                     message += `🏔️ Место: Кулига Парк\n\n`;
                     
                     if (priceDifference > 0) {
-                        message += `💰 Доплата: ${priceDifference.toFixed(2)} ₽\n`;
+                        message += `💰 *Доплата:* ${priceDifference.toFixed(2)} ₽\n`;
+                        message += `Средства списаны с вашего баланса.`;
                     } else if (priceDifference < 0) {
-                        message += `💰 Возврат: ${Math.abs(priceDifference).toFixed(2)} ₽\n`;
+                        message += `💰 *Возврат:* ${Math.abs(priceDifference).toFixed(2)} ₽\n`;
+                        message += `Средства возвращены на ваш баланс.`;
                     } else {
-                        message += `💰 Стоимость не изменилась\n`;
+                        message += `💰 Стоимость не изменилась`;
                     }
                     
                     await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
+                    console.log(`✅ Уведомление о переносе отправлено клиенту ${booking.client_name} (ID: ${booking.client_telegram_id})`);
                 }
             } catch (error) {
                 console.error('Ошибка при отправке уведомления о переносе бронирования Kuliga:', error);
@@ -2465,17 +2487,24 @@ router.delete('/booking/:bookingId', async (req, res) => {
                 
                 // Уведомление клиенту
                 if (booking.client_telegram_id) {
-                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                    const message = 
-                        `❌ *Отмена тренировки в Кулига Парке*\n\n` +
-                        `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
-                        `⏰ *Время:* ${formattedTime}\n` +
-                        `👤 *Участники:* ${participantName}\n` +
-                        `🏔️ *Место:* Кулига Парк\n\n` +
-                        `💰 *Возврат:* ${refundAmount.toFixed(2)} руб.\n` +
-                        `Средства возвращены на ваш баланс.`;
+                    const { bot } = require('../bot/client-bot');
                     
-                    await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
+                    if (!bot || !bot.sendMessage) {
+                        console.error('❌ Бот недоступен для отправки уведомления об отмене');
+                    } else {
+                        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                        const message = 
+                            `❌ *Отмена тренировки в Кулига Парке*\n\n` +
+                            `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                            `⏰ *Время:* ${formattedTime}\n` +
+                            `👤 *Участники:* ${participantName}\n` +
+                            `🏔️ *Место:* Кулига Парк\n\n` +
+                            `💰 *Возврат:* ${refundAmount.toFixed(2)} руб.\n` +
+                            `Средства возвращены на ваш баланс.`;
+                        
+                        await bot.sendMessage(booking.client_telegram_id, message, { parse_mode: 'Markdown' });
+                        console.log(`✅ Уведомление об отмене отправлено клиенту ${booking.client_name} (ID: ${booking.client_telegram_id})`);
+                    }
                 }
             } catch (error) {
                 console.error('Ошибка при отправке уведомлений об отмене бронирования Kuliga:', error);

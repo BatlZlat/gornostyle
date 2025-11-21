@@ -100,6 +100,9 @@ async function safeSendMessage(chatId, text, options = {}) {
     }
 }
 
+// Экспортируем бота для использования в других модулях
+module.exports = { bot, userStates, safeSendMessage };
+
 // Функция для получения JWT токена
 function getJWTToken() {
     return jwt.sign(
