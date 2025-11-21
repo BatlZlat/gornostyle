@@ -159,11 +159,119 @@ router.get('/admin', async (req, res) => {
             ]);
             results = [...groupResult.rows, ...individualResult.rows];
         } else if (slope_type === 'natural_slope') {
+            // Запросы для тренировок из training_sessions (старый формат)
             const [groupResult, naturalSlopeResult] = await Promise.all([
                 pool.query(groupQuery),
                 pool.query(naturalSlopeIndividualQuery)
             ]);
-            results = [...groupResult.rows, ...naturalSlopeResult.rows];
+            
+            // Запрос для групповых тренировок Кулиги
+            const kuligaGroupQuery = `
+                SELECT 
+                    kgt.id,
+                    kgt.date,
+                    kgt.start_time,
+                    kgt.end_time,
+                    EXTRACT(EPOCH FROM (kgt.end_time::time - kgt.start_time::time))/60 as duration,
+                    FALSE as is_individual,
+                    kgt.instructor_id as trainer_id,
+                    ki.full_name as trainer_name,
+                    NULL::INTEGER as simulator_id,
+                    NULL::TEXT as simulator_name,
+                    kgt.max_participants,
+                    kgt.current_participants,
+                    CASE kgt.level
+                        WHEN 'beginner' THEN 1
+                        WHEN 'intermediate' THEN 2
+                        WHEN 'advanced' THEN 3
+                        ELSE NULL
+                    END::INTEGER as skill_level,
+                    kgt.price_per_person * kgt.max_participants as price,
+                    NULL::TEXT as equipment_type,
+                    NULL::BOOLEAN as with_trainer,
+                    CASE kgt.sport_type
+                        WHEN 'ski' THEN 'Групповая тренировка (Горные лыжи)'
+                        WHEN 'snowboard' THEN 'Групповая тренировка (Сноуборд)'
+                        ELSE CONCAT('Групповая тренировка (', kgt.sport_type, ')')
+                    END as group_name,
+                    'natural_slope' as slope_type,
+                    'group' as winter_training_type,
+                    CASE kgt.status
+                        WHEN 'open' THEN 'scheduled'
+                        WHEN 'confirmed' THEN 'scheduled'
+                        WHEN 'cancelled' THEN 'cancelled'
+                        ELSE 'scheduled'
+                    END as status,
+                    COALESCE(
+                        STRING_AGG(
+                            DISTINCT array_to_string(kb.participants_names, ', '), 
+                            ', '
+                        ) FILTER (WHERE kb.status IN ('pending', 'confirmed') AND kb.participants_names IS NOT NULL),
+                        ''
+                    ) as participant_names
+                FROM kuliga_group_trainings kgt
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id
+                    AND kb.status IN ('pending', 'confirmed')
+                WHERE kgt.date >= CURRENT_DATE - INTERVAL '7 days'
+                    AND kgt.date <= CURRENT_DATE + INTERVAL '60 days'
+                    AND kgt.status IN ('open', 'confirmed')
+                GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
+                         kgt.max_participants, kgt.current_participants, kgt.level, kgt.price_per_person,
+                         kgt.sport_type, kgt.status, ki.full_name
+            `;
+            
+            // Запрос для индивидуальных тренировок Кулиги
+            const kuligaIndividualQuery = `
+                SELECT 
+                    kb.id,
+                    kb.date,
+                    kb.start_time,
+                    kb.end_time,
+                    EXTRACT(EPOCH FROM (kb.end_time::time - kb.start_time::time))/60 as duration,
+                    TRUE as is_individual,
+                    kb.instructor_id as trainer_id,
+                    ki.full_name as trainer_name,
+                    NULL::INTEGER as simulator_id,
+                    NULL::TEXT as simulator_name,
+                    1 as max_participants,
+                    kb.participants_count as current_participants,
+                    NULL::INTEGER as skill_level,
+                    kb.price_total as price,
+                    NULL::TEXT as equipment_type,
+                    NULL::BOOLEAN as with_trainer,
+                    NULL::TEXT as group_name,
+                    'natural_slope' as slope_type,
+                    'individual' as winter_training_type,
+                    CASE kb.status
+                        WHEN 'pending' THEN 'scheduled'
+                        WHEN 'confirmed' THEN 'scheduled'
+                        WHEN 'cancelled' THEN 'cancelled'
+                        ELSE 'scheduled'
+                    END as status,
+                    COALESCE(array_to_string(kb.participants_names, ', '), '') as participant_names
+                FROM kuliga_bookings kb
+                LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+                WHERE kb.booking_type = 'individual'
+                    AND kb.date >= CURRENT_DATE - INTERVAL '7 days'
+                    AND kb.date <= CURRENT_DATE + INTERVAL '60 days'
+                    AND kb.status IN ('pending', 'confirmed')
+            `;
+            
+            const [oldGroupResult, oldIndividualResult, kuligaGroupResult, kuligaIndividualResult] = await Promise.all([
+                pool.query(groupQuery),
+                pool.query(naturalSlopeIndividualQuery),
+                pool.query(kuligaGroupQuery),
+                pool.query(kuligaIndividualQuery)
+            ]);
+            
+            // Объединяем все результаты
+            results = [
+                ...oldGroupResult.rows, 
+                ...oldIndividualResult.rows,
+                ...kuligaGroupResult.rows,
+                ...kuligaIndividualResult.rows
+            ];
         } else {
             // Если slope_type не указан, возвращаем пустой массив
             results = [];

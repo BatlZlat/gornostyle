@@ -13,6 +13,27 @@ let currentApplicationsFilter = 'all';
 let currentApplicationsDate = '';
 let currentApplicationsSearch = '';
 
+// Текущий выбранный тип расписания (по умолчанию тренажер)
+let currentScheduleType = 'simulator';
+
+// Переключение типа расписания (определяем глобально ДО загрузки DOM)
+window.switchScheduleType = function(slopeType) {
+    currentScheduleType = slopeType;
+    
+    // Обновляем активные вкладки
+    const tabs = document.querySelectorAll('.schedule-tab');
+    tabs.forEach(tab => {
+        if (tab.dataset.slopeType === slopeType) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Перезагружаем расписание для выбранного типа
+    loadSchedule();
+};
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Инициализация админской панели...');
@@ -135,6 +156,16 @@ function initializeDatePicker() {
 
 // Инициализация обработчиков событий
 function initializeEventListeners() {
+    // Обработчики для вкладок расписания
+    const scheduleTabSimulator = document.getElementById('schedule-tab-simulator');
+    const scheduleTabNatural = document.getElementById('schedule-tab-natural');
+    if (scheduleTabSimulator) {
+        scheduleTabSimulator.addEventListener('click', () => switchScheduleType('simulator'));
+    }
+    if (scheduleTabNatural) {
+        scheduleTabNatural.addEventListener('click', () => switchScheduleType('natural_slope'));
+    }
+    
     // Обработчики для страницы тренировок
     const createTrainingBtn = document.getElementById('create-training');
     if (createTrainingBtn) {
@@ -1414,27 +1445,6 @@ function getEquipmentTypeName(equipmentType) {
         case 'snowboard': return 'Сноуборд';
         default: return equipmentType;
     }
-}
-
-// Текущий выбранный тип расписания (по умолчанию тренажер)
-let currentScheduleType = 'simulator';
-
-// Переключение типа расписания (делаем глобальной)
-window.switchScheduleType = function(slopeType) {
-    currentScheduleType = slopeType;
-    
-    // Обновляем активные вкладки
-    const tabs = document.querySelectorAll('.schedule-tab');
-    tabs.forEach(tab => {
-        if (tab.dataset.slopeType === slopeType) {
-            tab.classList.add('active');
-        } else {
-            tab.classList.remove('active');
-        }
-    });
-    
-    // Перезагружаем расписание для выбранного типа
-    loadSchedule();
 }
 
 // Загрузка расписания
