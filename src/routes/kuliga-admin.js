@@ -123,9 +123,45 @@ router.use(verifyToken);
 // ============ ИНСТРУКТОРЫ ============
 
 // Получить список инструкторов с фильтрами
+// ВАЖНО: Этот endpoint используется для общего списка инструкторов (без фильтрации по слотам)
+// Для фильтрации по дате и виду спорта используется другой endpoint ниже
 router.get('/instructors', async (req, res) => {
-    const { status = 'active', sport = 'all' } = req.query;
+    const { status = 'active', sport = 'all', date, sport_type } = req.query;
 
+    // Если переданы date и sport_type, используем логику фильтрации по слотам
+    if (date && sport_type && ['ski', 'snowboard'].includes(sport_type)) {
+        try {
+            console.log('🔍 Запрос инструкторов с фильтрацией по слотам:', { date, sport_type });
+            
+            const { rows } = await pool.query(
+                `SELECT DISTINCT i.id, i.full_name, i.sport_type, i.photo_url
+                 FROM kuliga_instructors i
+                 JOIN kuliga_schedule_slots s ON s.instructor_id = i.id
+                 WHERE s.date = $1
+                   AND s.status = 'available'
+                   AND i.is_active = TRUE
+                   AND (i.sport_type = $2 OR i.sport_type = 'both')
+                 ORDER BY i.full_name ASC`,
+                [date, sport_type]
+            );
+            
+            console.log('📊 Найденные инструкторы из БД:', rows);
+            
+            // Дополнительная фильтрация на случай если SQL не сработал правильно
+            const filteredRows = rows.filter(instructor => 
+                instructor.sport_type === sport_type || instructor.sport_type === 'both'
+            );
+            
+            console.log('✅ Отфильтрованные инструкторы:', filteredRows);
+
+            return res.json({ success: true, data: filteredRows });
+        } catch (error) {
+            console.error('Ошибка получения инструкторов:', error);
+            return res.status(500).json({ success: false, error: 'Не удалось получить список инструкторов' });
+        }
+    }
+
+    // Обычный список инструкторов без фильтрации по слотам
     try {
         let query = 'SELECT * FROM kuliga_instructors WHERE 1=1';
         const params = [];
@@ -138,7 +174,7 @@ router.get('/instructors', async (req, res) => {
 
         if (sport !== 'all') {
             params.push(sport);
-            query += ` AND sport_type = $${params.length}`;
+            query += ` AND (sport_type = $${params.length} OR sport_type = 'both')`;
         }
 
         query += ' ORDER BY full_name ASC';
@@ -1668,47 +1704,7 @@ router.get('/available-dates', async (req, res) => {
     }
 });
 
-/**
- * GET /api/kuliga/admin/instructors
- * Получение инструкторов, у которых есть расписание на указанную дату для указанного вида спорта
- */
-router.get('/instructors', async (req, res) => {
-    const { date, sport_type } = req.query;
-
-    if (!date) {
-        return res.status(400).json({ success: false, error: 'Укажите date' });
-    }
-
-    if (!sport_type || !['ski', 'snowboard'].includes(sport_type)) {
-        return res.status(400).json({ success: false, error: 'Укажите sport_type (ski или snowboard)' });
-    }
-
-    try {
-        // Получаем инструкторов, у которых есть хотя бы один свободный слот на указанную дату
-        // Фильтруем строго по виду спорта: инструктор должен иметь sport_type = выбранный вид спорта ИЛИ 'both'
-        const { rows } = await pool.query(
-            `SELECT DISTINCT i.id, i.full_name, i.sport_type, i.photo_url
-             FROM kuliga_instructors i
-             JOIN kuliga_schedule_slots s ON s.instructor_id = i.id
-             WHERE s.date = $1
-               AND s.status = 'available'
-               AND i.is_active = TRUE
-               AND (i.sport_type = $2 OR i.sport_type = 'both')
-             ORDER BY i.full_name ASC`,
-            [date, sport_type]
-        );
-        
-        // Дополнительная фильтрация на случай если SQL не сработал правильно
-        const filteredRows = rows.filter(instructor => 
-            instructor.sport_type === sport_type || instructor.sport_type === 'both'
-        );
-
-        res.json({ success: true, data: filteredRows });
-    } catch (error) {
-        console.error('Ошибка получения инструкторов:', error);
-        res.status(500).json({ success: false, error: 'Не удалось получить список инструкторов' });
-    }
-});
+// Удалено: этот endpoint был дублирующимся, логика перенесена в основной /instructors выше
 
 /**
  * GET /api/kuliga/admin/available-slots

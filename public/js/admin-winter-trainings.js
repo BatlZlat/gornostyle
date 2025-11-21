@@ -1072,6 +1072,9 @@ function showKuligaTrainingEditModal(training, type, id) {
                 // Получаем дату из input поля или используем текущую дату тренировки
                 const dateInput = modal.querySelector('input[name="date"]');
                 const trainingDate = dateInput ? dateInput.value : (training.date ? new Date(training.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+                
+                console.log('🔍 Загрузка инструкторов:', { date: trainingDate, sport_type: sportType });
+                
                 const response = await fetch(`/api/kuliga/admin/instructors?date=${trainingDate}&sport_type=${sportType}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -1080,20 +1083,31 @@ function showKuligaTrainingEditModal(training, type, id) {
                 
                 if (response.ok) {
                     const result = await response.json();
+                    console.log('📊 Результат загрузки инструкторов:', result);
+                    
                     if (result.success && result.data && result.data.length > 0) {
+                        // Дополнительная клиентская фильтрация на всякий случай
+                        const filteredInstructors = result.data.filter(instructor => 
+                            instructor.sport_type === sportType || instructor.sport_type === 'both'
+                        );
+                        
+                        console.log('✅ Отфильтрованные инструкторы:', filteredInstructors);
+                        
                         instructorSelect.innerHTML = '<option value="">Выберите инструктора</option>';
-                        result.data.forEach(instructor => {
+                        filteredInstructors.forEach(instructor => {
                             const selected = instructor.id == selectedInstructorId ? 'selected' : '';
-                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name}</option>`;
+                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name} (${instructor.sport_type === 'ski' ? 'Лыжи' : instructor.sport_type === 'snowboard' ? 'Сноуборд' : 'Оба'})</option>`;
                         });
                     } else {
                         instructorSelect.innerHTML = '<option value="">Нет доступных инструкторов</option>';
                     }
                 } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('❌ Ошибка загрузки инструкторов:', errorData);
                     instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
                 }
             } catch (error) {
-                console.error('Ошибка загрузки инструкторов:', error);
+                console.error('❌ Ошибка загрузки инструкторов:', error);
                 instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
             }
         };
@@ -1105,7 +1119,17 @@ function showKuligaTrainingEditModal(training, type, id) {
         if (sportTypeSelect) {
             sportTypeSelect.addEventListener('change', (e) => {
                 currentSportType = e.target.value;
-                loadInstructors(currentSportType);
+                // Сбрасываем выбранного инструктора при смене вида спорта
+                loadInstructors(currentSportType, null);
+            });
+        }
+        
+        // Обновляем список инструкторов при изменении даты (на случай, если у инструктора нет слотов на новую дату)
+        const dateInput = modal.querySelector('input[name="date"]');
+        if (dateInput) {
+            dateInput.addEventListener('change', () => {
+                // Перезагружаем список инструкторов для новой даты
+                loadInstructors(currentSportType, instructorSelect.value || null);
             });
         }
     }
