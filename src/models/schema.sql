@@ -1415,7 +1415,7 @@ CREATE INDEX IF NOT EXISTS idx_natural_slope_subscriptions_expires ON natural_sl
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_subscription ON natural_slope_subscription_usage(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_natural_slope_subscription_usage_training ON natural_slope_subscription_usage(training_session_id);
 CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_subscription_usage(session_participant_id); -- МИГРАЦИЯ 023
-CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 
 
 -- ============================================================================
 -- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027, обновлено в МИГРАЦИИ 033)
