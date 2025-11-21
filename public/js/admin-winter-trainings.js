@@ -46,6 +46,75 @@ function initWinterTrainingsPage() {
         statusFilter.addEventListener('change', loadWinterTrainings);
     }
     
+    // Делегирование событий для кнопок (устанавливается один раз при инициализации)
+    // Используем делегирование на уровне документа, чтобы оно работало всегда
+    if (!window.winterTrainingsEventsAttached) {
+        console.log('🔧 Устанавливаем обработчики событий для зимних тренировок...');
+        document.addEventListener('click', function(e) {
+            console.log('🔍 Обработчик клика сработал:', {
+                target: e.target,
+                targetClass: e.target.className,
+                targetTag: e.target.tagName,
+                closestEdit: e.target.closest('.edit-winter-btn'),
+                closestDelete: e.target.closest('.delete-winter-btn')
+            });
+            
+            // Обработка кнопки "Редактировать"
+            const editBtn = e.target.closest('.edit-winter-btn');
+            if (editBtn) {
+                console.log('✅ Кнопка "Редактировать" найдена:', {
+                    element: editBtn,
+                    dataset: editBtn.dataset,
+                    className: editBtn.className
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                const trainingId = parseInt(editBtn.dataset.trainingId);
+                const trainingSource = editBtn.dataset.trainingSource || '';
+                const kuligaType = editBtn.dataset.kuligaType || '';
+                console.log('🚀 Вызываем editWinterTraining:', { trainingId, trainingSource, kuligaType });
+                
+                if (typeof editWinterTraining === 'function') {
+                    editWinterTraining(trainingId, trainingSource, kuligaType);
+                } else {
+                    console.error('❌ editWinterTraining не является функцией:', typeof editWinterTraining);
+                    alert('Ошибка: функция editWinterTraining не найдена');
+                }
+                return;
+            }
+            
+            // Обработка кнопки "Удалить"
+            const deleteBtn = e.target.closest('.delete-winter-btn');
+            if (deleteBtn) {
+                console.log('✅ Кнопка "Удалить" найдена:', {
+                    element: deleteBtn,
+                    dataset: deleteBtn.dataset,
+                    className: deleteBtn.className
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                const trainingId = parseInt(deleteBtn.dataset.trainingId);
+                const trainingSource = deleteBtn.dataset.trainingSource || '';
+                const kuligaType = deleteBtn.dataset.kuligaType || '';
+                console.log('🚀 Вызываем deleteWinterTraining:', { trainingId, trainingSource, kuligaType });
+                
+                if (typeof deleteWinterTraining === 'function') {
+                    deleteWinterTraining(trainingId, trainingSource, kuligaType);
+                } else {
+                    console.error('❌ deleteWinterTraining не является функцией:', typeof deleteWinterTraining);
+                    alert('Ошибка: функция deleteWinterTraining не найдена');
+                }
+                return;
+            }
+            
+            console.log('ℹ️ Клик не на кнопках редактирования/удаления');
+        }, true); // Используем capture phase для более раннего перехвата
+        window.winterTrainingsEventsAttached = true;
+        console.log('✅ Обработчики событий для зимних тренировок установлены');
+    } else {
+        console.log('⚠️ Обработчики событий для зимних тренировок уже установлены');
+    }
+    
     loadWinterTrainings();
 }
 
@@ -185,6 +254,34 @@ function displayWinterTrainings(trainings) {
     });
     
     container.innerHTML = html;
+    
+    // Логируем количество созданных кнопок после рендеринга
+    setTimeout(() => {
+        const editButtons = container.querySelectorAll('.edit-winter-btn');
+        const deleteButtons = container.querySelectorAll('.delete-winter-btn');
+        console.log('📊 Рендеринг завершен:', {
+            editButtons: editButtons.length,
+            deleteButtons: deleteButtons.length,
+            totalRows: trainings.length,
+            containerExists: !!container
+        });
+        
+        // Проверяем, что кнопки имеют правильные data-атрибуты
+        if (editButtons.length > 0) {
+            console.log('🔍 Первая кнопка "Редактировать":', {
+                element: editButtons[0],
+                dataset: editButtons[0].dataset,
+                className: editButtons[0].className
+            });
+        }
+        if (deleteButtons.length > 0) {
+            console.log('🔍 Первая кнопка "Удалить":', {
+                element: deleteButtons[0],
+                dataset: deleteButtons[0].dataset,
+                className: deleteButtons[0].className
+            });
+        }
+    }, 100);
 }
 
 // Отрисовать строку тренировки
@@ -289,6 +386,32 @@ function renderWinterTrainingRow(training) {
     // Уровень подготовки
     const skillLevel = training.skill_level || '—';
     
+    // Логируем информацию о тренировке для отладки
+    const isKuliga = training.training_source === 'kuliga';
+    console.log('🎨 Рендерим строку тренировки:', {
+        id: training.id,
+        training_source: training.training_source,
+        isKuliga: isKuliga,
+        type: training.winter_training_type || training.is_individual ? 'individual' : 'group'
+    });
+    
+    // На странице "Тренировки на естественном склоне (ЗИМА)" 
+    // разрешаем редактирование и удаление для ВСЕХ тренировок
+    // В функциях editWinterTraining и deleteWinterTraining будем определять тип и использовать правильный API
+    const editButton = `<button class="btn-secondary edit-winter-btn" 
+                 data-training-id="${training.id}" 
+                 data-training-source="${training.training_source || ''}"
+                 data-kuliga-type="${training.kuliga_type || ''}">
+            Редактировать
+        </button>`;
+    
+    const deleteButton = `<button class="btn-danger delete-winter-btn" 
+                 data-training-id="${training.id}" 
+                 data-training-source="${training.training_source || ''}"
+                 data-kuliga-type="${training.kuliga_type || ''}">
+            Удалить
+        </button>`;
+    
     return `
         <tr class="training-row">
             <td>${startTime} - ${endTime}</td>
@@ -303,18 +426,8 @@ function renderWinterTrainingRow(training) {
                 <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id}, '${training.training_source || ''}', '${training.kuliga_type || ''}')">
                     Подробнее
                 </button>
-                ${training.training_source === 'kuliga' ? 
-                    '<button class="btn-secondary" disabled title="Редактирование тренировок Кулиги пока недоступно">Редактировать</button>' :
-                    `<button class="btn-secondary" onclick="editWinterTraining(${training.id}, '${training.training_source || ''}')">
-                        Редактировать
-                    </button>`
-                }
-                ${training.training_source === 'kuliga' ? 
-                    '<button class="btn-danger" disabled title="Удаление тренировок Кулиги пока недоступно">Удалить</button>' :
-                    `<button class="btn-danger" onclick="deleteWinterTraining(${training.id})">
-                        Удалить
-                    </button>`
-                }
+                ${editButton}
+                ${deleteButton}
             </td>
         </tr>
     `;
@@ -509,17 +622,39 @@ async function viewWinterTrainingDetails(id, trainingSource, kuligaType) {
 }
 
 // Редактирование зимней тренировки
-async function editWinterTraining(id, trainingSource) {
+async function editWinterTraining(id, trainingSource, kuligaType) {
+    console.log('📝 editWinterTraining вызвана:', { id, trainingSource, kuligaType, typeofId: typeof id });
     try {
-        // Тренировки Кулиги пока не редактируются через эту функцию
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        // Для тренировок Кулиги используем API Кулиги
         if (trainingSource === 'kuliga') {
-            alert('Редактирование тренировок Кулиги пока недоступно. Используйте раздел "Служба инструкторов Кулига" для управления тренировками.');
+            console.log('🔍 Тренировка Кулиги, используем API Кулиги');
+            const kuligaResponse = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'individual'}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!kuligaResponse.ok) {
+                throw new Error('Не удалось загрузить данные тренировки Кулиги');
+            }
+            
+            const kuligaResult = await kuligaResponse.json();
+            if (!kuligaResult.success) {
+                throw new Error(kuligaResult.error || 'Ошибка получения данных');
+            }
+            
+            const training = kuligaResult.data;
+            console.log('📊 Данные тренировки Кулиги загружены:', training);
+            
+            // Показываем сообщение, что редактирование через другой интерфейс
+            alert('Редактирование тренировок Кулиги выполняется через раздел "Служба инструкторов Кулига".\n\nВы можете использовать кнопку "Подробнее" для просмотра деталей.');
             return;
         }
         
-        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-        
-        // Загружаем данные тренировки
+        // Для обычных тренировок используем стандартный API
+        console.log('🔍 Обычная тренировка, используем API winter-trainings');
         const trainingResponse = await fetch(`/api/winter-trainings/${id}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -776,7 +911,23 @@ async function editWinterTraining(id, trainingSource) {
 }
 
 // Удаление зимней тренировки
-async function deleteWinterTraining(id) {
+async function deleteWinterTraining(id, trainingSource, kuligaType) {
+    console.log('🗑️ deleteWinterTraining вызвана:', { id, trainingSource, kuligaType, typeofId: typeof id });
+    
+    // Для тренировок Кулиги
+    if (trainingSource === 'kuliga') {
+        if (!confirm('Вы уверены, что хотите удалить эту тренировку Кулиги?\n\nВнимание: это действие нельзя отменить!')) {
+            return;
+        }
+        
+        console.log('🔍 Удаление тренировки Кулиги через API Кулиги');
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        // TODO: Добавить API endpoint для удаления тренировок Кулиги
+        alert('Удаление тренировок Кулиги пока выполняется через раздел "Служба инструкторов Кулига".');
+        return;
+    }
+    
     if (!confirm('Вы уверены, что хотите удалить эту тренировку?')) {
         return;
     }
