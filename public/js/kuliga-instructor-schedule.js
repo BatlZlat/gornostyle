@@ -866,14 +866,8 @@ function calculatePrice() {
     priceInfo.innerHTML = `
         <div style="margin-top: 5px;">
             <div><strong>Цена за участника:</strong> ${pricePerPerson.toFixed(2)} ₽</div>
-            <div><strong>Общая стоимость (при полном заполнении):</strong> ${totalPrice.toFixed(2)} ₽</div>
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
-                <div><strong>Ваш заработок за участника:</strong> ${instructorPerPerson.toFixed(2)} ₽</div>
-                <div><strong>Ваш общий заработок:</strong> ${instructorEarnings.toFixed(2)} ₽</div>
-                <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                    (с учетом вычета ${adminPercentage}% администратору)
-                </div>
-            </div>
+            <div><strong>Ваш заработок за участника:</strong> ${instructorPerPerson.toFixed(2)} ₽</div>
+            <div><strong>Ваш общий заработок при полном заполнении:</strong> ${instructorEarnings.toFixed(2)} ₽</div>
         </div>
     `;
 }
@@ -1066,10 +1060,10 @@ async function loadSchedule() {
     if (!token) return;
 
     try {
-        // Загружаем слоты и групповые тренировки
+        // Загружаем слоты и групповые тренировки на 2 недели вперед
         const today = new Date().toISOString().split('T')[0];
         const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 60);
+        endDate.setDate(endDate.getDate() + 14);
         const endDateStr = endDate.toISOString().split('T')[0];
 
         const [slotsResponse, trainingsResponse] = await Promise.all([
@@ -1092,7 +1086,14 @@ async function loadSchedule() {
         const scheduleByDate = {};
         
         slots.forEach(slot => {
-            const dateKey = slot.date;
+            // Нормализуем дату (может быть в формате YYYY-MM-DD или объект Date)
+            let dateKey = slot.date;
+            if (typeof dateKey === 'object' && dateKey !== null) {
+                dateKey = dateKey.toISOString().split('T')[0];
+            } else if (typeof dateKey === 'string' && dateKey.includes('T')) {
+                dateKey = dateKey.split('T')[0];
+            }
+            
             if (!scheduleByDate[dateKey]) {
                 scheduleByDate[dateKey] = { slots: [], trainings: [] };
             }
@@ -1100,7 +1101,14 @@ async function loadSchedule() {
         });
 
         trainings.forEach(training => {
-            const dateKey = training.date;
+            // Нормализуем дату
+            let dateKey = training.date;
+            if (typeof dateKey === 'object' && dateKey !== null) {
+                dateKey = dateKey.toISOString().split('T')[0];
+            } else if (typeof dateKey === 'string' && dateKey.includes('T')) {
+                dateKey = dateKey.split('T')[0];
+            }
+            
             if (!scheduleByDate[dateKey]) {
                 scheduleByDate[dateKey] = { slots: [], trainings: [] };
             }
@@ -1168,6 +1176,8 @@ function displaySchedule(scheduleByDate) {
                                  <button class="btn-secondary" onclick="toggleSlotStatus(${item.id}, 'blocked')">Заблокировать</button>` : ''}
                             ${item.status === 'blocked' ? 
                                 `<button class="btn-primary" onclick="toggleSlotStatus(${item.id}, 'available')">Разблокировать</button>` : ''}
+                            ${item.status === 'booked' ? 
+                                `<button class="btn-primary" onclick="showSlotDetails(${item.id})">Подробнее</button>` : ''}
                             ${item.status === 'available' || item.status === 'blocked' ? 
                                 `<button class="btn-danger" onclick="deleteSlot(${item.id})">Удалить</button>` : ''}
                         </div>
@@ -1189,6 +1199,7 @@ function displaySchedule(scheduleByDate) {
                             </div>
                         </div>
                         <div class="slot-actions">
+                            <button class="btn-primary" onclick="showGroupTrainingDetails(${item.id})">Подробнее</button>
                             <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️</button>
                             <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️</button>
                         </div>
@@ -1470,6 +1481,137 @@ async function deleteGroupTraining(trainingId) {
     }
 }
 
+// Показать детали индивидуального бронирования (слота)
+async function showSlotDetails(slotId) {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        // Получаем информацию о бронировании для этого слота
+        const response = await fetch(`/api/kuliga/instructor/bookings/slot/${slotId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить информацию о бронировании');
+        }
+
+        const booking = await response.json();
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+        
+        const dateObj = new Date(booking.date + 'T00:00:00');
+        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <h2 style="margin-top: 0;">Индивидуальная тренировка</h2>
+                <div style="margin-bottom: 20px;">
+                    <div style="margin-bottom: 10px;"><strong>Дата:</strong> ${formattedDate} (${dayOfWeek})</div>
+                    <div style="margin-bottom: 10px;"><strong>Время:</strong> ${String(booking.start_time).substring(0, 5)} - ${String(booking.end_time).substring(0, 5)}</div>
+                    <div style="margin-bottom: 10px;"><strong>Клиент:</strong> ${booking.client_name || 'Не указан'}</div>
+                    <div style="margin-bottom: 10px;"><strong>Телефон:</strong> ${booking.client_phone || 'Не указан'}</div>
+                    <div style="margin-bottom: 10px;"><strong>Вид спорта:</strong> ${booking.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
+                    <div style="margin-bottom: 10px;"><strong>Стоимость:</strong> ${parseFloat(booking.price_total || 0).toFixed(2)} ₽</div>
+                    <div style="margin-bottom: 10px;"><strong>Статус:</strong> ${booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status}</div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки информации о слоте:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
+// Показать детали групповой тренировки
+async function showGroupTrainingDetails(trainingId) {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        // Получаем информацию о групповой тренировке
+        const [trainingResponse, bookingsResponse] = await Promise.all([
+            fetch(`/api/kuliga/instructor/group-trainings/${trainingId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/kuliga/instructor/bookings/group/${trainingId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+        ]);
+
+        if (!trainingResponse.ok) {
+            throw new Error('Не удалось загрузить информацию о тренировке');
+        }
+
+        const training = await trainingResponse.json();
+        const bookings = bookingsResponse.ok ? await bookingsResponse.json() : [];
+        
+        const dateObj = new Date(training.date + 'T00:00:00');
+        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+        
+        const participantsList = bookings.length > 0 
+            ? bookings.map((b, idx) => `
+                <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
+                    <div><strong>${idx + 1}. ${b.client_name || 'Клиент'}</strong></div>
+                    <div style="font-size: 0.9em; color: #666;">
+                        Телефон: ${b.client_phone || 'Не указан'} | 
+                        Участников: ${b.participants_count} | 
+                        Стоимость: ${parseFloat(b.price_total || 0).toFixed(2)} ₽
+                    </div>
+                </div>
+            `).join('')
+            : '<div style="color: #666;">Пока нет записавшихся</div>';
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <h2 style="margin-top: 0;">Групповая тренировка</h2>
+                <div style="margin-bottom: 20px;">
+                    <div style="margin-bottom: 10px;"><strong>Дата:</strong> ${formattedDate} (${dayOfWeek})</div>
+                    <div style="margin-bottom: 10px;"><strong>Время:</strong> ${String(training.start_time).substring(0, 5)} - ${String(training.end_time).substring(0, 5)}</div>
+                    <div style="margin-bottom: 10px;"><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
+                    <div style="margin-bottom: 10px;"><strong>Уровень:</strong> ${training.level}</div>
+                    <div style="margin-bottom: 10px;"><strong>Участников:</strong> ${training.current_participants || 0}/${training.max_participants}</div>
+                    <div style="margin-bottom: 10px;"><strong>Цена за участника:</strong> ${parseFloat(training.price_per_person || 0).toFixed(2)} ₽</div>
+                    ${training.description ? `<div style="margin-bottom: 10px;"><strong>Описание:</strong> ${training.description}</div>` : ''}
+                </div>
+                <h3>Записавшиеся:</h3>
+                <div style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;">
+                    ${participantsList}
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки информации о групповой тренировке:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
 // Глобальные функции (вызываются из inline onclick)
 window.toggleSlotStatus = toggleSlotStatus;
 window.deleteSlot = deleteSlot;
@@ -1477,4 +1619,6 @@ window.openGroupTrainingModal = openGroupTrainingModal;
 window.closeGroupTrainingModal = closeGroupTrainingModal;
 window.editGroupTraining = editGroupTraining;
 window.deleteGroupTraining = deleteGroupTraining;
+window.showSlotDetails = showSlotDetails;
+window.showGroupTrainingDetails = showGroupTrainingDetails;
 

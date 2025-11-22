@@ -1008,6 +1008,38 @@ async function notifyNewClient({ full_name, birth_date, phone, skill_level, chil
 }
 
 // Функция для отправки уведомления администратору об отмене групповой тренировки
+// Функция для уведомления администратора об удалении групповой тренировки инструктором
+async function notifyAdminGroupTrainingDeletedByInstructor(data) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const moment = require('moment-timezone');
+        const dateObj = moment(data.training.date).tz('Asia/Yekaterinburg');
+        const formattedDate = dateObj.format('DD.MM.YYYY');
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.day()];
+
+        const message =
+            `❌ *Инструктор удалил групповую тренировку*\n\n` +
+            `👨‍🏫 *Инструктор:* ${data.instructorName}\n` +
+            `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+            `⏰ *Время:* ${data.training.start_time.substring(0, 5)} - ${data.training.end_time.substring(0, 5)}\n` +
+            `⛷️ *Вид спорта:* ${data.training.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n` +
+            `📊 *Уровень:* ${data.training.level}\n` +
+            `👥 *Отменено бронирований:* ${data.bookingsCount}\n` +
+            `💰 *Средства возвращены клиентам*`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об удалении групповой тренировки:', error);
+    }
+}
+
 async function notifyAdminGroupTrainingCancellationByAdmin(trainingData) {
     try {
         const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
@@ -1604,6 +1636,7 @@ module.exports = {
     notifyNewGroupTrainingParticipant,
     notifyAdminGroupTrainingCancellation,
     notifyAdminGroupTrainingCancellationByAdmin,
+    notifyAdminGroupTrainingDeletedByInstructor,
     notifyAdminIndividualTrainingCancellation,
     notifyAdminParticipantRemoved,
     notifyAdminParticipantTransferred,

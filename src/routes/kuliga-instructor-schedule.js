@@ -665,6 +665,84 @@ router.post('/slots/delete-bulk', async (req, res) => {
 });
 
 /**
+ * GET /api/kuliga/instructor/bookings/slot/:slotId
+ * Получение индивидуального бронирования по слоту
+ */
+router.get('/bookings/slot/:slotId', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { slotId } = req.params;
+
+    try {
+        const result = await pool.query(
+            `SELECT 
+                kb.*,
+                c.full_name as client_name,
+                c.phone as client_phone,
+                kss.date,
+                kss.start_time,
+                kss.end_time
+             FROM kuliga_bookings kb
+             JOIN clients c ON kb.client_id = c.id
+             JOIN kuliga_schedule_slots kss ON kb.slot_id = kss.id
+             WHERE kb.slot_id = $1 
+               AND kb.instructor_id = $2 
+               AND kb.status IN ('pending', 'confirmed')
+             ORDER BY kb.created_at DESC
+             LIMIT 1`,
+            [slotId, instructorId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Бронирование не найдено' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения бронирования по слоту:', error);
+        res.status(500).json({ error: 'Не удалось получить информацию о бронировании' });
+    }
+});
+
+/**
+ * GET /api/kuliga/instructor/bookings/group/:trainingId
+ * Получение списка бронирований групповой тренировки
+ */
+router.get('/bookings/group/:trainingId', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { trainingId } = req.params;
+
+    try {
+        // Проверяем, что тренировка принадлежит инструктору
+        const trainingCheck = await pool.query(
+            'SELECT id FROM kuliga_group_trainings WHERE id = $1 AND instructor_id = $2',
+            [trainingId, instructorId]
+        );
+
+        if (trainingCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+        }
+
+        const result = await pool.query(
+            `SELECT 
+                kb.*,
+                c.full_name as client_name,
+                c.phone as client_phone
+             FROM kuliga_bookings kb
+             JOIN clients c ON kb.client_id = c.id
+             WHERE kb.group_training_id = $1 
+               AND kb.status IN ('pending', 'confirmed')
+             ORDER BY kb.created_at ASC`,
+            [trainingId]
+        );
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения бронирований групповой тренировки:', error);
+        res.status(500).json({ error: 'Не удалось получить список бронирований' });
+    }
+});
+
+/**
  * GET /api/kuliga/instructor/group-trainings
  * Получение списка групповых тренировок инструктора
  */
@@ -853,8 +931,7 @@ router.delete('/group-trainings/:id', async (req, res) => {
             const priceTotal = parseFloat(booking.price_total || 0);
             if (priceTotal > 0) {
                 await client.query(
-                    `UPDATE wallets SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP 
-                     WHERE client_id = $2`,
+                    `UPDATE wallets SET balance = balance + $1 WHERE client_id = $2`,
                     [priceTotal, booking.client_id]
                 );
 
@@ -865,8 +942,6 @@ router.delete('/group-trainings/:id', async (req, res) => {
                     [priceTotal, `Возврат за отмену групповой тренировки ${training.date}`, booking.client_id]
                 );
             }
-
-            // TODO: Отправить уведомление клиенту об отмене
         }
 
         // Обновляем статус тренировки на cancelled
@@ -890,6 +965,50 @@ router.delete('/group-trainings/:id', async (req, res) => {
         await client.query('COMMIT');
 
         console.log(`✅ Инструктор ${instructorId} удалил групповую тренировку ${id}, отменено бронирований: ${bookingsResult.rows.length}`);
+
+        // Получаем информацию об инструкторе для уведомлений
+        const instructorInfo = await pool.query(
+            'SELECT full_name FROM kuliga_instructors WHERE id = $1',
+            [instructorId]
+        );
+        const instructorName = instructorInfo.rows[0]?.full_name || 'Инструктор';
+
+        // Отправляем уведомления клиентам
+        const { bot } = require('../bot/client-bot');
+        for (const booking of bookingsResult.rows) {
+            if (booking.telegram_id) {
+                try {
+                    const moment = require('moment-timezone');
+                    const dateObj = moment(training.date).tz('Asia/Yekaterinburg');
+                    const formattedDate = dateObj.format('DD.MM.YYYY');
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.day()];
+                    
+                    await bot.sendMessage(
+                        booking.telegram_id,
+                        `❌ Групповая тренировка отменена\n\n` +
+                        `📅 Дата: ${formattedDate} (${dayOfWeek})\n` +
+                        `⏰ Время: ${training.start_time.substring(0, 5)}\n` +
+                        `👨‍🏫 Инструктор: ${instructorName}\n` +
+                        `💰 Возврат: ${parseFloat(booking.price_total).toFixed(2)} ₽\n\n` +
+                        `Средства возвращены на ваш баланс.`
+                    );
+                } catch (error) {
+                    console.error(`Ошибка отправки уведомления клиенту ${booking.telegram_id}:`, error);
+                }
+            }
+        }
+
+        // Отправляем уведомление администратору
+        const { notifyAdminGroupTrainingDeletedByInstructor } = require('../bot/admin-notify');
+        try {
+            await notifyAdminGroupTrainingDeletedByInstructor({
+                training,
+                instructorName,
+                bookingsCount: bookingsResult.rows.length
+            });
+        } catch (error) {
+            console.error('Ошибка отправки уведомления администратору:', error);
+        }
 
         res.json({ success: true, message: 'Групповая тренировка удалена', refunded: bookingsResult.rows.length });
     } catch (error) {
