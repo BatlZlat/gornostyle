@@ -1,5 +1,9 @@
 // Управление расписанием инструктора Кулиги
 
+// Глобальные переменные
+let instructorData = null; // Полные данные инструктора (sport_type, admin_percentage)
+let pricesData = null; // Данные прайса
+
 // Функции для показа уведомлений (аналогично showSuccess из admin.js)
 function showError(message) {
     const errorDiv = document.createElement('div');
@@ -520,8 +524,9 @@ async function toggleSlotStatus(slotId, newStatus) {
             throw new Error(error.error || 'Ошибка изменения статуса');
         }
 
-        // Перезагружаем слоты
+        // Перезагружаем слоты, расписание и статистику
         await loadSlotsForDay();
+        await loadSchedule();
         await loadStats();
     } catch (error) {
         console.error('Ошибка изменения статуса слота:', error);
@@ -551,8 +556,9 @@ async function deleteSlot(slotId) {
             throw new Error(error.error || 'Ошибка удаления слота');
         }
 
-        // Перезагружаем слоты
+        // Перезагружаем слоты, расписание и статистику
         await loadSlotsForDay();
+        await loadSchedule();
         await loadStats();
     } catch (error) {
         console.error('Ошибка удаления слота:', error);
@@ -721,22 +727,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('day-date').value = today;
     document.getElementById('bulk-from').value = today;
+    document.getElementById('delete-from').value = today;
     
-    // Устанавливаем дату +30 дней для массового создания
+    // Устанавливаем дату +30 дней для массового создания и удаления
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
     document.getElementById('bulk-to').value = endDate.toISOString().split('T')[0];
+    document.getElementById('delete-to').value = endDate.toISOString().split('T')[0];
 
     // Обработчики событий
     document.getElementById('create-slots-btn').addEventListener('click', createSlotsForDay);
     document.getElementById('load-slots-btn').addEventListener('click', loadSlotsForDay);
     document.getElementById('create-bulk-btn').addEventListener('click', createBulkSlots);
+    document.getElementById('delete-bulk-btn').addEventListener('click', deleteBulkSlots);
     document.getElementById('logout-btn').addEventListener('click', logout);
+    
+    // Загружаем полную информацию об инструкторе и прайс
+    await loadFullInstructorInfo();
+    await loadPrices();
+    
+    // Загружаем расписание (слоты + групповые тренировки)
+    await loadSchedule();
     
     // Обработчик формы создания групповой тренировки
     const groupTrainingForm = document.getElementById('group-training-form');
     if (groupTrainingForm) {
         groupTrainingForm.addEventListener('submit', createGroupTraining);
+        
+        // Обработчики изменения количества участников для расчета цены
+        const maxParticipantsInput = document.getElementById('gt-max-participants');
+        const minParticipantsInput = document.getElementById('gt-min-participants');
+        
+        if (maxParticipantsInput) {
+            maxParticipantsInput.addEventListener('input', calculatePrice);
+        }
+        if (minParticipantsInput) {
+            minParticipantsInput.addEventListener('input', () => {
+                const min = parseInt(minParticipantsInput.value) || 0;
+                const max = parseInt(maxParticipantsInput?.value) || 0;
+                if (min > max && max > 0) {
+                    maxParticipantsInput.value = min;
+                }
+                calculatePrice();
+            });
+        }
     }
     
     // Закрытие модального окна по клику вне его
@@ -757,8 +791,34 @@ function openGroupTrainingModal(slotId) {
     slotIdInput.value = slotId;
     
     // Очищаем форму
-    document.getElementById('group-training-form').reset();
+    const form = document.getElementById('group-training-form');
+    form.reset();
     slotIdInput.value = slotId;
+    
+    // Заполняем вид спорта в зависимости от возможностей инструктора
+    const sportTypeSelect = document.getElementById('gt-sport-type');
+    sportTypeSelect.innerHTML = '<option value="">Выберите вид спорта</option>';
+    
+    if (instructorData) {
+        if (instructorData.sport_type === 'both') {
+            sportTypeSelect.innerHTML += '<option value="ski">⛷️ Горные лыжи</option>';
+            sportTypeSelect.innerHTML += '<option value="snowboard">🏂 Сноуборд</option>';
+        } else if (instructorData.sport_type === 'ski') {
+            sportTypeSelect.innerHTML += '<option value="ski">⛷️ Горные лыжи</option>';
+        } else if (instructorData.sport_type === 'snowboard') {
+            sportTypeSelect.innerHTML += '<option value="snowboard">🏂 Сноуборд</option>';
+        }
+    }
+    
+    // Заполняем уровни от 1 до 10
+    const levelSelect = document.getElementById('gt-level');
+    levelSelect.innerHTML = '<option value="">Выберите уровень</option>';
+    for (let i = 1; i <= 10; i++) {
+        levelSelect.innerHTML += `<option value="${i}">${i} уровень</option>`;
+    }
+    
+    // Сбрасываем расчет цены
+    document.getElementById('price-info').innerHTML = 'Выберите максимум участников для расчета';
     
     modal.style.display = 'flex';
 }
@@ -767,6 +827,55 @@ function openGroupTrainingModal(slotId) {
 function closeGroupTrainingModal() {
     const modal = document.getElementById('group-training-modal');
     modal.style.display = 'none';
+}
+
+// Расчет цены групповой тренировки
+function calculatePrice() {
+    const maxParticipants = parseInt(document.getElementById('gt-max-participants')?.value) || 0;
+    const priceInfo = document.getElementById('price-info');
+    
+    if (!priceInfo) return;
+    
+    if (!maxParticipants || !pricesData || pricesData.length === 0) {
+        priceInfo.innerHTML = 'Выберите максимум участников для расчета';
+        return;
+    }
+    
+    // Ищем цену в прайсе для групповых тренировок
+    // Для групповых тренировок инструктора используем type='group' с participants=maxParticipants
+    // В прайсе type='group' означает общую цену группы, делим на количество для получения цены за человека
+    const groupPrice = pricesData.find(p => 
+        p.type === 'group' && 
+        parseInt(p.participants) === maxParticipants &&
+        parseInt(p.duration) === 60
+    );
+    
+    if (!groupPrice) {
+        priceInfo.innerHTML = `⚠️ Цена для ${maxParticipants} участников не найдена в прайсе`;
+        return;
+    }
+    
+    // Для типа 'group' цена - это общая стоимость группы
+    const totalPrice = parseFloat(groupPrice.price);
+    const pricePerPerson = totalPrice / maxParticipants;
+    
+    const adminPercentage = instructorData?.admin_percentage || 20;
+    const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+    const instructorPerPerson = instructorEarnings / maxParticipants;
+    
+    priceInfo.innerHTML = `
+        <div style="margin-top: 5px;">
+            <div><strong>Цена за участника:</strong> ${pricePerPerson.toFixed(2)} ₽</div>
+            <div><strong>Общая стоимость (при полном заполнении):</strong> ${totalPrice.toFixed(2)} ₽</div>
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                <div><strong>Ваш заработок за участника:</strong> ${instructorPerPerson.toFixed(2)} ₽</div>
+                <div><strong>Ваш общий заработок:</strong> ${instructorEarnings.toFixed(2)} ₽</div>
+                <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                    (с учетом вычета ${adminPercentage}% администратору)
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // Создание групповой тренировки из слота
@@ -780,12 +889,11 @@ async function createGroupTraining(event) {
     const sportType = document.getElementById('gt-sport-type').value;
     const level = document.getElementById('gt-level').value;
     const description = document.getElementById('gt-description').value;
-    const pricePerPerson = parseFloat(document.getElementById('gt-price').value);
     const minParticipants = parseInt(document.getElementById('gt-min-participants').value, 10);
     const maxParticipants = parseInt(document.getElementById('gt-max-participants').value, 10);
     
     // Валидация
-    if (!slotId || !sportType || !level || !pricePerPerson || !maxParticipants) {
+    if (!slotId || !sportType || !level || !maxParticipants) {
         showError('Заполните все обязательные поля');
         return;
     }
@@ -794,6 +902,24 @@ async function createGroupTraining(event) {
         showError('Минимум участников не может быть больше максимума');
         return;
     }
+    
+    // Получаем цену из прайса
+    // Для групповых тренировок инструктора используем type='group' с participants=maxParticipants
+    // В прайсе type='group' означает общую цену группы, делим на количество для получения цены за человека
+    const groupPrice = pricesData?.find(p => 
+        p.type === 'group' && 
+        parseInt(p.participants) === maxParticipants &&
+        parseInt(p.duration) === 60
+    );
+    
+    if (!groupPrice) {
+        showError(`Цена для ${maxParticipants} участников не найдена в прайсе`);
+        return;
+    }
+    
+    // Для типа 'group' цена - это общая стоимость группы, делим на количество участников
+    const totalPrice = parseFloat(groupPrice.price);
+    const pricePerPerson = totalPrice / maxParticipants;
     
     try {
         const response = await fetch('/api/kuliga/instructor/group-trainings', {
@@ -805,7 +931,7 @@ async function createGroupTraining(event) {
             body: JSON.stringify({
                 slot_id: parseInt(slotId, 10),
                 sport_type: sportType,
-                level: level,
+                level: level.toString(), // Сохраняем как строку
                 description: description || null,
                 price_per_person: pricePerPerson,
                 min_participants: minParticipants,
@@ -821,12 +947,526 @@ async function createGroupTraining(event) {
         showSuccess('Групповая тренировка успешно создана');
         closeGroupTrainingModal();
         
-        // Перезагружаем слоты и статистику
-        await loadSlotsForDay();
+        // Перезагружаем расписание и статистику
+        await loadSchedule();
         await loadStats();
     } catch (error) {
         console.error('Ошибка создания групповой тренировки:', error);
         showError(`Ошибка создания групповой тренировки: ${error.message}`);
+    }
+}
+
+// Массовое удаление слотов
+async function deleteBulkSlots() {
+    const token = getToken();
+    if (!token) return;
+
+    const fromDate = document.getElementById('delete-from').value;
+    const toDate = document.getElementById('delete-to').value;
+
+    // Получаем выбранные дни недели
+    const weekdaysCheckboxes = document.querySelectorAll('.delete-weekday:checked');
+    const weekdays = Array.from(weekdaysCheckboxes).map(cb => parseInt(cb.value));
+
+    if (!fromDate || !toDate) {
+        showError('Укажите диапазон дат для удаления');
+        return;
+    }
+
+    const confirmMessage = weekdays.length > 0
+        ? `Вы уверены, что хотите удалить все свободные и заблокированные слоты с ${fromDate} по ${toDate} в выбранные дни недели?`
+        : `Вы уверены, что хотите удалить все свободные и заблокированные слоты с ${fromDate} по ${toDate}?`;
+
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/kuliga/instructor/slots/delete-bulk', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fromDate,
+                toDate,
+                weekdays: weekdays.length > 0 ? weekdays : null
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка удаления слотов');
+        }
+
+        showSuccess(`Удалено слотов: ${result.deleted}`);
+        
+        // Обновляем статистику, расписание и слоты на выбранную дату
+        await loadStats();
+        await loadSchedule();
+        
+        // Если показаны слоты на дату из диапазона, обновляем их
+        const selectedDate = document.getElementById('selected-date').textContent;
+        if (selectedDate) {
+            const selectedDateISO = selectedDate.split('.').reverse().join('-').split(' ')[0];
+            if (selectedDateISO >= fromDate && selectedDateISO <= toDate) {
+                await loadSlotsForDay();
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка удаления слотов:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
+// Загрузка полной информации об инструкторе
+async function loadFullInstructorInfo() {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const response = await fetch('/api/kuliga/instructor/me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            instructorData = await response.json();
+            console.log('Данные инструктора загружены:', instructorData);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки информации об инструкторе:', error);
+    }
+}
+
+// Загрузка прайса
+async function loadPrices() {
+    try {
+        const response = await fetch('/api/kuliga/prices');
+
+        if (response.ok) {
+            const result = await response.json();
+            pricesData = result.data || [];
+            console.log('Прайс загружен:', pricesData);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки прайса:', error);
+    }
+}
+
+// Загрузка расписания (слоты + групповые тренировки)
+async function loadSchedule() {
+    const container = document.getElementById('schedule-list');
+    if (!container) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        // Загружаем слоты и групповые тренировки
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 60);
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        const [slotsResponse, trainingsResponse] = await Promise.all([
+            fetch(`/api/kuliga/instructor/slots?start_date=${today}&end_date=${endDateStr}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }),
+            fetch(`/api/kuliga/instructor/group-trainings?start_date=${today}&end_date=${endDateStr}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+        ]);
+
+        if (!slotsResponse.ok || !trainingsResponse.ok) {
+            throw new Error('Ошибка загрузки расписания');
+        }
+
+        const slots = await slotsResponse.json();
+        const trainings = await trainingsResponse.json();
+
+        // Группируем по датам
+        const scheduleByDate = {};
+        
+        slots.forEach(slot => {
+            const dateKey = slot.date;
+            if (!scheduleByDate[dateKey]) {
+                scheduleByDate[dateKey] = { slots: [], trainings: [] };
+            }
+            scheduleByDate[dateKey].slots.push(slot);
+        });
+
+        trainings.forEach(training => {
+            const dateKey = training.date;
+            if (!scheduleByDate[dateKey]) {
+                scheduleByDate[dateKey] = { slots: [], trainings: [] };
+            }
+            scheduleByDate[dateKey].trainings.push(training);
+        });
+
+        displaySchedule(scheduleByDate);
+    } catch (error) {
+        console.error('Ошибка загрузки расписания:', error);
+        container.innerHTML = '<div style="color: #666;">Ошибка загрузки расписания</div>';
+    }
+}
+
+// Отображение расписания
+function displaySchedule(scheduleByDate) {
+    const container = document.getElementById('schedule-list');
+    if (!container) return;
+
+    const dates = Object.keys(scheduleByDate).sort();
+    
+    if (dates.length === 0) {
+        container.innerHTML = '<div style="color: #666;">Расписание пусто</div>';
+        return;
+    }
+
+    let html = '';
+    dates.forEach(date => {
+        const { slots, trainings } = scheduleByDate[date];
+        const dateObj = new Date(date + 'T00:00:00');
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year} (${dayOfWeek})`;
+
+        html += `<div style="margin-bottom: 30px;">`;
+        html += `<h3 style="margin-bottom: 15px;">${formattedDate}</h3>`;
+
+        // Объединяем слоты и тренировки по времени
+        const allItems = [
+            ...slots.map(s => ({ ...s, type: 'slot' })),
+            ...trainings.map(t => ({ ...t, type: 'training' }))
+        ].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+        allItems.forEach(item => {
+            if (item.type === 'slot') {
+                const statusText = {
+                    'available': 'Свободен',
+                    'booked': 'Забронирован',
+                    'blocked': 'Заблокирован',
+                    'group': 'Групповая тренировка'
+                }[item.status] || item.status;
+                const startTime = String(item.start_time).substring(0, 5);
+                const endTime = String(item.end_time).substring(0, 5);
+                
+                html += `
+                    <div class="schedule-slot ${item.status}" style="margin-bottom: 10px;">
+                        <div class="slot-info">
+                            <div class="slot-time">${startTime} - ${endTime}</div>
+                            <div class="slot-status">${statusText}</div>
+                        </div>
+                        <div class="slot-actions">
+                            ${item.status === 'available' ? 
+                                `<button class="btn-primary" onclick="openGroupTrainingModal(${item.id})">👥 Создать групповую</button>
+                                 <button class="btn-secondary" onclick="toggleSlotStatus(${item.id}, 'blocked')">Заблокировать</button>` : ''}
+                            ${item.status === 'blocked' ? 
+                                `<button class="btn-primary" onclick="toggleSlotStatus(${item.id}, 'available')">Разблокировать</button>` : ''}
+                            ${item.status === 'available' || item.status === 'blocked' ? 
+                                `<button class="btn-danger" onclick="deleteSlot(${item.id})">Удалить</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Групповая тренировка
+                const startTime = String(item.start_time).substring(0, 5);
+                const endTime = String(item.end_time).substring(0, 5);
+                const sportType = item.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                html += `
+                    <div class="schedule-slot booked" style="margin-bottom: 10px;">
+                        <div class="slot-info">
+                            <div class="slot-time">${startTime} - ${endTime}</div>
+                            <div class="slot-status">👥 Групповая тренировка</div>
+                            <div style="margin-top: 5px; color: #666;">
+                                ${sportType} | Уровень: ${item.level} | 
+                                Участников: ${item.current_participants || 0}/${item.max_participants}
+                            </div>
+                        </div>
+                        <div class="slot-actions">
+                            <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️</button>
+                            <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        html += `</div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+// Загрузка списка групповых тренировок (старая функция, оставлена для совместимости)
+async function loadGroupTrainings() {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 60);
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        const response = await fetch(`/api/kuliga/instructor/group-trainings?start_date=${today}&end_date=${endDateStr}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки групповых тренировок');
+        }
+
+        const trainings = await response.json();
+        displayGroupTrainings(trainings);
+    } catch (error) {
+        console.error('Ошибка загрузки групповых тренировок:', error);
+        const container = document.getElementById('group-trainings-list');
+        if (container) {
+            container.innerHTML = '<div style="color: #666;">Ошибка загрузки групповых тренировок</div>';
+        }
+    }
+}
+
+// Отображение групповых тренировок
+function displayGroupTrainings(trainings) {
+    const container = document.getElementById('group-trainings-list');
+    if (!container) return;
+
+    if (!trainings || trainings.length === 0) {
+        container.innerHTML = '<div style="color: #666;">У вас пока нет созданных групповых тренировок</div>';
+        return;
+    }
+
+    const trainingsHtml = trainings.map(training => {
+        const date = new Date(training.date);
+        const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+        const timeStr = String(training.start_time).substring(0, 5);
+        const sportType = training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+        const statusText = training.status === 'open' ? 'Открыта' : training.status === 'confirmed' ? 'Подтверждена' : 'Отменена';
+        const statusColor = training.status === 'open' ? '#27ae60' : training.status === 'confirmed' ? '#3498db' : '#e74c3c';
+        
+        return `
+            <div class="schedule-slot" style="margin-bottom: 10px;">
+                <div class="slot-info">
+                    <div class="slot-time">${dateStr} (${dayOfWeek}) ${timeStr}</div>
+                    <div style="margin-top: 5px; color: #666;">
+                        ${sportType} | Уровень: ${training.level} | 
+                        Участников: ${training.current_participants || 0}/${training.max_participants} | 
+                        ${training.price_per_person} ₽/чел
+                    </div>
+                    <div style="margin-top: 5px; color: ${statusColor}; font-weight: 600;">
+                        ${statusText}
+                    </div>
+                </div>
+                <div class="slot-actions">
+                    <button class="btn-primary" onclick="editGroupTraining(${training.id})" title="Редактировать">✏️</button>
+                    <button class="btn-danger" onclick="deleteGroupTraining(${training.id})" title="Удалить">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = trainingsHtml;
+}
+
+// Редактирование групповой тренировки
+async function editGroupTraining(trainingId) {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        // Получаем данные тренировки
+        const response = await fetch(`/api/kuliga/instructor/group-trainings/${trainingId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить данные тренировки');
+        }
+
+        const training = await response.json();
+        
+        // Создаем модальное окно для редактирования
+        const modal = document.createElement('div');
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <h2 style="margin-top: 0;">Редактировать групповую тренировку</h2>
+                <form id="edit-training-form">
+                    <div class="form-group">
+                        <label>Вид спорта *</label>
+                        <select id="edit-sport-type" class="form-control" required>
+                            ${instructorData && instructorData.sport_type === 'both' 
+                                ? `<option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>⛷️ Горные лыжи</option>
+                                   <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>🏂 Сноуборд</option>`
+                                : instructorData && instructorData.sport_type === 'ski'
+                                    ? `<option value="ski" selected>⛷️ Горные лыжи</option>`
+                                    : instructorData && instructorData.sport_type === 'snowboard'
+                                        ? `<option value="snowboard" selected>🏂 Сноуборд</option>`
+                                        : `<option value="${training.sport_type}">${training.sport_type === 'ski' ? '⛷️ Горные лыжи' : '🏂 Сноуборд'}</option>`}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Уровень (1-10) *</label>
+                        <select id="edit-level" class="form-control" required>
+                            ${Array.from({ length: 10 }, (_, i) => {
+                                const levelNum = i + 1;
+                                // Преобразуем старое значение уровня в число
+                                let currentLevel = training.level;
+                                if (currentLevel === 'beginner') currentLevel = '1';
+                                else if (currentLevel === 'intermediate') currentLevel = '2';
+                                else if (currentLevel === 'advanced') currentLevel = '3';
+                                const isSelected = String(currentLevel) === String(levelNum);
+                                return `<option value="${levelNum}" ${isSelected ? 'selected' : ''}>${levelNum} уровень</option>`;
+                            }).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Описание</label>
+                        <textarea id="edit-description" class="form-control" rows="3">${training.description || ''}</textarea>
+                    </div>
+                    <div class="form-group" style="background: #f8f9fa; padding: 10px; border-radius: 6px;">
+                        <label>Цена за человека</label>
+                        <div style="font-weight: 600; font-size: 16px; color: #27ae60;">
+                            ${parseFloat(training.price_per_person || 0).toFixed(2)} ₽
+                        </div>
+                        <small style="color: #666;">Цена устанавливается автоматически из прайса по количеству участников</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Минимум участников *</label>
+                        <input type="number" id="edit-min-participants" class="form-control" min="1" value="${training.min_participants}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Максимум участников *</label>
+                        <input type="number" id="edit-max-participants" class="form-control" min="2" value="${training.max_participants}" required />
+                    </div>
+                    <div class="form-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Обработчик сохранения
+        document.getElementById('edit-training-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const sportType = document.getElementById('edit-sport-type').value;
+            const level = document.getElementById('edit-level').value;
+            const description = document.getElementById('edit-description').value;
+            const minParticipants = parseInt(document.getElementById('edit-min-participants').value, 10);
+            const maxParticipants = parseInt(document.getElementById('edit-max-participants').value, 10);
+            
+            if (minParticipants > maxParticipants) {
+                showError('Минимум участников не может быть больше максимума');
+                return;
+            }
+            
+            // Получаем цену из прайса
+            const groupPrice = pricesData?.find(p => 
+                p.type === 'group' && 
+                parseInt(p.participants) === maxParticipants &&
+                p.duration === 60
+            );
+            
+            if (!groupPrice) {
+                showError(`Цена для ${maxParticipants} участников не найдена в прайсе`);
+                return;
+            }
+            
+            const pricePerPerson = parseFloat(groupPrice.price);
+            
+            try {
+                const updateResponse = await fetch(`/api/kuliga/instructor/group-trainings/${trainingId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sport_type: sportType,
+                        level: level.toString(), // Сохраняем как строку
+                        description: description || null,
+                        price_per_person: pricePerPerson,
+                        min_participants: minParticipants,
+                        max_participants: maxParticipants
+                    })
+                });
+                
+                if (!updateResponse.ok) {
+                    const error = await updateResponse.json();
+                    throw new Error(error.error || 'Ошибка сохранения');
+                }
+                
+                showSuccess('Групповая тренировка обновлена');
+                modal.remove();
+                
+                // Перезагружаем расписание
+                await loadSchedule();
+            } catch (error) {
+                console.error('Ошибка обновления тренировки:', error);
+                showError(`Ошибка: ${error.message}`);
+            }
+        });
+        
+        // Закрытие по клику вне модального окна
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка редактирования групповой тренировки:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
+// Удаление групповой тренировки
+async function deleteGroupTraining(trainingId) {
+    if (!confirm('Вы уверены, что хотите удалить эту групповую тренировку? Все бронирования будут отменены.')) {
+        return;
+    }
+
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const response = await fetch(`/api/kuliga/instructor/group-trainings/${trainingId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка удаления тренировки');
+        }
+
+        showSuccess('Групповая тренировка удалена');
+        
+        // Перезагружаем расписание и статистику
+        await loadSchedule();
+        await loadStats();
+    } catch (error) {
+        console.error('Ошибка удаления групповой тренировки:', error);
+        showError(`Ошибка: ${error.message}`);
     }
 }
 
@@ -835,4 +1475,6 @@ window.toggleSlotStatus = toggleSlotStatus;
 window.deleteSlot = deleteSlot;
 window.openGroupTrainingModal = openGroupTrainingModal;
 window.closeGroupTrainingModal = closeGroupTrainingModal;
+window.editGroupTraining = editGroupTraining;
+window.deleteGroupTraining = deleteGroupTraining;
 

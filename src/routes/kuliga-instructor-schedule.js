@@ -601,5 +601,305 @@ router.post('/group-trainings', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/kuliga/instructor/me
+ * Получение информации о текущем инструкторе
+ */
+router.get('/me', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    
+    try {
+        const result = await pool.query(
+            'SELECT id, full_name, sport_type, admin_percentage, phone, email FROM kuliga_instructors WHERE id = $1',
+            [instructorId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Инструктор не найден' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения информации об инструкторе:', error);
+        res.status(500).json({ error: 'Не удалось получить информацию об инструкторе' });
+    }
+});
+
+/**
+ * POST /api/kuliga/instructor/slots/delete-bulk
+ * Массовое удаление слотов
+ */
+router.post('/slots/delete-bulk', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { fromDate, toDate, weekdays } = req.body;
+
+    if (!fromDate || !toDate) {
+        return res.status(400).json({ error: 'Укажите диапазон дат (fromDate, toDate)' });
+    }
+
+    try {
+        let query = `
+            DELETE FROM kuliga_schedule_slots
+            WHERE instructor_id = $1
+              AND date >= $2
+              AND date <= $3
+              AND status IN ('available', 'blocked')
+        `;
+        const params = [instructorId, fromDate, toDate];
+
+        // Если указаны дни недели, фильтруем по ним
+        if (weekdays && Array.isArray(weekdays) && weekdays.length > 0) {
+            query += ` AND EXTRACT(DOW FROM date)::INTEGER = ANY($4)`;
+            params.push(weekdays);
+        }
+
+        const result = await pool.query(query, params);
+
+        console.log(`✅ Инструктор ${instructorId} удалил ${result.rowCount} слотов (${fromDate} - ${toDate})`);
+
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (error) {
+        console.error('Ошибка массового удаления слотов:', error);
+        res.status(500).json({ error: 'Не удалось удалить слоты: ' + error.message });
+    }
+});
+
+/**
+ * GET /api/kuliga/instructor/group-trainings
+ * Получение списка групповых тренировок инструктора
+ */
+router.get('/group-trainings', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { start_date, end_date } = req.query;
+
+    try {
+        let query = `
+            SELECT 
+                kgt.*,
+                (SELECT COALESCE(SUM(kb.participants_count), 0)
+                 FROM kuliga_bookings kb
+                 WHERE kb.group_training_id = kgt.id 
+                   AND kb.status IN ('pending', 'confirmed')) as current_participants
+            FROM kuliga_group_trainings kgt
+            WHERE kgt.instructor_id = $1
+        `;
+        const params = [instructorId];
+        let paramIndex = 2;
+
+        if (start_date) {
+            query += ` AND kgt.date >= $${paramIndex}`;
+            params.push(start_date);
+            paramIndex++;
+        }
+
+        if (end_date) {
+            query += ` AND kgt.date <= $${paramIndex}`;
+            params.push(end_date);
+            paramIndex++;
+        }
+
+        query += ' ORDER BY kgt.date ASC, kgt.start_time ASC';
+
+        const { rows } = await pool.query(query, params);
+        res.json(rows);
+    } catch (error) {
+        console.error('Ошибка получения групповых тренировок:', error);
+        res.status(500).json({ error: 'Не удалось получить список групповых тренировок' });
+    }
+});
+
+/**
+ * GET /api/kuliga/instructor/group-trainings/:id
+ * Получение одной групповой тренировки
+ */
+router.get('/group-trainings/:id', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            `SELECT 
+                kgt.*,
+                (SELECT COALESCE(SUM(kb.participants_count), 0)
+                 FROM kuliga_bookings kb
+                 WHERE kb.group_training_id = kgt.id 
+                   AND kb.status IN ('pending', 'confirmed')) as current_participants
+             FROM kuliga_group_trainings kgt
+             WHERE kgt.id = $1 AND kgt.instructor_id = $2`,
+            [id, instructorId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения групповой тренировки:', error);
+        res.status(500).json({ error: 'Не удалось получить данные тренировки' });
+    }
+});
+
+/**
+ * PUT /api/kuliga/instructor/group-trainings/:id
+ * Редактирование групповой тренировки
+ */
+router.put('/group-trainings/:id', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { id } = req.params;
+    const {
+        sport_type,
+        level,
+        description,
+        price_per_person,
+        min_participants,
+        max_participants
+    } = req.body;
+
+    try {
+        // Валидация
+        if (!sport_type || !level || !price_per_person || !max_participants) {
+            return res.status(400).json({
+                error: 'Обязательные поля: sport_type, level, price_per_person, max_participants'
+            });
+        }
+
+        if (!['ski', 'snowboard'].includes(sport_type)) {
+            return res.status(400).json({ error: 'sport_type должен быть "ski" или "snowboard"' });
+        }
+
+        const pricePerPersonValue = parseFloat(price_per_person);
+        if (!Number.isFinite(pricePerPersonValue) || pricePerPersonValue <= 0) {
+            return res.status(400).json({ error: 'Цена должна быть положительным числом' });
+        }
+
+        const maxParticipantsValue = parseInt(max_participants, 10);
+        if (!Number.isInteger(maxParticipantsValue) || maxParticipantsValue < 2) {
+            return res.status(400).json({ error: 'Максимум участников должен быть не менее 2' });
+        }
+
+        const minParticipantsValue = parseInt(min_participants || 2, 10);
+        if (minParticipantsValue > maxParticipantsValue) {
+            return res.status(400).json({ error: 'Минимум участников не может превышать максимум' });
+        }
+
+        // Обновляем тренировку
+        const result = await pool.query(
+            `UPDATE kuliga_group_trainings
+             SET sport_type = $1, level = $2, description = $3, 
+                 price_per_person = $4, min_participants = $5, max_participants = $6,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $7 AND instructor_id = $8
+             RETURNING *`,
+            [sport_type, level, description, pricePerPersonValue, minParticipantsValue, maxParticipantsValue, id, instructorId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+        }
+
+        console.log(`✅ Инструктор ${instructorId} обновил групповую тренировку ${id}`);
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка редактирования групповой тренировки:', error);
+        res.status(500).json({ error: 'Не удалось обновить тренировку: ' + error.message });
+    }
+});
+
+/**
+ * DELETE /api/kuliga/instructor/group-trainings/:id
+ * Удаление групповой тренировки
+ */
+router.delete('/group-trainings/:id', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { id } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Получаем информацию о групповой тренировке
+        const trainingResult = await client.query(
+            `SELECT * FROM kuliga_group_trainings 
+             WHERE id = $1 AND instructor_id = $2`,
+            [id, instructorId]
+        );
+
+        if (trainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+        }
+
+        const training = trainingResult.rows[0];
+
+        // Получаем все активные бронирования для этой тренировки
+        const bookingsResult = await client.query(
+            `SELECT kb.*, c.full_name as client_name, c.phone as client_phone, c.telegram_id
+             FROM kuliga_bookings kb
+             JOIN clients c ON kb.client_id = c.id
+             WHERE kb.group_training_id = $1 AND kb.status IN ('pending', 'confirmed')`,
+            [id]
+        );
+
+        // Отменяем все бронирования и возвращаем деньги
+        for (const booking of bookingsResult.rows) {
+            await client.query(
+                'UPDATE kuliga_bookings SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
+                ['cancelled', booking.id]
+            );
+
+            // Возврат средств
+            const priceTotal = parseFloat(booking.price_total || 0);
+            if (priceTotal > 0) {
+                await client.query(
+                    `UPDATE wallets SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP 
+                     WHERE client_id = $2`,
+                    [priceTotal, booking.client_id]
+                );
+
+                await client.query(
+                    `INSERT INTO transactions (wallet_id, amount, transaction_type, description, created_at)
+                     SELECT id, $1, 'refund', $2, CURRENT_TIMESTAMP
+                     FROM wallets WHERE client_id = $3`,
+                    [priceTotal, `Возврат за отмену групповой тренировки ${training.date}`, booking.client_id]
+                );
+            }
+
+            // TODO: Отправить уведомление клиенту об отмене
+        }
+
+        // Обновляем статус тренировки на cancelled
+        await client.query(
+            `UPDATE kuliga_group_trainings 
+             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
+             WHERE id = $1`,
+            [id]
+        );
+
+        // Освобождаем слот
+        if (training.slot_id) {
+            await client.query(
+                `UPDATE kuliga_schedule_slots 
+                 SET status = 'available', updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [training.slot_id]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        console.log(`✅ Инструктор ${instructorId} удалил групповую тренировку ${id}, отменено бронирований: ${bookingsResult.rows.length}`);
+
+        res.json({ success: true, message: 'Групповая тренировка удалена', refunded: bookingsResult.rows.length });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка удаления групповой тренировки:', error);
+        res.status(500).json({ error: 'Не удалось удалить групповую тренировку: ' + error.message });
+    } finally {
+        client.release();
+    }
+});
+
 module.exports = router;
 
