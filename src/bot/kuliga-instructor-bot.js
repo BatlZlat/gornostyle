@@ -138,11 +138,28 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                 kb.payer_rides,
                 c.full_name as client_name,
                 c.phone as client_phone,
-                ki.admin_percentage
+                ki.admin_percentage,
+                kgt.id as group_training_id,
+                kgt.is_private,
+                kgt.max_participants,
+                kgt.price_per_person,
+                kgt.level as group_level,
+                kgt.sport_type as group_sport_type,
+                -- Реальное количество участников из активных бронирований
+                (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
+                 FROM kuliga_bookings kb_gr
+                 WHERE kb_gr.group_training_id = kgt.id 
+                   AND kb_gr.status IN ('pending', 'confirmed')) as real_participants_count,
+                -- Реальная сумма из активных бронирований
+                (SELECT COALESCE(SUM(kb_gr.price_total), 0)::DECIMAL
+                 FROM kuliga_bookings kb_gr
+                 WHERE kb_gr.group_training_id = kgt.id 
+                   AND kb_gr.status IN ('pending', 'confirmed')) as real_total_price
             FROM kuliga_schedule_slots ks
             LEFT JOIN kuliga_bookings kb ON ks.id = kb.slot_id AND kb.status IN ('pending', 'confirmed')
             LEFT JOIN clients c ON kb.client_id = c.id
             LEFT JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
+            LEFT JOIN kuliga_group_trainings kgt ON ks.id = kgt.slot_id AND kgt.status IN ('open', 'confirmed')
             WHERE ks.instructor_id = $1
               AND ks.date >= $2
               AND ks.date <= $3
@@ -167,13 +184,25 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
             );
         }
 
-        // Группируем по датам
+        // Группируем по датам, избегая дубликатов для групповых тренировок
         const scheduleByDate = {};
+        const seenGroupSlots = new Set(); // Для отслеживания уже обработанных групповых тренировок
+        
         scheduleRes.rows.forEach(row => {
             const dateKey = row.date;
             if (!scheduleByDate[dateKey]) {
                 scheduleByDate[dateKey] = [];
             }
+            
+            // Для групповых тренировок берем только первую запись (остальные - дубликаты из-за LEFT JOIN)
+            if (row.group_training_id) {
+                const slotKey = `${row.date}_${row.start_time}_${row.group_training_id}`;
+                if (seenGroupSlots.has(slotKey)) {
+                    return; // Пропускаем дубликаты
+                }
+                seenGroupSlots.add(slotKey);
+            }
+            
             scheduleByDate[dateKey].push(row);
         });
 
@@ -184,13 +213,53 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
             message += `*${formatDate(date)}*\n`;
 
             for (const slot of slots) {
-                const timeRange = `${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`;
+                const timeRange = `*${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}*`;
                 
                 if (slot.status === 'available') {
                     message += `${timeRange} - ✅ Свободно\n`;
                 } else if (slot.status === 'blocked') {
                     message += `${timeRange} - 🚫 Заблокировано\n`;
+                } else if (slot.group_training_id) {
+                    // Групповая тренировка
+                    const isPrivate = slot.is_private;
+                    const sportType = slot.group_sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                    // Используем реальное количество участников из активных бронирований
+                    const currentParticipants = parseInt(slot.real_participants_count || 0, 10);
+                    const maxParticipants = parseInt(slot.max_participants || 0, 10);
+                    // Используем реальную сумму из активных бронирований
+                    const totalPrice = parseFloat(slot.real_total_price || 0);
+                    const adminPercentage = parseFloat(slot.admin_percentage || 20);
+                    const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+                    
+                    // Конвертируем уровень в цифры
+                    let levelDisplay = null;
+                    if (slot.group_level) {
+                        const levelStr = String(slot.group_level).trim();
+                        if (/^\d+$/.test(levelStr)) {
+                            // Уже цифра
+                            levelDisplay = parseInt(levelStr, 10);
+                        } else {
+                            // Старые значения: beginner, intermediate, advanced
+                            if (levelStr === 'beginner') levelDisplay = 1;
+                            else if (levelStr === 'intermediate') levelDisplay = 2;
+                            else if (levelStr === 'advanced') levelDisplay = 3;
+                        }
+                    }
+                    
+                    if (isPrivate) {
+                        message += `${timeRange} - 👥 Групповая закрытая\n`;
+                    } else {
+                        message += `${timeRange} - 👥 Групповая общая\n`;
+                    }
+                    
+                    message += `  ${sportType}\n`;
+                    message += `  👤 Участников: ${currentParticipants}/${maxParticipants}\n`;
+                    if (levelDisplay !== null) {
+                        message += `  📊 Уровень: ${levelDisplay}\n`;
+                    }
+                    message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
                 } else if (slot.status === 'booked' && slot.booking_id) {
+                    // Индивидуальная тренировка
                     const participantName = slot.participants_names && slot.participants_names[0] 
                         ? slot.participants_names[0] 
                         : 'Участник';
@@ -201,7 +270,7 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                     const adminPercentage = parseFloat(slot.admin_percentage || 20);
                     const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
 
-                    message += `${timeRange} - 📋 Индивидуальное\n`;
+                    message += `${timeRange} - 📋 Индивидуальная\n`;
                     
                     // Если клиент не является участником, показываем обоих
                     if (!payerRides) {

@@ -12731,6 +12731,13 @@ async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
                AND ks.status = 'available'
                AND ki.is_active = TRUE
                AND (ki.sport_type = $3 OR ki.sport_type = 'both')
+               AND (
+                   ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                   OR (
+                       ks.date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                       AND ks.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                   )
+               )
              ORDER BY ks.date
              LIMIT 30`,
             [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD'), sportType]
@@ -12824,6 +12831,13 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
                )
                AND ki.is_active = TRUE
                AND (ki.sport_type = $2 OR ki.sport_type = 'both')
+               AND (
+                   ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                   OR (
+                       ks.date = (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
+                       AND ks.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
+                   )
+               )
              ORDER BY ks.start_time`,
             [selectedDate, sportType]
         );

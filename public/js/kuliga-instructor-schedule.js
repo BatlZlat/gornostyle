@@ -430,7 +430,15 @@ async function loadSlotsForDay() {
 
         const slots = await response.json();
         
-        document.getElementById('selected-date').textContent = date;
+        // Форматируем дату в формат д.м.г. (день недели)
+        const dateObj = new Date(date + 'T00:00:00');
+        const day = dateObj.getDate().toString().padStart(2, '0');
+        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+        const year = dateObj.getFullYear();
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
+        const formattedDate = `${day}.${month}.${year} (${dayOfWeek})`;
+        
+        document.getElementById('selected-date').textContent = formattedDate;
         slotsSection.style.display = 'block';
 
         if (slots.length === 0) {
