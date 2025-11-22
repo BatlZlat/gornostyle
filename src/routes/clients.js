@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
         let query = `
             SELECT 
                 c.*,
+                c.telegram_username,
                 ch.id as child_id,
                 ch.full_name as child_name,
                 ch.birth_date as child_birth_date,

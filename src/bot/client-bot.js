@@ -2324,7 +2324,7 @@ async function handleTextMessage(msg) {
                     
                     // Получаем информацию о клиенте
                     const clientResult = await pool.query(
-                        'SELECT id, full_name, phone FROM clients WHERE telegram_id = $1',
+                        'SELECT id, full_name, phone, telegram_username FROM clients WHERE telegram_id = $1',
                         [state.data.telegram_id]
                     );
                     const clientInfo = clientResult.rows[0];
@@ -2362,6 +2362,7 @@ async function handleTextMessage(msg) {
                         id: result.rows[0].id,
                         client_name: clientInfo.full_name,
                         client_phone: clientInfo.phone,
+                        telegram_username: clientInfo.telegram_username,
                         date: state.data.preferred_date,
                         time: state.data.preferred_time,
                         type: state.data.has_group ? 'Групповая' : 'Индивидуальная',
@@ -3075,7 +3076,7 @@ async function handleTextMessage(msg) {
                     
                     // Получаем информацию о клиенте
                     const clientResult = await pool.query(
-                        'SELECT id, full_name, phone FROM clients WHERE telegram_id = $1',
+                        'SELECT id, full_name, phone, telegram_username FROM clients WHERE telegram_id = $1',
                         [state.data.telegram_id]
                     );
                     const clientInfo = clientResult.rows[0];
@@ -3113,6 +3114,7 @@ async function handleTextMessage(msg) {
                         id: result.rows[0].id,
                         client_name: clientInfo.full_name,
                         client_phone: clientInfo.phone,
+                        telegram_username: clientInfo.telegram_username,
                         date: state.data.preferred_date,
                         time: state.data.preferred_time,
                         type: state.data.has_group ? 'Групповая' : 'Индивидуальная',
@@ -3546,7 +3548,7 @@ async function handleTextMessage(msg) {
                     
                     // Получаем информацию о клиенте
                     const clientResult = await pool.query(
-                        'SELECT id, full_name, phone FROM clients WHERE telegram_id = $1',
+                        'SELECT id, full_name, phone, telegram_username FROM clients WHERE telegram_id = $1',
                         [state.data.telegram_id]
                     );
                     const clientInfo = clientResult.rows[0];
@@ -3584,6 +3586,7 @@ async function handleTextMessage(msg) {
                         id: result.rows[0].id,
                         client_name: clientInfo.full_name,
                         client_phone: clientInfo.phone,
+                        telegram_username: clientInfo.telegram_username,
                         date: state.data.preferred_date,
                         time: state.data.preferred_time,
                         type: state.data.has_group ? 'Групповая' : 'Индивидуальная',

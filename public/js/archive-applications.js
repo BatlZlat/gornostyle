@@ -117,6 +117,7 @@ function displayApplications() {
                     <th>№</th>
                     <th>Дата</th>
                     <th>Клиент</th>
+                    <th>Телефон</th>
                     <th>Тип заявки</th>
                     <th>Оборудование</th>
                     <th>Статус</th>
@@ -124,11 +125,16 @@ function displayApplications() {
                 </tr>
             </thead>
             <tbody>
-                ${filteredApplications.map((application, index) => `
+                ${filteredApplications.map((application, index) => {
+                    const clientName = application.client_name || application.child_name || 'Не указан';
+                    const usernameDisplay = application.telegram_username ? ` <strong>${application.telegram_username}</strong>` : '';
+                    const clientDisplay = clientName !== 'Не указан' ? `${clientName}${usernameDisplay}` : clientName;
+                    return `
                     <tr class="application-row application-status-${application.group_status}">
                         <td>${index + 1}</td>
                         <td>${formatDate(application.preferred_date)} ${application.preferred_time}</td>
-                        <td>${application.client_name || application.child_name || 'Не указан'}</td>
+                        <td>${clientDisplay}</td>
+                        <td>${application.client_phone || '-'}</td>
                         <td>${application.has_group ? 'Групповая' : 'Индивидуальная'}</td>
                         <td>${application.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд'}</td>
                         <td>
@@ -147,7 +153,8 @@ function displayApplications() {
                             </button>
                         </td>
                     </tr>
-                `).join('')}
+                    `;
+                }).join('')}
             </tbody>
         </table>
     `;

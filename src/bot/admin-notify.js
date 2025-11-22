@@ -124,10 +124,14 @@ async function notifyNewTrainingRequest(trainingData) {
         // Форматируем дату в формат д.м.г
         const formattedDate = formatDate(trainingData.date);
 
+        // Формируем строку с username (если есть)
+        const usernameDisplay = trainingData.telegram_username ? ` (*${trainingData.telegram_username}*)` : '';
+        
         const message = `
 🔔 *Новая заявка на тренировку!*
 
-👤 *Клиент:* ${trainingData.client_name}
+👤 *Клиент:* ${trainingData.client_name}${usernameDisplay}
+📱 *Телефон:* ${trainingData.client_phone || 'Не указан'}
 📅 *Дата:* ${formattedDate}
 ⏰ *Время:* ${trainingData.time}
 🎯 *Тип:* ${trainingData.type}
