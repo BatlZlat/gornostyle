@@ -418,7 +418,9 @@ router.delete('/slots/:id', async (req, res) => {
 
         // Нельзя удалять забронированные слоты
         if (status === 'booked') {
-            return res.status(400).json({ error: 'Нельзя удалить забронированный слот' });
+            return res.status(400).json({ 
+                error: 'Нельзя удалить слот с активным бронированием. Для отмены обратитесь к администратору.' 
+            });
         }
 
         // Удаляем слот
@@ -920,7 +922,15 @@ router.delete('/group-trainings/:id', async (req, res) => {
             [id]
         );
 
-        // Отменяем все бронирования и возвращаем деньги
+        // Запрещаем удаление, если есть активные бронирования
+        if (bookingsResult.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                error: 'Нельзя удалить групповую тренировку с активными бронированиями. Для удаления обратитесь к администратору.' 
+            });
+        }
+
+        // Отменяем все бронирования и возвращаем деньги (этот код не выполнится, так как выше проверка)
         for (const booking of bookingsResult.rows) {
             await client.query(
                 'UPDATE kuliga_bookings SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
@@ -936,7 +946,7 @@ router.delete('/group-trainings/:id', async (req, res) => {
                 );
 
                 await client.query(
-                    `INSERT INTO transactions (wallet_id, amount, transaction_type, description, created_at)
+                    `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
                      SELECT id, $1, 'refund', $2, CURRENT_TIMESTAMP
                      FROM wallets WHERE client_id = $3`,
                     [priceTotal, `Возврат за отмену групповой тренировки ${training.date}`, booking.client_id]

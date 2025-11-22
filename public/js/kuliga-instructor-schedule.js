@@ -1200,8 +1200,12 @@ function displaySchedule(scheduleByDate) {
                         </div>
                         <div class="slot-actions">
                             <button class="btn-primary" onclick="showGroupTrainingDetails(${item.id})">Подробнее</button>
-                            <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️</button>
-                            <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️</button>
+                            ${(item.current_participants || 0) === 0 ? `
+                                <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️</button>
+                                <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️</button>
+                            ` : `
+                                <span style="color: #666; font-size: 0.9em;">Для редактирования или удаления обратитесь к администратору</span>
+                            `}
                         </div>
                     </div>
                 `;
@@ -1559,8 +1563,19 @@ async function showGroupTrainingDetails(trainingId) {
         const training = await trainingResponse.json();
         const bookings = bookingsResponse.ok ? await bookingsResponse.json() : [];
         
-        const dateObj = new Date(training.date + 'T00:00:00');
-        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
+        // Нормализуем дату
+        let dateStr = training.date;
+        if (typeof dateStr === 'object' && dateStr !== null) {
+            dateStr = dateStr.toISOString().split('T')[0];
+        } else if (typeof dateStr === 'string' && dateStr.includes('T')) {
+            dateStr = dateStr.split('T')[0];
+        }
+        
+        const dateObj = new Date(dateStr + 'T00:00:00');
+        const day = dateObj.getDate();
+        const month = dateObj.getMonth() + 1;
+        const year = dateObj.getFullYear();
+        const formattedDate = `${day.toString().padStart(2, '0')}.${month.toString().padStart(2, '0')}.${year}`;
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
         
         // Создаем модальное окно
