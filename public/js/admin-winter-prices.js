@@ -35,7 +35,7 @@ function openWinterPricesModal() {
     // Показываем индикатор загрузки
     container.innerHTML = '<p style="text-align:center;color:#666;">Загрузка цен...</p>';
     
-    loadWinterPrices();
+    loadWinterPricesForModal();
 }
 
 // Закрыть модальное окно управления ценами
@@ -43,8 +43,8 @@ function closeWinterPricesModal() {
     document.getElementById('winter-prices-modal').style.display = 'none';
 }
 
-// Загрузить список зимних цен
-async function loadWinterPrices() {
+// Загрузить список зимних цен (для модального окна управления ценами)
+async function loadWinterPricesForModal() {
     console.log('🔵 [WINTER PRICES] Функция loadWinterPrices вызвана');
     
     try {
@@ -383,7 +383,7 @@ async function saveWinterPrice(event) {
         
         alert(id ? 'Цена успешно обновлена' : 'Цена успешно создана');
         closeWinterPriceEditModal();
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert(error.message);
@@ -409,7 +409,7 @@ async function toggleWinterPriceStatus(id) {
             throw new Error('Ошибка изменения статуса');
         }
         
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert('Не удалось изменить статус');
@@ -437,7 +437,7 @@ async function deleteWinterPrice(id) {
         }
         
         alert('Цена успешно удалена');
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert(error.message);
