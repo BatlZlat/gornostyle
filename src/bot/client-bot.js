@@ -8100,16 +8100,19 @@ async function handleTextMessage(msg) {
 
             // Получаем групповые тренировки на выбранную дату
             // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
+            // ВАЖНО: Подсчитываем участников из активных бронирований (status IN ('pending', 'confirmed'))
             const trainingsResult = await pool.query(
                 `SELECT kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
-                        kgt.price_per_person, kgt.max_participants, kgt.current_participants,
+                        kgt.price_per_person, kgt.max_participants,
+                        COALESCE(SUM(kb.participants_count), 0)::INTEGER as current_participants,
                         kgt.description, ki.full_name as instructor_name
                  FROM kuliga_group_trainings kgt
                  JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
-                 WHERE kgt.date = $1
+                 LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
+                     AND kb.status IN ('pending', 'confirmed')
+                 WHERE kgt.date = $1::date
                    AND kgt.status IN ('open', 'confirmed')
                    AND kgt.is_private = FALSE
-                   AND kgt.current_participants < kgt.max_participants
                    AND ki.is_active = TRUE
                    AND (
                        kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
@@ -8118,6 +8121,10 @@ async function handleTextMessage(msg) {
                            AND kgt.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
                        )
                    )
+                 GROUP BY kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
+                          kgt.price_per_person, kgt.max_participants, kgt.description, 
+                          ki.full_name
+                 HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
                  ORDER BY kgt.start_time`,
                 [selectedDate]
             );
@@ -12268,17 +12275,18 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                 kgt.price_per_person as price,
                 kgt.min_participants,
                 kgt.max_participants,
-                kgt.current_participants,
+                COALESCE(SUM(kb.participants_count), 0)::INTEGER as current_participants,
                 kgt.status,
                 ki.full_name as trainer_name,
                 ki.phone as trainer_phone
             FROM kuliga_group_trainings kgt
             JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+            LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
+                AND kb.status IN ('pending', 'confirmed')
             WHERE kgt.status IN ('open', 'confirmed')
                 AND kgt.is_private = FALSE
                 AND kgt.date >= $1::date
                 AND kgt.date <= $2::date
-                AND kgt.current_participants < kgt.max_participants
                 AND (
                     kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                     OR (
@@ -12286,6 +12294,10 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                         AND kgt.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
                     )
                 )
+            GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.sport_type, 
+                     kgt.level, kgt.description, kgt.price_per_person, kgt.min_participants, 
+                     kgt.max_participants, kgt.status, ki.full_name, ki.phone
+            HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
             ORDER BY kgt.date, kgt.start_time`,
             [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
         );
@@ -12995,15 +13007,17 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
 
         // Получаем уникальные даты с групповыми тренировками
         // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
+        // ВАЖНО: Подсчитываем участников из активных бронирований (status IN ('pending', 'confirmed'))
         const datesResult = await pool.query(
             `SELECT DISTINCT kgt.date
              FROM kuliga_group_trainings kgt
              JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
-             WHERE kgt.date >= $1
-               AND kgt.date <= $2
+             LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
+                 AND kb.status IN ('pending', 'confirmed')
+             WHERE kgt.date >= $1::date
+               AND kgt.date <= $2::date
                AND kgt.status IN ('open', 'confirmed')
                AND kgt.is_private = FALSE
-               AND kgt.current_participants < kgt.max_participants
                AND ki.is_active = TRUE
                AND (
                    kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
@@ -13012,6 +13026,8 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
                        AND kgt.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
                    )
                )
+             GROUP BY kgt.id, kgt.date, kgt.max_participants
+             HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
              ORDER BY kgt.date`,
             [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')]
         );
