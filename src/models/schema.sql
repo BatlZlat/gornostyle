@@ -1448,6 +1448,7 @@ CREATE TABLE IF NOT EXISTS kuliga_instructors (
     admin_percentage DECIMAL(5,2) DEFAULT 20.00 CHECK (admin_percentage >= 0 AND admin_percentage <= 100),
     username VARCHAR(50) UNIQUE, -- МИГРАЦИЯ 030: Логин для входа в личный кабинет
     password_hash VARCHAR(255), -- МИГРАЦИЯ 030: Хеш пароля (bcrypt) для авторизации
+    plain_password VARCHAR(255), -- Пароль в открытом виде (для удобства администратора)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

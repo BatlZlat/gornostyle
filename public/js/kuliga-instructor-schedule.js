@@ -391,8 +391,9 @@ async function createSlotsForDay() {
         // Очищаем поле ввода временных слотов
         document.getElementById('day-times').value = '';
         
-        // Обновляем статистику
+        // Обновляем статистику и расписание
         await loadStats();
+        await loadSchedule();
         
         // Если показаны слоты на эту дату, обновляем их
         const selectedDate = document.getElementById('selected-date').textContent;
@@ -698,8 +699,9 @@ async function createBulkSlots() {
         // Очищаем поле ввода временных слотов
         document.getElementById('bulk-times').value = '';
         
-        // Обновляем статистику
+        // Обновляем статистику и расписание
         await loadStats();
+        await loadSchedule();
     } catch (error) {
         removeInfo();
         console.error('Ошибка массового создания слотов:', error);
@@ -740,11 +742,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('load-slots-btn').addEventListener('click', loadSlotsForDay);
     document.getElementById('create-bulk-btn').addEventListener('click', createBulkSlots);
     document.getElementById('delete-bulk-btn').addEventListener('click', deleteBulkSlots);
+    document.getElementById('create-regular-training-btn').addEventListener('click', createRegularGroupTrainings);
     document.getElementById('logout-btn').addEventListener('click', logout);
     
     // Загружаем полную информацию об инструкторе и прайс
     await loadFullInstructorInfo();
     await loadPrices();
+    
+    // Инициализируем форму регулярных тренировок после загрузки данных
+    // (расчет цены будет вызван внутри initRegularTrainingForm после установки значения по умолчанию)
+    initRegularTrainingForm();
     
     // Загружаем расписание (слоты + групповые тренировки)
     await loadSchedule();
@@ -773,15 +780,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // Закрытие модального окна по клику вне его
-    const groupTrainingModal = document.getElementById('group-training-modal');
-    if (groupTrainingModal) {
-        groupTrainingModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeGroupTrainingModal();
-            }
-        });
-    }
+    // Закрытие модального окна только по кнопке "Отмена"
+    // Убрали закрытие по клику вне окна для удобства заполнения формы
 });
 
 // Открытие модального окна для создания групповой тренировки
@@ -817,8 +817,13 @@ function openGroupTrainingModal(slotId) {
         levelSelect.innerHTML += `<option value="${i}">${i} уровень</option>`;
     }
     
-    // Сбрасываем расчет цены
-    document.getElementById('price-info').innerHTML = 'Выберите максимум участников для расчета';
+    // Устанавливаем значение по умолчанию 4 участника и сразу делаем расчет
+    const maxParticipantsInput = document.getElementById('gt-max-participants');
+    if (maxParticipantsInput) {
+        maxParticipantsInput.value = 4;
+        // Вызываем расчет цены сразу
+        calculatePrice();
+    }
     
     modal.style.display = 'flex';
 }
@@ -1043,11 +1048,21 @@ async function loadPrices() {
 
         if (response.ok) {
             const result = await response.json();
-            pricesData = result.data || [];
+            // Проверяем разные форматы ответа
+            if (Array.isArray(result)) {
+                pricesData = result;
+            } else if (result.data && Array.isArray(result.data)) {
+                pricesData = result.data;
+            } else if (result.prices && Array.isArray(result.prices)) {
+                pricesData = result.prices;
+            } else {
+                pricesData = [];
+            }
             console.log('Прайс загружен:', pricesData);
         }
     } catch (error) {
         console.error('Ошибка загрузки прайса:', error);
+        pricesData = [];
     }
 }
 
@@ -1623,6 +1638,213 @@ async function showGroupTrainingDetails(trainingId) {
         });
     } catch (error) {
         console.error('Ошибка загрузки информации о групповой тренировке:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
+// ========================================
+// РЕГУЛЯРНЫЕ ГРУППОВЫЕ ТРЕНИРОВКИ
+// ========================================
+
+// Инициализация формы регулярных групповых тренировок
+function initRegularTrainingForm() {
+    // Заполняем вид спорта в зависимости от возможностей инструктора
+    const sportTypeSelect = document.getElementById('regular-sport-type');
+    if (sportTypeSelect && instructorData) {
+        sportTypeSelect.innerHTML = '<option value="">Выберите вид спорта</option>';
+        
+        if (instructorData.sport_type === 'both') {
+            sportTypeSelect.innerHTML += '<option value="ski">⛷️ Горные лыжи</option>';
+            sportTypeSelect.innerHTML += '<option value="snowboard">🏂 Сноуборд</option>';
+        } else if (instructorData.sport_type === 'ski') {
+            sportTypeSelect.innerHTML += '<option value="ski">⛷️ Горные лыжи</option>';
+        } else if (instructorData.sport_type === 'snowboard') {
+            sportTypeSelect.innerHTML += '<option value="snowboard">🏂 Сноуборд</option>';
+        }
+    }
+    
+    // Заполняем уровни от 1 до 10
+    const levelSelect = document.getElementById('regular-level');
+    if (levelSelect) {
+        levelSelect.innerHTML = '<option value="">Выберите уровень</option>';
+        for (let i = 1; i <= 10; i++) {
+            levelSelect.innerHTML += `<option value="${i}">${i} уровень</option>`;
+        }
+    }
+    
+    // Устанавливаем даты по умолчанию
+    const today = new Date();
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 60); // 2 месяца вперед
+    
+    document.getElementById('regular-from').value = today.toISOString().split('T')[0];
+    document.getElementById('regular-to').value = endDate.toISOString().split('T')[0];
+    
+    // Обработчики изменения количества участников для расчета цены
+    const maxParticipantsInput = document.getElementById('regular-max-participants');
+    const minParticipantsInput = document.getElementById('regular-min-participants');
+    
+    if (maxParticipantsInput) {
+        maxParticipantsInput.addEventListener('input', calculateRegularPrice);
+        // Устанавливаем значение по умолчанию
+        maxParticipantsInput.value = 4;
+        // Делаем расчет после небольшой задержки, чтобы прайс точно был загружен
+        setTimeout(() => {
+            calculateRegularPrice();
+        }, 100);
+    }
+    
+    if (minParticipantsInput) {
+        minParticipantsInput.addEventListener('input', () => {
+            const min = parseInt(minParticipantsInput.value) || 0;
+            const max = parseInt(maxParticipantsInput?.value) || 0;
+            if (min > max && max > 0) {
+                maxParticipantsInput.value = min;
+            }
+            calculateRegularPrice();
+        });
+    }
+}
+
+// Получить цену из прайса по количеству участников (вспомогательная функция)
+function getPriceFromPricelist(maxParticipants) {
+    if (!pricesData || pricesData.length === 0) {
+        console.log('Прайс не загружен или пуст');
+        return null;
+    }
+    
+    console.log('Поиск цены для', maxParticipants, 'участников. Прайс:', pricesData);
+    
+    // Ищем цену в прайсе для групповых тренировок
+    const groupPrice = pricesData.find(p => {
+        const pType = p.type;
+        const pParticipants = parseInt(p.participants);
+        const pDuration = parseInt(p.duration);
+        
+        return pType === 'group' && 
+               pParticipants === maxParticipants &&
+               pDuration === 60;
+    });
+    
+    if (!groupPrice) {
+        console.log('Цена не найдена для', maxParticipants, 'участников');
+        return null;
+    }
+    
+    console.log('Найдена цена:', groupPrice);
+    
+    // Возвращаем общую стоимость группы
+    return parseFloat(groupPrice.price);
+}
+
+// Расчет цены для регулярных групповых тренировок
+function calculateRegularPrice() {
+    const maxParticipants = parseInt(document.getElementById('regular-max-participants')?.value) || 0;
+    const priceInfo = document.getElementById('regular-price-info');
+    
+    if (!priceInfo) {
+        return;
+    }
+    
+    if (maxParticipants === 0 || !pricesData || pricesData.length === 0) {
+        priceInfo.innerHTML = 'Выберите максимум участников для расчета';
+        return;
+    }
+    
+    const totalPrice = getPriceFromPricelist(maxParticipants);
+    if (!totalPrice) {
+        priceInfo.innerHTML = `⚠️ Цена для ${maxParticipants} участников не найдена в прайсе`;
+        return;
+    }
+    
+    const pricePerPerson = totalPrice / maxParticipants;
+    
+    const adminPercentage = instructorData?.admin_percentage || 20;
+    const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+    const instructorPerPerson = instructorEarnings / maxParticipants;
+    
+    priceInfo.innerHTML = `
+        <div style="margin-top: 5px;">
+            <div><strong>Цена за участника:</strong> ${pricePerPerson.toFixed(2)} ₽</div>
+            <div><strong>Ваш заработок за участника:</strong> ${instructorPerPerson.toFixed(2)} ₽</div>
+            <div><strong>Ваш общий заработок при полном заполнении:</strong> ${instructorEarnings.toFixed(2)} ₽</div>
+        </div>
+    `;
+}
+
+// Создание регулярных групповых тренировок
+async function createRegularGroupTrainings() {
+    const token = getToken();
+    if (!token) return;
+    
+    const fromDate = document.getElementById('regular-from').value;
+    const toDate = document.getElementById('regular-to').value;
+    const time = document.getElementById('regular-time').value;
+    const sportType = document.getElementById('regular-sport-type').value;
+    const level = document.getElementById('regular-level').value;
+    const description = document.getElementById('regular-description').value;
+    const minParticipants = parseInt(document.getElementById('regular-min-participants').value);
+    const maxParticipants = parseInt(document.getElementById('regular-max-participants').value);
+    
+    // Получаем выбранные дни недели
+    const weekdaysCheckboxes = document.querySelectorAll('.regular-weekday:checked');
+    const weekdays = Array.from(weekdaysCheckboxes).map(cb => parseInt(cb.value));
+    
+    // Валидация
+    if (!fromDate || !toDate || !time || !sportType || !level || weekdays.length === 0) {
+        showError('Заполните все обязательные поля и выберите хотя бы один день недели');
+        return;
+    }
+    
+    if (minParticipants > maxParticipants) {
+        showError('Минимум участников не может быть больше максимума');
+        return;
+    }
+    
+    // Проверяем время (не раньше 10:15)
+    const [hours, minutes] = time.split(':').map(Number);
+    if (hours < 10 || (hours === 10 && minutes < 15)) {
+        showError('Первая тренировка может начаться не раньше 10:15');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/kuliga/instructor/regular-group-trainings', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fromDate,
+                toDate,
+                weekdays,
+                time,
+                sportType,
+                level,
+                description,
+                minParticipants,
+                maxParticipants
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка создания регулярных тренировок');
+        }
+        
+        showSuccess(`Создано: ${result.created} слотов и ${result.trainings} групповых тренировок`);
+        
+        // Очищаем форму
+        document.getElementById('regular-description').value = '';
+        document.querySelectorAll('.regular-weekday').forEach(cb => cb.checked = false);
+        
+        // Обновляем статистику и расписание
+        await loadStats();
+        await loadSchedule();
+    } catch (error) {
+        console.error('Ошибка создания регулярных тренировок:', error);
         showError(`Ошибка: ${error.message}`);
     }
 }

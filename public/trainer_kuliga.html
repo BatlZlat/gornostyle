@@ -313,6 +313,90 @@
                 </div>
                 <div id="delete-bulk-result" style="margin-top:10px;"></div>
             </section>
+
+            <!-- Регулярные групповые тренировки -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>📅 Регулярные групповые тренировки</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Создайте регулярные групповые тренировки на выбранные дни недели. Слоты и тренировки будут созданы автоматически.
+                </p>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты *</label>
+                        <input type="date" id="regular-from" class="form-control" required />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату *</label>
+                        <input type="date" id="regular-to" class="form-control" required />
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дни недели *</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="regular-weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="regular-weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="regular-weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="regular-weekday" value="0" /> Вс</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Время начала тренировки (HH:MM) *</label>
+                    <input type="time" id="regular-time" class="form-control" required />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Первая тренировка начинается не раньше 10:15
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Вид спорта *</label>
+                    <select id="regular-sport-type" class="form-control" required>
+                        <option value="">Выберите вид спорта</option>
+                        <!-- Опции заполнятся автоматически в зависимости от возможностей инструктора -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Уровень (1-10) *</label>
+                    <select id="regular-level" class="form-control" required>
+                        <option value="">Выберите уровень</option>
+                        <!-- Опции от 1 до 10 -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea id="regular-description" class="form-control" rows="3" placeholder="Описание тренировки (необязательно)"></textarea>
+                </div>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>Минимум участников *</label>
+                        <input type="number" id="regular-min-participants" class="form-control" min="1" value="2" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Максимум участников *</label>
+                        <input type="number" id="regular-max-participants" class="form-control" min="2" value="4" required />
+                    </div>
+                </div>
+                
+                <div class="form-group" id="regular-price-calculation" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 15px;">
+                    <strong>Расчет стоимости:</strong>
+                    <div id="regular-price-info" style="margin-top: 10px; color: #666;">
+                        Выберите максимум участников для расчета
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-regular-training-btn">Создать регулярные тренировки</button>
+                </div>
+                <div id="regular-result" style="margin-top:10px;"></div>
+            </section>
         </main>
     </div>
 

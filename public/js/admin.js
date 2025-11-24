@@ -2052,6 +2052,7 @@ async function loadKuligaInstructorsForTrainersPage() {
                         <p>Телефон: ${instructor.phone}</p>
                         ${instructor.email ? `<p>Email: ${instructor.email}</p>` : ''}
                         ${instructor.username ? `<p>Логин: ${instructor.username}</p>` : '<p style="color: #999;">Логин не задан</p>'}
+                        ${instructor.plain_password ? `<p>Пароль: ${instructor.plain_password}</p>` : instructor.username ? '<p style="color: #999;">Пароль не сохранен</p>' : ''}
                         <p>Статус: ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
                     </div>
                     <div class="trainer-actions">

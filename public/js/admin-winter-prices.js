@@ -2,6 +2,14 @@
  * Управление ценами для зимнего направления (естественный склон)
  */
 
+// Получить cookie по имени
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+}
+
 // Открыть модальное окно управления ценами
 function openWinterPricesModal() {
     document.getElementById('winter-prices-modal').style.display = 'flex';
@@ -16,9 +24,11 @@ function closeWinterPricesModal() {
 // Загрузить список зимних цен
 async function loadWinterPrices() {
     try {
+        // Получаем токен из cookie (для админа)
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch('/api/winter-prices', {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
 
@@ -27,6 +37,7 @@ async function loadWinterPrices() {
         }
 
         const prices = await response.json();
+        console.log('✅ Цены загружены:', prices.length);
         displayWinterPrices(prices);
     } catch (error) {
         console.error('Ошибка:', error);
@@ -38,7 +49,14 @@ async function loadWinterPrices() {
 function displayWinterPrices(prices) {
     const container = document.getElementById('winter-prices-list');
     
-    if (prices.length === 0) {
+    if (!container) {
+        console.error('❌ Контейнер winter-prices-list не найден');
+        return;
+    }
+    
+    console.log('Отображение цен, количество:', prices.length);
+    
+    if (!prices || prices.length === 0) {
         container.innerHTML = '<p style="text-align:center;color:#666;">Цены не найдены</p>';
         return;
     }
@@ -49,6 +67,12 @@ function displayWinterPrices(prices) {
         sport_group: prices.filter(p => p.type === 'sport_group'),
         group: prices.filter(p => p.type === 'group')
     };
+    
+    console.log('Группировка цен:', {
+        individual: grouped.individual.length,
+        sport_group: grouped.sport_group.length,
+        group: grouped.group.length
+    });
 
     let html = '';
 
@@ -80,6 +104,7 @@ function displayWinterPrices(prices) {
     }
 
     container.innerHTML = html;
+    console.log('HTML сгенерирован, длина:', html.length);
 }
 
 // Отрисовать элемент цены
@@ -137,9 +162,10 @@ function openCreateWinterPriceModal() {
 // Открыть модальное окно редактирования цены
 async function editWinterPrice(id) {
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}`, {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
 
@@ -230,6 +256,7 @@ async function saveWinterPrice(event) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const url = id ? `/api/winter-prices/${id}` : '/api/winter-prices';
         const method = id ? 'PUT' : 'POST';
         
@@ -237,7 +264,7 @@ async function saveWinterPrice(event) {
             method,
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(data)
         });
@@ -263,10 +290,11 @@ async function toggleWinterPriceStatus(id) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}/toggle`, {
             method: 'PUT',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -288,10 +316,11 @@ async function deleteWinterPrice(id) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}`, {
             method: 'DELETE',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
         

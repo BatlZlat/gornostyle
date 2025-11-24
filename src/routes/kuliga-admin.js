@@ -334,12 +334,17 @@ router.put('/instructors/:id', async (req, res) => {
             }
         }
         
-        // Обработка password (хешируем только если указан)
+        // Обработка password (хешируем и сохраняем в двух полях)
         if (password && password.trim()) {
             const saltRounds = 10;
             const passwordHash = await bcrypt.hash(password.trim(), saltRounds);
             updateFields.push(`password_hash = $${paramIndex}`);
             updateValues.push(passwordHash);
+            paramIndex++;
+            
+            // Сохраняем также plain password для удобства администратора
+            updateFields.push(`plain_password = $${paramIndex}`);
+            updateValues.push(password.trim());
             paramIndex++;
         }
         
