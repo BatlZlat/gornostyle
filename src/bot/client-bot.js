@@ -828,18 +828,36 @@ async function handlePriceCommand(msg) {
     const year = yekatTime.getFullYear();
     const dateStr = `${day}.${month}.${year}`;
 
-    // Получаем прайс из базы
+    // Получаем прайс для тренажера из базы
     let prices;
     try {
         const res = await pool.query('SELECT * FROM prices ORDER BY type, with_trainer DESC, participants, duration');
         prices = res.rows;
     } catch (e) {
-        console.error('Ошибка при получении прайса:', e);
+        console.error('Ошибка при получении прайса тренажера:', e);
         await bot.sendMessage(chatId, '❌ Не удалось получить прайс. Попробуйте позже.');
         return;
     }
 
-    // Группируем прайс
+    // Получаем прайс для зимних тренировок
+    let winterPrices;
+    try {
+        const winterRes = await pool.query(
+            'SELECT * FROM winter_prices WHERE is_active = TRUE ORDER BY type, participants NULLS FIRST, duration'
+        );
+        winterPrices = winterRes.rows;
+    } catch (e) {
+        console.error('Ошибка при получении прайса зимних тренировок:', e);
+        winterPrices = [];
+    }
+
+    // Формируем текст
+    let message = `💸 *Актуальный прайс на тренировки*\nна дату: ${dateStr}\n\n`;
+
+    // ============ ТРЕНИРОВКИ НА ТРЕНАЖЕРЕ ============
+    message += '🎿 *Тренировки на тренажере:*\n\n';
+
+    // Группируем прайс тренажера
     const individual = prices.filter(p => p.type === 'individual');
     const group = prices.filter(p => p.type === 'group');
 
@@ -851,10 +869,6 @@ async function handlePriceCommand(msg) {
     const groupWithTrainer = group.filter(p => p.with_trainer);
     const groupWithoutTrainer = group.filter(p => !p.with_trainer);
 
-    // Формируем текст
-    let message = `💸 *Актуальный прайс на тренировки*\nна дату: ${dateStr}\n\n`;
-
-    // Индивидуальные
     message += '👤 *Индивидуальные тренировки:*\n';
     message += '👨‍🏫 С тренером:\n';
     indWithTrainer.forEach(p => {
@@ -866,7 +880,6 @@ async function handlePriceCommand(msg) {
         message += `⏱ ${p.duration} минут — ${Number(p.price).toLocaleString('ru-RU')} руб.\n`;
     });
     message += '(Только для уверенных райдеров! 😎)\n\n';
-    message += '---\n\n';
 
     // Групповые
     message += '👥 *Групповые тренировки (60 минут):*\n(Чем больше народу — тем выгоднее! 🥳)\n\n';
@@ -879,6 +892,57 @@ async function handlePriceCommand(msg) {
         message += `• ${p.participants} чел — ${Number(p.price).toLocaleString('ru-RU')} руб./чел\n`;
     });
     message += '\n*Запишись с друзьями и катай дешевле!*\n\n---\n\n';
+
+    // ============ ЗИМНИЕ ТРЕНИРОВКИ (ЕСТЕСТВЕННЫЙ СКЛОН) ============
+    if (winterPrices.length > 0) {
+        message += '🏔️ *Зимние тренировки (естественный склон):*\n\n';
+
+        // Индивидуальные зимние тренировки
+        const winterIndividual = winterPrices.filter(p => p.type === 'individual');
+        if (winterIndividual.length > 0) {
+            message += '👤 *Индивидуальные тренировки:*\n';
+            winterIndividual
+                .sort((a, b) => a.duration - b.duration)
+                .forEach(p => {
+                    message += `⏱ ${p.duration} минут — ${Number(p.price).toLocaleString('ru-RU')} руб.\n`;
+                });
+            message += '\n';
+        }
+
+        // Спортивная группа (до 4 чел) - цена уже за человека
+        const sportGroup = winterPrices.filter(p => p.type === 'sport_group');
+        if (sportGroup.length > 0) {
+            message += '👥 *Спортивная группа (до 4 чел):*\n';
+            sportGroup
+                .sort((a, b) => (a.participants || 0) - (b.participants || 0))
+                .forEach(p => {
+                    const pricePerPerson = Number(p.price).toLocaleString('ru-RU', { 
+                        minimumFractionDigits: 0, 
+                        maximumFractionDigits: 0 
+                    });
+                    message += `• ${p.participants} чел — ${pricePerPerson} руб./чел\n`;
+                });
+            message += '\n';
+        }
+
+        // Обычная группа
+        const winterGroup = winterPrices.filter(p => p.type === 'group');
+        if (winterGroup.length > 0) {
+            message += '👥 *Обычная группа:*\n';
+            message += '(Чем больше народу — тем выгоднее! 🥳)\n\n';
+            winterGroup
+                .sort((a, b) => (a.participants || 0) - (b.participants || 0))
+                .forEach(p => {
+                    // Для типа 'group' цена - общая за группу, делим на количество для показа цены за человека
+                    const pricePerPerson = (Number(p.price) / (p.participants || 1)).toLocaleString('ru-RU', { 
+                        minimumFractionDigits: 0, 
+                        maximumFractionDigits: 0 
+                    });
+                    message += `• ${p.participants} чел — ${pricePerPerson} руб./чел\n`;
+                });
+            message += '\n*Запишись с друзьями и катай дешевле!*\n\n---\n\n';
+        }
+    }
 
     message += `❓ Остались вопросы?\nПишите или звоните администратору: ${adminPhone}`;
 

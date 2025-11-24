@@ -1108,6 +1108,9 @@ router.post('/regular-group-trainings', async (req, res) => {
             }
         }
 
+        // Вычисляем end_time для тренировки (start_time + 60 минут)
+        const endTime = `${String(hours + 1).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
         // Для каждой даты создаем слот и групповую тренировку
         for (const date of dates) {
             const dateStr = date.toISOString().split('T')[0];
@@ -1137,8 +1140,6 @@ router.post('/regular-group-trainings', async (req, res) => {
                 }
             } else {
                 // Создаем новый слот
-                const endTime = `${String(hours + 1).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-                
                 const slotResult = await client.query(
                     `INSERT INTO kuliga_schedule_slots 
                      (instructor_id, date, start_time, end_time, status)
@@ -1162,10 +1163,10 @@ router.post('/regular-group-trainings', async (req, res) => {
                 `INSERT INTO kuliga_group_trainings 
                  (slot_id, instructor_id, sport_type, level, description, 
                   min_participants, max_participants, current_participants, 
-                  price_per_person, date, start_time, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, 'scheduled')`,
+                  price_per_person, date, start_time, end_time, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'open')`,
                 [slotId, instructorId, sportType, level, description || null, 
-                 minParticipants, maxParticipants, pricePerPerson, dateStr, time]
+                 minParticipants, maxParticipants, pricePerPerson, dateStr, time, endTime]
             );
 
             createdTrainings++;
