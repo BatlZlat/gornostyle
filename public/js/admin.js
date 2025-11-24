@@ -1277,7 +1277,7 @@ async function loadPageContent(page) {
             if (activeTab && activeTab.dataset.trainerType === 'kuliga') {
                 await loadKuligaInstructorsForTrainersPage();
             } else {
-                await loadTrainers();
+            await loadTrainers();
             }
             break;
         case 'clients':
@@ -1452,7 +1452,7 @@ async function loadSchedule() {
     try {
         // Загружаем данные только для выбранного типа расписания
         const response = await fetch(`/api/schedule/admin?slope_type=${currentScheduleType}`);
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -1876,7 +1876,7 @@ async function loadTrainers() {
         // Очищаем список
         trainersList.innerHTML = '';
         
-        // Добавляем кнопку для просмотра уволенных тренеров
+            // Добавляем кнопку для просмотра уволенных тренеров
         if (dismissedTrainers.length > 0) {
             const dismissedButton = document.createElement('button');
             dismissedButton.className = 'btn-secondary';
@@ -1888,35 +1888,35 @@ async function loadTrainers() {
             };
             trainersList.appendChild(dismissedButton);
         }
-        
-        // Отображаем только активных тренеров
-        if (activeTrainers.length === 0) {
+            
+            // Отображаем только активных тренеров
+            if (activeTrainers.length === 0) {
             const noTrainersMsg = document.createElement('div');
             noTrainersMsg.className = 'alert alert-info';
             noTrainersMsg.textContent = 'Нет активных тренеров';
             trainersList.appendChild(noTrainersMsg);
-        } else {
+            } else {
             activeTrainers.forEach(trainer => {
                 const trainerCard = document.createElement('div');
                 trainerCard.className = 'trainer-item';
                 trainerCard.innerHTML = `
-                    <div class="trainer-photo">
-                        ${trainer.photo_url ? 
-                            `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
-                            `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
-                        }
-                    </div>
-                    <div class="trainer-info">
-                        <h3>${trainer.full_name}</h3>
-                        <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
-                        <p>Телефон: ${trainer.phone}</p>
-                        <p>Статус: Работает</p>
-                    </div>
-                    <div class="trainer-actions">
-                        <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
-                        <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
-                    </div>
+                        <div class="trainer-photo">
+                            ${trainer.photo_url ? 
+                                `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                                `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                            }
+                        </div>
+                        <div class="trainer-info">
+                            <h3>${trainer.full_name}</h3>
+                            <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                            <p>Телефон: ${trainer.phone}</p>
+                            <p>Статус: Работает</p>
+                        </div>
+                        <div class="trainer-actions">
+                            <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
+                            <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
+                            <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
+                        </div>
                 `;
                 trainersList.appendChild(trainerCard);
             });
@@ -2264,7 +2264,7 @@ async function editKuligaInstructorForTrainersPage(id) {
                 modal.remove();
                 await loadKuligaInstructorsForTrainersPage();
                 showSuccess('Данные инструктора успешно обновлены');
-            } catch (error) {
+    } catch (error) {
                 console.error('Ошибка при обновлении инструктора:', error);
                 showError(error.message || 'Не удалось обновить данные инструктора');
             }

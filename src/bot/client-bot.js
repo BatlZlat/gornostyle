@@ -34,16 +34,16 @@ try {
     // Создаем бота с отложенным запуском polling для избежания падения при сетевых ошибках
     bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
-    // Глобальный обработчик ошибок бота
-    bot.on('polling_error', (error) => {
+// Глобальный обработчик ошибок бота
+bot.on('polling_error', (error) => {
         console.error('❌ Ошибка polling клиентского бота:', error.code || 'EFATAL', error.message);
         // Не падаем, просто логируем ошибку
         // Бот автоматически попытается переподключиться
-    });
+});
 
-    bot.on('error', (error) => {
+bot.on('error', (error) => {
         console.error('❌ Ошибка клиентского бота:', error.code || 'ERROR', error.message);
-    });
+});
     
     // Запускаем polling с обработкой ошибок асинхронно
     // Это предотвращает падение приложения при проблемах с сетью
@@ -1193,7 +1193,7 @@ function showNaturalSlopeTrainingMenu(chatId) {
 async function handleTextMessage(msg) {
     const chatId = msg.chat.id;
     const state = userStates.get(chatId);
-    
+
     console.log('📨 handleTextMessage вызван:', {
         text: msg.text,
         hasState: !!state,
@@ -1220,7 +1220,7 @@ async function handleTextMessage(msg) {
     }
     
     // Обработка кнопки "Кошелек" (работает всегда, независимо от состояния)
-    if (msg.text === '💰 Кошелек') {
+        if (msg.text === '💰 Кошелек') {
             try {
                 const clientResult = await pool.query(
                     'SELECT c.id, c.full_name, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.telegram_id = $1',
@@ -1751,7 +1751,7 @@ async function handleTextMessage(msg) {
 
             // Показываем обновленный список участников
             return await showParticipantsList(chatId, state);
-        }
+    }
 
         // Обработка выбора ребенка ДО switch-case
         // Формат кнопки: "👶 Имя (возраст)" или "✅ Имя (возраст)"

@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
 const { verifyKuligaInstructorToken } = require('../middleware/kuligaInstructorAuth');
+const moment = require('moment-timezone');
+
+const TIMEZONE = 'Asia/Yekaterinburg';
 
 // Применяем middleware авторизации ко всем роутам
 router.use(verifyKuligaInstructorToken);
@@ -42,6 +45,61 @@ router.get('/slots', async (req, res) => {
         }
 
         const result = await pool.query(query, params);
+        
+        // Автоматически освобождаем слоты, которые заблокированы, но на них нет групповых тренировок
+        // Это может произойти, если тренировка была удалена администратором
+        const blockedSlots = result.rows.filter(slot => slot.status === 'blocked');
+        
+        if (blockedSlots.length > 0) {
+            const slotIds = blockedSlots.map(slot => slot.id);
+            
+            // Проверяем, какие из заблокированных слотов имеют групповые тренировки
+            // (тренировки удаляются полностью, не помечаются как cancelled)
+            const trainingsCheck = await pool.query(
+                `SELECT slot_id FROM kuliga_group_trainings 
+                 WHERE slot_id = ANY($1)`,
+                [slotIds]
+            );
+            
+            const slotsWithTrainings = new Set(trainingsCheck.rows.map(row => row.slot_id));
+            
+            // Освобождаем слоты без тренировок
+            const slotsToFree = slotIds.filter(id => !slotsWithTrainings.has(id));
+            
+            if (slotsToFree.length > 0) {
+                await pool.query(
+                    `UPDATE kuliga_schedule_slots 
+                     SET status = 'available' 
+                     WHERE id = ANY($1) AND status = 'blocked'`,
+                    [slotsToFree]
+                );
+                
+                // Обновляем статус в результатах
+                result.rows.forEach(slot => {
+                    if (slotsToFree.includes(slot.id)) {
+                        slot.status = 'available';
+                    }
+                });
+            }
+        }
+        
+            // Добавляем информацию о наличии групповых тренировок для слотов
+            // (тренировки удаляются полностью, не помечаются как cancelled)
+        if (result.rows.length > 0) {
+            const allSlotIds = result.rows.map(row => row.id);
+            const trainingsInfo = await pool.query(
+                `SELECT slot_id FROM kuliga_group_trainings 
+                 WHERE slot_id = ANY($1)`,
+                [allSlotIds]
+            );
+            const slotsWithTrainings = new Set(trainingsInfo.rows.map(row => row.slot_id));
+            
+            // Добавляем флаг has_group_training к каждому слоту
+            result.rows.forEach(slot => {
+                slot.has_group_training = slotsWithTrainings.has(slot.id);
+            });
+        }
+        
         res.json(result.rows);
     } catch (error) {
         console.error('Ошибка при получении слотов:', error);
@@ -264,19 +322,31 @@ router.post('/slots/create-bulk', async (req, res) => {
         await client.query('BEGIN');
 
         let created = 0;
-        const startDate = new Date(fromDate);
-        const endDate = new Date(toDate);
+        
+        // Используем moment-timezone для правильной работы с часовым поясом
+        // Парсим даты как локальные в часовом поясе Екатеринбурга
+        const startMoment = moment.tz(fromDate, 'YYYY-MM-DD', TIMEZONE).startOf('day');
+        const endMoment = moment.tz(toDate, 'YYYY-MM-DD', TIMEZONE).endOf('day');
 
         // Проходим по всем датам в диапазоне
-        for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-            const dayOfWeek = date.getDay(); // 0 = ВС, 1 = ПН, ..., 6 = СБ
+        let currentMoment = startMoment.clone();
+        while (currentMoment.isSameOrBefore(endMoment)) {
+            const dayOfWeek = currentMoment.day(); // 0 = ВС, 1 = ПН, ..., 6 = СБ
+            
+            // Преобразуем массив weekdays в числа для корректного сравнения
+            const weekdaysNumbers = weekdays.map(w => typeof w === 'string' ? parseInt(w, 10) : w);
 
             // Проверяем, входит ли этот день недели в выбранные
-            if (!weekdays.includes(dayOfWeek)) {
+            if (!weekdaysNumbers.includes(dayOfWeek)) {
+                currentMoment.add(1, 'day');
                 continue;
             }
 
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = currentMoment.format('YYYY-MM-DD');
+            
+            // Логируем для отладки
+            const dayNames = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+            console.log(`📅 Обработка даты: ${dateStr} (${dayNames[dayOfWeek]}) - день недели: ${dayOfWeek}, выбрано: [${weekdaysNumbers.join(', ')}]`);
 
             // Получаем существующие слоты на эту дату для проверки интервалов
             const existingSlotsResult = await client.query(
@@ -324,6 +394,8 @@ router.post('/slots/create-bulk', async (req, res) => {
 
                 created++;
             }
+            
+            currentMoment.add(1, 'day');
         }
 
         await client.query('COMMIT');
@@ -423,7 +495,38 @@ router.delete('/slots/:id', async (req, res) => {
             });
         }
 
-        // Удаляем слот
+        // Проверяем, есть ли на слоте групповая тренировка (даже без участников)
+        // (тренировки удаляются полностью, не помечаются как cancelled)
+        const trainingCheck = await pool.query(
+            `SELECT id FROM kuliga_group_trainings 
+             WHERE slot_id = $1`,
+            [slotId]
+        );
+
+        if (trainingCheck.rows.length > 0) {
+            // Проверяем, есть ли участники на этой тренировке
+            const bookingsCheck = await pool.query(
+                `SELECT COUNT(*) as count 
+                 FROM kuliga_bookings 
+                 WHERE group_training_id = $1 
+                 AND status IN ('pending', 'confirmed')`,
+                [trainingCheck.rows[0].id]
+            );
+
+            const hasParticipants = parseInt(bookingsCheck.rows[0].count) > 0;
+
+            if (hasParticipants) {
+                return res.status(400).json({ 
+                    error: 'Нельзя удалить слот с групповой тренировкой, на которую записаны клиенты. Для удаления обратитесь к администратору.' 
+                });
+            } else {
+                return res.status(400).json({ 
+                    error: 'Нельзя удалить слот с групповой тренировкой. Сначала удалите групповую тренировку через администратора.' 
+                });
+            }
+        }
+
+        // Удаляем слот только если на нем нет групповой тренировки
         await pool.query(
             'DELETE FROM kuliga_schedule_slots WHERE id = $1',
             [slotId]
@@ -639,9 +742,17 @@ router.post('/slots/delete-bulk', async (req, res) => {
         return res.status(400).json({ error: 'Укажите диапазон дат (fromDate, toDate)' });
     }
 
+    const client = await pool.connect();
+    let deletedCount = 0;
+    let skippedWithTraining = 0;
+
     try {
+        await client.query('BEGIN');
+
+        // Получаем все слоты в диапазоне для инструктора
         let query = `
-            DELETE FROM kuliga_schedule_slots
+            SELECT id, status
+            FROM kuliga_schedule_slots
             WHERE instructor_id = $1
               AND date >= $2
               AND date <= $3
@@ -655,14 +766,48 @@ router.post('/slots/delete-bulk', async (req, res) => {
             params.push(weekdays);
         }
 
-        const result = await pool.query(query, params);
+        const slotsResult = await client.query(query, params);
 
-        console.log(`✅ Инструктор ${instructorId} удалил ${result.rowCount} слотов (${fromDate} - ${toDate})`);
+        // Для каждого слота проверяем наличие групповой тренировки
+        for (const slot of slotsResult.rows) {
+            // Проверяем, есть ли на слоте групповая тренировка
+            // (тренировки удаляются полностью, не помечаются как cancelled)
+            const trainingCheck = await client.query(
+                `SELECT id FROM kuliga_group_trainings 
+                 WHERE slot_id = $1`,
+                [slot.id]
+            );
 
-        res.json({ success: true, deleted: result.rowCount });
+            if (trainingCheck.rows.length > 0) {
+                // Пропускаем слоты с групповыми тренировками
+                skippedWithTraining++;
+                continue;
+            }
+
+            // Удаляем слот только если на нем нет групповой тренировки
+            await client.query(
+                'DELETE FROM kuliga_schedule_slots WHERE id = $1',
+                [slot.id]
+            );
+            deletedCount++;
+        }
+
+        await client.query('COMMIT');
+
+        console.log(`✅ Инструктор ${instructorId} удалил ${deletedCount} слотов, пропущено ${skippedWithTraining} (${fromDate} - ${toDate})`);
+
+        res.json({ 
+            success: true, 
+            deleted: deletedCount,
+            skipped: skippedWithTraining,
+            message: `Удалено слотов: ${deletedCount}${skippedWithTraining > 0 ? `, пропущено (с групповыми тренировками): ${skippedWithTraining}` : ''}`
+        });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Ошибка массового удаления слотов:', error);
         res.status(500).json({ error: 'Не удалось удалить слоты: ' + error.message });
+    } finally {
+        client.release();
     }
 });
 
@@ -930,97 +1075,28 @@ router.delete('/group-trainings/:id', async (req, res) => {
             });
         }
 
-        // Отменяем все бронирования и возвращаем деньги (этот код не выполнится, так как выше проверка)
-        for (const booking of bookingsResult.rows) {
-            await client.query(
-                'UPDATE kuliga_bookings SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
-                ['cancelled', booking.id]
-            );
-
-            // Возврат средств
-            const priceTotal = parseFloat(booking.price_total || 0);
-            if (priceTotal > 0) {
-                await client.query(
-                    `UPDATE wallets SET balance = balance + $1 WHERE client_id = $2`,
-                    [priceTotal, booking.client_id]
-                );
-
-                await client.query(
-                    `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
-                     SELECT id, $1, 'refund', $2, CURRENT_TIMESTAMP
-                     FROM wallets WHERE client_id = $3`,
-                    [priceTotal, `Возврат за отмену групповой тренировки ${training.date}`, booking.client_id]
-                );
-            }
-        }
-
-        // Обновляем статус тренировки на cancelled
+        // Удаляем групповую тренировку
         await client.query(
-            `UPDATE kuliga_group_trainings 
-             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
-             WHERE id = $1`,
+            'DELETE FROM kuliga_group_trainings WHERE id = $1',
             [id]
         );
 
-        // Освобождаем слот
-        if (training.slot_id) {
-            await client.query(
-                `UPDATE kuliga_schedule_slots 
-                 SET status = 'available', updated_at = CURRENT_TIMESTAMP 
-                 WHERE id = $1`,
-                [training.slot_id]
-            );
-        }
+        // Освобождаем слот (меняем статус с blocked на available)
+        await client.query(
+            `UPDATE kuliga_schedule_slots 
+             SET status = 'available' 
+             WHERE id = $1 AND status = 'blocked'`,
+            [training.slot_id]
+        );
 
         await client.query('COMMIT');
+        
+        console.log(`✅ Инструктор ${instructorId} удалил групповую тренировку ${id} и освободил слот ${training.slot_id}`);
 
-        console.log(`✅ Инструктор ${instructorId} удалил групповую тренировку ${id}, отменено бронирований: ${bookingsResult.rows.length}`);
-
-        // Получаем информацию об инструкторе для уведомлений
-        const instructorInfo = await pool.query(
-            'SELECT full_name FROM kuliga_instructors WHERE id = $1',
-            [instructorId]
-        );
-        const instructorName = instructorInfo.rows[0]?.full_name || 'Инструктор';
-
-        // Отправляем уведомления клиентам
-        const { bot } = require('../bot/client-bot');
-        for (const booking of bookingsResult.rows) {
-            if (booking.telegram_id) {
-                try {
-                    const moment = require('moment-timezone');
-                    const dateObj = moment(training.date).tz('Asia/Yekaterinburg');
-                    const formattedDate = dateObj.format('DD.MM.YYYY');
-                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.day()];
-                    
-                    await bot.sendMessage(
-                        booking.telegram_id,
-                        `❌ Групповая тренировка отменена\n\n` +
-                        `📅 Дата: ${formattedDate} (${dayOfWeek})\n` +
-                        `⏰ Время: ${training.start_time.substring(0, 5)}\n` +
-                        `👨‍🏫 Инструктор: ${instructorName}\n` +
-                        `💰 Возврат: ${parseFloat(booking.price_total).toFixed(2)} ₽\n\n` +
-                        `Средства возвращены на ваш баланс.`
-                    );
-                } catch (error) {
-                    console.error(`Ошибка отправки уведомления клиенту ${booking.telegram_id}:`, error);
-                }
-            }
-        }
-
-        // Отправляем уведомление администратору
-        const { notifyAdminGroupTrainingDeletedByInstructor } = require('../bot/admin-notify');
-        try {
-            await notifyAdminGroupTrainingDeletedByInstructor({
-                training,
-                instructorName,
-                bookingsCount: bookingsResult.rows.length
-            });
-        } catch (error) {
-            console.error('Ошибка отправки уведомления администратору:', error);
-        }
-
-        res.json({ success: true, message: 'Групповая тренировка удалена', refunded: bookingsResult.rows.length });
+        res.json({ 
+            success: true, 
+            message: 'Групповая тренировка успешно удалена, слот освобожден' 
+        });
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Ошибка удаления групповой тренировки:', error);
@@ -1096,24 +1172,37 @@ router.post('/regular-group-trainings', async (req, res) => {
         const totalPrice = parseFloat(priceResult.rows[0].price);
         const pricePerPerson = totalPrice / maxParticipants;
 
-        // Генерируем даты в диапазоне
-        const startDate = new Date(fromDate);
-        const endDate = new Date(toDate);
+        // Генерируем даты в диапазоне с учетом часового пояса Екатеринбурга
         const dates = [];
-
-        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-            const dayOfWeek = d.getDay();
-            if (weekdays.includes(dayOfWeek)) {
-                dates.push(new Date(d));
+        const startMoment = moment.tz(fromDate, 'YYYY-MM-DD', TIMEZONE).startOf('day');
+        const endMoment = moment.tz(toDate, 'YYYY-MM-DD', TIMEZONE).endOf('day');
+        
+        // Преобразуем массив weekdays в числа для корректного сравнения
+        const weekdaysNumbers = weekdays.map(w => typeof w === 'string' ? parseInt(w, 10) : w);
+        
+        let currentMoment = startMoment.clone();
+        while (currentMoment.isSameOrBefore(endMoment)) {
+            const dayOfWeek = currentMoment.day(); // 0=ВС, 1=ПН, ..., 6=СБ
+            
+            if (weekdaysNumbers.includes(dayOfWeek)) {
+                const dateStr = currentMoment.format('YYYY-MM-DD');
+                dates.push(dateStr);
+                
+                // Логируем для отладки
+                const dayNames = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+                console.log(`📅 Добавлена дата: ${dateStr} (${dayNames[dayOfWeek]}) - день недели: ${dayOfWeek}`);
             }
+            
+            currentMoment.add(1, 'day');
         }
+        
+        console.log(`📅 Сгенерировано ${dates.length} дат для дней недели [${weekdaysNumbers.join(', ')}] (часовой пояс: ${TIMEZONE}):`, dates);
 
         // Вычисляем end_time для тренировки (start_time + 60 минут)
         const endTime = `${String(hours + 1).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
         // Для каждой даты создаем слот и групповую тренировку
-        for (const date of dates) {
-            const dateStr = date.toISOString().split('T')[0];
+        for (const dateStr of dates) {
 
             // Проверяем, не существует ли уже слот на это время
             const existingSlot = await client.query(
@@ -1183,6 +1272,123 @@ router.post('/regular-group-trainings', async (req, res) => {
         await client.query('ROLLBACK');
         console.error('Ошибка при создании регулярных тренировок:', error);
         res.status(500).json({ error: error.message || 'Ошибка при создании регулярных тренировок' });
+    } finally {
+        client.release();
+    }
+});
+
+/**
+ * POST /api/kuliga/instructor/group-trainings/delete-bulk
+ * Массовое удаление групповых тренировок
+ * Body: { fromDate, toDate, weekdays[] (опционально), time (опционально) }
+ */
+router.post('/group-trainings/delete-bulk', async (req, res) => {
+    const instructorId = req.kuligaInstructor.id;
+    const { fromDate, toDate, weekdays, time } = req.body;
+
+    if (!fromDate || !toDate) {
+        return res.status(400).json({ error: 'Необходимо указать диапазон дат' });
+    }
+
+    const client = await pool.connect();
+    let deletedTrainings = 0;
+    let skippedWithBookings = 0;
+    let freedSlots = 0;
+
+    try {
+        await client.query('BEGIN');
+
+        // Формируем запрос для поиска групповых тренировок
+        let query = `
+            SELECT id, slot_id, date, start_time
+            FROM kuliga_group_trainings
+            WHERE instructor_id = $1 
+            AND date BETWEEN $2 AND $3
+        `;
+        const params = [instructorId, fromDate, toDate];
+        let paramIndex = 4;
+
+        // Фильтр по дням недели
+        if (weekdays && Array.isArray(weekdays) && weekdays.length > 0) {
+            query += ` AND EXTRACT(DOW FROM date)::INTEGER = ANY($${paramIndex})`;
+            params.push(weekdays);
+            paramIndex++;
+        }
+
+        // Фильтр по времени начала
+        if (time) {
+            query += ` AND start_time = $${paramIndex}`;
+            params.push(time);
+            paramIndex++;
+        }
+
+        query += ' ORDER BY date, start_time';
+
+        const trainingsResult = await client.query(query, params);
+
+        // Для каждой тренировки проверяем наличие активных бронирований и удаляем
+        for (const training of trainingsResult.rows) {
+            // Проверяем наличие активных бронирований
+            const bookingsCheck = await client.query(
+                `SELECT COUNT(*) as count 
+                 FROM kuliga_bookings 
+                 WHERE group_training_id = $1 
+                 AND status IN ('pending', 'confirmed')`,
+                [training.id]
+            );
+
+            const hasActiveBookings = parseInt(bookingsCheck.rows[0].count) > 0;
+
+            if (hasActiveBookings) {
+                // Пропускаем тренировки с активными бронированиями
+                skippedWithBookings++;
+                continue;
+            }
+
+            // Удаляем тренировку
+            await client.query(
+                'DELETE FROM kuliga_group_trainings WHERE id = $1',
+                [training.id]
+            );
+
+            // Освобождаем слот (устанавливаем статус available независимо от текущего статуса)
+            if (training.slot_id) {
+                const slotUpdateResult = await client.query(
+                    `UPDATE kuliga_schedule_slots 
+                     SET status = 'available', updated_at = CURRENT_TIMESTAMP 
+                     WHERE id = $1 AND instructor_id = $2`,
+                    [training.slot_id, instructorId]
+                );
+
+                if (slotUpdateResult.rowCount > 0) {
+                    freedSlots++;
+                }
+            }
+
+            deletedTrainings++;
+        }
+
+        await client.query('COMMIT');
+
+        let message = `Удалено тренировок: ${deletedTrainings}`;
+        if (skippedWithBookings > 0) {
+            message += `, пропущено (с бронированиями): ${skippedWithBookings}`;
+        }
+        if (freedSlots > 0) {
+            message += `, освобождено слотов: ${freedSlots}`;
+        }
+
+        res.json({
+            success: true,
+            deleted: deletedTrainings,
+            skipped: skippedWithBookings,
+            freedSlots: freedSlots,
+            message: message
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка массового удаления групповых тренировок:', error);
+        res.status(500).json({ error: 'Ошибка при удалении тренировок: ' + error.message });
     } finally {
         client.release();
     }

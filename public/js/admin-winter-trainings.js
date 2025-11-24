@@ -1222,10 +1222,19 @@ async function deleteWinterTraining(id, trainingSource, kuligaType) {
         }
         
         console.log('🔍 Удаление тренировки Кулиги через API Кулиги');
-        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        // Получаем токен из cookie (для админа)
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        };
+        const token = getCookie('adminToken') || localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        console.log('🔑 Токен для удаления:', token ? 'есть' : 'НЕТ');
         
         try {
-            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'individual'}`, {
+            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'group'}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,

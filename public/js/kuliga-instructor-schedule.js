@@ -557,6 +557,9 @@ async function deleteSlot(slotId) {
             throw new Error(error.error || 'Ошибка удаления слота');
         }
 
+        // Показываем сообщение об успехе
+        showSuccess('Слот успешно удален');
+        
         // Перезагружаем слоты, расписание и статистику
         await loadSlotsForDay();
         await loadSchedule();
@@ -736,6 +739,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     endDate.setDate(endDate.getDate() + 30);
     document.getElementById('bulk-to').value = endDate.toISOString().split('T')[0];
     document.getElementById('delete-to').value = endDate.toISOString().split('T')[0];
+    document.getElementById('delete-trainings-from').value = today;
+    document.getElementById('delete-trainings-to').value = endDate.toISOString().split('T')[0];
 
     // Обработчики событий
     document.getElementById('create-slots-btn').addEventListener('click', createSlotsForDay);
@@ -743,6 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('create-bulk-btn').addEventListener('click', createBulkSlots);
     document.getElementById('delete-bulk-btn').addEventListener('click', deleteBulkSlots);
     document.getElementById('create-regular-training-btn').addEventListener('click', createRegularGroupTrainings);
+    document.getElementById('delete-trainings-btn').addEventListener('click', deleteBulkGroupTrainings);
     document.getElementById('logout-btn').addEventListener('click', logout);
     
     // Загружаем полную информацию об инструкторе и прайс
@@ -1159,17 +1165,55 @@ function displaySchedule(scheduleByDate) {
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
         const formattedDate = `${day}.${month}.${year} (${dayOfWeek})`;
 
+        // Создаем карту слотов по ID для быстрого поиска
+        const slotsMap = new Map();
+        slots.forEach(slot => {
+            slotsMap.set(slot.id, slot);
+        });
+
+        // Объединяем слоты и тренировки по времени
+        // Если на слоте есть групповая тренировка - показываем только тренировку
+        // Если на слоте нет тренировки - показываем слот
+        const processedSlotIds = new Set();
+        const allItems = [];
+
+        // Сначала добавляем все тренировки и отмечаем их слоты
+        trainings.forEach(training => {
+            if (training.slot_id) {
+                processedSlotIds.add(training.slot_id);
+            }
+            allItems.push({ ...training, type: 'training' });
+        });
+
+        // Добавляем слоты, на которых нет тренировок
+        slots.forEach(slot => {
+            // Не добавляем слот, если на нем есть групповая тренировка (она уже добавлена выше)
+            // Проверяем как processedSlotIds (из тренировок), так и has_group_training (из API)
+            // Также проверяем статус слота - если он blocked и есть тренировка, не показываем слот
+            const hasTraining = processedSlotIds.has(slot.id) || slot.has_group_training || slot.status === 'group';
+            if (!hasTraining) {
+                allItems.push({ ...slot, type: 'slot' });
+            }
+        });
+
+        // Сортируем по времени
+        allItems.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        
+        // Показываем заголовок и элементы только если есть что показывать
+        if (allItems.length === 0) {
+            return; // Пропускаем эту дату, если нет элементов
+        }
+
         html += `<div style="margin-bottom: 30px;">`;
         html += `<h3 style="margin-bottom: 15px;">${formattedDate}</h3>`;
 
-        // Объединяем слоты и тренировки по времени
-        const allItems = [
-            ...slots.map(s => ({ ...s, type: 'slot' })),
-            ...trainings.map(t => ({ ...t, type: 'training' }))
-        ].sort((a, b) => a.start_time.localeCompare(b.start_time));
-
         allItems.forEach(item => {
             if (item.type === 'slot') {
+                // Не показываем слот, если на нем есть групповая тренировка (она показывается отдельно)
+                if (item.has_group_training) {
+                    return; // Пропускаем этот слот
+                }
+                
                 const statusText = {
                     'available': 'Свободен',
                     'booked': 'Забронирован',
@@ -1178,6 +1222,12 @@ function displaySchedule(scheduleByDate) {
                 }[item.status] || item.status;
                 const startTime = String(item.start_time).substring(0, 5);
                 const endTime = String(item.end_time).substring(0, 5);
+                
+                // Проверяем, можно ли удалить слот (нет групповой тренировки и нет бронирований)
+                const canDelete = item.status === 'available' || 
+                                 (item.status === 'blocked' && !item.has_group_training);
+                const canBlock = item.status === 'available';
+                const canUnblock = item.status === 'blocked' && !item.has_group_training;
                 
                 html += `
                     <div class="schedule-slot ${item.status}" style="margin-bottom: 10px;">
@@ -1188,13 +1238,15 @@ function displaySchedule(scheduleByDate) {
                         <div class="slot-actions">
                             ${item.status === 'available' ? 
                                 `<button class="btn-primary" onclick="openGroupTrainingModal(${item.id})">👥 Создать групповую</button>
-                                 <button class="btn-secondary" onclick="toggleSlotStatus(${item.id}, 'blocked')">Заблокировать</button>` : ''}
-                            ${item.status === 'blocked' ? 
-                                `<button class="btn-primary" onclick="toggleSlotStatus(${item.id}, 'available')">Разблокировать</button>` : ''}
+                                 <button class="btn-secondary" onclick="toggleSlotStatus(${item.id}, 'blocked')">Заблокировать</button>
+                                 ${canDelete ? `<button class="btn-danger" onclick="deleteSlot(${item.id})">Удалить</button>` : ''}` : ''}
+                            ${item.status === 'blocked' && canUnblock ? 
+                                `<button class="btn-primary" onclick="toggleSlotStatus(${item.id}, 'available')">Разблокировать</button>
+                                 ${canDelete ? `<button class="btn-danger" onclick="deleteSlot(${item.id})">Удалить</button>` : ''}` : ''}
+                            ${item.status === 'blocked' && !canUnblock ? 
+                                `<span style="color: #666; font-size: 0.9em;">На этом слоте групповая тренировка. Для управления обратитесь к администратору.</span>` : ''}
                             ${item.status === 'booked' ? 
                                 `<button class="btn-primary" onclick="showSlotDetails(${item.id})">Подробнее</button>` : ''}
-                            ${item.status === 'available' || item.status === 'blocked' ? 
-                                `<button class="btn-danger" onclick="deleteSlot(${item.id})">Удалить</button>` : ''}
                         </div>
                     </div>
                 `;
@@ -1215,9 +1267,9 @@ function displaySchedule(scheduleByDate) {
                         </div>
                         <div class="slot-actions">
                             <button class="btn-primary" onclick="showGroupTrainingDetails(${item.id})">Подробнее</button>
-                            ${(item.current_participants || 0) === 0 ? `
-                                <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️</button>
-                                <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️</button>
+                            ${(parseInt(item.current_participants) || 0) === 0 ? `
+                                <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️ Редактировать</button>
+                                <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️ Удалить</button>
                             ` : `
                                 <span style="color: #666; font-size: 0.9em;">Для редактирования или удаления обратитесь к администратору</span>
                             `}
@@ -1229,6 +1281,11 @@ function displaySchedule(scheduleByDate) {
 
         html += `</div>`;
     });
+    
+    // Если после обработки нет контента, показываем сообщение
+    if (html.trim() === '') {
+        html = '<div style="color: #666;">Расписание пусто</div>';
+    }
 
     container.innerHTML = html;
 }
@@ -1845,6 +1902,61 @@ async function createRegularGroupTrainings() {
         await loadSchedule();
     } catch (error) {
         console.error('Ошибка создания регулярных тренировок:', error);
+        showError(`Ошибка: ${error.message}`);
+    }
+}
+
+// Массовое удаление групповых тренировок
+async function deleteBulkGroupTrainings() {
+    if (!confirm('Вы уверены, что хотите удалить групповые тренировки? Тренировки с активными бронированиями будут пропущены.')) {
+        return;
+    }
+
+    const token = getToken();
+    if (!token) return;
+
+    const fromDate = document.getElementById('delete-trainings-from').value;
+    const toDate = document.getElementById('delete-trainings-to').value;
+    const time = document.getElementById('delete-trainings-time').value;
+    const resultDiv = document.getElementById('delete-trainings-result');
+
+    // Получаем выбранные дни недели
+    const weekdaysCheckboxes = document.querySelectorAll('.delete-trainings-weekday:checked');
+    const weekdays = Array.from(weekdaysCheckboxes).map(cb => parseInt(cb.value));
+
+    if (!fromDate || !toDate) {
+        showError('Заполните диапазон дат');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/kuliga/instructor/group-trainings/delete-bulk', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fromDate,
+                toDate,
+                weekdays: weekdays.length > 0 ? weekdays : undefined,
+                time: time || undefined
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка удаления тренировок');
+        }
+
+        showSuccess(result.message || `Удалено тренировок: ${result.deleted}`);
+        
+        // Обновляем расписание и статистику
+        await loadStats();
+        await loadSchedule();
+    } catch (error) {
+        console.error('Ошибка массового удаления тренировок:', error);
         showError(`Ошибка: ${error.message}`);
     }
 }

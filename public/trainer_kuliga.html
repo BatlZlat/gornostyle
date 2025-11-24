@@ -397,6 +397,54 @@
                 </div>
                 <div id="regular-result" style="margin-top:10px;"></div>
             </section>
+
+            <!-- Массовое удаление групповых тренировок -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>🗑️ Массовое удаление групповых тренировок</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Удалите групповые тренировки в указанном диапазоне дат. Можно удалить только тренировки без активных бронирований.
+                </p>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты *</label>
+                        <input type="date" id="delete-trainings-from" class="form-control" required />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату *</label>
+                        <input type="date" id="delete-trainings-to" class="form-control" required />
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дни недели (необязательно)</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="0" /> Вс</label>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Если не выбрано ни одного дня, будут удалены тренировки на все дни в указанном диапазоне.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Время начала тренировки (необязательно)</label>
+                    <input type="time" id="delete-trainings-time" class="form-control" />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Если указано, будут удалены только тренировки, начинающиеся в это время.
+                    </small>
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn-danger" id="delete-trainings-btn" style="background: #e74c3c;">Удалить групповые тренировки</button>
+                </div>
+                <div id="delete-trainings-result" style="margin-top:10px;"></div>
+            </section>
         </main>
     </div>
 

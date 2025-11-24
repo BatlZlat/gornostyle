@@ -1420,9 +1420,30 @@ router.delete('/training/:id', async (req, res) => {
 
                 const allBookings = allBookingsResult.rows;
                 
+                // Если нет активных бронирований, просто удаляем тренировку
                 if (allBookings.length === 0) {
-                    await client.query('ROLLBACK');
-                    return res.status(404).json({ success: false, error: 'Не найдено активных бронирований для этой групповой тренировки' });
+                    // Освобождаем слот (независимо от статуса, если он был заблокирован для тренировки)
+                    if (groupTraining.slot_id) {
+                        await client.query(
+                            `UPDATE kuliga_schedule_slots 
+                             SET status = 'available', updated_at = CURRENT_TIMESTAMP 
+                             WHERE id = $1`,
+                            [groupTraining.slot_id]
+                        );
+                    }
+                    
+                    // Удаляем групповую тренировку
+                    await client.query(
+                        'DELETE FROM kuliga_group_trainings WHERE id = $1',
+                        [id]
+                    );
+                    
+                    await client.query('COMMIT');
+                    return res.json({
+                        success: true,
+                        message: 'Групповая тренировка успешно удалена (не было активных бронирований)',
+                        refund: 0
+                    });
                 }
 
                 // Получаем данные инструктора
@@ -1492,23 +1513,21 @@ router.delete('/training/:id', async (req, res) => {
                     }
                 }
 
-                // Обновляем статус групповой тренировки на 'cancelled' и обнуляем current_participants
-                await client.query(
-                    `UPDATE kuliga_group_trainings 
-                     SET status = 'cancelled', 
-                         current_participants = 0,
-                         updated_at = CURRENT_TIMESTAMP 
-                     WHERE id = $1`,
-                    [id]
-                );
-
                 // Освобождаем слот (всегда, так как вся тренировка отменена)
                 if (groupTraining.slot_id) {
                     await client.query(
-                        'UPDATE kuliga_schedule_slots SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-                        ['available', groupTraining.slot_id]
+                        `UPDATE kuliga_schedule_slots 
+                         SET status = 'available', updated_at = CURRENT_TIMESTAMP 
+                         WHERE id = $1`,
+                        [groupTraining.slot_id]
                     );
                 }
+                
+                // Удаляем групповую тренировку (после обработки всех возвратов)
+                await client.query(
+                    'DELETE FROM kuliga_group_trainings WHERE id = $1',
+                    [id]
+                );
 
                 await client.query('COMMIT');
 
