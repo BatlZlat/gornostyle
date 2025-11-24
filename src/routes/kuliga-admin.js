@@ -163,7 +163,12 @@ router.get('/instructors', async (req, res) => {
 
     // Обычный список инструкторов без фильтрации по слотам
     try {
-        let query = 'SELECT * FROM kuliga_instructors WHERE 1=1';
+        // Явно указываем все поля, включая plain_password, чтобы гарантировать его возврат
+        let query = `SELECT id, full_name, phone, email, photo_url, description, sport_type, 
+                            admin_percentage, hire_date, dismissal_date, is_active, 
+                            username, password_hash, plain_password, telegram_id,
+                            created_at, updated_at
+                     FROM kuliga_instructors WHERE 1=1`;
         const params = [];
 
         if (status === 'active') {
@@ -180,6 +185,10 @@ router.get('/instructors', async (req, res) => {
         query += ' ORDER BY full_name ASC';
 
         const { rows } = await pool.query(query, params);
+        console.log(`📋 Загружено инструкторов Кулиги: ${rows.length}`);
+        if (rows.length > 0) {
+            console.log(`📋 Первый инструктор: ${rows[0].full_name}, plain_password=${rows[0].plain_password ? 'есть' : 'нет'}`);
+        }
         res.json({ success: true, data: rows });
     } catch (error) {
         console.error('Ошибка получения инструкторов Кулиги:', error);
@@ -192,12 +201,21 @@ router.get('/instructors/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const { rows } = await pool.query('SELECT * FROM kuliga_instructors WHERE id = $1', [id]);
+        // Явно указываем все поля, включая plain_password
+        const { rows } = await pool.query(
+            `SELECT id, full_name, phone, email, photo_url, description, sport_type, 
+                    admin_percentage, hire_date, dismissal_date, is_active, 
+                    username, password_hash, plain_password, telegram_id,
+                    created_at, updated_at
+             FROM kuliga_instructors WHERE id = $1`, 
+            [id]
+        );
 
         if (rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Инструктор не найден' });
         }
 
+        console.log(`📋 Загружен инструктор ${rows[0].full_name}: plain_password=${rows[0].plain_password ? 'есть' : 'нет'}`);
         res.json(rows[0]);
     } catch (error) {
         console.error('Ошибка получения инструктора Кулиги:', error);

@@ -2037,6 +2037,8 @@ async function loadKuligaInstructorsForTrainersPage() {
             trainersList.appendChild(noInstructorsMsg);
         } else {
             activeInstructors.forEach(instructor => {
+                console.log(`[loadKuligaInstructorsForTrainersPage] Инструктор ${instructor.full_name}: plain_password=`, instructor.plain_password, 'username=', instructor.username);
+                
                 const instructorCard = document.createElement('div');
                 instructorCard.className = 'trainer-item';
                 instructorCard.innerHTML = `
@@ -2052,7 +2054,7 @@ async function loadKuligaInstructorsForTrainersPage() {
                         <p>Телефон: ${instructor.phone}</p>
                         ${instructor.email ? `<p>Email: ${instructor.email}</p>` : ''}
                         ${instructor.username ? `<p>Логин: ${instructor.username}</p>` : '<p style="color: #999;">Логин не задан</p>'}
-                        ${instructor.plain_password ? `<p>Пароль: ${instructor.plain_password}</p>` : instructor.username ? '<p style="color: #999;">Пароль не сохранен</p>' : ''}
+                        ${instructor.plain_password ? `<p><strong>Пароль:</strong> ${instructor.plain_password}</p>` : instructor.username ? '<p style="color: #999;">Пароль не сохранен</p>' : ''}
                         <p>Статус: ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
                     </div>
                     <div class="trainer-actions">
@@ -2162,8 +2164,9 @@ async function editKuligaInstructorForTrainersPage(id) {
                     </div>
                     <div class="form-group">
                         <label for="kuliga_password">Пароль (для входа в личный кабинет):</label>
-                        <input type="text" id="kuliga_password" name="password" value="" placeholder="Оставьте пустым, чтобы не менять">
-                        <small style="color: #666; display: block; margin-top: 5px;">Пароль будет захеширован. Оставьте пустым, чтобы не менять текущий пароль.</small>
+                        <input type="text" id="kuliga_password" name="password" value="${instructor.plain_password || ''}" placeholder="Оставьте пустым, чтобы не менять">
+                        <small style="color: #666; display: block; margin-top: 5px;">Пароль будет захеширован для безопасности, но также будет сохранен в открытом виде для отображения. Оставьте пустым, чтобы не менять текущий пароль.</small>
+                        ${instructor.plain_password ? `<small style="color: #27ae60; display: block; margin-top: 5px;">Текущий пароль: <strong>${instructor.plain_password}</strong></small>` : ''}
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn-primary">Сохранить</button>
