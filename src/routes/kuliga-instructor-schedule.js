@@ -1138,6 +1138,38 @@ router.put('/group-trainings/:id', async (req, res) => {
             return res.status(400).json({ error: 'Минимум участников не может превышать максимум' });
         }
 
+        // Проверяем, есть ли записи на тренировку
+        const bookingsCheck = await pool.query(
+            `SELECT COUNT(*) as count 
+             FROM kuliga_bookings 
+             WHERE group_training_id = $1 
+               AND status IN ('pending', 'confirmed')`,
+            [id]
+        );
+        
+        const hasBookings = parseInt(bookingsCheck.rows[0].count) > 0;
+        
+        // Если есть записи, проверяем, не пытаются ли изменить количество участников
+        if (hasBookings) {
+            const currentTraining = await pool.query(
+                `SELECT min_participants, max_participants 
+                 FROM kuliga_group_trainings 
+                 WHERE id = $1 AND instructor_id = $2`,
+                [id, instructorId]
+            );
+            
+            if (currentTraining.rows.length === 0) {
+                return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+            }
+            
+            const current = currentTraining.rows[0];
+            if (current.min_participants !== minParticipantsValue || current.max_participants !== maxParticipantsValue) {
+                return res.status(400).json({ 
+                    error: 'Нельзя изменить количество участников, так как на тренировку есть записи. Обратитесь к администратору.' 
+                });
+            }
+        }
+
         // Обновляем тренировку
         const result = await pool.query(
             `UPDATE kuliga_group_trainings

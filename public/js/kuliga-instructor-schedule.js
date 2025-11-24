@@ -1429,6 +1429,9 @@ async function editGroupTraining(trainingId) {
 
         const training = await response.json();
         
+        // Проверяем, есть ли записи на тренировку
+        const hasBookings = (parseInt(training.current_participants) || 0) > 0;
+        
         // Создаем модальное окно для редактирования
         const modal = document.createElement('div');
         modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
@@ -1436,6 +1439,9 @@ async function editGroupTraining(trainingId) {
         modal.innerHTML = `
             <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
                 <h2 style="margin-top: 0;">Редактировать групповую тренировку</h2>
+                ${hasBookings ? `<div style="background: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 10px; border-radius: 6px; margin-bottom: 20px;">
+                    ⚠️ На эту тренировку есть записи (${training.current_participants} участник${training.current_participants > 1 ? 'ов' : ''}). Количество участников изменить нельзя.
+                </div>` : ''}
                 <form id="edit-training-form">
                     <div class="form-group">
                         <label>Вид спорта *</label>
@@ -1471,18 +1477,20 @@ async function editGroupTraining(trainingId) {
                     </div>
                     <div class="form-group" style="background: #f8f9fa; padding: 10px; border-radius: 6px;">
                         <label>Цена за человека</label>
-                        <div style="font-weight: 600; font-size: 16px; color: #27ae60;">
+                        <div id="edit-price-per-person" style="font-weight: 600; font-size: 16px; color: #27ae60;">
                             ${parseFloat(training.price_per_person || 0).toFixed(2)} ₽
                         </div>
                         <small style="color: #666;">Цена устанавливается автоматически из прайса по количеству участников</small>
                     </div>
                     <div class="form-group">
                         <label>Минимум участников *</label>
-                        <input type="number" id="edit-min-participants" class="form-control" min="1" value="${training.min_participants}" required />
+                        <input type="number" id="edit-min-participants" class="form-control" min="1" value="${training.min_participants}" required ${hasBookings ? 'disabled' : ''} />
+                        ${hasBookings ? '<small style="color: #666; display: block; margin-top: 5px;">Нельзя изменить: на тренировку есть записи</small>' : ''}
                     </div>
                     <div class="form-group">
                         <label>Максимум участников *</label>
-                        <input type="number" id="edit-max-participants" class="form-control" min="2" value="${training.max_participants}" required />
+                        <input type="number" id="edit-max-participants" class="form-control" min="2" value="${training.max_participants}" required ${hasBookings ? 'disabled' : ''} />
+                        ${hasBookings ? '<small style="color: #666; display: block; margin-top: 5px;">Нельзя изменить: на тренировку есть записи</small>' : ''}
                     </div>
                     <div class="form-actions" style="display: flex; gap: 10px; margin-top: 20px;">
                         <button type="submit" class="btn-primary">Сохранить</button>
@@ -1494,6 +1502,55 @@ async function editGroupTraining(trainingId) {
         
         document.body.appendChild(modal);
         
+        // Функция для расчета цены при редактировании
+        const calculateEditPrice = () => {
+            const maxParticipantsInput = document.getElementById('edit-max-participants');
+            const priceDisplay = document.getElementById('edit-price-per-person');
+            
+            if (!maxParticipantsInput || !priceDisplay || maxParticipantsInput.disabled) {
+                return; // Поля заблокированы или не найдены
+            }
+            
+            const maxParticipants = parseInt(maxParticipantsInput.value) || 0;
+            
+            if (!maxParticipants || !pricesData || pricesData.length === 0) {
+                priceDisplay.textContent = 'Выберите максимум участников для расчета';
+                return;
+            }
+            
+            // Получаем цену из прайса
+            const priceInfo = getPriceFromPricelist(maxParticipants);
+            if (!priceInfo) {
+                priceDisplay.textContent = `⚠️ Цена для ${maxParticipants} участников не найдена`;
+                return;
+            }
+            
+            // priceInfo.price - это общая цена группы, нужно разделить на количество участников
+            const pricePerPerson = priceInfo.price / maxParticipants;
+            priceDisplay.textContent = `${pricePerPerson.toFixed(2)} ₽`;
+        };
+        
+        // Добавляем обработчики для динамического обновления цены
+        const maxParticipantsInput = document.getElementById('edit-max-participants');
+        const minParticipantsInput = document.getElementById('edit-min-participants');
+        
+        if (maxParticipantsInput && !maxParticipantsInput.disabled) {
+            maxParticipantsInput.addEventListener('input', calculateEditPrice);
+            // Вызываем расчет сразу при открытии формы
+            calculateEditPrice();
+        }
+        
+        if (minParticipantsInput && !minParticipantsInput.disabled) {
+            minParticipantsInput.addEventListener('input', () => {
+                const min = parseInt(minParticipantsInput.value) || 0;
+                const max = parseInt(maxParticipantsInput?.value) || 0;
+                if (min > max && max > 0) {
+                    maxParticipantsInput.value = min;
+                    calculateEditPrice();
+                }
+            });
+        }
+        
         // Обработчик сохранения
         document.getElementById('edit-training-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1501,8 +1558,15 @@ async function editGroupTraining(trainingId) {
             const sportType = document.getElementById('edit-sport-type').value;
             const level = document.getElementById('edit-level').value;
             const description = document.getElementById('edit-description').value;
-            const minParticipants = parseInt(document.getElementById('edit-min-participants').value, 10);
-            const maxParticipants = parseInt(document.getElementById('edit-max-participants').value, 10);
+            const minParticipantsInput = document.getElementById('edit-min-participants');
+            const maxParticipantsInput = document.getElementById('edit-max-participants');
+            // Если поля заблокированы (есть записи), используем текущие значения из training
+            const minParticipants = minParticipantsInput.disabled 
+                ? parseInt(training.min_participants, 10)
+                : parseInt(minParticipantsInput.value, 10);
+            const maxParticipants = maxParticipantsInput.disabled 
+                ? parseInt(training.max_participants, 10)
+                : parseInt(maxParticipantsInput.value, 10);
             
             if (minParticipants > maxParticipants) {
                 showError('Минимум участников не может быть больше максимума');
@@ -1510,18 +1574,26 @@ async function editGroupTraining(trainingId) {
             }
             
             // Получаем цену из прайса
-            const groupPrice = pricesData?.find(p => 
-                p.type === 'group' && 
-                parseInt(p.participants) === maxParticipants &&
-                p.duration === 60
-            );
-            
-            if (!groupPrice) {
-                showError(`Цена для ${maxParticipants} участников не найдена в прайсе`);
-                return;
+            // Если поля заблокированы (есть записи), используем текущую цену
+            let pricePerPerson;
+            if (maxParticipantsInput.disabled) {
+                // Поля заблокированы, используем текущую цену из training
+                pricePerPerson = parseFloat(training.price_per_person || 0);
+            } else {
+                // Поля не заблокированы, пересчитываем цену
+                const priceInfo = getPriceFromPricelist(maxParticipants);
+                
+                if (!priceInfo) {
+                    showError(`Цена для ${maxParticipants} участников не найдена в прайсе`);
+                    return;
+                }
+                
+                // priceInfo.price - это общая цена группы, нужно разделить на количество участников
+                // чтобы получить цену за человека
+                pricePerPerson = priceInfo.price / maxParticipants;
+                
+                console.log(`💰 Расчет цены при сохранении: общая цена=${priceInfo.price}, участников=${maxParticipants}, цена за человека=${pricePerPerson.toFixed(2)}`);
             }
-            
-            const pricePerPerson = parseFloat(groupPrice.price);
             
             try {
                 const updateResponse = await fetch(`/api/kuliga/instructor/group-trainings/${trainingId}`, {
@@ -1835,8 +1907,11 @@ function getPriceFromPricelist(maxParticipants) {
     
     console.log('Найдена цена:', groupPrice);
     
-    // Возвращаем общую стоимость группы
-    return parseFloat(groupPrice.price);
+    // Возвращаем объект с общей стоимостью группы
+    return {
+        price: parseFloat(groupPrice.price),
+        ...groupPrice
+    };
 }
 
 // Расчет цены для регулярных групповых тренировок
@@ -1853,12 +1928,14 @@ function calculateRegularPrice() {
         return;
     }
     
-    const totalPrice = getPriceFromPricelist(maxParticipants);
-    if (!totalPrice) {
+    const priceInfoObj = getPriceFromPricelist(maxParticipants);
+    if (!priceInfoObj) {
         priceInfo.innerHTML = `⚠️ Цена для ${maxParticipants} участников не найдена в прайсе`;
         return;
     }
     
+    // priceInfoObj.price - это общая цена группы
+    const totalPrice = priceInfoObj.price;
     const pricePerPerson = totalPrice / maxParticipants;
     
     const adminPercentage = instructorData?.admin_percentage || 20;
