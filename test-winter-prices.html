@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Winter Prices</title>
+</head>
+<body>
+    <h1>Тест загрузки прайса</h1>
+    <button id="testBtn">Нажми для теста</button>
+    <div id="result"></div>
+    
+    <script>
+        // Получить cookie по имени
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+        
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            console.log('🔴 ТЕСТ: Начало теста загрузки прайса');
+            const result = document.getElementById('result');
+            result.innerHTML = 'Загрузка...';
+            
+            try {
+                const token = getCookie('adminToken');
+                console.log('🔴 ТЕСТ: Токен найден:', token ? 'ДА' : 'НЕТ');
+                
+                const response = await fetch('/api/winter-prices', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log('🔴 ТЕСТ: Статус ответа:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error('Ошибка: ' + response.status);
+                }
+                
+                const data = await response.json();
+                console.log('🔴 ТЕСТ: Данные получены:', data);
+                
+                let prices = Array.isArray(data) ? data : (data.data || data.rows || []);
+                console.log('🔴 ТЕСТ: Обработано цен:', prices.length);
+                
+                let html = '<h3>Загружено ' + prices.length + ' цен:</h3><ul>';
+                prices.forEach(price => {
+                    html += '<li>' + JSON.stringify(price) + '</li>';
+                });
+                html += '</ul>';
+                
+                result.innerHTML = html;
+            } catch (error) {
+                console.error('🔴 ТЕСТ: Ошибка:', error);
+                result.innerHTML = '<p style="color:red;">Ошибка: ' + error.message + '</p>';
+            }
+        });
+    </script>
+</body>
+</html>
+
