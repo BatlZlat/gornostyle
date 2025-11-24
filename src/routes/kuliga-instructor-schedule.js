@@ -221,9 +221,17 @@ router.post('/slots/create', async (req, res) => {
         }
 
         let created = 0;
+        let skipped = 0;
 
         // Фильтруем времена, убирая те, что уже существуют (с учетом нормализации формата)
         const newTimes = validTimes.filter(t => !uniqueExistingTimes.includes(t));
+        
+        // Подсчитываем пропущенные слоты
+        skipped = validTimes.length - newTimes.length;
+        
+        if (skipped > 0) {
+            console.log(`   ⚠️ Пропущено ${skipped} слотов, которые уже существуют`);
+        }
         
         // Если не осталось новых времен (все уже существуют), возвращаем ошибку с деталями
         if (newTimes.length === 0) {
@@ -260,13 +268,16 @@ router.post('/slots/create', async (req, res) => {
         for (const time of newTimes) {
             // Проверяем, существует ли уже такой слот (дополнительная проверка для надежности)
             const existingSlot = await client.query(
-                `SELECT id FROM kuliga_schedule_slots 
+                `SELECT id, status FROM kuliga_schedule_slots 
                  WHERE instructor_id = $1 AND date = $2::date AND start_time::text LIKE $3 || '%'`,
                 [instructorId, date, time]
             );
 
             if (existingSlot.rows.length > 0) {
                 // Слот уже существует, пропускаем
+                // ВАЖНО: skipped уже подсчитан выше, здесь только логируем
+                const existing = existingSlot.rows[0];
+                console.log(`   ⚠️ Слот на ${time} уже существует (id=${existing.id}, status=${existing.status}), пропускаем`);
                 continue;
             }
 
@@ -290,10 +301,13 @@ router.post('/slots/create', async (req, res) => {
 
         await client.query('COMMIT');
         
+        console.log(`   ✅ Создано слотов: ${created}, пропущено: ${skipped}`);
+        
         res.json({ 
             success: true, 
             created,
-            message: `Создано слотов: ${created}`
+            skipped: skipped || 0,
+            message: `Создано слотов: ${created}${skipped > 0 ? `, пропущено (уже существуют): ${skipped}` : ''}`
         });
     } catch (error) {
         await client.query('ROLLBACK');
