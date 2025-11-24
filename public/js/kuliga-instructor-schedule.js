@@ -508,7 +508,13 @@ async function loadSlotsForDay() {
 // Изменение статуса слота
 async function toggleSlotStatus(slotId, newStatus) {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+        console.error('Токен не найден');
+        showError('Ошибка: Требуется авторизация');
+        return;
+    }
+
+    console.log(`🔄 Изменение статуса слота ${slotId} на ${newStatus}`);
 
     try {
         const response = await fetch(`/api/kuliga/instructor/slots/${slotId}`, {
@@ -520,15 +526,21 @@ async function toggleSlotStatus(slotId, newStatus) {
             body: JSON.stringify({ status: newStatus })
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка изменения статуса');
+            console.error('Ошибка API:', data);
+            throw new Error(data.error || 'Ошибка изменения статуса');
         }
 
+        console.log(`✅ Статус слота ${slotId} успешно изменен на ${newStatus}`);
+
         // Перезагружаем слоты, расписание и статистику
-        await loadSlotsForDay();
-        await loadSchedule();
-        await loadStats();
+        await Promise.all([
+            loadSlotsForDay(),
+            loadSchedule(),
+            loadStats()
+        ]);
     } catch (error) {
         console.error('Ошибка изменения статуса слота:', error);
         showError(`Ошибка: ${error.message}`);
@@ -1082,10 +1094,23 @@ async function loadSchedule() {
 
     try {
         // Загружаем слоты и групповые тренировки на 2 недели вперед
-        const today = new Date().toISOString().split('T')[0];
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 14);
-        const endDateStr = endDate.toISOString().split('T')[0];
+        // ВАЖНО: Используем текущую дату в часовом поясе Екатеринбурга
+        // Получаем текущую дату в формате YYYY-MM-DD (локальная дата без учета времени)
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+        
+        // Добавляем 14 дней для конечной даты
+        const endDateObj = new Date(now);
+        endDateObj.setDate(endDateObj.getDate() + 14);
+        const endYear = endDateObj.getFullYear();
+        const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+        const endDay = String(endDateObj.getDate()).padStart(2, '0');
+        const endDateStr = `${endYear}-${endMonth}-${endDay}`;
+        
+        console.log(`📅 Загрузка расписания: сегодня=${today}, конец=${endDateStr} (2 недели вперед)`);
 
         const [slotsResponse, trainingsResponse] = await Promise.all([
             fetch(`/api/kuliga/instructor/slots?start_date=${today}&end_date=${endDateStr}`, {
@@ -1102,6 +1127,11 @@ async function loadSchedule() {
 
         const slots = await slotsResponse.json();
         const trainings = await trainingsResponse.json();
+
+        console.log('📅 Загружено слотов:', slots.length);
+        console.log('📅 Загружено тренировок:', trainings.length);
+        console.log('📅 Слоты:', slots);
+        console.log('📅 Тренировки:', trainings);
 
         // Группируем по датам
         const scheduleByDate = {};
@@ -1136,6 +1166,7 @@ async function loadSchedule() {
             scheduleByDate[dateKey].trainings.push(training);
         });
 
+        console.log('📅 Расписание по датам:', scheduleByDate);
         displaySchedule(scheduleByDate);
     } catch (error) {
         console.error('Ошибка загрузки расписания:', error);
@@ -1191,16 +1222,29 @@ function displaySchedule(scheduleByDate) {
             // Проверяем как processedSlotIds (из тренировок), так и has_group_training (из API)
             // Также проверяем статус слота - если он blocked и есть тренировка, не показываем слот
             const hasTraining = processedSlotIds.has(slot.id) || slot.has_group_training || slot.status === 'group';
+            
+            console.log(`🔍 Слот ${slot.id} (${slot.date} ${slot.start_time}): hasTraining=${hasTraining}, processedSlotIds.has=${processedSlotIds.has(slot.id)}, has_group_training=${slot.has_group_training}, status=${slot.status}`);
+            
             if (!hasTraining) {
                 allItems.push({ ...slot, type: 'slot' });
+                console.log(`  ✅ Добавлен слот ${slot.id} в allItems`);
+            } else {
+                console.log(`  ❌ Слот ${slot.id} пропущен из-за групповой тренировки`);
             }
         });
 
         // Сортируем по времени
-        allItems.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        allItems.sort((a, b) => {
+            const timeA = String(a.start_time).substring(0, 5);
+            const timeB = String(b.start_time).substring(0, 5);
+            return timeA.localeCompare(timeB);
+        });
+        
+        console.log(`📅 Дата ${formattedDate}: слотов=${slots.length}, тренировок=${trainings.length}, allItems=${allItems.length}`);
         
         // Показываем заголовок и элементы только если есть что показывать
         if (allItems.length === 0) {
+            console.log(`⚠️ Пропускаем дату ${formattedDate}: нет элементов для отображения`);
             return; // Пропускаем эту дату, если нет элементов
         }
 
@@ -1229,6 +1273,7 @@ function displaySchedule(scheduleByDate) {
                 const canBlock = item.status === 'available';
                 const canUnblock = item.status === 'blocked' && !item.has_group_training;
                 
+                console.log(`  🎨 Рендеринг слота ${item.id}: status=${item.status}, startTime=${startTime}, endTime=${endTime}`);
                 html += `
                     <div class="schedule-slot ${item.status}" style="margin-bottom: 10px;">
                         <div class="slot-info">

@@ -33,55 +33,30 @@ router.get('/slots', async (req, res) => {
             params = [instructorId, date];
         } else if (start_date && end_date) {
             // Получить слоты в диапазоне дат
+            // ВАЖНО: Используем ::date для явного приведения типа, чтобы избежать проблем с часовыми поясами
             query = `
                 SELECT id, instructor_id, date, start_time, end_time, status, created_at, updated_at
                 FROM kuliga_schedule_slots
-                WHERE instructor_id = $1 AND date BETWEEN $2 AND $3
+                WHERE instructor_id = $1 AND date >= $2::date AND date <= $3::date
                 ORDER BY date ASC, start_time ASC
             `;
             params = [instructorId, start_date, end_date];
+            console.log(`📅 Запрос слотов для инструктора ${instructorId}: ${start_date} - ${end_date}`);
         } else {
             return res.status(400).json({ error: 'Необходимо указать date или start_date+end_date' });
         }
 
         const result = await pool.query(query, params);
         
-        // Автоматически освобождаем слоты, которые заблокированы, но на них нет групповых тренировок
-        // Это может произойти, если тренировка была удалена администратором
-        const blockedSlots = result.rows.filter(slot => slot.status === 'blocked');
-        
-        if (blockedSlots.length > 0) {
-            const slotIds = blockedSlots.map(slot => slot.id);
-            
-            // Проверяем, какие из заблокированных слотов имеют групповые тренировки
-            // (тренировки удаляются полностью, не помечаются как cancelled)
-            const trainingsCheck = await pool.query(
-                `SELECT slot_id FROM kuliga_group_trainings 
-                 WHERE slot_id = ANY($1)`,
-                [slotIds]
-            );
-            
-            const slotsWithTrainings = new Set(trainingsCheck.rows.map(row => row.slot_id));
-            
-            // Освобождаем слоты без тренировок
-            const slotsToFree = slotIds.filter(id => !slotsWithTrainings.has(id));
-            
-            if (slotsToFree.length > 0) {
-                await pool.query(
-                    `UPDATE kuliga_schedule_slots 
-                     SET status = 'available' 
-                     WHERE id = ANY($1) AND status = 'blocked'`,
-                    [slotsToFree]
-                );
-                
-                // Обновляем статус в результатах
-                result.rows.forEach(slot => {
-                    if (slotsToFree.includes(slot.id)) {
-                        slot.status = 'available';
-                    }
-                });
-            }
+        console.log(`📅 Запрос слотов: instructorId=${instructorId}, ${start_date ? `start_date=${start_date}` : ''} ${end_date ? `end_date=${end_date}` : ''} ${date ? `date=${date}` : ''}`);
+        console.log(`📅 Найдено слотов: ${result.rows.length}`);
+        if (result.rows.length > 0) {
+            console.log(`📅 Первые 3 слота:`, result.rows.slice(0, 3).map(r => ({ id: r.id, date: r.date, start_time: r.start_time, status: r.status })));
         }
+        
+        // ВАЖНО: Убрана автоматическая разблокировка слотов
+        // Инструктор должен вручную блокировать/разблокировать слоты
+        // Если администратор удалит групповую тренировку, он сам установит статус слота
         
             // Добавляем информацию о наличии групповых тренировок для слотов
             // (тренировки удаляются полностью, не помечаются как cancelled)
@@ -220,15 +195,24 @@ router.post('/slots/create', async (req, res) => {
         // Получаем существующие слоты на эту дату для проверки интервалов
         const existingSlotsResult = await client.query(
             `SELECT start_time FROM kuliga_schedule_slots 
-             WHERE instructor_id = $1 AND date = $2 
+             WHERE instructor_id = $1 AND date = $2::date 
              ORDER BY start_time ASC`,
             [instructorId, date]
         );
-        const existingTimes = existingSlotsResult.rows.map(row => row.start_time);
+        // Нормализуем формат времени: PostgreSQL TIME возвращает "HH:MM:SS", нужно "HH:MM"
+        const existingTimes = existingSlotsResult.rows.map(row => {
+            const timeStr = String(row.start_time);
+            // Если формат "HH:MM:SS", обрезаем до "HH:MM"
+            return timeStr.substring(0, 5);
+        });
 
         // Проверяем интервалы с существующими слотами
-        const allTimes = [...existingTimes, ...validTimes];
-        const allTimesCheck = checkMinimumInterval(allTimes);
+        // Убираем дубликаты из существующих времен перед объединением
+        const uniqueExistingTimes = [...new Set(existingTimes)];
+        const allTimes = [...uniqueExistingTimes, ...validTimes];
+        // Убираем дубликаты и из общего массива (на случай, если пытаемся создать уже существующий слот)
+        const uniqueAllTimes = [...new Set(allTimes)].sort();
+        const allTimesCheck = checkMinimumInterval(uniqueAllTimes);
         if (!allTimesCheck.valid) {
             await client.query('ROLLBACK');
             return res.status(400).json({ 
@@ -238,11 +222,46 @@ router.post('/slots/create', async (req, res) => {
 
         let created = 0;
 
-        for (const time of validTimes) {
-            // Проверяем, существует ли уже такой слот
+        // Фильтруем времена, убирая те, что уже существуют (с учетом нормализации формата)
+        const newTimes = validTimes.filter(t => !uniqueExistingTimes.includes(t));
+        
+        // Если не осталось новых времен (все уже существуют), возвращаем ошибку с деталями
+        if (newTimes.length === 0) {
+            await client.query('ROLLBACK');
+            
+            // Получаем детальную информацию о существующих слотах для лучшего сообщения об ошибке
+            const detailedSlotsResult = await client.query(
+                `SELECT start_time, status 
+                 FROM kuliga_schedule_slots 
+                 WHERE instructor_id = $1 AND date = $2::date 
+                   AND start_time::text LIKE ANY(ARRAY[${validTimes.map((_, i) => `$${i + 3} || '%'`).join(', ')}])
+                 ORDER BY start_time ASC`,
+                [instructorId, date, ...validTimes]
+            );
+            
+            const statusMessages = {
+                'available': 'свободный',
+                'booked': 'забронированный',
+                'blocked': 'заблокированный',
+                'group': 'занятый групповой тренировкой'
+            };
+            
+            const existingDetails = detailedSlotsResult.rows.map(row => {
+                const timeStr = String(row.start_time).substring(0, 5);
+                const statusMsg = statusMessages[row.status] || row.status;
+                return `${timeStr} (${statusMsg})`;
+            }).join(', ');
+            
+            return res.status(400).json({ 
+                error: `Все указанные временные слоты уже существуют на эту дату. Существующие слоты: ${existingDetails}. Если слот занят групповой тренировкой, удалите или отредактируйте тренировку через администратора.` 
+            });
+        }
+
+        for (const time of newTimes) {
+            // Проверяем, существует ли уже такой слот (дополнительная проверка для надежности)
             const existingSlot = await client.query(
                 `SELECT id FROM kuliga_schedule_slots 
-                 WHERE instructor_id = $1 AND date = $2 AND start_time = $3`,
+                 WHERE instructor_id = $1 AND date = $2::date AND start_time::text LIKE $3 || '%'`,
                 [instructorId, date, time]
             );
 
@@ -257,10 +276,12 @@ router.post('/slots/create', async (req, res) => {
             const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
             // Создаем новый слот
+            // ВАЖНО: Используем date::date для явного приведения типа
+            console.log(`   💾 Создание слота: instructorId=${instructorId}, date=${date}, time=${time}, endTime=${endTime}`);
             await client.query(
                 `INSERT INTO kuliga_schedule_slots 
                  (instructor_id, date, start_time, end_time, status)
-                 VALUES ($1, $2, $3, $4, 'available')`,
+                 VALUES ($1, $2::date, $3, $4, 'available')`,
                 [instructorId, date, time, endTime]
             );
 
@@ -369,23 +390,41 @@ router.post('/slots/create-bulk', async (req, res) => {
                  ORDER BY start_time ASC`,
                 [instructorId, dateStr]
             );
-            const existingTimes = existingSlotsResult.rows.map(row => row.start_time);
+            // Нормализуем формат времени: PostgreSQL TIME возвращает "HH:MM:SS", нужно "HH:MM"
+            const existingTimes = existingSlotsResult.rows.map(row => {
+                const timeStr = String(row.start_time);
+                // Если формат "HH:MM:SS", обрезаем до "HH:MM"
+                return timeStr.substring(0, 5);
+            });
 
             // Проверяем интервалы с существующими слотами
-            const allTimes = [...existingTimes, ...validTimes];
-            const allTimesCheck = checkMinimumInterval(allTimes);
+            // Убираем дубликаты из существующих времен перед объединением
+            const uniqueExistingTimes = [...new Set(existingTimes)];
+            // Также фильтруем новые времена, убирая те, что уже существуют
+            const newTimes = validTimes.filter(t => !uniqueExistingTimes.includes(t));
+            
+            // Если не осталось новых времен (все уже существуют), пропускаем эту дату
+            if (newTimes.length === 0) {
+                currentMoment.add(1, 'day');
+                continue;
+            }
+            
+            const allTimes = [...uniqueExistingTimes, ...newTimes];
+            // Убираем дубликаты и сортируем перед проверкой интервалов
+            const uniqueAllTimes = [...new Set(allTimes)].sort();
+            const allTimesCheck = checkMinimumInterval(uniqueAllTimes);
             if (!allTimesCheck.valid) {
                 // Для массового создания просто пропускаем эту дату, не прерываем весь процесс
                 continue;
             }
 
-            // Создаем слоты для всех указанных времен
-            for (const time of validTimes) {
-                // Проверяем, существует ли уже такой слот
-                // ВАЖНО: Используем dateStr::date для явного приведения типа
+            // Создаем слоты только для новых времен (не существующих)
+            for (const time of newTimes) {
+                // Дополнительная проверка на существование слота (для надежности)
+                // ВАЖНО: Используем dateStr::date для явного приведения типа и LIKE для сравнения форматов
                 const existingSlot = await client.query(
                     `SELECT id FROM kuliga_schedule_slots 
-                     WHERE instructor_id = $1 AND date = $2::date AND start_time = $3`,
+                     WHERE instructor_id = $1 AND date = $2::date AND start_time::text LIKE $3 || '%'`,
                     [instructorId, dateStr, time]
                 );
 
@@ -466,6 +505,18 @@ router.patch('/slots/:id', async (req, res) => {
         // Нельзя изменять забронированные слоты
         if (currentStatus === 'booked') {
             return res.status(400).json({ error: 'Нельзя изменить статус забронированного слота' });
+        }
+
+        // Проверяем, есть ли на слоте групповая тренировка
+        const trainingCheck = await pool.query(
+            'SELECT id FROM kuliga_group_trainings WHERE slot_id = $1',
+            [slotId]
+        );
+
+        if (trainingCheck.rows.length > 0) {
+            return res.status(400).json({ 
+                error: 'Нельзя изменить статус слота с групповой тренировкой. Удалите или отредактируйте тренировку через администратора.' 
+            });
         }
 
         // Обновляем статус
@@ -961,6 +1012,8 @@ router.get('/group-trainings', async (req, res) => {
         query += ' ORDER BY kgt.date ASC, kgt.start_time ASC';
 
         const { rows } = await pool.query(query, params);
+        
+        console.log(`📅 Найдено групповых тренировок для инструктора ${instructorId}: ${rows.length}`);
         
         // Преобразуем даты в строки YYYY-MM-DD, чтобы избежать проблем с часовыми поясами
         // ВАЖНО: PostgreSQL DATE колонка возвращается как объект Date в JavaScript
