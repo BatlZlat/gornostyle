@@ -100,7 +100,15 @@ router.get('/slots', async (req, res) => {
             });
         }
         
-        res.json(result.rows);
+        // Преобразуем даты в строки YYYY-MM-DD, чтобы избежать проблем с часовыми поясами
+        const formattedRows = result.rows.map(row => ({
+            ...row,
+            date: row.date instanceof Date 
+                ? moment.tz(row.date, TIMEZONE).format('YYYY-MM-DD')
+                : (typeof row.date === 'string' ? row.date.split('T')[0] : row.date)
+        }));
+        
+        res.json(formattedRows);
     } catch (error) {
         console.error('Ошибка при получении слотов:', error);
         res.status(500).json({ error: 'Ошибка при получении слотов' });
@@ -324,17 +332,22 @@ router.post('/slots/create-bulk', async (req, res) => {
         let created = 0;
         
         // Используем moment-timezone для правильной работы с часовым поясом
-        // Парсим даты как локальные в часовом поясе Екатеринбурга
-        const startMoment = moment.tz(fromDate, 'YYYY-MM-DD', TIMEZONE).startOf('day');
-        const endMoment = moment.tz(toDate, 'YYYY-MM-DD', TIMEZONE).endOf('day');
+        // Парсим строку даты как локальную дату в часовом поясе Екатеринбурга
+        // ВАЖНО: Создаем момент явно из частей даты, чтобы избежать проблем с UTC
+        const [startYear, startMonth, startDay] = fromDate.split('-').map(Number);
+        const [endYear, endMonth, endDay] = toDate.split('-').map(Number);
+        
+        // Создаем моменты в часовом поясе Екатеринбурга
+        const startMoment = moment.tz([startYear, startMonth - 1, startDay], TIMEZONE).startOf('day');
+        const endMoment = moment.tz([endYear, endMonth - 1, endDay], TIMEZONE).endOf('day');
+        
+        // Преобразуем массив weekdays в числа для корректного сравнения (делаем это один раз)
+        const weekdaysNumbers = weekdays.map(w => typeof w === 'string' ? parseInt(w, 10) : w);
 
         // Проходим по всем датам в диапазоне
         let currentMoment = startMoment.clone();
         while (currentMoment.isSameOrBefore(endMoment)) {
             const dayOfWeek = currentMoment.day(); // 0 = ВС, 1 = ПН, ..., 6 = СБ
-            
-            // Преобразуем массив weekdays в числа для корректного сравнения
-            const weekdaysNumbers = weekdays.map(w => typeof w === 'string' ? parseInt(w, 10) : w);
 
             // Проверяем, входит ли этот день недели в выбранные
             if (!weekdaysNumbers.includes(dayOfWeek)) {
@@ -349,9 +362,10 @@ router.post('/slots/create-bulk', async (req, res) => {
             console.log(`📅 Обработка даты: ${dateStr} (${dayNames[dayOfWeek]}) - день недели: ${dayOfWeek}, выбрано: [${weekdaysNumbers.join(', ')}]`);
 
             // Получаем существующие слоты на эту дату для проверки интервалов
+            // ВАЖНО: Используем dateStr::date для явного приведения типа
             const existingSlotsResult = await client.query(
                 `SELECT start_time FROM kuliga_schedule_slots 
-                 WHERE instructor_id = $1 AND date = $2 
+                 WHERE instructor_id = $1 AND date = $2::date
                  ORDER BY start_time ASC`,
                 [instructorId, dateStr]
             );
@@ -368,9 +382,10 @@ router.post('/slots/create-bulk', async (req, res) => {
             // Создаем слоты для всех указанных времен
             for (const time of validTimes) {
                 // Проверяем, существует ли уже такой слот
+                // ВАЖНО: Используем dateStr::date для явного приведения типа
                 const existingSlot = await client.query(
                     `SELECT id FROM kuliga_schedule_slots 
-                     WHERE instructor_id = $1 AND date = $2 AND start_time = $3`,
+                     WHERE instructor_id = $1 AND date = $2::date AND start_time = $3`,
                     [instructorId, dateStr, time]
                 );
 
@@ -385,10 +400,12 @@ router.post('/slots/create-bulk', async (req, res) => {
                 const endTime = `${String(endHours).padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
                 // Создаем новый слот
+                // ВАЖНО: Используем dateStr::date для явного приведения типа, чтобы PostgreSQL правильно интерпретировал дату
+                console.log(`   💾 Сохранение слота: date=${dateStr}, time=${time}, endTime=${endTime}`);
                 await client.query(
                     `INSERT INTO kuliga_schedule_slots 
                      (instructor_id, date, start_time, end_time, status)
-                     VALUES ($1, $2, $3, $4, 'available')`,
+                     VALUES ($1, $2::date, $3, $4, 'available')`,
                     [instructorId, dateStr, time, endTime]
                 );
 
@@ -694,6 +711,13 @@ router.post('/group-trainings', async (req, res) => {
 
         console.log(`✅ Инструктор ${instructorId} создал групповую тренировку: ID=${training.id}, дата=${slot.date}, время=${slot.start_time}`);
 
+        // Преобразуем дату в строку YYYY-MM-DD
+        if (training.date instanceof Date) {
+            training.date = moment.tz(training.date, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof training.date === 'string') {
+            training.date = training.date.split('T')[0].split(' ')[0];
+        }
+
         res.status(201).json(training);
     } catch (error) {
         await client.query('ROLLBACK');
@@ -882,7 +906,18 @@ router.get('/bookings/group/:trainingId', async (req, res) => {
             [trainingId]
         );
 
-        res.json(result.rows);
+        // Преобразуем даты в строки YYYY-MM-DD
+        const formattedRows = result.rows.map(row => {
+            const formattedRow = { ...row };
+            if (row.date instanceof Date) {
+                formattedRow.date = moment.tz(row.date, TIMEZONE).format('YYYY-MM-DD');
+            } else if (typeof row.date === 'string') {
+                formattedRow.date = row.date.split('T')[0].split(' ')[0];
+            }
+            return formattedRow;
+        });
+
+        res.json(formattedRows);
     } catch (error) {
         console.error('Ошибка получения бронирований групповой тренировки:', error);
         res.status(500).json({ error: 'Не удалось получить список бронирований' });
@@ -926,7 +961,27 @@ router.get('/group-trainings', async (req, res) => {
         query += ' ORDER BY kgt.date ASC, kgt.start_time ASC';
 
         const { rows } = await pool.query(query, params);
-        res.json(rows);
+        
+        // Преобразуем даты в строки YYYY-MM-DD, чтобы избежать проблем с часовыми поясами
+        // ВАЖНО: PostgreSQL DATE колонка возвращается как объект Date в JavaScript
+        // Нужно преобразовать его в строку, используя правильный часовой пояс
+        const formattedRows = rows.map(row => {
+            let dateStr = row.date;
+            if (dateStr instanceof Date) {
+                // Если это объект Date, преобразуем его в момент в нужном часовом поясе
+                // и форматируем как строку YYYY-MM-DD
+                dateStr = moment.tz(dateStr, TIMEZONE).format('YYYY-MM-DD');
+            } else if (typeof dateStr === 'string') {
+                // Если это строка, убираем время если есть
+                dateStr = dateStr.split('T')[0].split(' ')[0];
+            }
+            return {
+                ...row,
+                date: dateStr
+            };
+        });
+        
+        res.json(formattedRows);
     } catch (error) {
         console.error('Ошибка получения групповых тренировок:', error);
         res.status(500).json({ error: 'Не удалось получить список групповых тренировок' });
@@ -958,7 +1013,15 @@ router.get('/group-trainings/:id', async (req, res) => {
             return res.status(404).json({ error: 'Групповая тренировка не найдена' });
         }
 
-        res.json(result.rows[0]);
+        // Преобразуем дату в строку YYYY-MM-DD
+        const row = result.rows[0];
+        if (row.date instanceof Date) {
+            row.date = moment.tz(row.date, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof row.date === 'string') {
+            row.date = row.date.split('T')[0].split(' ')[0];
+        }
+
+        res.json(row);
     } catch (error) {
         console.error('Ошибка получения групповой тренировки:', error);
         res.status(500).json({ error: 'Не удалось получить данные тренировки' });
@@ -1025,7 +1088,15 @@ router.put('/group-trainings/:id', async (req, res) => {
 
         console.log(`✅ Инструктор ${instructorId} обновил групповую тренировку ${id}`);
 
-        res.json(result.rows[0]);
+        // Преобразуем дату в строку YYYY-MM-DD
+        const row = result.rows[0];
+        if (row.date instanceof Date) {
+            row.date = moment.tz(row.date, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof row.date === 'string') {
+            row.date = row.date.split('T')[0].split(' ')[0];
+        }
+
+        res.json(row);
     } catch (error) {
         console.error('Ошибка редактирования групповой тренировки:', error);
         res.status(500).json({ error: 'Не удалось обновить тренировку: ' + error.message });
@@ -1173,11 +1244,16 @@ router.post('/regular-group-trainings', async (req, res) => {
         const pricePerPerson = totalPrice / maxParticipants;
 
         // Генерируем даты в диапазоне с учетом часового пояса Екатеринбурга
+        // ВАЖНО: Создаем момент явно из частей даты, чтобы избежать проблем с UTC
         const dates = [];
-        const startMoment = moment.tz(fromDate, 'YYYY-MM-DD', TIMEZONE).startOf('day');
-        const endMoment = moment.tz(toDate, 'YYYY-MM-DD', TIMEZONE).endOf('day');
+        const [startYear, startMonth, startDay] = fromDate.split('-').map(Number);
+        const [endYear, endMonth, endDay] = toDate.split('-').map(Number);
         
-        // Преобразуем массив weekdays в числа для корректного сравнения
+        // Создаем моменты в часовом поясе Екатеринбурга
+        const startMoment = moment.tz([startYear, startMonth - 1, startDay], TIMEZONE).startOf('day');
+        const endMoment = moment.tz([endYear, endMonth - 1, endDay], TIMEZONE).endOf('day');
+        
+        // Преобразуем массив weekdays в числа для корректного сравнения (делаем это один раз)
         const weekdaysNumbers = weekdays.map(w => typeof w === 'string' ? parseInt(w, 10) : w);
         
         let currentMoment = startMoment.clone();
@@ -1205,9 +1281,10 @@ router.post('/regular-group-trainings', async (req, res) => {
         for (const dateStr of dates) {
 
             // Проверяем, не существует ли уже слот на это время
+            // ВАЖНО: Используем dateStr::date для явного приведения типа
             const existingSlot = await client.query(
                 `SELECT id FROM kuliga_schedule_slots 
-                 WHERE instructor_id = $1 AND date = $2 AND start_time = $3`,
+                 WHERE instructor_id = $1 AND date = $2::date AND start_time = $3`,
                 [instructorId, dateStr, time]
             );
 
@@ -1229,10 +1306,12 @@ router.post('/regular-group-trainings', async (req, res) => {
                 }
             } else {
                 // Создаем новый слот
+                // ВАЖНО: Используем dateStr::date для явного приведения типа
+                console.log(`   💾 Создание слота для регулярной тренировки: date=${dateStr}, time=${time}, endTime=${endTime}`);
                 const slotResult = await client.query(
                     `INSERT INTO kuliga_schedule_slots 
                      (instructor_id, date, start_time, end_time, status)
-                     VALUES ($1, $2, $3, $4, 'blocked')
+                     VALUES ($1, $2::date, $3, $4, 'blocked')
                      RETURNING id`,
                     [instructorId, dateStr, time, endTime]
                 );
@@ -1248,12 +1327,13 @@ router.post('/regular-group-trainings', async (req, res) => {
             );
 
             // Создаем групповую тренировку
+            // ВАЖНО: Используем dateStr::date для явного приведения типа
             await client.query(
                 `INSERT INTO kuliga_group_trainings 
                  (slot_id, instructor_id, sport_type, level, description, 
                   min_participants, max_participants, current_participants, 
                   price_per_person, date, start_time, end_time, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'open')`,
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9::date, $10, $11, 'open')`,
                 [slotId, instructorId, sportType, level, description || null, 
                  minParticipants, maxParticipants, pricePerPerson, dateStr, time, endTime]
             );
