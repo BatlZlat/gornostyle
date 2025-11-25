@@ -1442,6 +1442,20 @@ async function editGroupTraining(trainingId) {
         // Проверяем, есть ли записи на тренировку
         const hasBookings = (parseInt(training.current_participants) || 0) > 0;
         
+        // Вычисляем начальную цену за человека и заработок инструктора
+        const adminPercentage = getAdminPercentageValue();
+        let initialPricePerPerson = parseFloat(training.price_per_person || 0);
+        
+        // Если цена не установлена или нужно пересчитать, используем прайс
+        if (!initialPricePerPerson && pricesData && pricesData.length > 0) {
+            const priceInfo = getPriceFromPricelist(training.max_participants || 2);
+            if (priceInfo) {
+                initialPricePerPerson = priceInfo.price / (training.max_participants || 2);
+            }
+        }
+        
+        const initialNetPerPerson = initialPricePerPerson * (1 - adminPercentage / 100);
+        
         // Создаем модальное окно для редактирования
         const modal = document.createElement('div');
         modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
