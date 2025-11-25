@@ -783,9 +783,14 @@ async function handleMessage(msg) {
         }
 
         // Обработка текстовых сообщений
-        return handleTextMessage(msg);
+        const result = await handleTextMessage(msg);
+        if (!result) {
+            console.warn('⚠️ handleTextMessage вернул undefined для сообщения:', msg.text);
+        }
+        return result;
     } catch (error) {
-        console.error('Ошибка при обработке сообщения:', error);
+        console.error('❌ Ошибка при обработке сообщения:', error);
+        console.error('Stack trace:', error.stack);
         return bot.sendMessage(chatId,
             '❌ Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
             {
@@ -1928,9 +1933,10 @@ async function handleTextMessage(msg) {
                 }
             );
         }
-        // Если это не кнопка участника и нет состояния, значит все глобальные обработчики уже отработали
-        // Прерываем выполнение перед switch-case
-        return;
+        // Если это не кнопка участника и нет состояния, но пользователь отправил сообщение
+        // Показываем главное меню
+        console.log('⚠️ Сообщение без состояния:', msg.text);
+        return showMainMenu(chatId);
     }
     
     console.log('🎯 Переход к switch-case:', {
@@ -7851,8 +7857,25 @@ async function handleTextMessage(msg) {
             }
 
             if (msg.text === '📅 Записаться в группу') {
-                // Показываем даты с групповыми тренировками
-                return showKuligaGroupTrainingDates(chatId, state.data.client_id);
+                // Сначала показываем выбор вида спорта
+                state.step = 'kuliga_group_existing_sport';
+                userStates.set(chatId, state);
+                return bot.sendMessage(chatId,
+                    '🎿 *Выберите вид спорта:*\n\n' +
+                    '• ⛷️ *Горные лыжи*\n' +
+                    '• 🏂 *Сноуборд*',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['⛷️ Горные лыжи'],
+                                ['🏂 Сноуборд'],
+                                ['🔙 Назад']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
             }
 
             return bot.sendMessage(chatId, 'Пожалуйста, выберите один из вариантов или нажмите "🔙 Назад".');
@@ -7886,6 +7909,39 @@ async function handleTextMessage(msg) {
                 state.step = 'kuliga_group_own_date';
                 userStates.set(chatId, state);
                 return showKuligaAvailableDatesForOwnGroup(chatId, state.data);
+            }
+
+            return bot.sendMessage(chatId, 'Пожалуйста, выберите вид спорта или нажмите "🔙 Назад".');
+        }
+
+        case 'kuliga_group_existing_sport': {
+            if (msg.text === '🔙 Назад' || msg.text === '⬅️ Назад' || msg.text === 'Назад') {
+                state.step = 'kuliga_group_type_selection';
+                userStates.set(chatId, state);
+                return bot.sendMessage(chatId,
+                    '👥 *Групповые тренировки на естественном склоне*\n\n' +
+                    'Выберите вариант записи:\n\n' +
+                    '• 👥 *У меня своя группа* - выберите дату и время для своей группы, укажите участников\n' +
+                    '• 📅 *Записаться в группу* - выберите из существующих групповых тренировок',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['👥 У меня своя группа'],
+                                ['📅 Записаться в группу'],
+                                ['🔙 Назад']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+
+            if (msg.text === '⛷️ Горные лыжи' || msg.text === '🏂 Сноуборд') {
+                state.data.selected_sport = msg.text === '🏂 Сноуборд' ? 'snowboard' : 'ski';
+                state.step = 'kuliga_group_existing_date';
+                userStates.set(chatId, state);
+                return showKuligaGroupTrainingDates(chatId, state.data.client_id, state.data.selected_sport);
             }
 
             return bot.sendMessage(chatId, 'Пожалуйста, выберите вид спорта или нажмите "🔙 Назад".');
@@ -8060,19 +8116,18 @@ async function handleTextMessage(msg) {
 
         case 'kuliga_group_existing_date': {
             if (msg.text === '🔙 Назад') {
-                state.step = 'kuliga_group_type_selection';
+                state.step = 'kuliga_group_existing_sport';
                 userStates.set(chatId, state);
                 return bot.sendMessage(chatId,
-                    '👥 *Групповые тренировки на естественном склоне*\n\n' +
-                    'Выберите вариант записи:\n\n' +
-                    '• 👥 *У меня своя группа* - выберите дату и время для своей группы, укажите участников\n' +
-                    '• 📅 *Записаться в группу* - выберите из существующих групповых тренировок',
+                    '🎿 *Выберите вид спорта:*\n\n' +
+                    '• ⛷️ *Горные лыжи*\n' +
+                    '• 🏂 *Сноуборд*',
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             keyboard: [
-                                ['👥 У меня своя группа'],
-                                ['📅 Записаться в группу'],
+                                ['⛷️ Горные лыжи'],
+                                ['🏂 Сноуборд'],
                                 ['🔙 Назад']
                             ],
                             resize_keyboard: true
@@ -8101,6 +8156,15 @@ async function handleTextMessage(msg) {
             // Получаем групповые тренировки на выбранную дату
             // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
             // ВАЖНО: Подсчитываем участников из активных бронирований (status IN ('pending', 'confirmed'))
+            // Фильтруем по выбранному виду спорта, если он был выбран
+            const sportType = state.data.selected_sport;
+            const params = [selectedDate];
+            let sportFilter = '';
+            if (sportType) {
+                sportFilter = 'AND kgt.sport_type = $2';
+                params.push(sportType);
+            }
+
             const trainingsResult = await pool.query(
                 `SELECT kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
                         kgt.price_per_person, kgt.max_participants,
@@ -8114,6 +8178,7 @@ async function handleTextMessage(msg) {
                    AND kgt.status IN ('open', 'confirmed')
                    AND kgt.is_private = FALSE
                    AND ki.is_active = TRUE
+                   ${sportFilter}
                    AND (
                        kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                        OR (
@@ -8126,7 +8191,7 @@ async function handleTextMessage(msg) {
                           ki.full_name
                  HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
                  ORDER BY kgt.start_time`,
-                [selectedDate]
+                params
             );
 
             if (trainingsResult.rows.length === 0) {
@@ -9507,6 +9572,15 @@ async function handleTextMessage(msg) {
         }
 
         // ... rest of the states ...
+
+        default: {
+            // Если состояние неизвестно, очищаем его и показываем главное меню
+            console.warn('⚠️ Неизвестное состояние:', state?.step, 'для сообщения:', msg.text);
+            if (state) {
+                userStates.delete(chatId);
+            }
+            return showMainMenu(chatId);
+        }
     }
 }
 
@@ -13000,7 +13074,7 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
 /**
  * Показ дат с групповыми тренировками для "Записаться в группу"
  */
-async function showKuligaGroupTrainingDates(chatId, clientId) {
+async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null) {
     try {
         const now = moment().tz('Asia/Yekaterinburg');
         const endDate = now.clone().add(30, 'days');
@@ -13008,6 +13082,13 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
         // Получаем уникальные даты с групповыми тренировками
         // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
         // ВАЖНО: Подсчитываем участников из активных бронирований (status IN ('pending', 'confirmed'))
+        let sportFilter = '';
+        const params = [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')];
+        if (sportType) {
+            sportFilter = 'AND kgt.sport_type = $3';
+            params.push(sportType);
+        }
+
         const datesResult = await pool.query(
             `SELECT DISTINCT kgt.date
              FROM kuliga_group_trainings kgt
@@ -13019,6 +13100,7 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
                AND kgt.status IN ('open', 'confirmed')
                AND kgt.is_private = FALSE
                AND ki.is_active = TRUE
+               ${sportFilter}
                AND (
                    kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                    OR (
@@ -13029,7 +13111,7 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
              GROUP BY kgt.id, kgt.date, kgt.max_participants
              HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
              ORDER BY kgt.date`,
-            [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')]
+            params
         );
 
         if (datesResult.rows.length === 0) {
@@ -13070,6 +13152,9 @@ async function showKuligaGroupTrainingDates(chatId, clientId) {
         const state = userStates.get(chatId) || {};
         state.data = state.data || {};
         state.data.client_id = clientId;
+        if (sportType) {
+            state.data.selected_sport = sportType;
+        }
         state.data.available_dates = Array.from(dateMap.values());
         state.data.date_map = Object.fromEntries(dateMap);
         state.step = 'kuliga_group_existing_date';
@@ -13705,7 +13790,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
 
         const trainingResult = await client.query(
             `SELECT id, instructor_id, date, start_time, end_time, sport_type,
-                    price_per_person, max_participants, current_participants
+                    price_per_person, max_participants
              FROM kuliga_group_trainings
              WHERE id = $1
              FOR UPDATE`,
@@ -13719,12 +13804,34 @@ async function createKuligaExistingGroupBooking(chatId, state) {
 
         const training = trainingResult.rows[0];
 
-        if (training.current_participants >= training.max_participants) {
+        // Пересчитываем текущее количество участников из бронирований
+        const participantsCountResult = await client.query(
+            `SELECT COALESCE(SUM(participants_count), 0)::INTEGER as current_participants
+             FROM kuliga_bookings
+             WHERE group_training_id = $1
+               AND status IN ('pending', 'confirmed')`,
+            [state.data.selected_training_id]
+        );
+        
+        const currentParticipants = participantsCountResult.rows[0]?.current_participants || 0;
+        const participants = state.data.selected_participants || [];
+        const newParticipantsCount = participants.length;
+
+        if (currentParticipants + newParticipantsCount > training.max_participants) {
             await client.query('ROLLBACK');
-            return bot.sendMessage(chatId, '❌ Группа заполнена. Выберите другую тренировку.');
+            return bot.sendMessage(chatId, 
+                `❌ Группа заполнена. Выберите другую тренировку.\n\n` +
+                `Занято мест: ${currentParticipants}/${training.max_participants}\n` +
+                `Требуется: ${newParticipantsCount} мест`,
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
         }
 
-        const participants = state.data.selected_participants || [];
         const participantsNames = participants.map(p => p.fullName);
         const participantsBirthYears = participants.map(p => p.birthYear);
 

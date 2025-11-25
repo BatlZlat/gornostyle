@@ -44,10 +44,14 @@ router.get('/finances/stats', async (req, res) => {
         // all_time - без ограничения по дате
 
         // Общая статистика
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные kb.id
         const statsQuery = `
             SELECT 
                 COUNT(DISTINCT ${BOOKING_INSTRUCTOR_ID}) as instructors_count,
-                COUNT(DISTINCT kb.id) as trainings_count,
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
                 COALESCE(SUM(kb.price_total), 0) as total_revenue,
                 COALESCE(SUM(kb.price_total * COALESCE(ki.admin_percentage, 20) / 100), 0) as admin_commission,
                 COALESCE(SUM(kb.price_total * (1 - COALESCE(ki.admin_percentage, 20) / 100)), 0) as total_earnings
@@ -98,11 +102,11 @@ router.get('/finances/stats', async (req, res) => {
 });
 
 /**
- * GET /api/kuliga/admin/instructors/earnings
+ * GET /api/kuliga/admin/finances/instructors
  * Получение списка инструкторов с неоплаченным заработком
  * Query params: period (current_month, last_month, all_time) или from, to
  */
-router.get('/instructors/earnings', async (req, res) => {
+router.get('/finances/instructors', async (req, res) => {
     try {
         const { period, from, to } = req.query;
         
@@ -121,6 +125,7 @@ router.get('/instructors/earnings', async (req, res) => {
 
         // Запрос для получения инструкторов с неоплаченным заработком
         // Учитывает как индивидуальные, так и групповые тренировки
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные kb.id
         const query = `
             SELECT 
                 ki.id,
@@ -130,7 +135,10 @@ router.get('/instructors/earnings', async (req, res) => {
                 ki.admin_percentage,
                 ki.telegram_id,
                 ki.telegram_registered,
-                COUNT(DISTINCT kb.id) as trainings_count,
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
                 COALESCE(SUM(kb.price_total), 0) as total_revenue,
                 COALESCE(SUM(kb.price_total * (COALESCE(ki.admin_percentage, 20) / 100)), 0) as admin_commission,
                 COALESCE(SUM(kb.price_total * (1 - COALESCE(ki.admin_percentage, 20) / 100)), 0) as unpaid_earnings
@@ -303,6 +311,7 @@ router.post('/payouts', async (req, res) => {
                 kb.start_time,
                 kb.end_time,
                 kb.booking_type,
+                kb.group_training_id,
                 kb.price_total,
                 ki.admin_percentage
             FROM kuliga_bookings kb
@@ -328,6 +337,18 @@ router.post('/payouts', async (req, res) => {
         const adminCommission = totalRevenue * (adminPercentage / 100);
         const instructorEarnings = totalRevenue - adminCommission;
 
+        // Подсчитываем количество уникальных тренировок
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные id
+        const uniqueTrainings = new Set();
+        trainings.forEach(t => {
+            if (t.booking_type === 'group' && t.group_training_id) {
+                uniqueTrainings.add(`group_${t.group_training_id}`);
+            } else {
+                uniqueTrainings.add(`individual_${t.id}`);
+            }
+        });
+        const trainingsCount = uniqueTrainings.size;
+
         // Создаем выплату
         const adminId = req.admin?.id || null; // TODO: получить ID администратора из токена
         const insertResult = await pool.query(
@@ -336,7 +357,7 @@ router.post('/payouts', async (req, res) => {
               instructor_earnings, admin_commission, status, created_by)
              VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
              RETURNING *`,
-            [instructor_id, period_start, period_end, trainings.length, totalRevenue, 
+            [instructor_id, period_start, period_end, trainingsCount, totalRevenue, 
              instructorEarnings, adminCommission, adminId]
         );
 
@@ -464,7 +485,9 @@ router.get('/payouts/:id/trainings', async (req, res) => {
                 kb.start_time,
                 kb.end_time,
                 kb.booking_type,
+                kb.group_training_id,
                 kb.price_total,
+                kb.participants_count,
                 kb.participants_names,
                 c.full_name as client_name,
                 c.phone as client_phone,
@@ -487,6 +510,20 @@ router.get('/payouts/:id/trainings', async (req, res) => {
             payout.period_end
         ]);
 
+        // Подсчитываем статистику по типам тренировок
+        let individualCount = 0;
+        let groupCount = 0;
+        const uniqueGroupTrainings = new Set();
+        
+        trainingsResult.rows.forEach(row => {
+            if (row.booking_type === 'group' && row.group_training_id) {
+                uniqueGroupTrainings.add(row.group_training_id);
+            } else if (row.booking_type === 'individual') {
+                individualCount++;
+            }
+        });
+        groupCount = uniqueGroupTrainings.size;
+
         res.json({
             success: true,
             payout: {
@@ -494,14 +531,21 @@ router.get('/payouts/:id/trainings', async (req, res) => {
                 period_start: payout.period_start,
                 period_end: payout.period_end
             },
+            statistics: {
+                total_trainings: individualCount + groupCount,
+                individual_trainings: individualCount,
+                group_trainings: groupCount
+            },
             trainings: trainingsResult.rows.map(row => ({
                 id: row.id,
                 date: row.date,
                 start_time: row.start_time,
                 end_time: row.end_time,
                 booking_type: row.booking_type,
+                group_training_id: row.group_training_id,
                 client_name: row.client_name,
                 client_phone: row.client_phone,
+                participants_count: row.participants_count || 1,
                 participants_names: row.participants_names,
                 price_total: parseFloat(row.price_total || 0),
                 instructor_earnings: parseFloat(row.instructor_earnings || 0)

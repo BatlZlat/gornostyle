@@ -143,7 +143,7 @@ async function loadInstructorsEarnings() {
             params.append('period', currentPeriod);
         }
 
-        const response = await authFetch(`/api/kuliga/admin/instructors/earnings?${params}`);
+        const response = await authFetch(`/api/kuliga/admin/finances/instructors?${params}`);
 
         if (!response.ok) {
             throw new Error('Ошибка загрузки списка инструкторов');
@@ -370,22 +370,144 @@ async function authFetch(url, options = {}) {
 
 function showError(message) {
     // Используем функцию из admin.js или создаем простой alert
-    if (typeof window.showError === 'function') {
+    if (typeof window.showError === 'function' && window.showError !== showError) {
         window.showError(message);
     } else {
+        console.error(message);
         alert(message);
     }
 }
 
-// Заглушки для функций действий (будут реализованы позже)
-function viewInstructorDetails(instructorId) {
-    console.log('Просмотр детализации инструктора:', instructorId);
-    alert('Функция детализации будет реализована');
+// Просмотр детализации инструктора
+async function viewInstructorDetails(instructorId) {
+    try {
+        const params = new URLSearchParams();
+        if (currentPeriod === 'custom' && currentPeriodFrom && currentPeriodTo) {
+            params.append('from', currentPeriodFrom);
+            params.append('to', currentPeriodTo);
+        } else {
+            params.append('period', currentPeriod);
+        }
+
+        const response = await authFetch(`/api/kuliga/instructor/trainings?instructor_id=${instructorId}&${params}`);
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки детализации');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            showInstructorDetailsModal(instructorId, data.trainings);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки детализации:', error);
+        showError('Не удалось загрузить детализацию');
+    }
 }
 
-function viewPayoutDetails(payoutId) {
-    console.log('Просмотр деталей выплаты:', payoutId);
-    alert('Функция просмотра деталей будет реализована');
+// Просмотр деталей выплаты
+async function viewPayoutDetails(payoutId) {
+    try {
+        const response = await authFetch(`/api/kuliga/admin/payouts/${payoutId}/trainings`);
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки деталей выплаты');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            showPayoutDetailsModal(data);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки деталей выплаты:', error);
+        showError('Не удалось загрузить детали выплаты');
+    }
+}
+
+// Модальное окно детализации инструктора
+function showInstructorDetailsModal(instructorId, trainings) {
+    // TODO: Реализовать модальное окно
+    console.log('Детализация инструктора:', instructorId, trainings);
+    alert(`Детализация инструктора будет реализована. Тренировок: ${trainings.length}`);
+}
+
+// Модальное окно деталей выплаты
+function showPayoutDetailsModal(data) {
+    const { payout, statistics, trainings } = data;
+    
+    const modal = document.createElement('div');
+    modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+    
+    const statisticsHtml = statistics ? `
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0;">Статистика тренировок:</h4>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Всего тренировок</div>
+                    <div style="font-size: 24px; font-weight: bold;">${statistics.total_trainings || 0}</div>
+                </div>
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Индивидуальных</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #3498db;">${statistics.individual_trainings || 0}</div>
+                </div>
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Групповых</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #27ae60;">${statistics.group_trainings || 0}</div>
+                </div>
+            </div>
+        </div>
+    ` : '';
+
+    const trainingsHtml = trainings.length > 0 ? `
+        <table class="data-table" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Дата</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Время</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Тип</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Клиент</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Стоимость</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Заработок</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${trainings.map(t => `
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px;">${formatDate(t.date)}</td>
+                        <td style="padding: 12px;">${String(t.start_time).substring(0, 5)} - ${String(t.end_time).substring(0, 5)}</td>
+                        <td style="padding: 12px;">
+                            ${t.booking_type === 'group' ? '👥 Групповая' : '👤 Индивидуальная'}
+                            ${t.participants_count > 1 ? ` (${t.participants_count} чел.)` : ''}
+                        </td>
+                        <td style="padding: 12px;">
+                            ${escapeHtml(t.client_name || 'Неизвестно')}
+                            ${t.participants_names && t.participants_names.length > 0 ? `<br><small style="color: #666;">${escapeHtml(t.participants_names.join(', '))}</small>` : ''}
+                        </td>
+                        <td style="padding: 12px; text-align: right;">${formatCurrency(t.price_total)} ₽</td>
+                        <td style="padding: 12px; text-align: right; font-weight: 600;">${formatCurrency(t.instructor_earnings)} ₽</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    ` : '<div style="padding: 20px; text-align: center; color: #666;">Нет тренировок</div>';
+
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 900px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <h2 style="margin-top: 0;">Детализация выплаты</h2>
+            <div style="margin-bottom: 20px;">
+                <div><strong>Период:</strong> ${formatDate(payout.period_start)} - ${formatDate(payout.period_end)}</div>
+            </div>
+            ${statisticsHtml}
+            <h3>Тренировки:</h3>
+            ${trainingsHtml}
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
 }
 
 function editPayoutStatus(payoutId) {
