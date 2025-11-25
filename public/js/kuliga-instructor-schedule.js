@@ -4,6 +4,16 @@
 let instructorData = null; // Полные данные инструктора (sport_type, admin_percentage)
 let pricesData = null; // Данные прайса
 
+function formatCurrency(amount) {
+    const value = parseFloat(amount || 0);
+    return isNaN(value) ? '0.00' : value.toFixed(2);
+}
+
+function getAdminPercentageValue() {
+    const value = parseFloat(instructorData?.admin_percentage);
+    return isNaN(value) ? 0 : value;
+}
+
 // Функции для показа уведомлений (аналогично showSuccess из admin.js)
 function showError(message) {
     const errorDiv = document.createElement('div');
@@ -1478,7 +1488,10 @@ async function editGroupTraining(trainingId) {
                     <div class="form-group" style="background: #f8f9fa; padding: 10px; border-radius: 6px;">
                         <label>Цена за человека</label>
                         <div id="edit-price-per-person" style="font-weight: 600; font-size: 16px; color: #27ae60;">
-                            ${parseFloat(training.price_per_person || 0).toFixed(2)} ₽
+                            ${formatCurrency(initialPricePerPerson)} ₽
+                        </div>
+                        <div id="edit-price-per-person-net" style="font-size: 0.9em; color: #2c3e50; margin-top: 4px;">
+                            ${adminPercentage > 0 ? `Инструктор получит: ${formatCurrency(initialNetPerPerson)} ₽ (админ ${adminPercentage}% )` : ''}
                         </div>
                         <small style="color: #666;">Цена устанавливается автоматически из прайса по количеству участников</small>
                     </div>
@@ -1506,28 +1519,48 @@ async function editGroupTraining(trainingId) {
         const calculateEditPrice = () => {
             const maxParticipantsInput = document.getElementById('edit-max-participants');
             const priceDisplay = document.getElementById('edit-price-per-person');
-            
-            if (!maxParticipantsInput || !priceDisplay || maxParticipantsInput.disabled) {
-                return; // Поля заблокированы или не найдены
-            }
-            
-            const maxParticipants = parseInt(maxParticipantsInput.value) || 0;
-            
-            if (!maxParticipants || !pricesData || pricesData.length === 0) {
-                priceDisplay.textContent = 'Выберите максимум участников для расчета';
+            const netDisplay = document.getElementById('edit-price-per-person-net');
+            const adminPct = getAdminPercentageValue();
+
+            if (!priceDisplay) {
                 return;
             }
-            
-            // Получаем цену из прайса
-            const priceInfo = getPriceFromPricelist(maxParticipants);
-            if (!priceInfo) {
-                priceDisplay.textContent = `⚠️ Цена для ${maxParticipants} участников не найдена`;
+
+            let pricePerPerson = parseFloat(training.price_per_person || 0);
+            let warningText = '';
+
+            if (maxParticipantsInput && !maxParticipantsInput.disabled) {
+                const maxParticipants = parseInt(maxParticipantsInput.value || '0', 10);
+
+                if (!maxParticipants || !pricesData || pricesData.length === 0) {
+                    warningText = 'Выберите максимум участников для расчета';
+                } else {
+                    const priceInfo = getPriceFromPricelist(maxParticipants);
+                    if (!priceInfo) {
+                        warningText = `⚠️ Цена для ${maxParticipants} участников не найдена`;
+                    } else {
+                        pricePerPerson = priceInfo.price / maxParticipants;
+                    }
+                }
+            }
+
+            if (warningText) {
+                priceDisplay.textContent = warningText;
+                if (netDisplay) netDisplay.textContent = '';
                 return;
             }
-            
-            // priceInfo.price - это общая цена группы, нужно разделить на количество участников
-            const pricePerPerson = priceInfo.price / maxParticipants;
-            priceDisplay.textContent = `${pricePerPerson.toFixed(2)} ₽`;
+
+            pricePerPerson = isNaN(pricePerPerson) ? 0 : pricePerPerson;
+            priceDisplay.textContent = `${formatCurrency(pricePerPerson)} ₽`;
+
+            if (netDisplay) {
+                if (adminPct > 0) {
+                    const netValue = pricePerPerson * (1 - adminPct / 100);
+                    netDisplay.textContent = `Инструктор получит: ${formatCurrency(netValue)} ₽ (админ ${adminPct}% )`;
+                } else {
+                    netDisplay.textContent = '';
+                }
+            }
         };
         
         // Добавляем обработчики для динамического обновления цены
@@ -1771,17 +1804,26 @@ async function showGroupTrainingDetails(trainingId) {
         const modal = document.createElement('div');
         modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
         
+        const adminPercentage = getAdminPercentageValue();
+        const pricePerPerson = parseFloat(training.price_per_person || 0);
+        const netPerPerson = pricePerPerson * (1 - adminPercentage / 100);
+
         const participantsList = bookings.length > 0 
-            ? bookings.map((b, idx) => `
-                <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
-                    <div><strong>${idx + 1}. ${b.client_name || 'Клиент'}</strong></div>
-                    <div style="font-size: 0.9em; color: #666;">
-                        Телефон: ${b.client_phone || 'Не указан'} | 
-                        Участников: ${b.participants_count} | 
-                        Стоимость: ${parseFloat(b.price_total || 0).toFixed(2)} ₽
+            ? bookings.map((b, idx) => {
+                const bookingTotal = parseFloat(b.price_total || 0);
+                const bookingNet = bookingTotal * (1 - adminPercentage / 100);
+                return `
+                    <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
+                        <div><strong>${idx + 1}. ${b.client_name || 'Клиент'}</strong></div>
+                        <div style="font-size: 0.9em; color: #666;">
+                            Телефон: ${b.client_phone || 'Не указан'} | 
+                            Участников: ${b.participants_count} | 
+                            Стоимость: ${formatCurrency(bookingTotal)} ₽
+                            ${adminPercentage > 0 ? `<br><span style="color:#2c3e50;">Инструктор получит: ${formatCurrency(bookingNet)} ₽</span>` : ''}
+                        </div>
                     </div>
-                </div>
-            `).join('')
+                `;
+            }).join('')
             : '<div style="color: #666;">Пока нет записавшихся</div>';
         
         modal.innerHTML = `
@@ -1793,7 +1835,12 @@ async function showGroupTrainingDetails(trainingId) {
                     <div style="margin-bottom: 10px;"><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
                     <div style="margin-bottom: 10px;"><strong>Уровень:</strong> ${training.level}</div>
                     <div style="margin-bottom: 10px;"><strong>Участников:</strong> ${training.current_participants || 0}/${training.max_participants}</div>
-                    <div style="margin-bottom: 10px;"><strong>Цена за участника:</strong> ${parseFloat(training.price_per_person || 0).toFixed(2)} ₽</div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Цена за участника:</strong> ${formatCurrency(pricePerPerson)} ₽
+                        ${adminPercentage > 0 ? `<div style="font-size:0.9em;color:#2c3e50;margin-top:4px;">
+                            Инструктор получит: ${formatCurrency(netPerPerson)} ₽ (админ ${adminPercentage}%)
+                        </div>` : ''}
+                    </div>
                     ${training.description ? `<div style="margin-bottom: 10px;"><strong>Описание:</strong> ${training.description}</div>` : ''}
                 </div>
                 <h3>Записавшиеся:</h3>
