@@ -130,6 +130,10 @@ function displayFinancesStats(stats) {
     document.getElementById('admin-commission-stat').textContent = formatCurrency(stats.admin_commission || 0) + ' ₽';
     document.getElementById('total-earnings-stat').textContent = formatCurrency(stats.total_earnings || 0) + ' ₽';
     document.getElementById('instructors-with-debt-stat').textContent = stats.instructors_with_debt || 0;
+    const totalInstructorsEl = document.getElementById('total-instructors-stat');
+    if (totalInstructorsEl) {
+        totalInstructorsEl.textContent = stats.total_instructors || 0;
+    }
 }
 
 // Загрузка списка инструкторов с заработком
@@ -446,7 +450,18 @@ async function createPayout(instructorId, modal) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Ошибка создания выплаты');
+            const errorMessage = errorData.error || 'Ошибка создания выплаты';
+            
+            // Если выплата уже существует, показываем информацию о ней
+            if (errorMessage.includes('уже существует')) {
+                const existingPayout = await checkExistingPayout(instructorId, periodStart, periodEnd);
+                if (existingPayout) {
+                    showExistingPayoutInfo(existingPayout, modal);
+                    return;
+                }
+            }
+            
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
@@ -464,14 +479,99 @@ async function createPayout(instructorId, modal) {
 
 function showSuccess(message) {
     // Используем функцию из admin.js или создаем простой alert
-    if (typeof window.showSuccess === 'function') {
+    // Проверяем, что это не наша собственная функция, чтобы избежать рекурсии
+    if (typeof window.showSuccess === 'function' && window.showSuccess !== showSuccess) {
         window.showSuccess(message);
     } else {
         alert(message);
     }
 }
 
+// Проверка существующей выплаты
+async function checkExistingPayout(instructorId, periodStart, periodEnd) {
+    try {
+        const response = await authFetch(`/api/kuliga/admin/payouts?instructor_id=${instructorId}`);
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        if (!data.success) return null;
+        
+        return data.payouts.find(p => 
+            p.period_start === periodStart && 
+            p.period_end === periodEnd
+        ) || null;
+    } catch (error) {
+        console.error('Ошибка проверки существующей выплаты:', error);
+        return null;
+    }
+}
+
+// Показать информацию о существующей выплате
+function showExistingPayoutInfo(payout, modal) {
+    const existingInfo = modal.querySelector('.existing-payout-info');
+    if (existingInfo) {
+        existingInfo.remove();
+    }
+    
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'existing-payout-info';
+    infoDiv.style.cssText = 'background: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 15px; border-radius: 6px; margin-bottom: 20px;';
+    infoDiv.innerHTML = `
+        <h4 style="margin: 0 0 10px 0;">⚠️ Выплата за этот период уже существует</h4>
+        <div style="margin-bottom: 10px;">
+            <div><strong>ID выплаты:</strong> ${payout.id}</div>
+            <div><strong>Период:</strong> ${formatDate(payout.period_start)} - ${formatDate(payout.period_end)}</div>
+            <div><strong>Статус:</strong> ${getStatusLabel(payout.status)}</div>
+            <div><strong>Сумма:</strong> ${formatCurrency(payout.instructor_earnings)} ₽</div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-primary" onclick="viewPayoutDetails(${payout.id}); this.closest('div[style*=\\'position: fixed\\']').remove();">
+                Просмотреть выплату
+            </button>
+            ${payout.status === 'pending' ? `
+                <button class="btn-danger" onclick="deletePayout(${payout.id}, ${payout.instructor_id});">
+                    Удалить выплату
+                </button>
+            ` : ''}
+        </div>
+    `;
+    
+    const form = modal.querySelector('#create-payout-form');
+    if (form) {
+        form.parentNode.insertBefore(infoDiv, form);
+    }
+}
+
+// Удаление выплаты
+async function deletePayout(payoutId, instructorId) {
+    if (!confirm('Вы уверены, что хотите удалить эту выплату?')) {
+        return;
+    }
+    
+    try {
+        const response = await authFetch(`/api/kuliga/admin/payouts/${payoutId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка удаления выплаты');
+        }
+        
+        showSuccess('Выплата успешно удалена');
+        loadFinancesData();
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('div[style*="position: fixed"]');
+        if (modal) modal.remove();
+    } catch (error) {
+        console.error('Ошибка удаления выплаты:', error);
+        showError('Не удалось удалить выплату: ' + error.message);
+    }
+}
+
 window.showCreatePayoutModal = showCreatePayoutModal;
+window.deletePayout = deletePayout;
 
 // Вспомогательные функции
 function formatCurrency(amount) {
@@ -842,10 +942,125 @@ function showPayoutDetailsModal(data) {
     });
 }
 
-function editPayoutStatus(payoutId) {
-    console.log('Изменение статуса выплаты:', payoutId);
-    alert('Функция изменения статуса будет реализована');
+async function editPayoutStatus(payoutId) {
+    try {
+        // Получаем данные выплаты
+        const response = await authFetch(`/api/kuliga/admin/payouts/${payoutId}`);
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить данные выплаты');
+        }
+
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || 'Ошибка загрузки данных');
+        }
+
+        const payout = data.payout;
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <h2 style="margin-top: 0;">Изменение статуса выплаты</h2>
+                <div style="margin-bottom: 20px;">
+                    <div><strong>ID выплаты:</strong> ${payout.id}</div>
+                    <div><strong>Инструктор:</strong> ${escapeHtml(payout.instructor_name || 'Неизвестно')}</div>
+                    <div><strong>Период:</strong> ${formatDate(payout.period_start)} - ${formatDate(payout.period_end)}</div>
+                    <div><strong>Сумма:</strong> ${formatCurrency(payout.instructor_earnings)} ₽</div>
+                    <div><strong>Текущий статус:</strong> ${getStatusLabel(payout.status)}</div>
+                </div>
+                <form id="edit-payout-status-form">
+                    <div class="form-group">
+                        <label>Статус *</label>
+                        <select id="payout-status" class="form-control" required>
+                            <option value="pending" ${payout.status === 'pending' ? 'selected' : ''}>⏳ В ожидании</option>
+                            <option value="paid" ${payout.status === 'paid' ? 'selected' : ''}>✅ Выплачено</option>
+                            <option value="cancelled" ${payout.status === 'cancelled' ? 'selected' : ''}>❌ Отменено</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Способ выплаты</label>
+                        <input type="text" id="payout-method" class="form-control" 
+                               value="${escapeHtml(payout.payment_method || '')}" 
+                               placeholder="Например: наличные, банковская карта, перевод" />
+                    </div>
+                    <div class="form-group">
+                        <label>Дата выплаты</label>
+                        <input type="date" id="payout-date" class="form-control" 
+                               value="${payout.payment_date || ''}" />
+                    </div>
+                    <div class="form-group">
+                        <label>Комментарий</label>
+                        <textarea id="payout-comment" class="form-control" rows="3" 
+                                  placeholder="Дополнительная информация">${escapeHtml(payout.payment_comment || '')}</textarea>
+                    </div>
+                    <div class="form-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Обработчик формы
+        const form = modal.querySelector('#edit-payout-status-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await updatePayoutStatus(payoutId, modal);
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки данных выплаты:', error);
+        showError('Не удалось загрузить данные выплаты: ' + error.message);
+    }
 }
+
+// Обновление статуса выплаты
+async function updatePayoutStatus(payoutId, modal) {
+    try {
+        const status = document.getElementById('payout-status').value;
+        const paymentMethod = document.getElementById('payout-method').value;
+        const paymentDate = document.getElementById('payout-date').value;
+        const paymentComment = document.getElementById('payout-comment').value;
+
+        const response = await authFetch(`/api/kuliga/admin/payouts/${payoutId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: status,
+                payment_method: paymentMethod || null,
+                payment_date: paymentDate || null,
+                payment_comment: paymentComment || null
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка обновления статуса');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            modal.remove();
+            showSuccess('Статус выплаты успешно обновлен');
+            loadFinancesData();
+        }
+    } catch (error) {
+        console.error('Ошибка обновления статуса выплаты:', error);
+        showError('Не удалось обновить статус: ' + error.message);
+    }
+}
+
+window.editPayoutStatus = editPayoutStatus;
 
 function downloadPayoutPdf(payoutId) {
     console.log('Скачивание PDF выплаты:', payoutId);

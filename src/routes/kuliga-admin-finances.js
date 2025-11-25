@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../db/index');
 const { verifyToken } = require('../middleware/auth');
 const moment = require('moment-timezone');
+const path = require('path');
 
 const TIMEZONE = 'Asia/Yekaterinburg';
 const BOOKING_INSTRUCTOR_ID = 'COALESCE(kb.instructor_id, kgt.instructor_id)';
@@ -371,8 +372,215 @@ router.post('/payouts', async (req, res) => {
 
         const payout = insertResult.rows[0];
 
-        // TODO: Генерация PDF и отправка в Telegram/Email
-        // Это будет реализовано в следующих этапах
+        // Получаем данные инструктора для генерации платежки
+        // Используем тот же запрос, что и для подсчета тренировок выше
+        const instructorResult = await pool.query(
+            `SELECT ki.*
+             FROM kuliga_instructors ki
+             WHERE ki.id = $1`,
+            [instructor_id]
+        );
+        
+        // Подсчитываем тренировки отдельным запросом (используем уже готовые данные из trainings)
+        const individualTrainings = trainings.filter(t => t.booking_type === 'individual').length;
+        const groupTrainingsSet = new Set();
+        trainings.filter(t => t.booking_type === 'group' && t.group_training_id).forEach(t => {
+            groupTrainingsSet.add(t.group_training_id);
+        });
+        const groupTrainings = groupTrainingsSet.size;
+
+        const instructor = instructorResult.rows[0];
+        if (!instructor) {
+            console.error('Инструктор не найден:', instructor_id);
+            return res.status(404).json({ success: false, error: 'Инструктор не найден' });
+        }
+
+        // Подготавливаем данные для генерации платежки
+        const payoutData = {
+            payout_id: payout.id,
+            instructor_name: instructor.full_name,
+            period_start: payout.period_start,
+            period_end: payout.period_end,
+            trainings_count: payout.trainings_count,
+            individual_trainings: individualTrainings,
+            group_trainings: groupTrainings,
+            total_revenue: parseFloat(payout.total_revenue),
+            admin_commission: parseFloat(payout.admin_commission),
+            instructor_earnings: parseFloat(payout.instructor_earnings),
+            admin_percentage: instructor.admin_percentage || 20,
+            created_at: payout.created_at
+        };
+
+        // Генерируем и отправляем платежку
+        const sendResults = {
+            telegram: { success: false, error: null },
+            email: { success: false, error: null }
+        };
+
+        try {
+            let jpgPath = null;
+            let fullPath = null;
+            
+            try {
+                const payoutJpgGenerator = require('../services/payoutJpgGenerator');
+                jpgPath = await payoutJpgGenerator.generatePayoutJpg(payoutData);
+                fullPath = path.join(__dirname, '../../public', jpgPath);
+                console.log(`✅ JPG платежка сгенерирована: ${jpgPath}`);
+            } catch (jpgError) {
+                console.error('⚠️ Ошибка генерации JPG платежки (продолжаем без JPG):', jpgError.message);
+                // Продолжаем без JPG - отправляем только текстовые уведомления
+            }
+
+            // Отправка в Telegram
+            if (send_telegram) {
+                try {
+                    const adminNotify = require('../bot/admin-notify');
+                    const instructorBot = adminNotify.instructorBot || adminNotify.bot;
+                    
+                    console.log('🔍 Проверка отправки в Telegram:', {
+                        hasInstructorBot: !!instructorBot,
+                        instructorTelegramId: instructor.telegram_id,
+                        instructorName: instructor.full_name
+                    });
+                    
+                    if (instructorBot && instructor.telegram_id) {
+                        const message = `💰 *Платежка №${payout.id}*\n\n` +
+                            `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n` +
+                            `К выплате: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n\n` +
+                            `Статус: ⏳ Ожидает выплаты`;
+                        
+                        if (fullPath) {
+                            try {
+                                const fs = require('fs');
+                                const photo = fs.readFileSync(fullPath);
+                                await instructorBot.sendPhoto(instructor.telegram_id, photo, {
+                                    caption: message,
+                                    parse_mode: 'Markdown'
+                                });
+                            } catch (photoError) {
+                                console.error('Ошибка отправки фото, отправляем текстовое сообщение:', photoError.message);
+                                await instructorBot.sendMessage(instructor.telegram_id, message, { parse_mode: 'Markdown' });
+                            }
+                        } else {
+                            await instructorBot.sendMessage(instructor.telegram_id, message, { parse_mode: 'Markdown' });
+                        }
+                        sendResults.telegram.success = true;
+                        console.log(`✅ Платежка отправлена в Telegram инструктору ${instructor.full_name}`);
+                    } else {
+                        const errorMsg = !instructorBot 
+                            ? 'Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)' 
+                            : !instructor.telegram_id 
+                                ? `Инструктор ${instructor.full_name} не зарегистрирован в Telegram (telegram_id отсутствует)`
+                                : 'Неизвестная ошибка';
+                        sendResults.telegram.error = errorMsg;
+                        console.error('❌ Не удалось отправить в Telegram:', errorMsg);
+                    }
+                } catch (telegramError) {
+                    console.error('Ошибка отправки платежки в Telegram:', telegramError);
+                    sendResults.telegram.error = telegramError.message;
+                }
+            }
+
+            // Отправка на Email
+            if (send_email && instructor.email) {
+                try {
+                    const EmailService = require('../services/emailService');
+                    const emailService = new EmailService();
+                    
+                    const emailSubject = `Платежка №${payout.id} - Служба инструкторов Горностайл72`;
+                    const emailHtml = `
+                        <h2>Платежка №${payout.id}</h2>
+                        <p>Уважаемый(ая) ${instructor.full_name}!</p>
+                        <p>Ваша платежка за период ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')} готова.</p>
+                        <p><strong>К выплате: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽</strong></p>
+                        ${fullPath ? '<p>Платежка прикреплена к письму.</p>' : '<p>Платежка будет доступна в личном кабинете.</p>'}
+                        <p>С уважением,<br>Служба инструкторов Горностайл72</p>
+                    `;
+                    
+                    const attachments = [];
+                    if (fullPath) {
+                        try {
+                            attachments.push({
+                                filename: `Платежка_${payout.id}.jpg`,
+                                path: fullPath,
+                                contentType: 'image/jpeg'
+                            });
+                        } catch (attachError) {
+                            console.error('Ошибка добавления вложения:', attachError.message);
+                        }
+                    }
+                    
+                    const emailResult = await emailService.sendEmail(
+                        instructor.email,
+                        emailSubject,
+                        emailHtml,
+                        attachments
+                    );
+                    
+                    if (!emailResult.success) {
+                        throw new Error(emailResult.error || 'Ошибка отправки email');
+                    }
+                    sendResults.email.success = true;
+                    console.log(`✅ Платежка отправлена на Email инструктору ${instructor.full_name}`);
+                } catch (emailError) {
+                    console.error('Ошибка отправки платежки на Email:', emailError);
+                    sendResults.email.error = emailError.message;
+                }
+            } else if (send_email && !instructor.email) {
+                sendResults.email.error = 'Email инструктора не указан';
+            }
+
+            // Уведомление администратора
+            try {
+                const adminNotify = require('../bot/admin-notify');
+                const adminBot = adminNotify.bot;
+                const adminIds = process.env.ADMIN_TELEGRAM_ID?.split(',').map(id => id.trim()) || [];
+                
+                console.log('🔍 Проверка отправки администратору:', {
+                    hasAdminBot: !!adminBot,
+                    adminIds: adminIds
+                });
+                
+                if (!adminBot) {
+                    console.error('❌ Бот администратора не найден в admin-notify');
+                    throw new Error('Бот администратора не настроен');
+                }
+                
+                let adminMessage = `💰 *Платежка создана*\n\n`;
+                adminMessage += `Инструктор: ${instructor.full_name}\n`;
+                adminMessage += `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n`;
+                adminMessage += `Сумма: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n\n`;
+                
+                if (send_telegram) {
+                    adminMessage += sendResults.telegram.success 
+                        ? `✅ Telegram: отправлено\n` 
+                        : `❌ Telegram: ${sendResults.telegram.error || 'ошибка'}\n`;
+                }
+                
+                if (send_email) {
+                    adminMessage += sendResults.email.success 
+                        ? `✅ Email: отправлено\n` 
+                        : `❌ Email: ${sendResults.email.error || 'ошибка'}\n`;
+                }
+                
+                for (const adminId of adminIds) {
+                    try {
+                        await adminBot.sendMessage(adminId, adminMessage, { parse_mode: 'Markdown' });
+                        console.log(`✅ Уведомление отправлено администратору ${adminId}`);
+                    } catch (err) {
+                        console.error(`Ошибка отправки уведомления администратору ${adminId}:`, err);
+                    }
+                }
+            } catch (adminNotifyError) {
+                console.error('Ошибка уведомления администратора:', adminNotifyError);
+                console.error('Стек ошибки:', adminNotifyError.stack);
+            }
+
+        } catch (generateError) {
+            console.error('Ошибка генерации платежки:', generateError);
+            console.error('Стек ошибки:', generateError.stack);
+            // Не прерываем создание выплаты, просто логируем ошибку
+        }
 
         res.json({
             success: true,
@@ -390,7 +598,65 @@ router.post('/payouts', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка создания выплаты:', error);
-        res.status(500).json({ success: false, error: 'Не удалось создать выплату' });
+        console.error('Стек ошибки:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Не удалось создать выплату',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+/**
+ * GET /api/kuliga/admin/payouts/:id
+ * Получение данных одной выплаты
+ */
+router.get('/payouts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await pool.query(
+            `SELECT 
+                kip.*,
+                ki.full_name as instructor_name,
+                ki.phone as instructor_phone,
+                ki.email as instructor_email
+            FROM kuliga_instructor_payouts kip
+            LEFT JOIN kuliga_instructors ki ON kip.instructor_id = ki.id
+            WHERE kip.id = $1`,
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Выплата не найдена' });
+        }
+
+        const payout = result.rows[0];
+        res.json({
+            success: true,
+            payout: {
+                id: payout.id,
+                instructor_id: payout.instructor_id,
+                instructor_name: payout.instructor_name,
+                instructor_phone: payout.instructor_phone,
+                instructor_email: payout.instructor_email,
+                period_start: payout.period_start,
+                period_end: payout.period_end,
+                trainings_count: payout.trainings_count,
+                total_revenue: parseFloat(payout.total_revenue || 0),
+                instructor_earnings: parseFloat(payout.instructor_earnings || 0),
+                admin_commission: parseFloat(payout.admin_commission || 0),
+                status: payout.status,
+                payment_method: payout.payment_method,
+                payment_date: payout.payment_date,
+                payment_comment: payout.payment_comment,
+                created_at: payout.created_at,
+                updated_at: payout.updated_at
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка получения выплаты:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить данные выплаты' });
     }
 });
 
@@ -704,6 +970,50 @@ router.get('/payouts/:id/trainings', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения детализации тренировок:', error);
         res.status(500).json({ success: false, error: 'Не удалось получить детализацию' });
+    }
+});
+
+/**
+ * DELETE /api/kuliga/admin/payouts/:id
+ * Удаление выплаты
+ */
+router.delete('/payouts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Проверяем существование выплаты
+        const payoutResult = await pool.query(
+            `SELECT id, status FROM kuliga_instructor_payouts WHERE id = $1`,
+            [id]
+        );
+
+        if (payoutResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Выплата не найдена' });
+        }
+
+        const payout = payoutResult.rows[0];
+
+        // Можно удалять только выплаты со статусом pending
+        if (payout.status !== 'pending') {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Можно удалять только выплаты со статусом "В ожидании"' 
+            });
+        }
+
+        // Удаляем выплату
+        await pool.query(
+            `DELETE FROM kuliga_instructor_payouts WHERE id = $1`,
+            [id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Выплата успешно удалена'
+        });
+    } catch (error) {
+        console.error('Ошибка удаления выплаты:', error);
+        res.status(500).json({ success: false, error: 'Не удалось удалить выплату' });
     }
 });
 

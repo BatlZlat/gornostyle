@@ -494,26 +494,31 @@ async function showFinances(chatId, instructorId) {
         const monthDebt = monthEarnings - monthPayouts;
         const totalDebt = totalEarnings - totalPayouts;
         
-        // Получаем последние транзакции выплат
-        const recentPayoutsRes = await pool.query(
-            `SELECT kt.amount, kt.created_at, kt.description
-             FROM kuliga_transactions kt
-             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
-             WHERE kb.instructor_id = $1
-               AND kt.type = 'payout'
-               AND kt.status = 'completed'
-             ORDER BY kt.created_at DESC
-             LIMIT 10`,
-            [instructorId]
-        );
-        
+        // Получаем последние выплаты из новой таблицы kuliga_instructor_payouts
         let payoutsList = '';
-        if (recentPayoutsRes.rows.length > 0) {
-            payoutsList = '\n*📋 Последние выплаты:*\n';
-            recentPayoutsRes.rows.forEach(payout => {
-                const date = moment(payout.created_at).tz('Asia/Yekaterinburg').format('DD.MM.YYYY');
-                payoutsList += `• ${date} — ${parseFloat(payout.amount).toFixed(2)} руб.\n`;
-            });
+        try {
+            const recentPayoutsRes = await pool.query(
+                `SELECT period_start, period_end, instructor_earnings, status, payment_date
+                 FROM kuliga_instructor_payouts
+                 WHERE instructor_id = $1
+                   AND status = 'paid'
+                 ORDER BY payment_date DESC, created_at DESC
+                 LIMIT 10`,
+                [instructorId]
+            );
+            
+            if (recentPayoutsRes.rows.length > 0) {
+                payoutsList = '\n*📋 Последние выплаты:*\n';
+                recentPayoutsRes.rows.forEach(payout => {
+                    const date = payout.payment_date 
+                        ? moment(payout.payment_date).tz('Asia/Yekaterinburg').format('DD.MM.YYYY')
+                        : moment(payout.period_end).tz('Asia/Yekaterinburg').format('DD.MM.YYYY');
+                    const period = `${moment(payout.period_start).format('DD.MM')} - ${moment(payout.period_end).format('DD.MM.YYYY')}`;
+                    payoutsList += `• ${date} (${period}) — ${parseFloat(payout.instructor_earnings).toFixed(2)} руб.\n`;
+                });
+            }
+        } catch (error) {
+            console.error('Ошибка получения последних выплат (таблица может не существовать):', error);
         }
         
         const message =

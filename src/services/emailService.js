@@ -457,6 +457,35 @@ class EmailService {
         `;
     }
 
+    // Универсальный метод отправки email
+    async sendEmail(recipientEmail, subject, htmlContent, attachments = []) {
+        try {
+            if (!process.env.EMAIL_PASS) {
+                console.warn(`⚠️  Не удалось отправить email на ${recipientEmail}: EMAIL_PASS не настроен`);
+                return { success: false, error: 'EMAIL_PASS не настроен' };
+            }
+
+            const mailOptions = {
+                from: {
+                    name: 'Горностайл72',
+                    address: process.env.EMAIL_USER || 'batl-zlat@yandex.ru'
+                },
+                to: recipientEmail,
+                subject: subject,
+                html: htmlContent,
+                attachments: attachments
+            };
+
+            console.log(`📧 Отправка email на ${recipientEmail}...`);
+            const result = await this.transporter.sendMail(mailOptions);
+            console.log('✅ Email отправлен успешно:', result.messageId);
+            return { success: true, messageId: result.messageId };
+        } catch (error) {
+            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
     // Проверка подключения к email сервису
     async verifyConnection() {
         try {

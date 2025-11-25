@@ -1628,6 +1628,8 @@ async function notifyAdminParticipantTransferred(trainingData) {
 }
 
 module.exports = {
+    bot,
+    instructorBot,
     notifyScheduleCreated,
     notifyRecurringTrainingsCreated,
     notifyRecurringTrainingConflict,
