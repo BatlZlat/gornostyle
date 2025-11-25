@@ -709,6 +709,22 @@ router.put('/payouts/:id', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Нет полей для обновления' });
         }
 
+        // Получаем старый статус для проверки изменений
+        const oldPayoutResult = await pool.query(
+            `SELECT kip.*, ki.full_name as instructor_name, ki.telegram_id, ki.email
+             FROM kuliga_instructor_payouts kip
+             LEFT JOIN kuliga_instructors ki ON kip.instructor_id = ki.id
+             WHERE kip.id = $1`,
+            [id]
+        );
+
+        if (oldPayoutResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Выплата не найдена' });
+        }
+
+        const oldPayout = oldPayoutResult.rows[0];
+        const oldStatus = oldPayout.status;
+
         params.push(id);
         const query = `
             UPDATE kuliga_instructor_payouts 
@@ -723,12 +739,133 @@ router.put('/payouts/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Выплата не найдена' });
         }
 
+        const payout = result.rows[0];
+        const newStatus = payout.status;
+
+        // Отправляем уведомления, если статус изменился
+        if (oldStatus !== newStatus) {
+            try {
+                const adminNotify = require('../bot/admin-notify');
+                const instructorBot = adminNotify.instructorBot || adminNotify.bot;
+                const adminBot = adminNotify.bot;
+
+                // Уведомление инструктору
+                if (instructorBot && oldPayout.telegram_id) {
+                    try {
+                        let instructorMessage = '';
+                        
+                        if (newStatus === 'paid') {
+                            instructorMessage = `✅ *Выплата получена!*\n\n` +
+                                `💰 Платежка №${payout.id}\n` +
+                                `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n` +
+                                `Сумма: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n`;
+                            
+                            if (payout.payment_method) {
+                                instructorMessage += `Способ выплаты: ${payout.payment_method}\n`;
+                            }
+                            
+                            if (payout.payment_date) {
+                                instructorMessage += `Дата выплаты: ${moment(payout.payment_date).format('DD.MM.YYYY')}\n`;
+                            }
+                            
+                            if (payout.payment_comment) {
+                                instructorMessage += `\nКомментарий: ${payout.payment_comment}`;
+                            }
+                        } else if (newStatus === 'cancelled') {
+                            instructorMessage = `❌ *Выплата отменена*\n\n` +
+                                `💰 Платежка №${payout.id}\n` +
+                                `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n` +
+                                `Сумма: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n`;
+                            
+                            if (payout.payment_comment) {
+                                instructorMessage += `\nПричина: ${payout.payment_comment}`;
+                            }
+                        } else if (newStatus === 'pending') {
+                            instructorMessage = `⏳ *Статус выплаты изменен*\n\n` +
+                                `💰 Платежка №${payout.id}\n` +
+                                `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n` +
+                                `Сумма: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n` +
+                                `Статус: Ожидает выплаты`;
+                        }
+
+                        if (instructorMessage) {
+                            await instructorBot.sendMessage(oldPayout.telegram_id, instructorMessage, { parse_mode: 'Markdown' });
+                            console.log(`✅ Уведомление о смене статуса отправлено инструктору ${oldPayout.instructor_name}`);
+                        }
+                    } catch (instructorError) {
+                        console.error('Ошибка отправки уведомления инструктору:', instructorError);
+                    }
+                }
+
+                // Уведомление администратору
+                if (adminBot) {
+                    try {
+                        const adminIds = process.env.ADMIN_TELEGRAM_ID?.split(',').map(id => id.trim()) || [];
+                        
+                        const statusLabels = {
+                            'pending': '⏳ В ожидании',
+                            'paid': '✅ Выплачено',
+                            'cancelled': '❌ Отменено'
+                        };
+
+                        let adminMessage = `📝 *Статус выплаты изменен*\n\n`;
+                        adminMessage += `Инструктор: ${oldPayout.instructor_name}\n`;
+                        adminMessage += `Платежка №${payout.id}\n`;
+                        adminMessage += `Период: ${moment(payout.period_start).format('DD.MM.YYYY')} - ${moment(payout.period_end).format('DD.MM.YYYY')}\n`;
+                        adminMessage += `Сумма: ${parseFloat(payout.instructor_earnings).toFixed(2)} ₽\n\n`;
+                        adminMessage += `Статус: ${statusLabels[oldStatus] || oldStatus} → ${statusLabels[newStatus] || newStatus}\n`;
+                        
+                        if (payout.payment_method) {
+                            adminMessage += `Способ выплаты: ${payout.payment_method}\n`;
+                        }
+                        
+                        if (payout.payment_date) {
+                            adminMessage += `Дата выплаты: ${moment(payout.payment_date).format('DD.MM.YYYY')}\n`;
+                        }
+                        
+                        if (payout.payment_comment) {
+                            adminMessage += `\nКомментарий: ${payout.payment_comment}`;
+                        }
+
+                        for (const adminId of adminIds) {
+                            try {
+                                await adminBot.sendMessage(adminId, adminMessage, { parse_mode: 'Markdown' });
+                                console.log(`✅ Уведомление о смене статуса отправлено администратору ${adminId}`);
+                            } catch (err) {
+                                console.error(`Ошибка отправки уведомления администратору ${adminId}:`, err);
+                            }
+                        }
+                    } catch (adminError) {
+                        console.error('Ошибка отправки уведомления администратору:', adminError);
+                    }
+                }
+            } catch (notifyError) {
+                console.error('Ошибка при отправке уведомлений о смене статуса:', notifyError);
+                // Не прерываем обновление выплаты из-за ошибки уведомлений
+            }
+        }
+
         res.json({
             success: true,
-            payout: result.rows[0]
+            payout: {
+                id: payout.id,
+                instructor_id: payout.instructor_id,
+                period_start: payout.period_start,
+                period_end: payout.period_end,
+                trainings_count: payout.trainings_count,
+                total_revenue: parseFloat(payout.total_revenue),
+                instructor_earnings: parseFloat(payout.instructor_earnings),
+                admin_commission: parseFloat(payout.admin_commission),
+                status: payout.status,
+                payment_method: payout.payment_method,
+                payment_date: payout.payment_date,
+                payment_comment: payout.payment_comment,
+                updated_at: payout.updated_at
+            }
         });
     } catch (error) {
         console.error('Ошибка обновления выплаты:', error);
+        console.error('Стек ошибки:', error.stack);
         res.status(500).json({ success: false, error: 'Не удалось обновить выплату' });
     }
 });
