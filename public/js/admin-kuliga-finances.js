@@ -308,11 +308,170 @@ function updateInstructorFilter(instructors) {
 }
 
 // Модальное окно создания выплаты
-function showCreatePayoutModal(instructorId, instructorName) {
-    // TODO: Реализовать модальное окно
-    console.log('Создание выплаты для инструктора:', instructorId, instructorName);
-    alert('Функция создания выплаты будет реализована');
+async function showCreatePayoutModal(instructorId, instructorName) {
+    try {
+        // Получаем данные инструктора для расчета периода
+        const params = new URLSearchParams();
+        if (currentPeriod === 'custom' && currentPeriodFrom && currentPeriodTo) {
+            params.append('from', currentPeriodFrom);
+            params.append('to', currentPeriodTo);
+        } else {
+            params.append('period', currentPeriod);
+        }
+
+        const response = await authFetch(`/api/kuliga/admin/finances/instructors?${params}`);
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить данные инструктора');
+        }
+
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error('Ошибка загрузки данных');
+        }
+
+        const instructor = data.instructors.find(i => i.id === instructorId);
+        if (!instructor) {
+            throw new Error('Инструктор не найден');
+        }
+
+        // Определяем период
+        let periodStart, periodEnd;
+        if (currentPeriod === 'custom' && currentPeriodFrom && currentPeriodTo) {
+            periodStart = currentPeriodFrom;
+            periodEnd = currentPeriodTo;
+        } else if (currentPeriod === 'current_month') {
+            const now = new Date();
+            periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            periodEnd = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+        } else if (currentPeriod === 'last_month') {
+            const now = new Date();
+            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            periodStart = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-01`;
+            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+            periodEnd = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+        } else {
+            // all_time - используем дату первой тренировки и сегодня
+            // Для упрощения используем текущий месяц
+            const now = new Date();
+            periodStart = `${now.getFullYear()}-01-01`;
+            periodEnd = `${now.getFullYear()}-12-31`;
+        }
+
+        const modal = document.createElement('div');
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <h2 style="margin-top: 0;">Формирование выплаты</h2>
+                <div style="margin-bottom: 20px;">
+                    <div><strong>Инструктор:</strong> ${escapeHtml(instructorName)}</div>
+                    <div><strong>Период:</strong> ${formatDate(periodStart)} - ${formatDate(periodEnd)}</div>
+                    <div><strong>Неоплаченный заработок:</strong> ${formatCurrency(instructor.unpaid_earnings || 0)} ₽</div>
+                    <div><strong>Тренировок:</strong> ${instructor.trainings_count || 0}</div>
+                </div>
+                <form id="create-payout-form">
+                    <div class="form-group">
+                        <label>Период начала *</label>
+                        <input type="date" id="payout-period-start" class="form-control" value="${periodStart}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Период окончания *</label>
+                        <input type="date" id="payout-period-end" class="form-control" value="${periodEnd}" required />
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="payout-send-telegram" checked />
+                            Отправить в Telegram
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="payout-send-email" />
+                            Отправить на Email
+                        </label>
+                    </div>
+                    <div class="form-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button type="submit" class="btn-primary">Создать выплату</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Обработчик формы
+        const form = modal.querySelector('#create-payout-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await createPayout(instructorId, modal);
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+    } catch (error) {
+        console.error('Ошибка создания модального окна выплаты:', error);
+        showError('Не удалось загрузить данные для создания выплаты');
+    }
 }
+
+// Создание выплаты
+async function createPayout(instructorId, modal) {
+    try {
+        const periodStart = document.getElementById('payout-period-start').value;
+        const periodEnd = document.getElementById('payout-period-end').value;
+        const sendTelegram = document.getElementById('payout-send-telegram').checked;
+        const sendEmail = document.getElementById('payout-send-email').checked;
+
+        if (!periodStart || !periodEnd) {
+            showError('Укажите период');
+            return;
+        }
+
+        const response = await authFetch('/api/kuliga/admin/payouts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                instructor_id: instructorId,
+                period_start: periodStart,
+                period_end: periodEnd,
+                send_telegram: sendTelegram,
+                send_email: sendEmail
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка создания выплаты');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            modal.remove();
+            showSuccess('Выплата успешно создана');
+            // Обновляем данные
+            loadFinancesData();
+        }
+    } catch (error) {
+        console.error('Ошибка создания выплаты:', error);
+        showError('Не удалось создать выплату: ' + error.message);
+    }
+}
+
+function showSuccess(message) {
+    // Используем функцию из admin.js или создаем простой alert
+    if (typeof window.showSuccess === 'function') {
+        window.showSuccess(message);
+    } else {
+        alert(message);
+    }
+}
+
+window.showCreatePayoutModal = showCreatePayoutModal;
 
 // Вспомогательные функции
 function formatCurrency(amount) {
@@ -326,6 +485,11 @@ function formatDate(dateStr) {
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
     return `${day}.${month}.${year}`;
+}
+
+function formatTime(timeString) {
+    if (!timeString) return '-';
+    return String(timeString).substring(0, 5);
 }
 
 function getStatusLabel(status) {
@@ -389,7 +553,7 @@ async function viewInstructorDetails(instructorId) {
             params.append('period', currentPeriod);
         }
 
-        const response = await authFetch(`/api/kuliga/instructor/trainings?instructor_id=${instructorId}&${params}`);
+        const response = await authFetch(`/api/kuliga/admin/finances/instructors/${instructorId}/trainings?${params}`);
         if (!response.ok) {
             throw new Error('Ошибка загрузки детализации');
         }
@@ -424,10 +588,178 @@ async function viewPayoutDetails(payoutId) {
 
 // Модальное окно детализации инструктора
 function showInstructorDetailsModal(instructorId, trainings) {
-    // TODO: Реализовать модальное окно
-    console.log('Детализация инструктора:', instructorId, trainings);
-    alert(`Детализация инструктора будет реализована. Тренировок: ${trainings.length}`);
+    const modal = document.createElement('div');
+    modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+    
+    // Подсчитываем статистику
+    let individualCount = 0;
+    let groupCount = 0;
+    let totalRevenue = 0;
+    let totalEarnings = 0;
+    
+    trainings.forEach(training => {
+        if (training.booking_type === 'group') {
+            groupCount++;
+        } else {
+            individualCount++;
+        }
+        totalRevenue += parseFloat(training.price_total || 0);
+        totalEarnings += parseFloat(training.instructor_earnings || 0);
+    });
+    
+    const statisticsHtml = `
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0;">Статистика:</h4>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Всего тренировок</div>
+                    <div style="font-size: 24px; font-weight: bold;">${trainings.length}</div>
+                </div>
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Индивидуальных</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #3498db;">${individualCount}</div>
+                </div>
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Групповых</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #27ae60;">${groupCount}</div>
+                </div>
+                <div>
+                    <div style="color: #666; font-size: 0.9em;">Заработок</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #27ae60;">${formatCurrency(totalEarnings)} ₽</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const trainingsHtml = trainings.length > 0 ? `
+        <table class="data-table" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Дата</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Время</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Тип</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Вид спорта</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Участники</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Стоимость</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Заработок</th>
+                    <th style="padding: 12px; text-align: center; border-bottom: 2px solid #dee2e6;">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${trainings.map(t => {
+                    const typeText = t.booking_type === 'group' ? '👥 Групповая' : '👤 Индивидуальная';
+                    const sportText = t.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                    let participantsText = '';
+                    if (t.booking_type === 'group' && t.bookings && t.bookings.length > 0) {
+                        participantsText = `${t.participants_count} чел.`;
+                    } else {
+                        participantsText = t.participants_names && Array.isArray(t.participants_names) 
+                            ? t.participants_names.join(', ') 
+                            : t.participants_count || 1;
+                    }
+                    return `
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 12px;">${formatDate(t.date)}</td>
+                            <td style="padding: 12px;">${formatTime(t.start_time)} - ${formatTime(t.end_time)}</td>
+                            <td style="padding: 12px;">${typeText}</td>
+                            <td style="padding: 12px;">${sportText}</td>
+                            <td style="padding: 12px;">${escapeHtml(participantsText)}</td>
+                            <td style="padding: 12px; text-align: right;">${formatCurrency(t.price_total)} ₽</td>
+                            <td style="padding: 12px; text-align: right; font-weight: 600;">${formatCurrency(t.instructor_earnings)} ₽</td>
+                            <td style="padding: 12px; text-align: center;">
+                                ${t.booking_type === 'group' && t.bookings ? 
+                                    `<button class="btn-secondary" onclick="showTrainingParticipants(${JSON.stringify(t).replace(/"/g, '&quot;')})" style="padding: 5px 10px; font-size: 0.85em;">Детали</button>` 
+                                    : ''}
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    ` : '<div style="padding: 20px; text-align: center; color: #666;">Нет тренировок</div>';
+
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 1000px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <h2 style="margin-top: 0;">Детализация тренировок инструктора</h2>
+            ${statisticsHtml}
+            <h3>Тренировки:</h3>
+            ${trainingsHtml}
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
 }
+
+// Показать участников групповой тренировки
+function showTrainingParticipants(training) {
+    if (typeof training === 'string') {
+        try {
+            training = JSON.parse(training.replace(/&quot;/g, '"'));
+        } catch (e) {
+            console.error('Ошибка парсинга данных тренировки:', e);
+            return;
+        }
+    }
+    
+    if (!training.bookings || training.bookings.length === 0) {
+        alert('Нет участников');
+        return;
+    }
+    
+    const modal = document.createElement('div');
+    modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; align-items: center; justify-content: center;';
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <h3 style="margin-top: 0;">Участники групповой тренировки</h3>
+            <div style="margin-bottom: 15px;">
+                <div><strong>Дата:</strong> ${formatDate(training.date)}</div>
+                <div><strong>Время:</strong> ${formatTime(training.start_time)} - ${formatTime(training.end_time)}</div>
+                <div><strong>Всего участников:</strong> ${training.participants_count}</div>
+            </div>
+            <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Клиент</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Участники</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Стоимость</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Заработок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${training.bookings.map(booking => `
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 12px;">${escapeHtml(booking.client_name || '-')}</td>
+                            <td style="padding: 12px;">
+                                ${booking.participants_names && Array.isArray(booking.participants_names) 
+                                    ? booking.participants_names.join(', ') 
+                                    : booking.participants_count || 1}
+                            </td>
+                            <td style="padding: 12px; text-align: right;">${formatCurrency(booking.price_total)} ₽</td>
+                            <td style="padding: 12px; text-align: right;">${formatCurrency(booking.instructor_earnings)} ₽</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+window.showTrainingParticipants = showTrainingParticipants;
 
 // Модальное окно деталей выплаты
 function showPayoutDetailsModal(data) {

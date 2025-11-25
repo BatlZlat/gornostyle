@@ -86,13 +86,21 @@ router.get('/finances/stats', async (req, res) => {
         const unpaidResult = await pool.query(unpaidQuery);
         const instructorsWithDebt = parseInt(unpaidResult.rows[0]?.count || 0);
 
+        // Общее количество инструкторов (активных)
+        const totalInstructorsResult = await pool.query(
+            `SELECT COUNT(*) as count FROM kuliga_instructors WHERE is_active = TRUE`
+        );
+        const totalInstructors = parseInt(totalInstructorsResult.rows[0]?.count || 0);
+
         res.json({
             success: true,
             stats: {
                 total_revenue: parseFloat(stats.total_revenue || 0),
                 admin_commission: parseFloat(stats.admin_commission || 0),
                 total_earnings: parseFloat(stats.total_earnings || 0),
-                instructors_with_debt: instructorsWithDebt
+                instructors_with_debt: instructorsWithDebt,
+                total_instructors: totalInstructors,
+                instructors_count: parseInt(stats.instructors_count || 0) // Инструкторы с тренировками за период
             }
         });
     } catch (error) {
@@ -456,6 +464,148 @@ router.put('/payouts/:id', async (req, res) => {
     } catch (error) {
         console.error('Ошибка обновления выплаты:', error);
         res.status(500).json({ success: false, error: 'Не удалось обновить выплату' });
+    }
+});
+
+/**
+ * GET /api/kuliga/admin/finances/instructors/:id/trainings
+ * Получение детализации тренировок инструктора (для админа)
+ * Query params: period (current_month, last_month, all_time) или from, to
+ */
+router.get('/finances/instructors/:id/trainings', async (req, res) => {
+    try {
+        const instructorId = parseInt(req.params.id);
+        const { period, from, to } = req.query;
+
+        if (!instructorId || isNaN(instructorId)) {
+            return res.status(400).json({ success: false, error: 'Неверный ID инструктора' });
+        }
+
+        let dateFilter = '';
+        const params = [instructorId];
+
+        if (period === 'custom' && from && to) {
+            dateFilter = `AND kb.date >= $${params.length + 1}::date AND kb.date <= $${params.length + 2}::date`;
+            params.push(from, to);
+        } else if (period === 'current_month') {
+            const startOfMonth = moment().tz(TIMEZONE).startOf('month').format('YYYY-MM-DD');
+            const endOfMonth = moment().tz(TIMEZONE).endOf('month').format('YYYY-MM-DD');
+            dateFilter = `AND kb.date >= $${params.length + 1}::date AND kb.date <= $${params.length + 2}::date`;
+            params.push(startOfMonth, endOfMonth);
+        } else if (period === 'last_month') {
+            const startOfLastMonth = moment().tz(TIMEZONE).subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+            const endOfLastMonth = moment().tz(TIMEZONE).subtract(1, 'month').endOf('month').format('YYYY-MM-DD');
+            dateFilter = `AND kb.date >= $${params.length + 1}::date AND kb.date <= $${params.length + 2}::date`;
+            params.push(startOfLastMonth, endOfLastMonth);
+        }
+        // all_time - без ограничения по дате
+
+        let query = `
+            SELECT 
+                kb.id,
+                kb.booking_type,
+                kb.group_training_id,
+                kb.date,
+                kb.start_time,
+                kb.end_time,
+                kb.sport_type,
+                kb.participants_count,
+                kb.participants_names,
+                kb.price_total,
+                kb.status,
+                c.full_name as client_name,
+                c.phone as client_phone,
+                ki.admin_percentage,
+                (kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings
+            FROM kuliga_bookings kb
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN clients c ON kb.client_id = c.id
+            JOIN kuliga_instructors ki ON ${BOOKING_INSTRUCTOR_ID} = ki.id
+            WHERE ${BOOKING_INSTRUCTOR_ID} = $1
+              ${dateFilter}
+              ${COMPLETION_CONDITION}
+            ORDER BY kb.date DESC, kb.start_time DESC
+        `;
+
+        const result = await pool.query(query, params);
+
+        // Группируем групповые тренировки по group_training_id
+        const trainingsMap = new Map();
+        const individualTrainings = [];
+
+        result.rows.forEach(row => {
+            if (row.booking_type === 'group' && row.group_training_id) {
+                const key = `${row.group_training_id}_${row.date}_${row.start_time}`;
+                if (!trainingsMap.has(key)) {
+                    trainingsMap.set(key, {
+                        id: row.group_training_id,
+                        booking_type: 'group',
+                        date: row.date,
+                        start_time: row.start_time,
+                        end_time: row.end_time,
+                        sport_type: row.sport_type,
+                        participants_count: 0,
+                        participants_names: [],
+                        price_total: 0,
+                        instructor_earnings: 0,
+                        bookings: []
+                    });
+                }
+                const training = trainingsMap.get(key);
+                training.participants_count += row.participants_count || 1;
+                if (row.participants_names && Array.isArray(row.participants_names)) {
+                    training.participants_names.push(...row.participants_names);
+                }
+                training.price_total += parseFloat(row.price_total || 0);
+                training.instructor_earnings += parseFloat(row.instructor_earnings || 0);
+                training.bookings.push({
+                    id: row.id,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    participants_names: row.participants_names,
+                    participants_count: row.participants_count,
+                    price_total: parseFloat(row.price_total || 0),
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0)
+                });
+            } else {
+                individualTrainings.push({
+                    id: row.id,
+                    booking_type: 'individual',
+                    date: row.date,
+                    start_time: row.start_time,
+                    end_time: row.end_time,
+                    sport_type: row.sport_type,
+                    participants_count: row.participants_count,
+                    participants_names: row.participants_names,
+                    price_total: parseFloat(row.price_total || 0).toFixed(2),
+                    status: row.status,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0).toFixed(2)
+                });
+            }
+        });
+
+        // Преобразуем Map в массив и объединяем с индивидуальными
+        const groupedTrainings = Array.from(trainingsMap.values()).map(training => ({
+            ...training,
+            price_total: training.price_total.toFixed(2),
+            instructor_earnings: training.instructor_earnings.toFixed(2)
+        }));
+
+        const allTrainings = [...groupedTrainings, ...individualTrainings].sort((a, b) => {
+            const dateA = new Date(`${a.date}T${a.start_time}`);
+            const dateB = new Date(`${b.date}T${b.start_time}`);
+            return dateB - dateA;
+        });
+
+        res.json({
+            success: true,
+            trainings: allTrainings
+        });
+    } catch (error) {
+        console.error('Ошибка получения детализации тренировок инструктора:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить детализацию' });
     }
 });
 
