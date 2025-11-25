@@ -38,6 +38,7 @@ const kuligaPaymentRouter = require('./routes/kuliga-payment');
 const kuligaAdminRouter = require('./routes/kuliga-admin');
 const kuligaInstructorAuthRouter = require('./routes/kuliga-instructor-auth');
 const kuligaInstructorScheduleRouter = require('./routes/kuliga-instructor-schedule');
+const kuligaInstructorFinancesRouter = require('./routes/kuliga-instructor-finances');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
 const { verifyKuligaInstructorAuth } = require('./middleware/kuligaInstructorAuth');
@@ -433,6 +434,7 @@ app.use('/api/kuliga/payment', kuligaPaymentRouter);
 app.use('/api/kuliga/admin', kuligaAdminRouter);
 app.use('/api/kuliga/instructor', kuligaInstructorAuthRouter);
 app.use('/api/kuliga/instructor', kuligaInstructorScheduleRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorFinancesRouter);
 app.use(kuligaPublicRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)

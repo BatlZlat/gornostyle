@@ -46,6 +46,11 @@
 --      - Исключает дублирование клиентов при разных форматах ввода
 --      - Обновлена форма бронирования Кулиги на сайте
 --      - Добавлены уведомления инструктору и админу о записи через сайт
+-- 032: СИСТЕМА ВЫПЛАТ ИНСТРУКТОРАМ КУЛИГИ (18 ноября 2025)
+--      - Создана таблица kuliga_instructor_payouts для отслеживания выплат
+--      - Поддержка периодов выплат, статусов, способов выплаты
+--      - Интеграция с kuliga_bookings для расчета заработка
+--      - Автоматический расчет комиссии администратора
 -- ============================================================================
 
 -- ============================================================================
@@ -830,6 +835,11 @@ CREATE TRIGGER update_failed_payments_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_kuliga_payouts_updated_at
+    BEFORE UPDATE ON kuliga_instructor_payouts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- Создаем триггер для обновления слотов при создании/отмене индивидуальных тренировок
 CREATE OR REPLACE FUNCTION update_individual_training_slots()
 RETURNS TRIGGER AS $$
@@ -1594,6 +1604,38 @@ CREATE TABLE IF NOT EXISTS kuliga_program_bookings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица выплат инструкторам Кулиги
+-- МИГРАЦИЯ 032: Создана система выплат инструкторам с отслеживанием периодов и статусов
+CREATE TABLE IF NOT EXISTS kuliga_instructor_payouts (
+    id SERIAL PRIMARY KEY,
+    instructor_id INTEGER NOT NULL REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
+    
+    -- Период выплаты
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    
+    -- Финансы
+    trainings_count INTEGER NOT NULL DEFAULT 0,
+    total_revenue DECIMAL(10,2) NOT NULL DEFAULT 0, -- Общая выручка
+    instructor_earnings DECIMAL(10,2) NOT NULL DEFAULT 0, -- Заработок инструктора
+    admin_commission DECIMAL(10,2) NOT NULL DEFAULT 0, -- Комиссия администратора
+    
+    -- Статус выплаты
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+    payment_method VARCHAR(50), -- Способ выплаты (наличные, банковская карта, перевод)
+    payment_date DATE,
+    payment_comment TEXT,
+    
+    -- Метаданные
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES administrators(id),
+    paid_by INTEGER REFERENCES administrators(id),
+    
+    -- Уникальность: один период для одного инструктора
+    CONSTRAINT unique_instructor_period UNIQUE(instructor_id, period_start, period_end)
+);
+
 -- Индексы для таблиц Кулиги
 -- МИГРАЦИЯ 033: Индексы для kuliga_clients удалены (таблица больше не существует)
 -- Клиенты используют основные индексы таблицы clients
@@ -1633,6 +1675,11 @@ CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_program ON kuliga_program
 CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_client ON kuliga_program_bookings(client_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_program_bookings_status ON kuliga_program_bookings(status);
 
+CREATE INDEX IF NOT EXISTS idx_kuliga_payouts_instructor ON kuliga_instructor_payouts(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_kuliga_payouts_status ON kuliga_instructor_payouts(status);
+CREATE INDEX IF NOT EXISTS idx_kuliga_payouts_period ON kuliga_instructor_payouts(period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_kuliga_payouts_instructor_status ON kuliga_instructor_payouts(instructor_id, status);
+
 -- Комментарии для таблиц Кулиги (обновлено в МИГРАЦИИ 033)
 COMMENT ON TABLE kuliga_instructors IS 'Инструкторы Кулиги (добавляются администратором, могут регистрироваться в Telegram-боте)';
 COMMENT ON TABLE kuliga_schedule_slots IS 'Временные слоты инструкторов (available=свободен, booked=индивидуальная, group=групповая, blocked=не работает)';
@@ -1646,6 +1693,15 @@ COMMENT ON COLUMN kuliga_bookings.price_id IS 'ID записи прайса wint
 COMMENT ON COLUMN kuliga_bookings.payer_rides IS 'true, если заказчик участвует в тренировке';
 COMMENT ON TABLE kuliga_programs IS 'Регулярные групповые программы (шаблоны с привязкой к дням недели, клиенты записываются индивидуально)';
 COMMENT ON TABLE kuliga_program_bookings IS 'Записи клиентов на регулярные программы (один клиент = один участник, client_id -> clients.id)';
+COMMENT ON TABLE kuliga_instructor_payouts IS 'Выплаты инструкторам Кулиги за проведенные тренировки (МИГРАЦИЯ 032)';
+COMMENT ON COLUMN kuliga_instructor_payouts.period_start IS 'Начало периода выплаты (включительно)';
+COMMENT ON COLUMN kuliga_instructor_payouts.period_end IS 'Конец периода выплаты (включительно)';
+COMMENT ON COLUMN kuliga_instructor_payouts.trainings_count IS 'Количество проведенных тренировок за период';
+COMMENT ON COLUMN kuliga_instructor_payouts.total_revenue IS 'Общая выручка от тренировок (до вычета комиссии)';
+COMMENT ON COLUMN kuliga_instructor_payouts.instructor_earnings IS 'Сумма к выплате инструктору (после вычета комиссии администратора)';
+COMMENT ON COLUMN kuliga_instructor_payouts.admin_commission IS 'Комиссия администратора (рассчитывается по admin_percentage)';
+COMMENT ON COLUMN kuliga_instructor_payouts.status IS 'Статус выплаты: pending (ожидает выплаты), paid (выплачено), cancelled (отменено)';
+COMMENT ON COLUMN kuliga_instructor_payouts.payment_method IS 'Способ выплаты: наличные, банковская карта, перевод и т.д.';
 
 COMMENT ON COLUMN kuliga_instructors.admin_percentage IS 'Процент администратора от заработка инструктора (индивидуальный, по умолчанию из kuliga_admin_settings)';
 COMMENT ON COLUMN kuliga_instructors.telegram_registered IS 'Зарегистрирован ли в Telegram-боте для получения уведомлений (уволенные не получают)';
