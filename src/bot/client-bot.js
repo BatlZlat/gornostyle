@@ -8167,9 +8167,9 @@ async function handleTextMessage(msg) {
 
             const trainingsResult = await pool.query(
                 `SELECT kgt.id, kgt.start_time, kgt.end_time, kgt.sport_type, kgt.level,
-                        kgt.price_per_person, kgt.max_participants,
+                        kgt.price_per_person, kgt.max_participants, kgt.description,
                         COALESCE(SUM(kb.participants_count), 0)::INTEGER as current_participants,
-                        kgt.description, ki.full_name as instructor_name
+                        ki.full_name as instructor_name
                  FROM kuliga_group_trainings kgt
                  JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
                  LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
@@ -8256,6 +8256,9 @@ async function handleTextMessage(msg) {
                 message += `  👨‍🏫 ${training.instructor_name}\n`;
                 const occupiedPlaces = training.current_participants || 0;
                 message += `  👥 Занято мест: ${occupiedPlaces}/${training.max_participants}\n`;
+                if (training.description) {
+                    message += `  📝 ${training.description}\n`;
+                }
                 message += `  💰 Цена за человека: ${pricePerPerson} ₽\n\n`;
             });
 
@@ -8314,6 +8317,7 @@ async function handleTextMessage(msg) {
             state.data.price_per_person = selectedTraining.price_per_person;
             state.data.max_participants = selectedTraining.max_participants;
             state.data.current_participants = selectedTraining.current_participants;
+            state.data.training_description = selectedTraining.description;
 
             // Переходим к выбору участников
             state.step = 'kuliga_group_existing_participants';
@@ -8334,6 +8338,9 @@ async function handleTextMessage(msg) {
             message += `👨‍🏫 Инструктор: ${selectedTraining.instructor_name}\n`;
             const occupiedPlaces = selectedTraining.current_participants || 0;
             message += `👥 Занято мест: ${occupiedPlaces}/${selectedTraining.max_participants}\n`;
+            if (selectedTraining.description) {
+                message += `📝 ${selectedTraining.description}\n`;
+            }
             message += `💰 Цена за человека: ${parseFloat(selectedTraining.price_per_person || 0).toFixed(2)} ₽\n\n`;
 
             if (children.length > 0) {
@@ -12412,7 +12419,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                 message += `   👨‍🏫 Инструктор: ${training.trainer_name}\n`;
             }
             if (training.description) {
-                message += `   📝 ${training.description.substring(0, 50)}${training.description.length > 50 ? '...' : ''}\n`;
+                message += `   📝 ${training.description}\n`;
             }
             message += `   💰 Цена за человека: ${pricePerPerson} ₽\n\n`;
         });
@@ -13450,8 +13457,11 @@ async function confirmAndPayKuligaExistingGroupBooking(chatId, state) {
         message += `👨‍🏫 *Инструктор:* ${state.data.selected_instructor_name}\n`;
         message += `🏔️ *Место:* Кулига Парк\n`;
         const occupiedPlacesAfter = (state.data.current_participants || 0) + participants.length;
-        message += `👥 *Занято мест:* ${occupiedPlacesAfter}/${state.data.max_participants}\n\n`;
-        message += `👤 *Участник:*\n`;
+        message += `👥 *Занято мест:* ${occupiedPlacesAfter}/${state.data.max_participants}\n`;
+        if (state.data.training_description) {
+            message += `📝 *Описание:* ${state.data.training_description}\n`;
+        }
+        message += `\n👤 *Участник:*\n`;
         participants.forEach((p, index) => {
             message += `${index + 1}. ${p.fullName} (${p.age} лет)\n`;
         });

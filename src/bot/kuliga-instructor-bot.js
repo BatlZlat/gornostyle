@@ -353,16 +353,34 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
 // Показать финансы
 async function showFinances(chatId, instructorId) {
     try {
+        const TIMEZONE = 'Asia/Yekaterinburg';
+        // Условие для завершенных тренировок (как в веб-странице)
+        const COMPLETION_CONDITION = `
+            AND (
+                kb.status = 'completed'
+                OR (
+                    kb.status IN ('confirmed', 'pending')
+                    AND (kb.date::timestamp + kb.end_time::interval) <= (NOW() AT TIME ZONE '${TIMEZONE}')
+                )
+            )
+        `;
+
         // Получаем статистику по заработку за все время
+        // Для групповых тренировок инструктор связан через group_training_id
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные id
         const statsRes = await pool.query(
             `SELECT 
                 kb.booking_type,
-                COUNT(*) as trainings_count,
-                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as earnings
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
+                SUM(kb.price_total * (1 - COALESCE(ki.admin_percentage, 20) / 100)) as earnings
             FROM kuliga_bookings kb
-            JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
-            WHERE kb.instructor_id = $1
-              AND kb.status IN ('pending', 'confirmed', 'completed')
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN kuliga_instructors ki ON COALESCE(kb.instructor_id, kgt.instructor_id) = ki.id
+            WHERE COALESCE(kb.instructor_id, kgt.instructor_id) = $1
+              ${COMPLETION_CONDITION}
             GROUP BY kb.booking_type`,
             [instructorId]
         );
@@ -385,16 +403,22 @@ async function showFinances(chatId, instructorId) {
         });
 
         // Получаем статистику за текущий месяц
+        // Для групповых тренировок инструктор связан через group_training_id
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные id
         const currentMonth = moment().tz('Asia/Yekaterinburg').format('YYYY-MM');
         const monthStatsRes = await pool.query(
             `SELECT 
                 kb.booking_type,
-                COUNT(*) as trainings_count,
-                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as earnings
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
+                SUM(kb.price_total * (1 - COALESCE(ki.admin_percentage, 20) / 100)) as earnings
             FROM kuliga_bookings kb
-            JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
-            WHERE kb.instructor_id = $1
-              AND kb.status IN ('pending', 'confirmed', 'completed')
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN kuliga_instructors ki ON COALESCE(kb.instructor_id, kgt.instructor_id) = ki.id
+            WHERE COALESCE(kb.instructor_id, kgt.instructor_id) = $1
+              ${COMPLETION_CONDITION}
               AND TO_CHAR(kb.date, 'YYYY-MM') = $2
             GROUP BY kb.booking_type`,
             [instructorId, currentMonth]
@@ -417,45 +441,54 @@ async function showFinances(chatId, instructorId) {
             }
         });
 
-        // Получаем информацию о выплатах
+        // Получаем информацию о выплатах из новой таблицы kuliga_instructor_payouts
         // Выплаты за текущий месяц
-        const monthPayoutsRes = await pool.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_payouts
-             FROM kuliga_transactions kt
-             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
-             WHERE kb.instructor_id = $1
-               AND kt.type = 'payout'
-               AND kt.status = 'completed'
-               AND TO_CHAR(kt.created_at, 'YYYY-MM') = $2`,
-            [instructorId, currentMonth]
-        );
-        const monthPayouts = parseFloat(monthPayoutsRes.rows[0]?.total_payouts || 0);
+        let monthPayouts = 0;
+        try {
+            const monthPayoutsRes = await pool.query(
+                `SELECT COALESCE(SUM(instructor_earnings), 0) as total_payouts
+                 FROM kuliga_instructor_payouts
+                 WHERE instructor_id = $1
+                   AND status = 'paid'
+                   AND TO_CHAR(period_start, 'YYYY-MM') = $2`,
+                [instructorId, currentMonth]
+            );
+            monthPayouts = parseFloat(monthPayoutsRes.rows[0]?.total_payouts || 0);
+        } catch (error) {
+            console.error('Ошибка получения выплат за месяц (таблица может не существовать):', error);
+        }
         
         // Выплаты за текущий год
         const currentYear = moment().tz('Asia/Yekaterinburg').format('YYYY');
-        const yearPayoutsRes = await pool.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_payouts
-             FROM kuliga_transactions kt
-             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
-             WHERE kb.instructor_id = $1
-               AND kt.type = 'payout'
-               AND kt.status = 'completed'
-               AND TO_CHAR(kt.created_at, 'YYYY') = $2`,
-            [instructorId, currentYear]
-        );
-        const yearPayouts = parseFloat(yearPayoutsRes.rows[0]?.total_payouts || 0);
+        let yearPayouts = 0;
+        try {
+            const yearPayoutsRes = await pool.query(
+                `SELECT COALESCE(SUM(instructor_earnings), 0) as total_payouts
+                 FROM kuliga_instructor_payouts
+                 WHERE instructor_id = $1
+                   AND status = 'paid'
+                   AND TO_CHAR(period_start, 'YYYY') = $2`,
+                [instructorId, currentYear]
+            );
+            yearPayouts = parseFloat(yearPayoutsRes.rows[0]?.total_payouts || 0);
+        } catch (error) {
+            console.error('Ошибка получения выплат за год (таблица может не существовать):', error);
+        }
         
         // Выплаты за все время
-        const totalPayoutsRes = await pool.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_payouts
-             FROM kuliga_transactions kt
-             JOIN kuliga_bookings kb ON kt.booking_id = kb.id
-             WHERE kb.instructor_id = $1
-               AND kt.type = 'payout'
-               AND kt.status = 'completed'`,
-            [instructorId]
-        );
-        const totalPayouts = parseFloat(totalPayoutsRes.rows[0]?.total_payouts || 0);
+        let totalPayouts = 0;
+        try {
+            const totalPayoutsRes = await pool.query(
+                `SELECT COALESCE(SUM(instructor_earnings), 0) as total_payouts
+                 FROM kuliga_instructor_payouts
+                 WHERE instructor_id = $1
+                   AND status = 'paid'`,
+                [instructorId]
+            );
+            totalPayouts = parseFloat(totalPayoutsRes.rows[0]?.total_payouts || 0);
+        } catch (error) {
+            console.error('Ошибка получения выплат за все время (таблица может не существовать):', error);
+        }
         
         // Рассчитываем долги
         const monthDebt = monthEarnings - monthPayouts;
