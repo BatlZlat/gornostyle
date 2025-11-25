@@ -373,6 +373,7 @@
                         <div class="page-actions">
                             <a href="#" class="btn-primary" id="create-payment-link">Ссылка для оплаты</a>
                             <button class="btn-secondary" id="trainer-salary-btn">💰 ЗП Инструктора</button>
+                            <button class="btn-primary" id="kuliga-finances-btn">🏔️ Финансы Кулига</button>
                         </div>
                     </div>
                     
@@ -558,6 +559,78 @@
                         </div>
                         <div id="salary-payments-list">
                             <!-- История выплат будет загружена динамически -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Страница Финансы Кулиги -->
+                <div class="page-content" id="kuliga-finances-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🏔️ Финансы Кулиги</h2>
+                        <div class="page-actions">
+                            <button class="btn-secondary" id="back-to-finances-btn">🔙 Назад к финансам</button>
+                            <button class="btn-primary" id="export-finances-btn">📊 Экспорт</button>
+                        </div>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="kuliga-finances-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Общая выручка</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-revenue-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Комиссия администратора</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="admin-commission-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">К выплате инструкторам</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-earnings-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Инструкторов с долгами</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="instructors-with-debt-stat">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры периода -->
+                    <div class="filter-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <label style="font-weight: 600;">Период:</label>
+                        <button class="btn-secondary period-btn" data-period="current_month">Текущий месяц</button>
+                        <button class="btn-secondary period-btn" data-period="last_month">Прошлый месяц</button>
+                        <button class="btn-secondary period-btn" data-period="all_time">Все время</button>
+                        <input type="date" id="period-from" class="form-control" style="width: auto;">
+                        <span>—</span>
+                        <input type="date" id="period-to" class="form-control" style="width: auto;">
+                        <button class="btn-primary" id="apply-period-btn">Применить</button>
+                    </div>
+
+                    <!-- Список инструкторов с неоплаченным заработком -->
+                    <div class="kuliga-instructors-earnings" style="margin-bottom: 40px;">
+                        <h3 style="margin-bottom: 20px;">Инструкторы с неоплаченным заработком</h3>
+                        <div id="instructors-earnings-list" class="instructors-earnings-list">
+                            <!-- Список будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- История выплат -->
+                    <div class="kuliga-payouts-history">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 style="margin: 0;">История выплат</h3>
+                            <div class="filter-section" style="display: flex; gap: 10px;">
+                                <select id="payout-instructor-filter" class="form-control" style="width: auto;">
+                                    <option value="">Все инструкторы</option>
+                                </select>
+                                <select id="payout-status-filter" class="form-control" style="width: auto;">
+                                    <option value="">Все статусы</option>
+                                    <option value="pending">В ожидании</option>
+                                    <option value="paid">Выплачено</option>
+                                    <option value="cancelled">Отменено</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="payouts-history-list" class="payouts-history-list">
+                            <!-- Таблица выплат будет загружена динамически -->
                         </div>
                     </div>
                 </div>
@@ -1293,5 +1366,6 @@
     <script src="js/admin-kuliga-group-training.js?v=1"></script>
     <script src="js/admin-kuliga-move-booking.js?v=1"></script>
     <script src="js/admin-scheduled-messages.js?v=1"></script>
+    <script src="js/admin-kuliga-finances.js"></script>
 </body>
 </html> 
