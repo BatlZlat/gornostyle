@@ -1748,6 +1748,11 @@ async function showSlotDetails(slotId) {
         const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}.${(dateObj.getMonth() + 1).toString().padStart(2, '0')}.${dateObj.getFullYear()}`;
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateObj.getDay()];
         
+        // Проверяем, прошла ли тренировка
+        const now = new Date();
+        const trainingEnd = new Date(`${booking.date}T${booking.end_time}`);
+        const isTrainingPassed = trainingEnd < now;
+        
         modal.innerHTML = `
             <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
                 <h2 style="margin-top: 0;">Индивидуальная тренировка</h2>
@@ -1755,7 +1760,7 @@ async function showSlotDetails(slotId) {
                     <div style="margin-bottom: 10px;"><strong>Дата:</strong> ${formattedDate} (${dayOfWeek})</div>
                     <div style="margin-bottom: 10px;"><strong>Время:</strong> ${String(booking.start_time).substring(0, 5)} - ${String(booking.end_time).substring(0, 5)}</div>
                     <div style="margin-bottom: 10px;"><strong>Клиент:</strong> ${booking.client_name || 'Не указан'}</div>
-                    <div style="margin-bottom: 10px;"><strong>Телефон:</strong> ${booking.client_phone || 'Не указан'}</div>
+                    ${!isTrainingPassed ? `<div style="margin-bottom: 10px;"><strong>Телефон:</strong> ${booking.client_phone || 'Не указан'}</div>` : ''}
                     <div style="margin-bottom: 10px;"><strong>Вид спорта:</strong> ${booking.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
                     <div style="margin-bottom: 10px;"><strong>Стоимость:</strong> ${parseFloat(booking.price_total || 0).toFixed(2)} ₽</div>
                     <div style="margin-bottom: 10px;"><strong>Статус:</strong> ${booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status}</div>
@@ -1822,6 +1827,11 @@ async function showGroupTrainingDetails(trainingId) {
         const pricePerPerson = parseFloat(training.price_per_person || 0);
         const netPerPerson = pricePerPerson * (1 - adminPercentage / 100);
 
+        // Проверяем, прошла ли тренировка
+        const now = new Date();
+        const trainingEnd = new Date(`${dateStr}T${training.end_time}`);
+        const isTrainingPassed = trainingEnd < now;
+
         const participantsList = bookings.length > 0 
             ? bookings.map((b, idx) => {
                 const bookingTotal = parseFloat(b.price_total || 0);
@@ -1830,7 +1840,7 @@ async function showGroupTrainingDetails(trainingId) {
                     <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
                         <div><strong>${idx + 1}. ${b.client_name || 'Клиент'}</strong></div>
                         <div style="font-size: 0.9em; color: #666;">
-                            Телефон: ${b.client_phone || 'Не указан'} | 
+                            ${!isTrainingPassed ? `Телефон: ${b.client_phone || 'Не указан'} | ` : ''}
                             Участников: ${b.participants_count} | 
                             Стоимость: ${formatCurrency(bookingTotal)} ₽
                             ${adminPercentage > 0 ? `<br><span style="color:#2c3e50;">Инструктор получит: ${formatCurrency(bookingNet)} ₽</span>` : ''}

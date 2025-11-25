@@ -403,20 +403,26 @@ function displayTrainings(trainings) {
                     <th>Тип</th>
                     <th>Вид спорта</th>
                     <th>Участники</th>
-                    <th>Клиент</th>
                     <th>Стоимость</th>
                     <th>Заработок</th>
+                    <th>Действия</th>
                 </tr>
             </thead>
             <tbody>
     `;
 
     trainings.forEach(training => {
-        const participants = training.participants_names && Array.isArray(training.participants_names) 
-            ? training.participants_names.join(', ') 
-            : training.participants_count || 1;
         const typeText = training.booking_type === 'individual' ? 'Индивидуальная' : 'Групповая';
         const sportText = training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+        
+        let participantsText;
+        if (training.booking_type === 'group') {
+            participantsText = `${training.participants_count || 0} чел.`;
+        } else {
+            participantsText = training.participants_names && Array.isArray(training.participants_names) 
+                ? training.participants_names.join(', ') 
+                : training.participants_count || 1;
+        }
 
         html += `
             <tr>
@@ -424,10 +430,14 @@ function displayTrainings(trainings) {
                 <td>${formatTime(training.start_time)}</td>
                 <td>${typeText}</td>
                 <td>${sportText}</td>
-                <td>${participants}</td>
-                <td>${training.client_name || '-'}<br/><small style="color: #666;">${training.client_phone || ''}</small></td>
+                <td>${participantsText}</td>
                 <td>${parseFloat(training.price_total).toLocaleString('ru-RU')} ₽</td>
                 <td><strong>${parseFloat(training.instructor_earnings).toLocaleString('ru-RU')} ₽</strong></td>
+                <td>
+                    <button class="btn-secondary" data-training='${JSON.stringify(training)}' onclick="showTrainingDetails(this)" style="padding: 5px 10px; font-size: 0.9em;">
+                        Детализация
+                    </button>
+                </td>
             </tr>
         `;
     });
@@ -439,6 +449,115 @@ function displayTrainings(trainings) {
 
     container.innerHTML = html;
 }
+
+// Показать детали тренировки
+function showTrainingDetails(button) {
+    // Получаем данные из data-атрибута
+    let training;
+    if (button && button.dataset && button.dataset.training) {
+        try {
+            training = JSON.parse(button.dataset.training);
+        } catch (e) {
+            console.error('Ошибка парсинга данных тренировки:', e);
+            return;
+        }
+    } else {
+        console.error('Данные тренировки не найдены');
+        return;
+    }
+    
+    const modal = document.createElement('div');
+    modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+    
+    let detailsHtml = '';
+    
+    if (training.booking_type === 'group' && training.bookings && training.bookings.length > 0) {
+        // Групповая тренировка - показываем всех участников
+        detailsHtml = `
+            <h3 style="margin-top: 0;">Детализация групповой тренировки</h3>
+            <div style="margin-bottom: 15px;">
+                <div><strong>Дата:</strong> ${formatDate(training.date)}</div>
+                <div><strong>Время:</strong> ${formatTime(training.start_time)} - ${formatTime(training.end_time)}</div>
+                <div><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
+                <div><strong>Участников:</strong> ${training.participants_count}</div>
+                <div><strong>Общая стоимость:</strong> ${parseFloat(training.price_total).toLocaleString('ru-RU')} ₽</div>
+                <div><strong>Ваш заработок:</strong> ${parseFloat(training.instructor_earnings).toLocaleString('ru-RU')} ₽</div>
+            </div>
+            <h4>Участники:</h4>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 10px; text-align: left; border-bottom: 1px solid #dee2e6;">Клиент</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 1px solid #dee2e6;">Участники</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 1px solid #dee2e6;">Стоимость</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 1px solid #dee2e6;">Заработок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${training.bookings.map(booking => `
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 10px;">
+                                ${escapeHtml(booking.client_name || '-')}
+                            </td>
+                            <td style="padding: 10px;">
+                                ${booking.participants_names && Array.isArray(booking.participants_names) 
+                                    ? booking.participants_names.join(', ') 
+                                    : booking.participants_count || 1}
+                            </td>
+                            <td style="padding: 10px; text-align: right;">
+                                ${parseFloat(booking.price_total).toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td style="padding: 10px; text-align: right;">
+                                ${parseFloat(booking.instructor_earnings).toLocaleString('ru-RU')} ₽
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        // Индивидуальная тренировка
+        detailsHtml = `
+            <h3 style="margin-top: 0;">Детализация индивидуальной тренировки</h3>
+            <div style="margin-bottom: 15px;">
+                <div><strong>Дата:</strong> ${formatDate(training.date)}</div>
+                <div><strong>Время:</strong> ${formatTime(training.start_time)} - ${formatTime(training.end_time)}</div>
+                <div><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд'}</div>
+                <div><strong>Клиент:</strong> ${escapeHtml(training.client_name || '-')}</div>
+                <div><strong>Участники:</strong> ${training.participants_names && Array.isArray(training.participants_names) 
+                    ? training.participants_names.join(', ') 
+                    : training.participants_count || 1}</div>
+                <div><strong>Стоимость:</strong> ${parseFloat(training.price_total).toLocaleString('ru-RU')} ₽</div>
+                <div><strong>Ваш заработок:</strong> ${parseFloat(training.instructor_earnings).toLocaleString('ru-RU')} ₽</div>
+            </div>
+        `;
+    }
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            ${detailsHtml}
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn-secondary" onclick="this.closest('div[style*=\\'position: fixed\\']').remove()">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Экранирование HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Экспортируем функцию в глобальную область видимости
+window.showTrainingDetails = showTrainingDetails;
 
 // Форматирование даты
 function formatDate(dateString) {

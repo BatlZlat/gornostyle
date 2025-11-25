@@ -279,6 +279,7 @@ router.get('/trainings', async (req, res) => {
             SELECT 
                 kb.id,
                 kb.booking_type,
+                kb.group_training_id,
                 kb.date,
                 kb.start_time,
                 kb.end_time,
@@ -323,23 +324,79 @@ router.get('/trainings', async (req, res) => {
 
         logFinancesDebug('GET /trainings result count:', result.rowCount);
 
+        // Группируем групповые тренировки по group_training_id
+        const trainingsMap = new Map();
+        const individualTrainings = [];
+
+        result.rows.forEach(row => {
+            if (row.booking_type === 'group' && row.group_training_id) {
+                const key = `${row.group_training_id}_${row.date}_${row.start_time}`;
+                if (!trainingsMap.has(key)) {
+                    trainingsMap.set(key, {
+                        id: row.group_training_id,
+                        booking_type: 'group',
+                        date: row.date,
+                        start_time: row.start_time,
+                        end_time: row.end_time,
+                        sport_type: row.sport_type,
+                        participants_count: 0,
+                        participants_names: [],
+                        price_total: 0,
+                        instructor_earnings: 0,
+                        bookings: []
+                    });
+                }
+                const training = trainingsMap.get(key);
+                training.participants_count += row.participants_count || 1;
+                if (row.participants_names && Array.isArray(row.participants_names)) {
+                    training.participants_names.push(...row.participants_names);
+                }
+                training.price_total += parseFloat(row.price_total || 0);
+                training.instructor_earnings += parseFloat(row.instructor_earnings || 0);
+                training.bookings.push({
+                    id: row.id,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    participants_names: row.participants_names,
+                    participants_count: row.participants_count,
+                    price_total: parseFloat(row.price_total || 0),
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0)
+                });
+            } else {
+                individualTrainings.push({
+                    id: row.id,
+                    booking_type: 'individual',
+                    date: row.date,
+                    start_time: row.start_time,
+                    end_time: row.end_time,
+                    sport_type: row.sport_type,
+                    participants_count: row.participants_count,
+                    participants_names: row.participants_names,
+                    price_total: parseFloat(row.price_total || 0).toFixed(2),
+                    status: row.status,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0).toFixed(2)
+                });
+            }
+        });
+
+        // Преобразуем Map в массив и объединяем с индивидуальными
+        const groupedTrainings = Array.from(trainingsMap.values()).map(training => ({
+            ...training,
+            price_total: training.price_total.toFixed(2),
+            instructor_earnings: training.instructor_earnings.toFixed(2)
+        }));
+
+        const allTrainings = [...groupedTrainings, ...individualTrainings].sort((a, b) => {
+            const dateA = new Date(`${a.date}T${a.start_time}`);
+            const dateB = new Date(`${b.date}T${b.start_time}`);
+            return dateB - dateA;
+        });
+
         res.json({
             success: true,
-            trainings: result.rows.map(row => ({
-                id: row.id,
-                booking_type: row.booking_type,
-                date: row.date,
-                start_time: row.start_time,
-                end_time: row.end_time,
-                sport_type: row.sport_type,
-                participants_count: row.participants_count,
-                participants_names: row.participants_names,
-                price_total: parseFloat(row.price_total || 0).toFixed(2),
-                status: row.status,
-                client_name: row.client_name,
-                client_phone: row.client_phone,
-                instructor_earnings: parseFloat(row.instructor_earnings || 0).toFixed(2)
-            }))
+            trainings: allTrainings
         });
     } catch (error) {
         console.error('Ошибка получения детализации тренировок:', error);
