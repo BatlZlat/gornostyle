@@ -112,6 +112,7 @@ async function loadEarnings() {
             url += 'period=current_month';
         }
 
+        console.log('[Finances] fetch earnings', url);
         const response = await fetch(url, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -175,6 +176,7 @@ async function loadChart() {
     if (!token) return;
 
     try {
+        console.log('[Finances] fetch monthly earnings');
         const response = await fetch('/api/kuliga/instructor/earnings/monthly?months=12', {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -255,6 +257,7 @@ async function loadPayouts() {
     if (!token) return;
 
     try {
+        console.log('[Finances] fetch payouts');
         const response = await fetch('/api/kuliga/instructor/payouts', {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -359,8 +362,7 @@ async function loadTrainings() {
             const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
             url += `from=${from}&to=${to}`;
         }
-        url += '&status=completed';
-
+        console.log('[Finances] fetch trainings', url);
         const response = await fetch(url, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -507,9 +509,11 @@ function logout() {
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('[Finances] init start');
     // Проверка авторизации
     const instructorId = await checkAuth();
     if (!instructorId) return;
+    console.log('[Finances] auth OK', instructorId);
 
     // Обработчики событий
     document.querySelectorAll('.period-btn').forEach(btn => {
@@ -522,6 +526,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('logout-btn').addEventListener('click', logout);
 
     // Загрузка данных
+    console.log('[Finances] load data');
     loadAllData();
     loadChart();
 });

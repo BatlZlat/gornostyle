@@ -5,6 +5,36 @@ const { verifyKuligaInstructorToken } = require('../middleware/kuligaInstructorA
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Asia/Yekaterinburg';
+const BOOKING_INSTRUCTOR_ID = 'COALESCE(kb.instructor_id, kgt.instructor_id)';
+// Условие для определения прошедших тренировок (учитывает часовой пояс)
+// Тренировка считается прошедшей, если:
+// 1. Статус = 'completed' ИЛИ
+// 2. Статус = 'confirmed'/'pending' И дата+время окончания уже прошли
+const COMPLETION_CONDITION = `
+      AND (
+          kb.status = 'completed'
+          OR (
+              kb.status IN ('confirmed', 'pending')
+              AND (kb.date::timestamp + kb.end_time::interval) <= (NOW() AT TIME ZONE '${TIMEZONE}')
+          )
+      )
+`;
+const logFinancesDebug = (...args) => console.log('[KuligaFinances]', ...args);
+
+let dbTimezone = 'unknown';
+pool.query('SHOW TIMEZONE')
+    .then(result => {
+        dbTimezone = result.rows?.[0]?.TimeZone || result.rows?.[0]?.timezone || 'unknown';
+        logFinancesDebug('Database timezone:', dbTimezone);
+    })
+    .catch(err => {
+        console.error('[KuligaFinances] Failed to determine DB timezone:', err.message);
+    });
+
+router.use((req, res, next) => {
+    logFinancesDebug(`${req.method} ${req.originalUrl}`);
+    next();
+});
 
 // Применяем middleware авторизации ко всем роутам
 router.use(verifyKuligaInstructorToken);
@@ -38,6 +68,14 @@ router.get('/earnings', async (req, res) => {
             params.push(currentMonth);
         }
 
+        logFinancesDebug('GET /earnings params:', {
+            instructorId,
+            period: period || 'current_month',
+            from,
+            to,
+            currentLocal: moment().tz(TIMEZONE).format()
+        });
+
         // Получаем процент администратора
         const instructorResult = await pool.query(
             'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
@@ -46,6 +84,7 @@ router.get('/earnings', async (req, res) => {
         const adminPercentage = instructorResult.rows[0]?.admin_percentage || 20;
 
         // Статистика по типам тренировок
+        // Включаем только прошедшие тренировки (completed или confirmed/pending, которые уже прошли по времени)
         const statsQuery = `
             SELECT 
                 kb.booking_type,
@@ -54,10 +93,11 @@ router.get('/earnings', async (req, res) => {
                 SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings,
                 SUM(kb.price_total * (ki.admin_percentage / 100)) as admin_commission
             FROM kuliga_bookings kb
-            JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
-            WHERE kb.instructor_id = $1
-              AND kb.status IN ('confirmed', 'completed')
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN kuliga_instructors ki ON ${BOOKING_INSTRUCTOR_ID} = ki.id
+            WHERE ${BOOKING_INSTRUCTOR_ID} = $1
               ${dateFilter}
+              ${COMPLETION_CONDITION}
             GROUP BY kb.booking_type
         `;
 
@@ -110,11 +150,26 @@ router.get('/earnings', async (req, res) => {
             payoutsParams.push(currentMonth);
         }
 
-        const payoutsResult = await pool.query(payoutsQuery, payoutsParams);
-        const totalPaid = parseFloat(payoutsResult.rows[0]?.total_paid || 0);
+        let totalPaid = 0;
+        try {
+            const payoutsResult = await pool.query(payoutsQuery, payoutsParams);
+            totalPaid = parseFloat(payoutsResult.rows[0]?.total_paid || 0);
+        } catch (error) {
+            console.error('Ошибка получения выплат (таблица может не существовать):', error);
+            // Если таблица не существует, просто используем 0
+            totalPaid = 0;
+        }
 
         // Долг = заработок - выплачено
         const debt = totalEarnings - totalPaid;
+
+        logFinancesDebug('GET /earnings result:', {
+            totalTrainings,
+            totalEarnings: totalEarnings.toFixed(2),
+            totalPaid: totalPaid.toFixed(2),
+            debt: debt.toFixed(2),
+            statsRows: statsResult.rowCount
+        });
 
         res.json({
             success: true,
@@ -212,6 +267,14 @@ router.get('/trainings', async (req, res) => {
     const { status, from, to } = req.query;
 
     try {
+        logFinancesDebug('GET /trainings params:', {
+            instructorId,
+            status,
+            from,
+            to,
+            currentLocal: moment().tz(TIMEZONE).format()
+        });
+
         let query = `
             SELECT 
                 kb.id,
@@ -229,9 +292,10 @@ router.get('/trainings', async (req, res) => {
                 ki.admin_percentage,
                 (kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings
             FROM kuliga_bookings kb
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
             JOIN clients c ON kb.client_id = c.id
-            JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
-            WHERE kb.instructor_id = $1
+            JOIN kuliga_instructors ki ON ${BOOKING_INSTRUCTOR_ID} = ki.id
+            WHERE ${BOOKING_INSTRUCTOR_ID} = $1
         `;
         const params = [instructorId];
 
@@ -250,9 +314,14 @@ router.get('/trainings', async (req, res) => {
             params.push(to);
         }
 
-        query += ` ORDER BY kb.date DESC, kb.start_time DESC`;
+        query += `
+            ${COMPLETION_CONDITION}
+            ORDER BY kb.date DESC, kb.start_time DESC
+        `;
 
         const result = await pool.query(query, params);
+
+        logFinancesDebug('GET /trainings result count:', result.rowCount);
 
         res.json({
             success: true,
@@ -289,6 +358,8 @@ router.get('/earnings/monthly', async (req, res) => {
     try {
         const monthsAgo = moment().tz(TIMEZONE).subtract(parseInt(months) - 1, 'months').startOf('month');
 
+        logFinancesDebug('GET /earnings/monthly params:', { instructorId, months, since: monthsAgo.format('YYYY-MM-DD') });
+
         const query = `
             SELECT 
                 TO_CHAR(kb.date, 'YYYY-MM') as month,
@@ -296,9 +367,10 @@ router.get('/earnings/monthly', async (req, res) => {
                 SUM(kb.price_total) as total_revenue,
                 SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings
             FROM kuliga_bookings kb
-            JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
-            WHERE kb.instructor_id = $1
-              AND kb.status IN ('confirmed', 'completed')
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN kuliga_instructors ki ON ${BOOKING_INSTRUCTOR_ID} = ki.id
+            WHERE ${BOOKING_INSTRUCTOR_ID} = $1
+              ${COMPLETION_CONDITION}
               AND kb.date >= $2::date
             GROUP BY TO_CHAR(kb.date, 'YYYY-MM')
             ORDER BY month ASC
@@ -327,6 +399,8 @@ router.get('/earnings/monthly', async (req, res) => {
                 instructor_earnings: (dataMap[month]?.instructor_earnings || 0).toFixed(2)
             });
         }
+
+        logFinancesDebug('GET /earnings/monthly result points:', monthlyData.length);
 
         res.json({
             success: true,
