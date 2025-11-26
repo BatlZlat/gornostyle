@@ -87,7 +87,7 @@
                     const perPerson = Number(price.price) / participants;
                     return { ...price, participants, perPerson };
                 })
-                .sort((a, b) => a.perPerson - b.perPerson);
+                .sort((a, b) => a.participants - b.participants); // Сортировка по количеству участников по возрастанию
 
             const ordered = [...individuals, ...groups];
 
@@ -129,6 +129,9 @@
                     <div class="kuliga-price-card__meta">
                         <span><i class="fa-regular fa-clock"></i> ${price.duration} мин.</span>
                         ${description ? `<span><i class="fa-regular fa-note-sticky"></i> ${description}</span>` : ''}
+                    </div>
+                    <div class="kuliga-price-card__note" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.85rem; color: var(--kuliga-gray-500);">
+                        <i class="fa-solid fa-circle-info"></i> Аренда снаряжения и подъемника в стоимость не входят
                     </div>
                     <button class="kuliga-button kuliga-button--secondary kuliga-button--small" 
                             data-booking-trigger

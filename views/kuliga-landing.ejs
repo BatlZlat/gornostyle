@@ -103,10 +103,27 @@
                 <p>Горностайл72 — обучение горным лыжам и сноуборду круглый год. Теперь и на натуральном склоне Кулиги.</p>
             </div>
             <div class="kuliga-footer__links">
-                <a href="tel:+79123924956"><i class="fa-solid fa-phone"></i> +7 912 392-49-56</a>
-                <a href="mailto:batl-zlat@yandex.ru"><i class="fa-solid fa-envelope"></i> batl-zlat@yandex.ru</a>
+                <a href="tel:<%= adminPhone %>"><i class="fa-solid fa-phone"></i> <%= adminPhone %></a>
+                <a href="mailto:<%= contactEmail %>"><i class="fa-solid fa-envelope"></i> <%= contactEmail %></a>
                 <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
                 <a href="https://t.me/<%= botUsername %>" target="_blank" rel="noopener"><i class="fa-solid fa-robot"></i> Telegram-бот Горностайл72</a>
+            </div>
+            <div class="kuliga-footer__documents">
+                <h4>Документы</h4>
+                <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
+                <a href="/user-agreement" target="_blank" rel="noopener">Пользовательское соглашение</a>
+                <a href="/payment-terms" target="_blank" rel="noopener">Условия оплаты и доставки</a>
+                <a href="/return-policy" target="_blank" rel="noopener">Политика возврата</a>
+            </div>
+            <div class="kuliga-footer__requisites">
+                <h4>Реквизиты</h4>
+                <p><strong>ИП Тебякин Данила Юрьевич</strong></p>
+                <p>ИНН: <%= inn || '740416017714' %></p>
+                <% if (ogrnip) { %>
+                <p>ОГРНИП: <%= ogrnip %></p>
+                <% } %>
+                <p>Юридический адрес: Тюменская обл., Тюменский р-он, д. Якуши, ул. Гоголя, 15</p>
+                <p>Место оказания услуг: База отдыха «Кулига-Клуб»</p>
             </div>
             <div class="kuliga-footer__meta">
                 <span>© <%= new Date().getFullYear() %> Горностайл72</span>

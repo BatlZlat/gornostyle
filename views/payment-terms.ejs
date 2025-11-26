@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Условия оплаты и доставки - Горностайл72</title>
+    <meta name="description" content="Условия оплаты и доставки услуг по обучению горным лыжам и сноуборду в Горностайл72">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <style>
+        .privacy-page {
+            padding-top: 80px;
+            min-height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        .privacy-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .privacy-content {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            line-height: 1.6;
+        }
+        
+        .privacy-content h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.2rem;
+        }
+        
+        .privacy-content h2 {
+            color: #2c3e50;
+            margin-top: 30px;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .privacy-content h3 {
+            color: #34495e;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .privacy-content p {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content ul, 
+        .privacy-content ol {
+            margin-bottom: 15px;
+            padding-left: 25px;
+        }
+        
+        .privacy-content li {
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: #2980b9;
+        }
+        
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        @media (max-width: 768px) {
+            .privacy-content {
+                padding: 30px 20px;
+            }
+            
+            .privacy-content h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <a href="/">
+                        <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                    </a>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="<%= telegramGroup %>" class="nav-contact-icon telegram-inverted" title="Telegram канал" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="privacy-page">
+        <div class="privacy-container">
+            <a href="javascript:history.back()" class="back-link">
+                <i class="fas fa-arrow-left"></i> Назад
+            </a>
+            
+            <div class="privacy-content">
+                <h1>Условия оплаты и доставки</h1>
+                
+                <h2>Горностайл72</h2>
+                <p><strong>Дата последнего обновления:</strong> <%= new Date().toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' }) %></p>
+                
+                <h3>1. Способы оплаты</h3>
+                <p>Оплата услуг осуществляется следующими способами:</p>
+                <ol>
+                    <li><strong>Онлайн-оплата через интернет-эквайринг</strong>
+                        <ul>
+                            <li>Оплата банковской картой (Visa, MasterCard, МИР) через систему Точка Банк</li>
+                            <li>Оплата производится на странице бронирования после заполнения формы</li>
+                            <li>Оплата безопасна и защищена современными системами шифрования</li>
+                        </ul>
+                    </li>
+                </ol>
+                
+                <div class="info-box">
+                    <p><strong>Безопасность платежей:</strong> Все платежи обрабатываются через защищенное соединение. Данные банковских карт не сохраняются на наших серверах.</p>
+                </div>
+                
+                <h3>2. Сроки оплаты</h3>
+                <ul>
+                    <li><strong>Бронирование создается и подтверждается только после 100% предоплаты</strong></li>
+                    <li><strong>Предоплата обязательна</strong> для создания бронирования</li>
+                    <li>Оплата производится на странице бронирования сразу после заполнения формы</li>
+                    <li>Для групповых тренировок предоплата вносится при бронировании места в группе</li>
+                    <li>Бронирование считается подтвержденным только после успешного поступления средств на счет Исполнителя</li>
+                </ul>
+                
+                <h3>3. Стоимость услуг</h3>
+                <ul>
+                    <li>Актуальные цены на услуги указаны на странице <a href="/instruktora-kuliga#prices">прайса</a></li>
+                    <li>Цены указаны в российских рублях (₽)</li>
+                    <li>Стоимость услуг может изменяться. Актуальная цена указывается при бронировании</li>
+                    <li>Для групповых тренировок цена указана за одного участника</li>
+                </ul>
+                
+                <h3>4. Чек об оплате</h3>
+                <ul>
+                    <li>Чек об оплате отправляется автоматически на email, указанный при бронировании, или в Telegram-бот (если Пользователь подключил бота для получения уведомлений)</li>
+                    <li>Чек соответствует требованиям законодательства РФ и может быть использован для налогового вычета</li>
+                    <li>Если чек не пришел, проверьте папку "Спам" или свяжитесь с нами по телефону <%= adminPhone %></li>
+                    <li>Чек отправляется после успешного подтверждения оплаты и подтверждения бронирования</li>
+                </ul>
+                
+                <h3>5. Доставка услуг</h3>
+                <div class="info-box">
+                    <p><strong>Услуги оказываются на месте:</strong> Обучение горным лыжам и сноуборду проводится на базе отдыха «Кулига-Клуб».</p>
+                    <p>Доставка услуг не требуется, так как услуги оказываются непосредственно на месте проведения тренировок.</p>
+                </div>
+                
+                <ul>
+                    <li><strong>Место оказания услуг:</strong> База отдыха «Кулига-Клуб»</li>
+                    <li><strong>Время оказания услуг:</strong> Согласно расписанию, указанному при бронировании</li>
+                    <li><strong>Длительность услуг:</strong> Указана в прайсе и подтверждается при бронировании</li>
+                </ul>
+                
+                <h3>6. Возврат средств</h3>
+                <p>Условия возврата предоплаты указаны в разделе <a href="/return-policy">«Политика возврата»</a>.</p>
+                <ul>
+                    <li>Возврат средств производится на ту же банковскую карту, с которой была произведена оплата</li>
+                    <li>Срок возврата средств: 1-3 рабочих дня с момента принятия решения о возврате</li>
+                    <li>При отмене групповой тренировки из-за недобора участников возврат производится автоматически</li>
+                </ul>
+                
+                <div class="warning-box">
+                    <p><strong>Важно:</strong> При отмене бронирования менее чем за 24 часа до начала тренировки возврат средств может быть не произведен. Подробности в <a href="/return-policy">«Политике возврата»</a>.</p>
+                </div>
+                
+                <h3>7. Контактная информация</h3>
+                <p>По всем вопросам, связанным с оплатой и доставкой услуг, вы можете обратиться:</p>
+                <ul>
+                    <li><strong>Телефон:</strong> <%= adminPhone %></li>
+                    <li><strong>Email:</strong> <%= contactEmail %></li>
+                    <li><strong>Telegram:</strong> <%= adminTelegramUsername ? (adminTelegramUsername.startsWith('@') ? adminTelegramUsername : '@' + adminTelegramUsername) : 'Уточняйте по телефону' %></li>
+                </ul>
+                
+                <hr style="margin: 40px 0; border: 1px solid #e9ecef;">
+                <p style="font-style: italic; color: #7f8c8d; text-align: center;">
+                    Условия оплаты и доставки соответствуют требованиям законодательства Российской Федерации.
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="/js/main.js"></script>
+    
+    <!-- Analytics -->
+    <% if (yandexMetrikaId) { %>
+        <%- include('partials/analytics', { yandexMetrikaId, googleAnalyticsId }) %>
+    <% } %>
+</body>
+</html>
+

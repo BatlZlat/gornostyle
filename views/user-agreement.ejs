@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Пользовательское соглашение - Горностайл72</title>
+    <meta name="description" content="Пользовательское соглашение на оказание услуг по обучению горным лыжам и сноуборду в Горностайл72">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <style>
+        .privacy-page {
+            padding-top: 80px;
+            min-height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        .privacy-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .privacy-content {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            line-height: 1.6;
+        }
+        
+        .privacy-content h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.2rem;
+        }
+        
+        .privacy-content h2 {
+            color: #2c3e50;
+            margin-top: 30px;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .privacy-content h3 {
+            color: #34495e;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .privacy-content p {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content ul, 
+        .privacy-content ol {
+            margin-bottom: 15px;
+            padding-left: 25px;
+        }
+        
+        .privacy-content li {
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: #2980b9;
+        }
+        
+        .contact-info {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        @media (max-width: 768px) {
+            .privacy-content {
+                padding: 30px 20px;
+            }
+            
+            .privacy-content h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <a href="/">
+                        <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                    </a>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="<%= telegramGroup %>" class="nav-contact-icon telegram-inverted" title="Telegram канал" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="privacy-page">
+        <div class="privacy-container">
+            <a href="javascript:history.back()" class="back-link">
+                <i class="fas fa-arrow-left"></i> Назад
+            </a>
+            
+            <div class="privacy-content">
+                <h1>Пользовательское соглашение</h1>
+                
+                <h2>Горностайл72</h2>
+                <p><strong>Дата последнего обновления:</strong> <%= new Date().toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' }) %></p>
+                
+                <h3>1. Общие положения</h3>
+                <p>Настоящее Пользовательское соглашение (далее — «Соглашение») регулирует отношения между Индивидуальным предпринимателем Тебякиным Данилой Юрьевичем (далее — «Исполнитель», «Горностайл72») и физическим лицом, использующим услуги Горностайл72 (далее — «Пользователь», «Клиент»).</p>
+                <p>Использование услуг Горностайл72 означает полное и безоговорочное принятие Пользователем условий настоящего Соглашения.</p>
+                
+                <div class="contact-info">
+                    <p><strong>Исполнитель:</strong></p>
+                    <ul>
+                        <li>ИП Тебякин Данила Юрьевич</li>
+                        <li>ИНН: <%= inn || '740416017714' %></li>
+                        <% if (ogrnip) { %>
+                        <li>ОГРНИП: <%= ogrnip %></li>
+                        <% } %>
+                        <li>Юридический адрес: Тюменская обл., Тюменский р-он, д. Якуши, ул. Гоголя, 15</li>
+                        <li>Место оказания услуг: База отдыха «Кулига-Клуб»</li>
+                        <li>Телефон: <%= adminPhone %></li>
+                        <li>Email: <%= contactEmail %></li>
+                    </ul>
+                </div>
+                
+                <h3>2. Предмет соглашения</h3>
+                <p>Исполнитель обязуется оказать Пользователю следующие услуги:</p>
+                <ol>
+                    <li><strong>Обучение горным лыжам и сноуборду</strong> — индивидуальные и групповые тренировки</li>
+                    <li><strong>Инструкторские услуги</strong> по горным лыжам и сноуборду на базе отдыха «Кулига-Клуб»</li>
+                    <li><strong>Организация спортивных мероприятий и сборов</strong> по горным лыжам и сноуборду</li>
+                </ol>
+                
+                <h3>3. Права и обязанности сторон</h3>
+                
+                <h4>3.1. Права Исполнителя:</h4>
+                <ul>
+                    <li>Требовать от Пользователя соблюдения правил безопасности и техники безопасности</li>
+                    <li>Отказать в оказании услуг при нарушении Пользователем условий Соглашения</li>
+                    <li>Использовать фото и видеоматериалы с тренировок для рекламных целей (при наличии согласия)</li>
+                </ul>
+                
+                <h4>3.2. Обязанности Исполнителя:</h4>
+                <ul>
+                    <li>Оказать услуги в соответствии с условиями бронирования</li>
+                    <li>Обеспечить безопасность тренировочного процесса</li>
+                    <li>Обеспечить оказание услуг квалифицированными специалистами</li>
+                    <li>Соблюдать конфиденциальность персональных данных Пользователя</li>
+                </ul>
+                
+                <h4>3.3. Права Пользователя:</h4>
+                <ul>
+                    <li>Получать услуги в соответствии с условиями бронирования</li>
+                    <li>Требовать возврата средств в случаях, предусмотренных Соглашением</li>
+                    <li>Отозвать согласие на обработку персональных данных</li>
+                </ul>
+                
+                <h4>3.4. Обязанности Пользователя:</h4>
+                <ul>
+                    <li>Соблюдать правила безопасности и техники безопасности</li>
+                    <li>Своевременно вносить оплату за услуги</li>
+                    <li>Предоставлять достоверную информацию при бронировании</li>
+                    <li>Уведомлять Исполнителя об отмене бронирования в установленные сроки</li>
+                </ul>
+                
+                <h3>4. Порядок оказания услуг</h3>
+                <ol>
+                    <li>Пользователь осуществляет бронирование услуги через сайт или иным способом</li>
+                    <li>Пользователь вносит предоплату в размере, указанном при бронировании</li>
+                    <li>Исполнитель подтверждает бронирование и предоставляет детали тренировки</li>
+                    <li>Услуга оказывается в указанное время и месте (база отдыха «Кулига-Клуб»)</li>
+                    <li>После оказания услуги Исполнитель отправляет чек об оплате на email, указанный при бронировании, или в Telegram-бот (если Пользователь подключил бота для получения уведомлений)</li>
+                </ol>
+                
+                <h3>5. Порядок оплаты</h3>
+                <ul>
+                    <li>Оплата услуг осуществляется путем внесения предоплаты через систему интернет-эквайринга</li>
+                    <li>Предоплата обязательна для подтверждения бронирования</li>
+                    <li>Чек об оплате отправляется автоматически на email, указанный при бронировании, или в Telegram-бот (если Пользователь подключил бота для получения уведомлений)</li>
+                    <li>Подробные условия оплаты указаны в разделе <a href="/payment-terms">«Условия оплаты и доставки»</a></li>
+                </ul>
+                
+                <h3>6. Ответственность сторон</h3>
+                <ul>
+                    <li>Исполнитель несет ответственность за качество оказанных услуг в соответствии с законодательством РФ</li>
+                    <li>Пользователь несет ответственность за соблюдение правил безопасности во время тренировок</li>
+                    <li>Исполнитель не несет ответственности за травмы, полученные Пользователем в результате нарушения правил безопасности</li>
+                    <li>Исполнитель не несет ответственности за ущерб, причиненный имуществу Пользователя, если такой ущерб не связан с действиями Исполнителя</li>
+                </ul>
+                
+                <h3>7. Отмена и возврат средств</h3>
+                <ul>
+                    <li>Пользователь имеет право отменить бронирование в соответствии с условиями, указанными в <a href="/return-policy">«Политике возврата»</a></li>
+                    <li>Исполнитель имеет право отменить тренировку в следующих случаях:
+                        <ul>
+                            <li>Неблагоприятные погодные условия</li>
+                            <li>Обстоятельства непреодолимой силы</li>
+                            <li>Недобор минимального количества участников для групповой тренировки</li>
+                            <li>Болезнь или иная невозможность участия специалиста, оказывающего услугу</li>
+                        </ul>
+                    </li>
+                    <li>При отмене тренировки по инициативе Исполнителя предоплата возвращается в течение 1-3 рабочих дней</li>
+                </ul>
+                
+                <h3>8. Заключительные положения</h3>
+                <ul>
+                    <li>Настоящее Соглашение вступает в силу с момента принятия Пользователем условий Соглашения</li>
+                    <li>Исполнитель оставляет за собой право изменять условия Соглашения. Изменения вступают в силу с момента публикации новой версии на сайте</li>
+                    <li>Все споры решаются путем переговоров, а при невозможности достижения соглашения — в соответствии с законодательством РФ</li>
+                    <li>По всем вопросам, связанным с оказанием услуг, Пользователь может обращаться к Исполнителю по указанным контактам</li>
+                </ul>
+                
+                <div class="contact-info">
+                    <h3>Контактная информация</h3>
+                    <p><strong>ИП Тебякин Данила Юрьевич</strong></p>
+                    <ul>
+                        <li><strong>Телефон:</strong> <%= adminPhone %></li>
+                        <li><strong>Email:</strong> <%= contactEmail %></li>
+                        <li><strong>Telegram:</strong> <%= adminTelegramUsername ? (adminTelegramUsername.startsWith('@') ? adminTelegramUsername : '@' + adminTelegramUsername) : 'Уточняйте по телефону' %></li>
+                    </ul>
+                </div>
+                
+                <hr style="margin: 40px 0; border: 1px solid #e9ecef;">
+                <p style="font-style: italic; color: #7f8c8d; text-align: center;">
+                    Настоящее соглашение составлено в соответствии с законодательством Российской Федерации.
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="/js/main.js"></script>
+    
+    <!-- Analytics -->
+    <% if (yandexMetrikaId) { %>
+        <%- include('partials/analytics', { yandexMetrikaId, googleAnalyticsId }) %>
+    <% } %>
+</body>
+</html>
+

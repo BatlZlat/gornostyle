@@ -35,6 +35,8 @@ router.get('/instruktora-kuliga', (req, res) => {
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
         googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
     });
 });
 
@@ -46,6 +48,49 @@ router.get('/instruktora-kuliga/booking', (req, res) => {
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         botUsername: process.env.BOT_USERNAME,
         kuligaClientBotUsername: getKuligaClientBotUsername(),
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
+    });
+});
+
+router.get('/user-agreement', (req, res) => {
+    res.render('user-agreement', {
+        pageTitle: 'Пользовательское соглашение - Горностайл72',
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
+    });
+});
+
+router.get('/payment-terms', (req, res) => {
+    res.render('payment-terms', {
+        pageTitle: 'Условия оплаты и доставки - Горностайл72',
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
+        telegramGroup: process.env.TELEGRAM_GROUP,
+        vkGroup: process.env.VK_GROUP,
+        yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
+        googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+    });
+});
+
+router.get('/return-policy', (req, res) => {
+    res.render('return-policy', {
+        pageTitle: 'Политика возврата - Горностайл72',
+        adminPhone: process.env.ADMIN_PHONE,
+        contactEmail: process.env.CONTACT_EMAIL,
+        adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
         telegramGroup: process.env.TELEGRAM_GROUP,
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,

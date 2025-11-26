@@ -758,11 +758,50 @@
     gap: 10px;
 }
 
+.kuliga-footer__documents,
+.kuliga-footer__requisites {
+    display: grid;
+    gap: 10px;
+}
+
+.kuliga-footer__documents h4,
+.kuliga-footer__requisites h4 {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--kuliga-white);
+}
+
+.kuliga-footer__documents a {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    display: inline-block;
+    transition: color 0.2s ease;
+}
+
+.kuliga-footer__documents a:hover {
+    color: var(--kuliga-white);
+    text-decoration: underline;
+}
+
+.kuliga-footer__requisites p {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.kuliga-footer__requisites p strong {
+    color: var(--kuliga-white);
+    font-weight: 600;
+}
+
 .kuliga-footer__meta {
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-size: 0.9rem;
+    grid-column: 1 / -1;
 }
 
 .kuliga-empty {
@@ -1001,8 +1040,13 @@
     }
 
     .kuliga-footer__content {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: start;
+    }
+    
+    .kuliga-footer__documents,
+    .kuliga-footer__requisites {
+        margin-top: 24px;
     }
 }
 

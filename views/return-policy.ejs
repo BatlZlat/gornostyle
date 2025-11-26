@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Meta Tags -->
+    <title>Политика возврата - Горностайл72</title>
+    <meta name="description" content="Политика возврата средств за услуги по обучению горным лыжам и сноуборду в Горностайл72">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <style>
+        .privacy-page {
+            padding-top: 80px;
+            min-height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        .privacy-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .privacy-content {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            line-height: 1.6;
+        }
+        
+        .privacy-content h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.2rem;
+        }
+        
+        .privacy-content h2 {
+            color: #2c3e50;
+            margin-top: 30px;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .privacy-content h3 {
+            color: #34495e;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .privacy-content p {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content ul, 
+        .privacy-content ol {
+            margin-bottom: 15px;
+            padding-left: 25px;
+        }
+        
+        .privacy-content li {
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        
+        .privacy-content strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: #2980b9;
+        }
+        
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .success-box {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        @media (max-width: 768px) {
+            .privacy-content {
+                padding: 30px 20px;
+            }
+            
+            .privacy-content h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <nav class="nav">
+                <div class="nav-logo">
+                    <a href="/">
+                        <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo">
+                    </a>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="/#about">О нас</a></li>
+                    <li><a href="/prices">Цены</a></li>
+                    <li><a href="/#team">Команда</a></li>
+                    <li><a href="/schedule">График работы</a></li>
+                    <li><a href="/#faq">Вопросы</a></li>
+                    <li><a href="/rules">Правила</a></li>
+                    <li><a href="/#contact">Как добраться</a></li>
+                </ul>
+                <div class="nav-contacts">
+                    <a href="tel:<%= adminPhone %>" class="nav-contact-icon" title="Позвонить">
+                        <i class="fas fa-phone"></i>
+                    </a>
+                    <a href="<%= telegramGroup %>" class="nav-contact-icon telegram-inverted" title="Telegram канал" target="_blank">
+                        <i class="fab fa-telegram-plane"></i>
+                    </a>
+                    <a href="<%= vkGroup %>" class="nav-contact-icon" title="ВКонтакте" target="_blank">
+                        <i class="fab fa-vk"></i>
+                    </a>
+                </div>
+                <div class="nav-toggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="privacy-page">
+        <div class="privacy-container">
+            <a href="javascript:history.back()" class="back-link">
+                <i class="fas fa-arrow-left"></i> Назад
+            </a>
+            
+            <div class="privacy-content">
+                <h1>Политика возврата</h1>
+                
+                <h2>Горностайл72</h2>
+                <p><strong>Дата последнего обновления:</strong> <%= new Date().toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' }) %></p>
+                
+                <h3>1. Общие положения</h3>
+                <p>Настоящая Политика возврата определяет условия и порядок возврата предоплаты за услуги по обучению горным лыжам и сноуборду, оказываемые ИП Тебякиным Данилой Юрьевичем (Горностайл72).</p>
+                
+                <h3>2. Условия возврата предоплаты</h3>
+                
+                <h4>2.1. Автоматический возврат (100% суммы)</h4>
+                <div class="success-box">
+                    <p><strong>Возврат производится автоматически в следующих случаях:</strong></p>
+                    <ul>
+                        <li>Групповая тренировка не набрала минимальное количество участников до 22:00 накануне тренировки</li>
+                        <li>Тренировка отменена Исполнителем по причине неблагоприятных погодных условий</li>
+                        <li>Тренировка отменена Исполнителем по иным причинам, не зависящим от Пользователя</li>
+                        <li>Отмена бронирования более чем за 48 часов до начала тренировки</li>
+                    </ul>
+                </div>
+                
+                <h4>2.2. Возврат по заявлению Пользователя</h4>
+                <ul>
+                    <li><strong>Более чем за 24 часа до начала:</strong> Возврат 100% суммы предоплаты</li>
+                    <li><strong>От 24 до 12 часов до начала:</strong> Возврат 50% суммы предоплаты</li>
+                    <li><strong>От 12 до 6 часов до начала:</strong> Возврат 30% суммы предоплаты</li>
+                    <li><strong>Менее чем за 6 часов до начала:</strong> Возврат не производится</li>
+                </ul>
+                
+                <div class="warning-box">
+                    <p><strong>Важно:</strong> Время отмены рассчитывается от момента начала тренировки, указанного при бронировании.</p>
+                </div>
+                
+                <h3>3. Сроки возврата средств</h3>
+                <ul>
+                    <li>Возврат средств производится на ту же банковскую карту, с которой была произведена оплата</li>
+                    <li>Срок возврата: <strong>1-3 рабочих дня</strong> с момента принятия решения о возврате</li>
+                    <li>При автоматической отмене групповой тренировки возврат производится в течение 1 рабочего дня</li>
+                    <li>Фактическое поступление средств на карту зависит от банка-эмитента карты (обычно 1-5 рабочих дней)</li>
+                </ul>
+                
+                <h3>4. Порядок возврата</h3>
+                <ol>
+                    <li>Пользователь уведомляет Исполнителя об отмене бронирования (по телефону, email или через Telegram)</li>
+                    <li>Исполнитель подтверждает возможность возврата в соответствии с условиями настоящей Политики</li>
+                    <li>Исполнитель инициирует возврат средств через систему интернет-эквайринга</li>
+                    <li>Пользователь получает уведомление о возврате средств</li>
+                </ol>
+                
+                <h3>5. Случаи, когда возврат невозможен</h3>
+                <div class="warning-box">
+                    <p><strong>Возврат не производится в следующих случаях:</strong></p>
+                    <ul>
+                        <li>Отмена бронирования менее чем за 6 часов до начала тренировки</li>
+                        <li>Пользователь не явился на тренировку без предварительного уведомления</li>
+                        <li>Пользователь нарушил правила безопасности и был отстранен от тренировки</li>
+                        <li>Тренировка была проведена в полном объеме</li>
+                    </ul>
+                </div>
+                
+                <h3>6. Особые случаи</h3>
+                
+                <h4>6.1. Болезнь или форс-мажор</h4>
+                <p>В случае болезни Пользователя или иных обстоятельств непреодолимой силы возврат может быть произведен по решению Исполнителя при предоставлении соответствующих документов (справка от врача и т.д.).</p>
+                
+                <h4>6.2. Групповые тренировки</h4>
+                <p>Для групповых тренировок действуют особые условия:</p>
+                <ul>
+                    <li>Если группа не набрала минимальное количество участников до 22:00 накануне, возврат производится автоматически</li>
+                    <li>Уведомление об отмене отправляется на email и в Telegram (если подключен бот)</li>
+                    <li>Возврат средств производится в течение 1 рабочего дня</li>
+                </ul>
+                
+                <h3>7. Контактная информация для запроса возврата</h3>
+                <div class="info-box">
+                    <p><strong>Для запроса возврата средств обращайтесь:</strong></p>
+                    <ul>
+                        <li><strong>Телефон:</strong> <%= adminPhone %></li>
+                        <li><strong>Email:</strong> <%= contactEmail %></li>
+                        <li><strong>Telegram:</strong> <%= adminTelegramUsername ? (adminTelegramUsername.startsWith('@') ? adminTelegramUsername : '@' + adminTelegramUsername) : 'Уточняйте по телефону' %></li>
+                    </ul>
+                    <p><strong>Время обработки запросов:</strong> Пн-Пт, 9:00-21:00</p>
+                </div>
+                
+                <h3>8. Изменения в Политике возврата</h3>
+                <p>Исполнитель оставляет за собой право изменять условия настоящей Политики возврата. Изменения вступают в силу с момента публикации новой версии на сайте.</p>
+                
+                <hr style="margin: 40px 0; border: 1px solid #e9ecef;">
+                <p style="font-style: italic; color: #7f8c8d; text-align: center;">
+                    Политика возврата соответствует требованиям законодательства Российской Федерации и защищает права как Пользователей, так и Исполнителя.
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="/js/main.js"></script>
+    
+    <!-- Analytics -->
+    <% if (yandexMetrikaId) { %>
+        <%- include('partials/analytics', { yandexMetrikaId, googleAnalyticsId }) %>
+    <% } %>
+</body>
+</html>
+
