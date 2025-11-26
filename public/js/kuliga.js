@@ -63,6 +63,30 @@
         }).format(date);
     };
 
+    const formatWeekRange = (days) => {
+        if (!days || days.length === 0) return '';
+        const firstDay = new Date(days[0].iso + 'T00:00:00');
+        const lastDay = new Date(days[days.length - 1].iso + 'T00:00:00');
+        const year = firstDay.getFullYear();
+        
+        const firstFormatted = new Intl.DateTimeFormat('ru-RU', {
+            day: 'numeric',
+            month: 'long',
+        }).format(firstDay);
+        
+        const lastFormatted = new Intl.DateTimeFormat('ru-RU', {
+            day: 'numeric',
+            month: 'long',
+        }).format(lastDay);
+        
+        // Если месяц одинаковый, показываем "24–30 ноября 2025"
+        if (firstDay.getMonth() === lastDay.getMonth()) {
+            return `${firstDay.getDate()}–${lastDay.getDate()} ${new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(firstDay)} ${year}`;
+        }
+        // Если разные месяцы, показываем "30 ноября – 6 декабря 2025"
+        return `${firstFormatted} – ${lastFormatted} ${year}`;
+    };
+
     const renderPriceList = async () => {
         const container = document.getElementById('kuligaPriceList');
         if (!container) return;
@@ -346,9 +370,9 @@
                         <div class="kuliga-instructor__info">
                             <h3>${instructor.full_name}</h3>
                             <span class="kuliga-instructor__sport"><i class="fa-solid fa-person-skiing"></i> ${sportLabel}</span>
+                            ${instructor.description ? `<p class="kuliga-instructor__description">${instructor.description}</p>` : ''}
                         </div>
                     </header>
-                    ${instructor.description ? `<p class="kuliga-instructor__description">${instructor.description}</p>` : ''}
                     <div class="kuliga-schedule" data-instructor-id="${instructor.id}" data-week-offset="${weekOffset}">
                         <div class="kuliga-schedule__nav kuliga-schedule__nav--desktop">
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--prev" 
@@ -358,6 +382,10 @@
                                     aria-label="Предыдущая неделя">
                                 <i class="fa-solid fa-chevron-left"></i>
                             </button>
+                            <div class="kuliga-schedule__week-title">
+                                <span class="kuliga-schedule__week-range">${formatWeekRange(days)}</span>
+                                ${weekOffset === 0 ? '<span class="kuliga-schedule__week-badge">Текущая неделя</span>' : ''}
+                            </div>
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="next-week"
@@ -375,19 +403,40 @@
                             <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
                                 ${days.map((day, index) => {
                                     const daySchedule = instructor.schedule[day.iso] || [];
-                                    const hasSlots = daySchedule.length > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group');
+                                    const availableSlots = daySchedule.filter(slot => slot.status === 'available').length;
+                                    const groupSlots = daySchedule.filter(slot => slot.status === 'group').length;
+                                    const totalSlots = daySchedule.length;
+                                    const hasSlots = totalSlots > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group');
+                                    
+                                    // Определяем, является ли день сегодняшним
+                                    const today = new Date();
+                                    const dayDate = new Date(day.iso + 'T00:00:00');
+                                    const isToday = today.toDateString() === dayDate.toDateString();
+                                    
+                                    // Формируем счетчик слотов
+                                    let slotCounter = '';
+                                    if (totalSlots > 0) {
+                                        const parts = [];
+                                        if (availableSlots > 0) parts.push(`${availableSlots} свободно`);
+                                        if (groupSlots > 0) parts.push(`${groupSlots} групп.`);
+                                        slotCounter = parts.length > 0 ? `<div class="kuliga-schedule__day-counter">${parts.join(', ')}</div>` : '';
+                                    }
+                                    
                                     return `
-                                        <div class="kuliga-schedule__day ${index === 0 ? 'kuliga-schedule__day-active' : ''} ${hasSlots ? 'kuliga-schedule__day--has-slots' : ''}" 
+                                        <div class="kuliga-schedule__day ${isToday ? 'kuliga-schedule__day--today' : ''} ${hasSlots ? 'kuliga-schedule__day--has-slots' : 'kuliga-schedule__day--empty'}" 
                                              data-date="${day.iso}" 
                                              data-index="${index}">
-                                            <div class="kuliga-schedule__weekday">${day.weekday}</div>
-                                            <div>${day.label}</div>
+                                            <div class="kuliga-schedule__day-header">
+                                                <div class="kuliga-schedule__weekday">${day.weekday}</div>
+                                                <div class="kuliga-schedule__date">${day.label}</div>
+                                                ${slotCounter}
+                                            </div>
                                             <div class="kuliga-slot-list">
                                                 ${daySchedule.length > 0 ? daySchedule.map((slot) => `
                                                     <span class="kuliga-slot ${statusClasses[slot.status] || ''}">
                                                         ${formatTime(slot.startTime)} — ${statusLabels[slot.status] || ''}
                                                     </span>
-                                                `).join('') : '<span class="kuliga-slot">Нет слотов</span>'}
+                                                `).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет слотов</span>'}
                                             </div>
                                         </div>
                                     `;

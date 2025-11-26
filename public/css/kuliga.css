@@ -573,17 +573,20 @@
 }
 
 .kuliga-instructors {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
-    max-width: 1400px;
+    max-width: 1200px;
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
     padding: 0 16px;
+    align-items: center;
 }
 
 .kuliga-instructor-card {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 20px;
     padding: 24px;
     background: var(--kuliga-white);
@@ -591,28 +594,49 @@
     border: 1px solid rgba(148, 163, 184, 0.18);
     box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
     width: 100%;
-    max-width: 100%;
+    max-width: 1000px;
     box-sizing: border-box;
 }
 
 .kuliga-instructor__header {
     display: flex;
-    gap: 16px;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+@media (min-width: 768px) {
+    .kuliga-instructor__header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
 }
 
 .kuliga-instructor__photo {
-    width: 80px;
-    height: 80px;
-    border-radius: 18px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
     background: var(--kuliga-gray-200);
     object-fit: cover;
     flex-shrink: 0;
+    border: 3px solid var(--kuliga-primary);
+    box-shadow: 0 4px 12px rgba(30, 144, 255, 0.2);
+}
+
+.kuliga-instructor__info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
 }
 
 .kuliga-instructor__info h3 {
-    margin: 0 0 6px;
+    margin: 0;
     color: var(--kuliga-navy);
+    font-size: 1.3rem;
 }
 
 .kuliga-instructor__sport {
@@ -627,9 +651,10 @@
 
 .kuliga-instructor__description {
     margin: 0;
-    font-size: 0.97rem;
+    font-size: 0.95rem;
     color: var(--kuliga-gray-500);
-    line-height: 1.58;
+    line-height: 1.5;
+    max-width: 600px;
 }
 
 .kuliga-schedule {
@@ -641,14 +666,44 @@
     margin-top: 0;
     box-sizing: border-box;
     overflow: hidden;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .kuliga-schedule__nav {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
     width: 100%;
+    gap: 16px;
+}
+
+.kuliga-schedule__week-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    justify-content: center;
+}
+
+.kuliga-schedule__week-range {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-schedule__week-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(30, 144, 255, 0.15);
+    color: var(--kuliga-primary);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .kuliga-schedule__nav--desktop {
@@ -657,10 +712,10 @@
 
 .kuliga-schedule__nav-btn {
     background: var(--kuliga-white);
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    border-radius: 8px;
-    width: 36px;
-    height: 36px;
+    border: 2px solid var(--kuliga-primary);
+    border-radius: 10px;
+    width: 42px;
+    height: 42px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -668,11 +723,14 @@
     color: var(--kuliga-primary);
     transition: all 0.2s ease;
     flex-shrink: 0;
+    font-size: 1rem;
 }
 
 .kuliga-schedule__nav-btn:hover:not(:disabled) {
-    background: rgba(30, 144, 255, 0.1);
-    border-color: var(--kuliga-primary);
+    background: var(--kuliga-primary);
+    color: var(--kuliga-white);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(30, 144, 255, 0.3);
 }
 
 .kuliga-schedule__nav-btn:disabled {
@@ -701,8 +759,8 @@
 }
 
 .kuliga-schedule__day {
-    padding: 10px 8px;
-    border-radius: 10px;
+    padding: 12px 10px;
+    border-radius: 12px;
     background: var(--kuliga-gray-100);
     text-align: center;
     min-width: 0;
@@ -710,15 +768,53 @@
     flex-direction: column;
     align-items: stretch;
     width: 100%;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
 }
 
-.kuliga-schedule__day-active {
-    background: rgba(30, 144, 255, 0.12);
-    border: 1px solid rgba(30, 144, 255, 0.4);
+.kuliga-schedule__day--today {
+    background: rgba(30, 144, 255, 0.15);
+    border: 2px solid var(--kuliga-primary);
+    box-shadow: 0 4px 12px rgba(30, 144, 255, 0.2);
 }
 
 .kuliga-schedule__day--has-slots {
-    border: 1px solid rgba(30, 144, 255, 0.2);
+    border: 2px solid rgba(30, 144, 255, 0.3);
+    background: rgba(30, 144, 255, 0.05);
+}
+
+.kuliga-schedule__day--empty {
+    opacity: 0.7;
+    padding: 8px 10px;
+}
+
+.kuliga-schedule__day-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.kuliga-schedule__date {
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-600);
+    font-weight: 500;
+}
+
+.kuliga-schedule__day--today .kuliga-schedule__date {
+    color: var(--kuliga-primary);
+    font-weight: 600;
+}
+
+.kuliga-schedule__day-counter {
+    font-size: 0.7rem;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+    margin-top: 2px;
+    padding: 2px 6px;
+    background: rgba(30, 144, 255, 0.1);
+    border-radius: 8px;
+    display: inline-block;
 }
 
 .kuliga-schedule__weekday {
@@ -737,13 +833,23 @@
 }
 
 .kuliga-slot-list {
-    margin-top: 6px;
+    margin-top: auto;
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-height: auto;
     flex-grow: 0;
     justify-content: flex-start;
+}
+
+.kuliga-schedule__day--empty .kuliga-slot-list {
+    margin-top: 4px;
+    min-height: auto;
+}
+
+.kuliga-slot--empty {
+    opacity: 0.5;
+    font-size: 0.8rem;
 }
 
 /* Дни без слотов - минимальная высота */
