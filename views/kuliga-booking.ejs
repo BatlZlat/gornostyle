@@ -175,7 +175,7 @@
             <div class="kuliga-footer__links">
                 <a href="tel:<%= adminPhone %>"><i class="fa-solid fa-phone"></i> <%= adminPhone %></a>
                 <a href="mailto:<%= contactEmail %>"><i class="fa-solid fa-envelope"></i> <%= contactEmail %></a>
-                <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
+                <a href="https://t.me/<%= adminTelegramUsername ? adminTelegramUsername.replace(/^@/, '') : '' %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
                 <a href="https://t.me/<%= botUsername %>" target="_blank" rel="noopener"><i class="fa-solid fa-robot"></i> Telegram-бот Горностайл72</a>
             </div>
             <div class="kuliga-footer__documents">

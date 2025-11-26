@@ -104,6 +104,14 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     margin-bottom: 20px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.kuliga-hero__badge:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
 }
 
 .kuliga-hero h1 {
@@ -732,17 +740,81 @@
     max-width: 1140px;
     margin: 0 auto;
     display: grid;
-    gap: 24px;
+    gap: 32px;
+}
+
+@media (min-width: 768px) {
+    .kuliga-footer__content {
+        grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+        gap: 40px;
+        align-items: start;
+    }
+    
+    .kuliga-footer__meta {
+        grid-column: 1 / -1;
+        margin-top: 16px;
+        padding-top: 24px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        flex-direction: row;
+        justify-content: space-between;
+    }
 }
 
 .kuliga-footer__brand {
     display: grid;
     gap: 12px;
+    justify-items: center;
+    text-align: center;
 }
 
-.kuliga-footer__brand img {
-    width: 160px;
+@media (max-width: 767px) {
+    .kuliga-footer__brand {
+        width: 100%;
+    }
+    
+    .kuliga-footer__brand a {
+        margin: 0 auto;
+    }
+}
+
+.kuliga-footer__brand img,
+.kuliga-footer__brand .header-logo {
+    width: auto;
     height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+.kuliga-footer__brand a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    background: var(--kuliga-white);
+    padding: 20px;
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.kuliga-footer__brand a:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.kuliga-footer__brand a img,
+.kuliga-footer__brand a .header-logo {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    margin: 0;
+    transform: translateY(-4px);
 }
 
 .kuliga-footer__links {
@@ -1039,15 +1111,6 @@
         align-items: center;
     }
 
-    .kuliga-footer__content {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        align-items: start;
-    }
-    
-    .kuliga-footer__documents,
-    .kuliga-footer__requisites {
-        margin-top: 24px;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -25,7 +25,7 @@ const buildWeekContext = (days = 7) => {
 
 router.get('/instruktora-kuliga', (req, res) => {
     res.render('kuliga-landing', {
-        pageTitle: 'Служба инструкторов Кулиги Горностайл72',
+        pageTitle: 'Служба инструкторов Горностайл72',
         adminPhone: process.env.ADMIN_PHONE,
         contactEmail: process.env.CONTACT_EMAIL,
         adminTelegramUsername: process.env.ADMIN_TELEGRAM_USERNAME,
@@ -37,6 +37,7 @@ router.get('/instruktora-kuliga', (req, res) => {
         googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
         inn: process.env.INN,
         ogrnip: process.env.OGRNIP,
+        baseUrl: process.env.BASE_URL || '/',
     });
 });
 

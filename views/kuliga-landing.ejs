@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Служба инструкторов Кулиги Горностайл72 | Обучение горным лыжам и сноуборду</title>
+    <title>Служба инструкторов Горностайл72 | Обучение горным лыжам и сноуборду</title>
     <meta name="description" content="Запишитесь на обучение горным лыжам и сноуборду на базе отдыха Кулига. Профессиональные инструкторы Горностайл72, групповые и индивидуальные занятия, удобное онлайн-бронирование и предоплата через Tinkoff." />
     <meta name="keywords" content="обучение горным лыжам Кулига, обучение сноуборду Кулига, инструктор Кулига, горнолыжная школа Тюмень, инструктор сноуборда Тюмень, Горностайл72" />
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://gornostyle.ru/instruktora-kuliga">
 
-    <meta property="og:title" content="Служба инструкторов Кулиги Горностайл72" />
+    <meta property="og:title" content="Служба инструкторов Горностайл72" />
     <meta property="og:description" content="Групповые и индивидуальные занятия по горным лыжам и сноуборду на базе отдыха Кулига. Онлайн-бронирование, предоплата, Telegram-уведомления." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://gornostyle.ru/instruktora-kuliga" />
@@ -27,8 +27,8 @@
     <header class="kuliga-hero">
         <div class="kuliga-hero__bg"></div>
         <div class="kuliga-hero__content">
-            <div class="kuliga-hero__badge">Горностайл72 × Кулига-Клуб</div>
-            <h1>Служба инструкторов Кулиги Горностайл72</h1>
+            <a href="<%= baseUrl || '/' %>" class="kuliga-hero__badge" style="text-decoration: none; color: inherit; display: inline-block;">Горностайл72</a>
+            <h1>Служба инструкторов Горностайл72</h1>
             <p>Профессиональные занятия по горным лыжам и сноуборду на естественном склоне. Подготовим к поездке в горы, обучим с нуля и поможем уверенно и безопасно прогрессировать.</p>
             <div class="kuliga-hero__actions">
                 <a href="#booking" class="kuliga-button kuliga-button--primary">Записаться на тренировку</a>
@@ -99,13 +99,15 @@
     <footer class="kuliga-footer">
         <div class="kuliga-footer__content">
             <div class="kuliga-footer__brand">
-                <img src="/images/logo.png" alt="Логотип Горностайл72" loading="lazy">
+                <a href="<%= baseUrl || '/' %>">
+                    <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" class="header-logo" loading="lazy">
+                </a>
                 <p>Горностайл72 — обучение горным лыжам и сноуборду круглый год. Теперь и на натуральном склоне Кулиги.</p>
             </div>
             <div class="kuliga-footer__links">
                 <a href="tel:<%= adminPhone %>"><i class="fa-solid fa-phone"></i> <%= adminPhone %></a>
                 <a href="mailto:<%= contactEmail %>"><i class="fa-solid fa-envelope"></i> <%= contactEmail %></a>
-                <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
+                <a href="https://t.me/<%= adminTelegramUsername ? adminTelegramUsername.replace(/^@/, '') : '' %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
                 <a href="https://t.me/<%= botUsername %>" target="_blank" rel="noopener"><i class="fa-solid fa-robot"></i> Telegram-бот Горностайл72</a>
             </div>
             <div class="kuliga-footer__documents">
