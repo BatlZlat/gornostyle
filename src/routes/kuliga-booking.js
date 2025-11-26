@@ -71,11 +71,15 @@ const upsertClient = async (client, trx) => {
     }
 
     // Клиент не найден, создаем нового с датой рождения из формы или временной датой
+    // Email обязателен, проверка должна быть выполнена до вызова этой функции
+    if (!client.email) {
+        throw new Error('Email обязателен для создания клиента');
+    }
     const insertResult = await trx.query(
         `INSERT INTO clients (full_name, phone, email, birth_date, created_at, updated_at)
          VALUES ($1, $2, $3, COALESCE($4::date, '1900-01-01'::date), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id, telegram_id`,
-        [client.fullName, phone, client.email || null, client.birthDate || null]
+        [client.fullName, phone, client.email.trim(), client.birthDate || null]
     );
 
     return { id: insertResult.rows[0].id, telegram_id: insertResult.rows[0].telegram_id };
@@ -121,8 +125,14 @@ const createGroupBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Необходимо согласие на обработку персональных данных' });
     }
 
-    if (!fullName || !birthDate || !phone) {
-        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения и телефон' });
+    if (!fullName || !birthDate || !phone || !email) {
+        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения, телефон и email' });
+    }
+    
+    // Валидация формата email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ success: false, error: 'Неверный формат email' });
     }
 
     if (!groupTrainingId) {
@@ -164,7 +174,7 @@ const createGroupBooking = async (req, res) => {
         }
 
         const clientRecord = await upsertClient(
-            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email?.trim() },
+            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email.trim() },
             client
         );
         await ensurePrivacyConsent(clientRecord.id, client);
@@ -305,8 +315,14 @@ const createIndividualBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Необходимо согласие на обработку персональных данных' });
     }
 
-    if (!fullName || !birthDate || !phone) {
-        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения и телефон' });
+    if (!fullName || !birthDate || !phone || !email) {
+        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения, телефон и email' });
+    }
+    
+    // Валидация формата email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ success: false, error: 'Неверный формат email' });
     }
 
     if (!priceId) {
@@ -332,9 +348,7 @@ const createIndividualBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Выберите способ уведомлений: email или Telegram' });
     }
 
-    if (notifyEmail && !email) {
-        return res.status(400).json({ success: false, error: 'Укажите email или отключите уведомления по email' });
-    }
+    // Email теперь обязателен всегда, эта проверка больше не нужна
 
     const normalizedSport = sportType === 'snowboard' ? 'snowboard' : 'ski';
     const normalizedPhone = normalizePhone(phone);
@@ -393,7 +407,7 @@ const createIndividualBooking = async (req, res) => {
         });
 
         const clientRecord = await upsertClient(
-            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email?.trim() },
+            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email.trim() },
             client
         );
 

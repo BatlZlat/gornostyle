@@ -289,8 +289,14 @@ async function registerClient(data) {
     console.log('Начало регистрации клиента:', data);
     
     // Проверяем обязательные поля
-    if (!data.full_name || !data.birth_date || !data.phone || !data.telegram_id) {
+    if (!data.full_name || !data.birth_date || !data.phone || !data.telegram_id || !data.email) {
         throw new Error('Отсутствуют обязательные поля для регистрации');
+    }
+    
+    // Валидация формата email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(data.email)) {
+        throw new Error('Неверный формат email');
     }
 
     const dbClient = await pool.connect();
@@ -341,21 +347,22 @@ async function registerClient(data) {
                      nickname = $3,
                      full_name = $4,
                      birth_date = $5,
-                     referral_code = COALESCE(referral_code, $6),
-                     referred_by = COALESCE(referred_by, $7),
+                     email = $6,
+                     referral_code = COALESCE(referral_code, $7),
+                     referred_by = COALESCE(referred_by, $8),
                      skill_level = COALESCE(skill_level, 1),
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $8`,
-                [data.telegram_id, data.username || null, data.nickname, data.full_name, data.birth_date, newReferralCode, referrerId, clientId]
+                 WHERE id = $9`,
+                [data.telegram_id, data.username || null, data.nickname, data.full_name, data.birth_date, data.email, newReferralCode, referrerId, clientId]
             );
             
             console.log('✅ Клиент обновлен для интеграции с ботом');
         } else {
             // Клиент не найден, создаем нового
         const res = await dbClient.query(
-            `INSERT INTO clients (full_name, birth_date, phone, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
-             VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8) RETURNING id`,
-            [data.full_name, data.birth_date, data.phone, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
+            `INSERT INTO clients (full_name, birth_date, phone, email, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9) RETURNING id`,
+            [data.full_name, data.birth_date, data.phone, data.email, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
         );
         
         console.log('Клиент создан, ID:', res.rows[0].id);
@@ -2505,6 +2512,16 @@ async function handleTextMessage(msg) {
             const phone = validatePhone(msg.text);
             if (!phone) return bot.sendMessage(chatId, 'Неверный формат номера телефона. Используйте формат +79999999999:');
             state.data.phone = phone;
+            state.step = 'email';
+            return bot.sendMessage(chatId, 'Укажите свой email, на который вам необходимо отправлять чеки:');
+        }
+        case 'email': {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const email = msg.text.trim();
+            if (!emailRegex.test(email)) {
+                return bot.sendMessage(chatId, 'Неверный формат email. Пожалуйста, введите корректный email адрес (например: example@mail.ru):');
+            }
+            state.data.email = email;
             state.step = 'has_child';
             return bot.sendMessage(chatId, 'У вас есть ребенок, которого вы будете записывать на тренировки?', {
                 reply_markup: {
@@ -2514,6 +2531,140 @@ async function handleTextMessage(msg) {
                     persistent: true
                 }
             });
+        }
+        case 'kuliga_group_email': {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const email = msg.text.trim();
+            if (!emailRegex.test(email)) {
+                return bot.sendMessage(chatId, 'Неверный формат email. Пожалуйста, введите корректный email адрес (например: example@mail.ru):');
+            }
+            // Сохраняем email и продолжаем создание бронирования
+            // Используем сохраненные данные из state для продолжения
+            const savedData = state.data;
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+                
+                // Создаем клиента с email
+                const newKuligaClientResult = await client.query(
+                    `INSERT INTO clients (full_name, phone, email, telegram_id, birth_date)
+                     VALUES ($1, $2, $3, $4, '1900-01-01')
+                     RETURNING id`,
+                    [savedData.participantName, savedData.normalizedPhone, email, msg.from.id.toString()]
+                );
+                const kuligaClientId = newKuligaClientResult.rows[0].id;
+                
+                // Продолжаем создание бронирования (копируем логику из callback обработчика)
+                const selectedTraining = savedData.selectedTraining;
+                const sportType = selectedTraining.sport_type || 'ski';
+                
+                const trainingInfo = await client.query(
+                    `SELECT date, start_time, end_time FROM kuliga_group_trainings WHERE id = $1`,
+                    [selectedTraining.id]
+                );
+                
+                if (trainingInfo.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    userStates.delete(chatId);
+                    return bot.sendMessage(chatId, '❌ Информация о тренировке не найдена.', {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    });
+                }
+                
+                const trainingDetails = trainingInfo.rows[0];
+                const pricePerPerson = parseFloat(selectedTraining.price || 0);
+                
+                // Создаем бронирование
+                const bookingResult = await client.query(
+                    `INSERT INTO kuliga_bookings (
+                        client_id, booking_type, group_training_id,
+                        date, start_time, end_time, sport_type,
+                        participants_count, participants_names, participants_birth_years,
+                        price_total, price_per_person,
+                        status, notification_method, payer_rides
+                    ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', 'telegram', true)
+                    RETURNING id`,
+                    [
+                        kuligaClientId,
+                        selectedTraining.id,
+                        trainingDetails.date,
+                        trainingDetails.start_time,
+                        trainingDetails.end_time,
+                        sportType,
+                        1,
+                        [savedData.participantName],
+                        [null],
+                        pricePerPerson,
+                        pricePerPerson,
+                    ]
+                );
+                
+                const bookingId = bookingResult.rows[0].id;
+                
+                // Увеличиваем счетчик участников
+                await client.query(
+                    `UPDATE kuliga_group_trainings
+                     SET current_participants = current_participants + 1,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $1`,
+                    [selectedTraining.id]
+                );
+                
+                // Создаем транзакцию для оплаты
+                const walletResult = await client.query(
+                    'SELECT id FROM wallets WHERE client_id = $1 LIMIT 1',
+                    [kuligaClientId]
+                );
+                
+                if (walletResult.rows.length === 0) {
+                    // Создаем кошелек, если его нет
+                    const walletNumber = await generateUniqueWalletNumber();
+                    await client.query(
+                        `INSERT INTO wallets (client_id, wallet_number, balance) 
+                         VALUES ($1, $2, 0) RETURNING id`,
+                        [kuligaClientId, walletNumber]
+                    );
+                }
+                
+                await client.query('COMMIT');
+                client.release();
+                userStates.delete(chatId);
+                
+                return bot.sendMessage(chatId,
+                    `✅ Бронирование создано!\n\n` +
+                    `Тренировка: ${selectedTraining.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n` +
+                    `Дата: ${trainingDetails.date}\n` +
+                    `Время: ${trainingDetails.start_time}\n\n` +
+                    `Для оплаты перейдите в раздел "Мои записи".`,
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['📋 Мои записи'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            } catch (error) {
+                await client.query('ROLLBACK');
+                client.release();
+                userStates.delete(chatId);
+                console.error('Ошибка при создании бронирования после получения email:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка при создании бронирования. Пожалуйста, попробуйте позже.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
         }
         case 'has_child': {
             if (msg.text === 'Да') {
@@ -5223,19 +5374,67 @@ async function handleTextMessage(msg) {
                     
                     let kuligaClientId;
                     const kuligaClientCheck = await client.query(
-                        `SELECT id FROM clients WHERE phone = $1 LIMIT 1`,
+                        `SELECT id, email FROM clients WHERE phone = $1 LIMIT 1`,
                         [normalizedPhone]
                     );
                     
                     if (kuligaClientCheck.rows.length > 0) {
                         kuligaClientId = kuligaClientCheck.rows[0].id;
+                        // Если у клиента нет email, используем email из clientData (если клиент зарегистрирован в боте)
+                        if (!kuligaClientCheck.rows[0].email && clientData.email) {
+                            await client.query(
+                                `UPDATE clients SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+                                [clientData.email, kuligaClientId]
+                            );
+                        }
                     } else {
-                        // Создаем нового клиента с временной датой рождения
+                        // Клиент не найден, проверяем наличие email
+                        let clientEmail = clientData.email;
+                        if (!clientEmail) {
+                            // Если email нет, запрашиваем его у пользователя
+                            await client.query('ROLLBACK');
+                            client.release();
+                            // Сохраняем состояние для запроса email
+                            userStates.set(chatId, {
+                                step: 'kuliga_group_email',
+                                data: {
+                                    ...state.data,
+                                    participantName: participantName,
+                                    normalizedPhone: normalizedPhone,
+                                    selectedTraining: selectedTraining,
+                                    clientData: clientData
+                                }
+                            });
+                            return bot.sendMessage(chatId, 
+                                'Укажите свой email, на который вам необходимо отправлять чеки:',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
+                        // Создаем нового клиента с email
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!emailRegex.test(clientEmail.trim())) {
+                            await client.query('ROLLBACK');
+                            client.release();
+                            return bot.sendMessage(chatId, 
+                                'Неверный формат email. Пожалуйста, введите корректный email адрес.',
+                                {
+                                    reply_markup: {
+                                        keyboard: [['🔙 Назад в меню']],
+                                        resize_keyboard: true
+                                    }
+                                }
+                            );
+                        }
                         const newKuligaClientResult = await client.query(
-                            `INSERT INTO clients (full_name, phone, telegram_id, birth_date)
-                             VALUES ($1, $2, $3, '1900-01-01')
+                            `INSERT INTO clients (full_name, phone, email, telegram_id, birth_date)
+                             VALUES ($1, $2, $3, $4, '1900-01-01')
                              RETURNING id`,
-                            [participantName, normalizedPhone, msg.from.id.toString()]
+                            [participantName, normalizedPhone, clientEmail.trim(), msg.from.id.toString()]
                         );
                         kuligaClientId = newKuligaClientResult.rows[0].id;
                     }
