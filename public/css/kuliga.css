@@ -78,7 +78,7 @@
 .kuliga-hero__bg {
     position: absolute;
     inset: 0;
-    background-image: url('/images/photo_trenagor.webp');
+    background-image: url('/images/kuliga/kuliga-hero-bg.webp');
     background-size: cover;
     background-position: center;
     opacity: 0.15;
@@ -882,6 +882,59 @@
     border-radius: 12px;
     text-align: center;
     color: var(--kuliga-gray-500);
+}
+
+.kuliga-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.kuliga-gallery__item {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    aspect-ratio: 4 / 3;
+    background: var(--kuliga-gray-200);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.kuliga-gallery__item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.15);
+}
+
+.kuliga-gallery__item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+@media (max-width: 767px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .kuliga-gallery__item {
+        border-radius: 12px;
+    }
+}
+
+@media (min-width: 768px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(4, 1fr);
+    }
 }
 
 .kuliga-booking-header {
