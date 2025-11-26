@@ -409,6 +409,7 @@
             container.innerHTML = '';
             container.appendChild(fragment);
             initScheduleNavigation();
+            initScheduleTouchPrevention();
             
             // На мобильной версии прокручиваем к первому дню с расписанием
             if (window.innerWidth <= 767) {
@@ -420,10 +421,30 @@
                         const startIndex = parseInt(daysContainer.getAttribute('data-start-index') || '0', 10);
                         const days = Array.from(daysContainer.querySelectorAll('.kuliga-schedule__day'));
                         if (days[startIndex]) {
-                            days[startIndex].scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'start' });
+                            const targetDay = days[startIndex];
+                            
+                            // Используем scrollIntoView с правильными параметрами
+                            targetDay.scrollIntoView({
+                                behavior: 'auto',
+                                block: 'nearest',
+                                inline: 'start'
+                            });
+                            
+                            // Дополнительная корректировка через requestAnimationFrame
+                            requestAnimationFrame(() => {
+                                // Проверяем, полностью ли виден день
+                                const containerRect = daysContainer.getBoundingClientRect();
+                                const dayRect = targetDay.getBoundingClientRect();
+                                
+                                // Если день обрезан слева, корректируем
+                                if (dayRect.left < containerRect.left) {
+                                    const scrollLeft = targetDay.offsetLeft;
+                                    daysContainer.scrollLeft = scrollLeft;
+                                }
+                            });
                         }
                     });
-                }, 100);
+                }, 300);
             }
         } catch (error) {
             console.error('Не удалось загрузить инструкторов:', error);
@@ -505,6 +526,45 @@
                 }
             });
         });
+    };
+
+    const initScheduleTouchPrevention = () => {
+        // Блокируем горизонтальные свайпы на расписании в мобильной версии
+        if (window.innerWidth <= 767) {
+            document.querySelectorAll('.kuliga-schedule__days').forEach((daysContainer) => {
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let isScrolling = false;
+
+                daysContainer.addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    isScrolling = false;
+                }, { passive: true });
+
+                daysContainer.addEventListener('touchmove', (e) => {
+                    if (!touchStartX || !touchStartY) return;
+
+                    const touchCurrentX = e.touches[0].clientX;
+                    const touchCurrentY = e.touches[0].clientY;
+                    const diffX = Math.abs(touchCurrentX - touchStartX);
+                    const diffY = Math.abs(touchCurrentY - touchStartY);
+
+                    // Если горизонтальное движение больше вертикального - блокируем
+                    if (diffX > diffY && diffX > 10) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        isScrolling = true;
+                    }
+                }, { passive: false });
+
+                daysContainer.addEventListener('touchend', () => {
+                    touchStartX = 0;
+                    touchStartY = 0;
+                    isScrolling = false;
+                }, { passive: true });
+            });
+        }
     };
 
     const initBookingButton = () => {
