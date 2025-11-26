@@ -11,9 +11,14 @@ const formatDate = (date) => moment(date).tz(TIMEZONE).format('YYYY-MM-DD');
 const getKuligaClientBotUsername = () =>
     process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || '';
 
-const buildWeekContext = (days = 7) => {
-    const start = moment().tz(TIMEZONE).startOf('day');
-    return Array.from({ length: days }, (_, index) => {
+const buildWeekContext = (weekOffset = 0) => {
+    // Начинаем с понедельника текущей недели
+    const today = moment().tz(TIMEZONE).startOf('day');
+    const monday = today.clone().startOf('isoWeek'); // Понедельник текущей недели
+    const start = monday.clone().add(weekOffset * 7, 'days'); // Добавляем недели для навигации
+    
+    // Возвращаем полную неделю (7 дней: ПН-ВС)
+    return Array.from({ length: 7 }, (_, index) => {
         const day = start.clone().add(index, 'day');
         return {
             iso: day.format('YYYY-MM-DD'),
@@ -133,9 +138,11 @@ router.get('/api/kuliga/group-trainings', async (_req, res) => {
     }
 });
 
-router.get('/api/kuliga/instructors', async (_req, res) => {
+router.get('/api/kuliga/instructors', async (req, res) => {
     try {
-        const days = buildWeekContext();
+        // Поддержка навигации по неделям (weekOffset: 0 = текущая неделя, 1 = следующая и т.д.)
+        const weekOffset = parseInt(req.query.weekOffset || '0', 10);
+        const days = buildWeekContext(weekOffset);
         const startDate = days[0].iso;
         const endDate = days[days.length - 1].iso;
 

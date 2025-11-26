@@ -297,12 +297,26 @@
         });
     };
 
-    const renderInstructors = async () => {
+    // Найти первый день с расписанием для инструктора
+    const findFirstDayWithSchedule = (instructor, days) => {
+        for (let i = 0; i < days.length; i++) {
+            const daySchedule = instructor.schedule[days[i].iso] || [];
+            if (daySchedule.length > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group')) {
+                return i;
+            }
+        }
+        return 0; // Если нет расписания, начинаем с первого дня
+    };
+
+    const renderInstructors = async (weekOffset = 0) => {
         const container = document.getElementById('kuligaInstructors');
         if (!container) return;
 
         try {
-            const response = await fetchJson(API_ENDPOINTS.instructors);
+            const url = weekOffset !== 0 
+                ? `${API_ENDPOINTS.instructors}?weekOffset=${weekOffset}`
+                : API_ENDPOINTS.instructors;
+            const response = await fetchJson(url);
             if (!response.success) {
                 throw new Error('API вернуло ошибку');
             }
@@ -323,6 +337,9 @@
                 const photoUrl = instructor.photo_url || 'https://via.placeholder.com/160x160/1e293b/ffffff?text=GS72';
                 const sportLabel = sportLabels[instructor.sport_type] || 'Инструктор';
 
+                // Находим первый день с расписанием для мобильной версии
+                const firstDayIndex = findFirstDayWithSchedule(instructor, days);
+
                 card.innerHTML = `
                     <header class="kuliga-instructor__header">
                         <img class="kuliga-instructor__photo" src="${photoUrl}" alt="${instructor.full_name}" loading="lazy">
@@ -332,21 +349,56 @@
                         </div>
                     </header>
                     ${instructor.description ? `<p class="kuliga-instructor__description">${instructor.description}</p>` : ''}
-                    <div class="kuliga-schedule" data-instructor-id="${instructor.id}">
-                        <div class="kuliga-schedule__days">
-                            ${days.map((day, index) => `
-                                <div class="kuliga-schedule__day ${index === 0 ? 'kuliga-schedule__day-active' : ''}" data-date="${day.iso}">
-                                    <div class="kuliga-schedule__weekday">${day.weekday}</div>
-                                    <div>${day.label}</div>
-                                    <div class="kuliga-slot-list">
-                                        ${(instructor.schedule[day.iso] || []).map((slot) => `
-                                            <span class="kuliga-slot ${statusClasses[slot.status] || ''}">
-                                                ${formatTime(slot.startTime)} — ${statusLabels[slot.status] || ''}
-                                            </span>
-                                        `).join('') || '<span class="kuliga-slot">Нет слотов</span>'}
-                                    </div>
-                                </div>
-                            `).join('')}
+                    <div class="kuliga-schedule" data-instructor-id="${instructor.id}" data-week-offset="${weekOffset}">
+                        <div class="kuliga-schedule__nav kuliga-schedule__nav--desktop">
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--prev" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="prev-week"
+                                    ${weekOffset === 0 ? 'disabled' : ''}
+                                    aria-label="Предыдущая неделя">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="next-week"
+                                    aria-label="Следующая неделя">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div class="kuliga-schedule__wrapper">
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--prev-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="prev-day"
+                                    aria-label="Предыдущий день">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
+                                ${days.map((day, index) => {
+                                    const daySchedule = instructor.schedule[day.iso] || [];
+                                    const hasSlots = daySchedule.length > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group');
+                                    return `
+                                        <div class="kuliga-schedule__day ${index === 0 ? 'kuliga-schedule__day-active' : ''} ${hasSlots ? 'kuliga-schedule__day--has-slots' : ''}" 
+                                             data-date="${day.iso}" 
+                                             data-index="${index}">
+                                            <div class="kuliga-schedule__weekday">${day.weekday}</div>
+                                            <div>${day.label}</div>
+                                            <div class="kuliga-slot-list">
+                                                ${daySchedule.length > 0 ? daySchedule.map((slot) => `
+                                                    <span class="kuliga-slot ${statusClasses[slot.status] || ''}">
+                                                        ${formatTime(slot.startTime)} — ${statusLabels[slot.status] || ''}
+                                                    </span>
+                                                `).join('') : '<span class="kuliga-slot">Нет слотов</span>'}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--next-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="next-day"
+                                    aria-label="Следующий день">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
                         </div>
                     </div>
                 `;
@@ -356,10 +408,103 @@
 
             container.innerHTML = '';
             container.appendChild(fragment);
+            initScheduleNavigation();
+            
+            // На мобильной версии прокручиваем к первому дню с расписанием
+            if (window.innerWidth <= 767) {
+                setTimeout(() => {
+                    document.querySelectorAll('.kuliga-schedule').forEach((scheduleEl) => {
+                        const daysContainer = scheduleEl.querySelector('.kuliga-schedule__days');
+                        if (!daysContainer) return;
+                        
+                        const startIndex = parseInt(daysContainer.getAttribute('data-start-index') || '0', 10);
+                        const days = Array.from(daysContainer.querySelectorAll('.kuliga-schedule__day'));
+                        if (days[startIndex]) {
+                            days[startIndex].scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'start' });
+                        }
+                    });
+                }, 100);
+            }
         } catch (error) {
             console.error('Не удалось загрузить инструкторов:', error);
             container.innerHTML = '<div class="kuliga-empty">Не удалось загрузить список инструкторов. Зайдите позже.</div>';
         }
+    };
+
+    const initScheduleNavigation = () => {
+        // Навигация по неделям (десктоп)
+        document.querySelectorAll('[data-action="prev-week"], [data-action="next-week"]').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const action = e.currentTarget.getAttribute('data-action');
+                const instructorId = e.currentTarget.getAttribute('data-instructor-id');
+                const scheduleEl = document.querySelector(`[data-instructor-id="${instructorId}"]`);
+                if (!scheduleEl) return;
+
+                const currentWeekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
+                const newWeekOffset = action === 'prev-week' ? currentWeekOffset - 1 : currentWeekOffset + 1;
+
+                // Перезагружаем всех инструкторов с новым weekOffset
+                await renderInstructors(newWeekOffset);
+            });
+        });
+        
+        // Обновляем состояние кнопок навигации
+        document.querySelectorAll('.kuliga-schedule').forEach((scheduleEl) => {
+            const weekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
+            const instructorId = scheduleEl.getAttribute('data-instructor-id');
+            
+            const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]`);
+            if (prevBtn) {
+                prevBtn.disabled = weekOffset === 0;
+            }
+        });
+
+        // Навигация по дням (мобильная)
+        document.querySelectorAll('[data-action="prev-day"], [data-action="next-day"]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                const action = e.currentTarget.getAttribute('data-action');
+                const instructorId = e.currentTarget.getAttribute('data-instructor-id');
+                const scheduleEl = document.querySelector(`[data-instructor-id="${instructorId}"]`);
+                if (!scheduleEl) return;
+
+                const daysContainer = scheduleEl.querySelector('.kuliga-schedule__days');
+                if (!daysContainer) return;
+
+                const days = Array.from(daysContainer.querySelectorAll('.kuliga-schedule__day'));
+                if (days.length === 0) return;
+
+                // Находим текущий видимый день
+                const containerRect = daysContainer.getBoundingClientRect();
+                let currentIndex = -1;
+                days.forEach((day, index) => {
+                    const dayRect = day.getBoundingClientRect();
+                    if (dayRect.left >= containerRect.left && dayRect.right <= containerRect.right) {
+                        currentIndex = index;
+                    }
+                });
+
+                if (currentIndex === -1) {
+                    // Если не нашли, используем первый день с расписанием
+                    const startIndex = parseInt(daysContainer.getAttribute('data-start-index') || '0', 10);
+                    currentIndex = startIndex;
+                }
+
+                // Вычисляем следующий/предыдущий индекс
+                let targetIndex;
+                if (action === 'prev-day') {
+                    targetIndex = Math.max(0, currentIndex - 1);
+                } else {
+                    targetIndex = Math.min(days.length - 1, currentIndex + 1);
+                }
+
+                // Прокручиваем к целевому дню
+                const targetDay = days[targetIndex];
+                if (targetDay) {
+                    targetDay.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
+            });
+        });
     };
 
     const initBookingButton = () => {
