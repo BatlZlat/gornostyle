@@ -10,6 +10,18 @@ const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscri
 const { normalizePhone } = require('../utils/phone-normalizer');
 const moment = require('moment-timezone');
 
+// Функция для получения названия места по location
+function getLocationDisplayName(location) {
+    if (!location) {
+        return 'Кулига Парк';
+    }
+    const locationNames = {
+        'kuliga': 'База отдыха «Кулига-Клуб»',
+        'vorona': 'Воронинские горки'
+    };
+    return locationNames[location] || 'Кулига Парк';
+}
+
 // Настройка подключения к БД
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || undefined,
@@ -1080,7 +1092,7 @@ function formatDateLabel(dateStr) {
     return `${dd}.${mm} (${weekday})`;
 }
 
-async function promptNaturalSlopeParticipant(chatId, client) {
+async function promptNaturalSlopeParticipant(chatId, client, location = 'kuliga') {
     const { rows: children } = await pool.query(
         'SELECT id, full_name FROM children WHERE parent_id = $1 ORDER BY full_name',
         [client.id]
@@ -1098,7 +1110,8 @@ async function promptNaturalSlopeParticipant(chatId, client) {
             client_id: client.id,
             client_phone: client.phone,
             client_full_name: client.full_name,
-            available_children: children
+            available_children: children,
+            location: location // Сохраняем location
         }
     });
 
@@ -1140,13 +1153,23 @@ async function promptNaturalSlopeInstructor(chatId, state) {
     userStates.set(chatId, state);
 
     const sportType = state.data?.selected_sport || 'ski';
+    const location = state.data?.location || 'kuliga';
+    
+    const params = [sportType === 'snowboard' ? 'snowboard' : 'ski'];
+    let locationFilter = '';
+    if (location && (location === 'kuliga' || location === 'vorona')) {
+        params.push(location);
+        locationFilter = `AND location = $${params.length}`;
+    }
+    
     const instructorsRes = await pool.query(
         `SELECT id, full_name, sport_type
          FROM kuliga_instructors
          WHERE is_active = TRUE
            AND (sport_type = $1 OR sport_type = 'both')
+           ${locationFilter}
          ORDER BY full_name`,
-        [sportType === 'snowboard' ? 'snowboard' : 'ski']
+        params
     );
 
     const instructors = instructorsRes.rows;
@@ -1593,7 +1616,9 @@ async function handleTextMessage(msg) {
             return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
         }
 
-        return promptNaturalSlopeParticipant(chatId, client);
+        const currentState = userStates.get(chatId);
+        const location = currentState?.data?.location || 'kuliga';
+        return promptNaturalSlopeParticipant(chatId, client, location);
     }
 
     // Обработка "Групповая тренировка" (естественный склон)
@@ -1670,13 +1695,18 @@ async function handleTextMessage(msg) {
 
         const child = childResult.rows[0];
 
+        // Получаем location из текущего состояния
+        const currentState = userStates.get(chatId);
+        const location = currentState?.data?.location || 'kuliga';
+        
         // Устанавливаем состояние для записи ребенка
         const stateData = {
                 client_id: client.id,
             client_phone: client.phone,
                 participant_type: 'child',
                 participant_id: child.id,
-                participant_name: child.full_name
+                participant_name: child.full_name,
+                location: location // Сохраняем location
         };
         const newState = { step: 'natural_slope_individual_sport', data: stateData };
         userStates.set(chatId, newState);
@@ -1691,13 +1721,18 @@ async function handleTextMessage(msg) {
             return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
         }
 
+        // Получаем location из текущего состояния
+        const currentState = userStates.get(chatId);
+        const location = currentState?.data?.location || 'kuliga';
+        
         // Устанавливаем состояние для записи самого клиента
         const stateData = {
                 client_id: client.id,
             client_phone: client.phone,
                 participant_type: 'self',
                 participant_id: client.id,
-                participant_name: client.full_name
+                participant_name: client.full_name,
+                location: location // Сохраняем location
         };
         const newState = { step: 'natural_slope_individual_sport', data: stateData };
         userStates.set(chatId, newState);
@@ -9241,10 +9276,16 @@ async function handleTextMessage(msg) {
 
             if (msg.text === '⛷️ Горные лыжи' || msg.text === '🏂 Сноуборд') {
                 state.data = state.data || {};
+                // Сохраняем location, если он был установлен ранее
+                const existingLocation = state.data.location;
                 state.data.selected_sport = msg.text === '🏂 Сноуборд' ? 'snowboard' : 'ski';
                 state.data.selected_sport_type = state.data.selected_sport;
                 state.data.selected_instructor_id = null;
                 state.data.selected_instructor_name = null;
+                // Восстанавливаем location, если он был
+                if (existingLocation) {
+                    state.data.location = existingLocation;
+                }
                 return promptNaturalSlopeInstructor(chatId, state);
             }
 
@@ -9597,7 +9638,7 @@ async function handleTextMessage(msg) {
                     
                     // Получаем информацию о слоте для создания бронирования
                     const slotInfo = await dbClient.query(
-                        `SELECT date, start_time, end_time FROM kuliga_schedule_slots WHERE id = $1`,
+                        `SELECT date, start_time, end_time, location FROM kuliga_schedule_slots WHERE id = $1`,
                         [slotId]
                     );
                     
@@ -9606,6 +9647,9 @@ async function handleTextMessage(msg) {
                     }
                     
                     const slotData = slotInfo.rows[0];
+                    
+                    // Получаем location из слота или из state
+                    const location = slotData.location || state.data.location || 'kuliga';
                     
                     // Получаем price_id из winter_prices
                     const priceInfoResult = await dbClient.query(
@@ -9621,9 +9665,9 @@ async function handleTextMessage(msg) {
                             client_id, booking_type, instructor_id, slot_id,
                             date, start_time, end_time, sport_type,
                             participants_count, participants_names, participants_birth_years,
-                            price_total, price_per_person, price_id,
+                            price_total, price_per_person, price_id, location,
                             status, notification_method, payer_rides
-                        ) VALUES ($1, 'individual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'telegram', true)
+                        ) VALUES ($1, 'individual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', 'telegram', true)
                         RETURNING id`,
                         [
                             kuligaClientId,
@@ -9639,6 +9683,7 @@ async function handleTextMessage(msg) {
                             price, // price_total
                             price, // price_per_person
                             priceId,
+                            location, // МИГРАЦИЯ 038: Передаем location
                         ]
                     );
                     
@@ -9724,6 +9769,9 @@ async function handleTextMessage(msg) {
                     );
                     const instructor = instructorRes.rows[0];
                     
+                    // Используем уже полученный location
+                    const locationName = getLocationDisplayName(location);
+                    
                     // Уведомляем админа
                     await notifyAdminNaturalSlopeTrainingBooking({
                         client_name: client.full_name,
@@ -9732,7 +9780,9 @@ async function handleTextMessage(msg) {
                         instructor_name: instructor?.full_name || state.data.selected_instructor_name || 'Не указан',
                         date: state.data.selected_date,
                         time: state.data.selected_time,
-                        price: price
+                        price: price,
+                        location: location,
+                        location_name: locationName
                     });
                     
                     // Уведомляем инструктора
@@ -9747,7 +9797,9 @@ async function handleTextMessage(msg) {
                             admin_percentage: instructor.admin_percentage,
                             date: state.data.selected_date,
                             time: state.data.selected_time,
-                            price: price
+                            price: price,
+                            location: location,
+                            location_name: locationName
                         });
                     }
                     
@@ -9758,13 +9810,16 @@ async function handleTextMessage(msg) {
                     const date = new Date(state.data.selected_date);
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                     
+                    // Используем уже полученный location для формирования названия места
+                    const finalLocationName = getLocationDisplayName(location);
+                    
                     // Отправляем подтверждение
                     return bot.sendMessage(chatId,
-                        `✅ Тренировка *В КУЛИГА ПАРКЕ* успешно забронирована!\n\n` +
+                        `✅ Тренировка успешно забронирована!\n\n` +
                         `👤 *Участник:* ${state.data.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate}\n` +
                         `⏰ *Время:* ${state.data.selected_time}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
+                        `🏔️ *Место:* ${finalLocationName}\n` +
                         `💰 *Стоимость:* ${price.toFixed(2)} руб.\n` +
                         `💳 *Остаток на балансе:* ${updatedBalance.toFixed(2)} руб.\n\n` +
                         `🎿 *Удачной тренировки!*`,
@@ -12444,6 +12499,12 @@ async function showNaturalSlopeAvailableDates(chatId, filters = {}) {
         conditions.push(`(ki.sport_type = $${params.length + 1} OR ki.sport_type = 'both')`);
         params.push(sportFilter);
     }
+    
+    // Фильтрация по location
+    if (filters.location && (filters.location === 'kuliga' || filters.location === 'vorona')) {
+        conditions.push(`ks.location = $${params.length + 1}`);
+        params.push(filters.location);
+    }
 
     const query = `
         SELECT DISTINCT ks.date, ks.date::text AS date_str
@@ -12518,6 +12579,12 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
             conditions.push(`(ki.sport_type = $${params.length + 1} OR ki.sport_type = 'both')`);
             params.push(sportFilter);
         }
+        
+        // Фильтрация по location
+        if (data?.location && (data.location === 'kuliga' || data.location === 'vorona')) {
+            conditions.push(`ks.location = $${params.length + 1}`);
+            params.push(data.location);
+        }
 
         // Получаем свободные индивидуальные слоты из kuliga_schedule_slots на выбранную дату
         const freeSlotsRes = await pool.query(
@@ -12572,10 +12639,13 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
         
         const d = new Date(selectedDate);
         const formattedDate = `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+        const location = data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
         return bot.sendMessage(chatId,
             `⏰ *Выберите время тренировки на ${formattedDate}:*\n\n` +
             `👤 *Участник:* ${data.participant_name}\n` +
-            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне в Кулига Парке\n\n` +
+            `🏔️ *Тип:* Индивидуальная тренировка на естественном склоне\n` +
+            `📍 *Место:* ${locationName}\n\n` +
             `📋 *Доступные слоты:*`,
             {
                 parse_mode: 'Markdown',
@@ -13458,6 +13528,10 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null, 
         state.data.client_id = clientId;
         if (sportType) {
             state.data.selected_sport = sportType;
+        }
+        // Сохраняем location, если он был передан
+        if (location) {
+            state.data.location = location;
         }
         state.data.available_dates = Array.from(dateMap.values());
         state.data.date_map = Object.fromEntries(dateMap);

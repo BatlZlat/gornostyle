@@ -641,15 +641,23 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             console.error('❌ Ошибка форматирования даты в notifyAdminNaturalSlopeTrainingBooking:', dateError, trainingData.date);
         }
 
+        // Получаем название места
+        const location = trainingData.location || 'kuliga';
+        const locationNames = {
+            'kuliga': 'База отдыха «Кулига-Клуб»',
+            'vorona': 'Воронинские горки'
+        };
+        const locationName = locationNames[location] || 'Кулига Парк';
+        
         const message = 
-            `✅ *Новая запись на ${trainingType} тренировку Кулига Парк!*\n\n` +
+            `✅ *Новая запись на ${trainingType} тренировку!*\n\n` +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
             `${participantsInfo}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || 'Не указан'}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
-            `🏔️ *Место:* Кулига Парк\n` +
+            `🏔️ *Место:* ${locationName}\n` +
             `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;
 
         for (const adminId of adminIds) {
@@ -692,6 +700,14 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             ? `👤 *Участники (${participantsCount}):* ${trainingData.participant_name}`
             : `👤 *Участник:* ${trainingData.participant_name}`;
 
+        // Получаем название места
+        const location = trainingData.location || 'kuliga';
+        const locationNames = {
+            'kuliga': 'База отдыха «Кулига-Клуб»',
+            'vorona': 'Воронинские горки'
+        };
+        const locationName = locationNames[location] || 'Кулига Парк';
+        
         const message = 
             '🎉 *Новая запись на вашу тренировку!*\n\n' +
             `*${trainingType}*\n\n` +
@@ -700,7 +716,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${trainingData.time}\n` +
-            `🏔️ *Место:* Кулига Парк\n\n` +
+            `🏔️ *Место:* ${locationName}\n\n` +
             `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
         await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
