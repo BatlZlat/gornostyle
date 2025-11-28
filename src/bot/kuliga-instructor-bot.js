@@ -124,6 +124,8 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
         }
 
         // Получаем расписание инструктора
+        // ВАЖНО: Если статус слота = 'group', значит на нем есть групповая тренировка, 
+        // поэтому JOIN должен возвращать групповую тренировку даже если ее статус не 'open' или 'confirmed'
         const scheduleRes = await pool.query(
             `SELECT 
                 ks.id,
@@ -145,6 +147,7 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                 kgt.price_per_person,
                 kgt.level as group_level,
                 kgt.sport_type as group_sport_type,
+                kgt.status as group_training_status,
                 -- Реальное количество участников из активных бронирований
                 (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
                  FROM kuliga_bookings kb_gr
@@ -159,7 +162,9 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
             LEFT JOIN kuliga_bookings kb ON ks.id = kb.slot_id AND kb.status IN ('pending', 'confirmed')
             LEFT JOIN clients c ON kb.client_id = c.id
             LEFT JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
-            LEFT JOIN kuliga_group_trainings kgt ON ks.id = kgt.slot_id AND kgt.status IN ('open', 'confirmed')
+            -- Если статус слота = 'group', обязательно возвращаем групповую тренировку (независимо от ее статуса)
+            LEFT JOIN kuliga_group_trainings kgt ON ks.id = kgt.slot_id 
+                AND (kgt.status IN ('open', 'confirmed') OR ks.status = 'group')
             WHERE ks.instructor_id = $1
               AND ks.date >= $2
               AND ks.date <= $3
@@ -213,53 +218,121 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
             message += `*${formatDate(date)}*\n`;
 
             for (const slot of slots) {
-                const timeRange = `*${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}*`;
-                
-                if (slot.status === 'available') {
-                    message += `${timeRange} - ✅ Свободно\n`;
-                } else if (slot.status === 'blocked') {
-                    message += `${timeRange} - 🚫 Заблокировано\n`;
-                } else if (slot.group_training_id) {
+                // Сначала проверяем наличие групповой тренировки (приоритет выше статуса слота)
+                if (slot.group_training_id || slot.status === 'group') {
+                    // Для занятых слотов (групповые и индивидуальные) время жирное
+                    const timeRange = `*${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}*`;
                     // Групповая тренировка
-                    const isPrivate = slot.is_private;
-                    const sportType = slot.group_sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
-                    // Используем реальное количество участников из активных бронирований
-                    const currentParticipants = parseInt(slot.real_participants_count || 0, 10);
-                    const maxParticipants = parseInt(slot.max_participants || 0, 10);
-                    // Используем реальную сумму из активных бронирований
-                    const totalPrice = parseFloat(slot.real_total_price || 0);
-                    const adminPercentage = parseFloat(slot.admin_percentage || 20);
-                    const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
-                    
-                    // Конвертируем уровень в цифры
-                    let levelDisplay = null;
-                    if (slot.group_level) {
-                        const levelStr = String(slot.group_level).trim();
-                        if (/^\d+$/.test(levelStr)) {
-                            // Уже цифра
-                            levelDisplay = parseInt(levelStr, 10);
+                    // Если group_training_id есть, используем данные из JOIN, иначе пробуем получить из БД
+                    if (slot.group_training_id) {
+                        const isPrivate = slot.is_private;
+                        const sportType = slot.group_sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                        // Используем реальное количество участников из активных бронирований
+                        const currentParticipants = parseInt(slot.real_participants_count || 0, 10);
+                        const maxParticipants = parseInt(slot.max_participants || 0, 10);
+                        // Используем реальную сумму из активных бронирований
+                        const totalPrice = parseFloat(slot.real_total_price || 0);
+                        const adminPercentage = parseFloat(slot.admin_percentage || 20);
+                        const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+                        
+                        // Конвертируем уровень в цифры
+                        let levelDisplay = null;
+                        if (slot.group_level) {
+                            const levelStr = String(slot.group_level).trim();
+                            if (/^\d+$/.test(levelStr)) {
+                                // Уже цифра
+                                levelDisplay = parseInt(levelStr, 10);
+                            } else {
+                                // Старые значения: beginner, intermediate, advanced
+                                if (levelStr === 'beginner') levelDisplay = 1;
+                                else if (levelStr === 'intermediate') levelDisplay = 2;
+                                else if (levelStr === 'advanced') levelDisplay = 3;
+                            }
+                        }
+                        
+                        if (isPrivate) {
+                            message += `${timeRange} - 👥 Групповая закрытая\n`;
                         } else {
-                            // Старые значения: beginner, intermediate, advanced
-                            if (levelStr === 'beginner') levelDisplay = 1;
-                            else if (levelStr === 'intermediate') levelDisplay = 2;
-                            else if (levelStr === 'advanced') levelDisplay = 3;
+                            message += `${timeRange} - 👥 Групповая общая\n`;
+                        }
+                        
+                        message += `  ${sportType}\n`;
+                        message += `  👤 Участников: ${currentParticipants}/${maxParticipants}\n`;
+                        if (levelDisplay !== null) {
+                            message += `  📊 Уровень: ${levelDisplay}\n`;
+                        }
+                        message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
+                    } else {
+                        // Статус 'group', но group_training_id не получен из JOIN - возможно, тренировка с другим статусом
+                        // Попробуем получить информацию напрямую из БД
+                        // Для занятых слотов (групповые и индивидуальные) время жирное
+                        const timeRange = `*${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}*`;
+                        try {
+                            const groupTrainingRes = await pool.query(
+                                `SELECT kgt.id, kgt.is_private, kgt.max_participants, kgt.price_per_person, 
+                                        kgt.level, kgt.sport_type,
+                                        (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
+                                         FROM kuliga_bookings kb_gr
+                                         WHERE kb_gr.group_training_id = kgt.id 
+                                           AND kb_gr.status IN ('pending', 'confirmed')) as real_participants_count,
+                                        (SELECT COALESCE(SUM(kb_gr.price_total), 0)::DECIMAL
+                                         FROM kuliga_bookings kb_gr
+                                         WHERE kb_gr.group_training_id = kgt.id 
+                                           AND kb_gr.status IN ('pending', 'confirmed')) as real_total_price
+                                 FROM kuliga_group_trainings kgt
+                                 JOIN kuliga_schedule_slots ks ON kgt.slot_id = ks.id
+                                 WHERE ks.id = $1 AND ks.date = $2 AND ks.start_time = $3
+                                 LIMIT 1`,
+                                [slot.id, slot.date, slot.start_time]
+                            );
+                            
+                            if (groupTrainingRes.rows.length > 0) {
+                                const gt = groupTrainingRes.rows[0];
+                                const isPrivate = gt.is_private;
+                                const sportType = gt.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                                const currentParticipants = parseInt(gt.real_participants_count || 0, 10);
+                                const maxParticipants = parseInt(gt.max_participants || 0, 10);
+                                const totalPrice = parseFloat(gt.real_total_price || 0);
+                                const adminPercentage = parseFloat(slot.admin_percentage || 20);
+                                const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
+                                
+                                let levelDisplay = null;
+                                if (gt.level) {
+                                    const levelStr = String(gt.level).trim();
+                                    if (/^\d+$/.test(levelStr)) {
+                                        levelDisplay = parseInt(levelStr, 10);
+                                    } else {
+                                        if (levelStr === 'beginner') levelDisplay = 1;
+                                        else if (levelStr === 'intermediate') levelDisplay = 2;
+                                        else if (levelStr === 'advanced') levelDisplay = 3;
+                                    }
+                                }
+                                
+                                if (isPrivate) {
+                                    message += `${timeRange} - 👥 Групповая закрытая\n`;
+                                } else {
+                                    message += `${timeRange} - 👥 Групповая общая\n`;
+                                }
+                                
+                                message += `  ${sportType}\n`;
+                                message += `  👤 Участников: ${currentParticipants}/${maxParticipants}\n`;
+                                if (levelDisplay !== null) {
+                                    message += `  📊 Уровень: ${levelDisplay}\n`;
+                                }
+                                message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
+                            } else {
+                                // Если групповая тренировка не найдена, показываем как занято
+                                message += `${timeRange} - 👥 Групповая\n`;
+                            }
+                        } catch (error) {
+                            console.error('Ошибка при получении групповой тренировки:', error);
+                            message += `${timeRange} - 👥 Групповая\n`;
                         }
                     }
-                    
-                    if (isPrivate) {
-                        message += `${timeRange} - 👥 Групповая закрытая\n`;
-                    } else {
-                        message += `${timeRange} - 👥 Групповая общая\n`;
-                    }
-                    
-                    message += `  ${sportType}\n`;
-                    message += `  👤 Участников: ${currentParticipants}/${maxParticipants}\n`;
-                    if (levelDisplay !== null) {
-                        message += `  📊 Уровень: ${levelDisplay}\n`;
-                    }
-                    message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
                 } else if (slot.status === 'booked' && slot.booking_id) {
                     // Индивидуальная тренировка
+                    // Для занятых слотов время жирное
+                    const timeRange = `*${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}*`;
                     const participantName = slot.participants_names && slot.participants_names[0] 
                         ? slot.participants_names[0] 
                         : 'Участник';
@@ -284,6 +357,14 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
                     message += `  ${sportType}\n`;
                     message += `  📱 ${slot.client_phone || 'не указан'}\n`;
                     message += `  💵 Ваш заработок: ${instructorEarnings.toFixed(2)} руб.\n`;
+                } else if (slot.status === 'available') {
+                    // Для свободных слотов время обычное (не жирное)
+                    const timeRange = `${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`;
+                    message += `${timeRange} - ✅ Свободно\n`;
+                } else if (slot.status === 'blocked') {
+                    // Для заблокированных слотов время обычное (не жирное)
+                    const timeRange = `${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`;
+                    message += `${timeRange} - 🚫 Заблокировано\n`;
                 }
             }
 
@@ -652,16 +733,56 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     }
 });
 
+// Функция для восстановления состояния инструктора из базы данных
+async function restoreInstructorState(chatId, telegramId) {
+    try {
+        // Ищем инструктора по telegram_id
+        const instructorRes = await pool.query(
+            'SELECT id, full_name, is_active FROM kuliga_instructors WHERE telegram_id = $1',
+            [telegramId]
+        );
+
+        if (instructorRes.rows.length === 0) {
+            return null;
+        }
+
+        const instructor = instructorRes.rows[0];
+
+        if (!instructor.is_active) {
+            return null;
+        }
+
+        // Восстанавливаем состояние
+        const state = {
+            instructor_id: instructor.id,
+            instructor_name: instructor.full_name
+        };
+
+        userStates.set(chatId, state);
+        return state;
+    } catch (error) {
+        console.error('Ошибка при восстановлении состояния инструктора:', error);
+        return null;
+    }
+}
+
 // Обработчик текстовых сообщений
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
+    const telegramId = msg.from.id;
 
     // Игнорируем команды
     if (text && text.startsWith('/')) return;
 
-    const state = userStates.get(chatId);
+    let state = userStates.get(chatId);
 
+    // Если состояния нет, пытаемся восстановить его из базы данных
+    if (!state || !state.instructor_id) {
+        state = await restoreInstructorState(chatId, telegramId);
+    }
+
+    // Если состояние не удалось восстановить, показываем ошибку
     if (!state || !state.instructor_id) {
         return bot.sendMessage(chatId,
             '❌ Сессия истекла. Отправьте команду /start для начала работы.'
