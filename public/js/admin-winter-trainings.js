@@ -9,6 +9,7 @@ function initWinterTrainingsPage() {
     const nextBtn = document.getElementById('winter-next-date');
     const typeFilter = document.getElementById('winter-type-filter');
     const statusFilter = document.getElementById('winter-status-filter');
+    const locationFilter = document.getElementById('winter-location-filter');
     
     // Установить текущую дату
     if (dateInput && !dateInput.value) {
@@ -44,6 +45,10 @@ function initWinterTrainingsPage() {
     
     if (statusFilter) {
         statusFilter.addEventListener('change', loadWinterTrainings);
+    }
+    
+    if (locationFilter) {
+        locationFilter.addEventListener('change', loadWinterTrainings);
     }
     
     // Делегирование событий для кнопок (устанавливается один раз при инициализации)
@@ -155,9 +160,10 @@ async function loadWinterTrainings() {
             throw new Error('Получены некорректные данные от сервера');
         }
         
-        // Фильтруем по типу и статусу, если указаны
+        // Фильтруем по типу, статусу и месту проведения, если указаны
         const typeFilter = document.getElementById('winter-type-filter');
         const statusFilter = document.getElementById('winter-status-filter');
+        const locationFilter = document.getElementById('winter-location-filter');
         
         let filteredTrainings = trainings;
         
@@ -167,6 +173,13 @@ async function loadWinterTrainings() {
         
         if (statusFilter && statusFilter.value) {
             filteredTrainings = filteredTrainings.filter(t => t.status === statusFilter.value);
+        }
+        
+        if (locationFilter && locationFilter.value) {
+            filteredTrainings = filteredTrainings.filter(t => {
+                const trainingLocation = t.location || (t.training_source === 'kuliga' ? 'kuliga' : null);
+                return trainingLocation === locationFilter.value;
+            });
         }
         
         displayWinterTrainings(filteredTrainings);
@@ -238,6 +251,7 @@ function displayWinterTrainings(trainings) {
                             <th>Тип</th>
                             <th>Название</th>
                             <th>Тренер</th>
+                            <th>Место проведения</th>
                             <th>Участников</th>
                             <th>Уровень</th>
                             <th>Цена (за чел.)</th>
@@ -335,6 +349,10 @@ function renderWinterTrainingRow(training) {
     // Тренер
     const trainer = training.trainer_name || 'Не назначен';
     
+    // Место проведения
+    const location = training.location || (training.training_source === 'kuliga' ? 'kuliga' : null);
+    const locationDisplay = location === 'vorona' ? 'Воронинские горки' : (location === 'kuliga' ? 'Кулига' : '—');
+    
     // Цена за человека
     let price = '—';
     if (training.price != null && maxParticipants > 0) {
@@ -418,6 +436,7 @@ function renderWinterTrainingRow(training) {
             <td>${type}</td>
             <td>${name}</td>
             <td>${trainer}</td>
+            <td>${locationDisplay}</td>
             <td>${currentParticipants}/${maxParticipants}</td>
             <td>${skillLevel}</td>
             <td>${price}</td>

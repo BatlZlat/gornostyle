@@ -44,7 +44,8 @@ router.post('/login', async (req, res) => {
                 username: instructor.username,
                 sportType: instructor.sportType,
                 phone: instructor.phone,
-                email: instructor.email
+                email: instructor.email,
+                location: instructor.location
             }
         });
     } catch (error) {

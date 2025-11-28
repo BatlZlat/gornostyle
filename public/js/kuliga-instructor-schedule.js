@@ -165,14 +165,79 @@ async function checkAuth() {
 
 // Загрузка информации об инструкторе
 async function loadInstructorInfo() {
-    const instructorData = localStorage.getItem('kuligaInstructorData');
-    if (!instructorData) {
+    const token = getToken();
+    if (!token) {
         return;
     }
 
     try {
-        const instructor = JSON.parse(instructorData);
-        document.getElementById('instructor-name').textContent = instructor.fullName;
+        // Сначала загружаем актуальные данные из API
+        let instructor = null;
+        try {
+            const response = await fetch('/api/kuliga/instructor/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const apiData = await response.json();
+                // Преобразуем данные из API в формат, совместимый с localStorage
+                instructor = {
+                    id: apiData.id,
+                    fullName: apiData.full_name,
+                    sportType: apiData.sport_type,
+                    phone: apiData.phone,
+                    email: apiData.email,
+                    location: apiData.location // Актуальное значение location из БД
+                };
+                // Обновляем localStorage актуальными данными
+                localStorage.setItem('kuligaInstructorData', JSON.stringify(instructor));
+                console.log('✅ Актуальные данные инструктора загружены из API, location:', instructor.location);
+            } else {
+                throw new Error('Не удалось загрузить данные из API');
+            }
+        } catch (apiError) {
+            console.warn('⚠️ Не удалось загрузить данные из API, используем данные из localStorage:', apiError);
+            // Fallback: используем данные из localStorage
+            const instructorData = localStorage.getItem('kuligaInstructorData');
+            if (instructorData) {
+                instructor = JSON.parse(instructorData);
+            } else {
+                return;
+            }
+        }
+
+        if (!instructor) {
+            return;
+        }
+        
+        // Формируем название места работы для отображения
+        const locationDisplayName = instructor.location === 'vorona' 
+            ? 'Воронинские горки' 
+            : (instructor.location === 'kuliga' || !instructor.location) 
+                ? 'Кулига' 
+                : instructor.location;
+        
+        // Обновляем заголовок страницы на основе места работы
+        const pageTitleElement = document.getElementById('page-title');
+        if (pageTitleElement) {
+            if (instructor.location === 'vorona') {
+                pageTitleElement.textContent = '🏔️ Личный кабинет инструктора (Воронинские горки)';
+            } else {
+                pageTitleElement.textContent = '🏔️ Личный кабинет инструктора (Кулига)';
+            }
+        }
+        
+        // Обновляем title страницы
+        if (instructor.location === 'vorona') {
+            document.title = 'Личный кабинет инструктора - Воронинские горки';
+        } else {
+            document.title = 'Личный кабинет инструктора - Кулига';
+        }
+        
+        // Отображаем имя инструктора с местом работы в скобках
+        document.getElementById('instructor-name').textContent = `${instructor.fullName} (${locationDisplayName})`;
         
         const sportTypeMapping = {
             'ski': 'Горные лыжи',
@@ -184,7 +249,6 @@ async function loadInstructorInfo() {
             `Вид спорта: ${sportTypeMapping[instructor.sportType] || instructor.sportType} • Телефон: ${instructor.phone}`;
         
         // Получаем имя бота из API и формируем Deep Link
-        const token = getToken();
         if (token) {
             try {
                 const botInfoResponse = await fetch('/api/kuliga/instructor/bot-info', {

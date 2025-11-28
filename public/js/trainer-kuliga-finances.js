@@ -412,7 +412,16 @@ function displayTrainings(trainings) {
     `;
 
     trainings.forEach(training => {
-        const typeText = training.booking_type === 'individual' ? 'Индивидуальная' : 'Групповая';
+        // Формируем текст типа тренировки с указанием максимального количества участников для групповых
+        let typeText;
+        if (training.booking_type === 'individual') {
+            typeText = 'Индивидуальная';
+        } else {
+            // Групповая тренировка - добавляем максимальное количество участников в скобках
+            const maxParticipants = training.max_participants || training.participants_count;
+            typeText = maxParticipants ? `Групповая (${maxParticipants})` : 'Групповая';
+        }
+        
         const sportText = training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
         
         let participantsText;

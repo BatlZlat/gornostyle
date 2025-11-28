@@ -804,7 +804,7 @@ router.get('/me', async (req, res) => {
     
     try {
         const result = await pool.query(
-            'SELECT id, full_name, sport_type, admin_percentage, phone, email FROM kuliga_instructors WHERE id = $1',
+            'SELECT id, full_name, sport_type, admin_percentage, phone, email, location FROM kuliga_instructors WHERE id = $1',
             [instructorId]
         );
         

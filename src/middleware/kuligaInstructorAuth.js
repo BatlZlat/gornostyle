@@ -134,7 +134,7 @@ const verifyKuligaInstructorCredentials = async (username, password) => {
     try {
         // Ищем инструктора по username
         const result = await pool.query(
-            `SELECT id, full_name, username, password_hash, is_active, sport_type, phone, email
+            `SELECT id, full_name, username, password_hash, is_active, sport_type, phone, email, location
              FROM kuliga_instructors 
              WHERE username = $1`,
             [username]
@@ -169,7 +169,8 @@ const verifyKuligaInstructorCredentials = async (username, password) => {
             username: instructor.username,
             sportType: instructor.sport_type,
             phone: instructor.phone,
-            email: instructor.email
+            email: instructor.email,
+            location: instructor.location
         };
     } catch (error) {
         console.error('Ошибка при проверке учетных данных инструктора Кулиги:', error);

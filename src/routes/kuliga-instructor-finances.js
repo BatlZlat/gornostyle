@@ -291,6 +291,7 @@ router.get('/trainings', async (req, res) => {
                 c.full_name as client_name,
                 c.phone as client_phone,
                 ki.admin_percentage,
+                kgt.max_participants,
                 (kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings
             FROM kuliga_bookings kb
             LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
@@ -339,6 +340,7 @@ router.get('/trainings', async (req, res) => {
                         start_time: row.start_time,
                         end_time: row.end_time,
                         sport_type: row.sport_type,
+                        max_participants: row.max_participants || null,
                         participants_count: 0,
                         participants_names: [],
                         price_total: 0,

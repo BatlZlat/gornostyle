@@ -2051,6 +2051,7 @@ async function loadKuligaInstructorsForTrainersPage() {
                     <div class="trainer-info">
                         <h3>${instructor.full_name}</h3>
                         <p>Вид спорта: ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                        <p><strong>Место работы:</strong> ${instructor.location === 'vorona' ? 'Воронинские горки' : (instructor.location === 'kuliga' || !instructor.location) ? 'База отдыха «Кулига-Клуб»' : instructor.location}</p>
                         <p>Телефон: ${instructor.phone}</p>
                         ${instructor.email ? `<p>Email: ${instructor.email}</p>` : ''}
                         ${instructor.username ? `<p>Логин: ${instructor.username}</p>` : '<p style="color: #999;">Логин не задан</p>'}
