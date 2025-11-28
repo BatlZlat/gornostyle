@@ -233,80 +233,230 @@ router.get('/', async (req, res) => {
  * GET /api/winter-trainings/archive
  * Получение архива зимних тренировок (прошедших тренировок)
  * ВАЖНО: Этот роут должен быть ПЕРЕД /:id, иначе /archive будет обрабатываться как /:id
+ * Включает тренировки из training_sessions и тренировки Кулиги (индивидуальные и групповые)
  */
 router.get('/archive', async (req, res) => {
     try {
         const { date_from, date_to, trainer_id } = req.query;
+        const moment = require('moment-timezone');
+        const TIMEZONE = 'Asia/Yekaterinburg';
         
-        let query = `
-            SELECT 
-                ts.id,
-                ts.session_date as date,
-                ts.start_time,
-                ts.end_time,
-                ts.duration,
-                ts.training_type as is_group,
-                ts.winter_training_type,
-                ts.trainer_id,
-                t.full_name as trainer_name,
-                ts.group_id,
-                g.name as group_name,
-                ts.max_participants,
-                ts.skill_level,
-                ts.price,
-                ts.status,
-                COUNT(sp.id) as current_participants,
-                ts.slope_type,
-                COALESCE(STRING_AGG(DISTINCT COALESCE(ch.full_name, c.full_name), ', ') FILTER (WHERE sp.id IS NOT NULL), '') as participant_names
-            FROM training_sessions ts
-            LEFT JOIN trainers t ON ts.trainer_id = t.id
-            LEFT JOIN groups g ON ts.group_id = g.id
-            LEFT JOIN session_participants sp ON ts.id = sp.session_id 
-                AND sp.status = 'confirmed'
-            LEFT JOIN clients c ON sp.client_id = c.id
-            LEFT JOIN children ch ON sp.child_id = ch.id
-            WHERE ts.slope_type = 'natural_slope'
-                AND (
-                    ts.session_date < CURRENT_DATE 
-                    OR (ts.session_date = CURRENT_DATE AND ts.end_time < CURRENT_TIME)
-                )
-        `;
+        // Получаем текущее время в часовом поясе для фильтрации прошедших тренировок
+        const nowInTimezone = moment().tz(TIMEZONE);
+        const currentDateStr = nowInTimezone.format('YYYY-MM-DD');
+        const currentTimeStr = nowInTimezone.format('HH:mm:ss');
+        
+        // По умолчанию показываем за текущий месяц
+        let defaultDateFrom, defaultDateTo;
+        if (!date_from || !date_to) {
+            const startOfMonth = nowInTimezone.clone().startOf('month');
+            const endOfMonth = nowInTimezone.clone().endOf('month');
+            defaultDateFrom = startOfMonth.format('YYYY-MM-DD');
+            defaultDateTo = endOfMonth.format('YYYY-MM-DD');
+        }
         
         const params = [];
         let paramIndex = 1;
         
+        // UNION запрос для объединения всех типов тренировок
+        let query = `
+            WITH archive_trainings AS (
+                -- Старые тренировки из training_sessions (групповые)
+                SELECT 
+                    ts.id,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    FALSE as is_individual,
+                    ts.winter_training_type,
+                    ts.trainer_id,
+                    t.full_name as trainer_name,
+                    ts.group_id,
+                    g.name as group_name,
+                    ts.max_participants,
+                    ts.skill_level,
+                    ts.price,
+                    ts.status,
+                    COUNT(sp.id) as current_participants,
+                    ts.slope_type,
+                    COALESCE(STRING_AGG(DISTINCT COALESCE(ch.full_name, c.full_name), ', ') FILTER (WHERE sp.id IS NOT NULL), '') as participant_names,
+                    NULL::TEXT as training_source,
+                    NULL::TEXT as kuliga_type
+                FROM training_sessions ts
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN groups g ON ts.group_id = g.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
+                LEFT JOIN clients c ON sp.client_id = c.id
+                LEFT JOIN children ch ON sp.child_id = ch.id
+                WHERE ts.slope_type = 'natural_slope'
+                    AND ts.training_type = TRUE
+                    AND (
+                        ts.session_date < '${currentDateStr}'::date 
+                        OR (ts.session_date = '${currentDateStr}'::date AND ts.end_time < '${currentTimeStr}'::time)
+                    )
+                GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
+                         ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
+                         ts.group_id, g.name, ts.max_participants, 
+                         ts.skill_level, ts.price, ts.status, ts.slope_type
+                
+                UNION ALL
+                
+                -- Старые тренировки из training_sessions (индивидуальные)
+                SELECT 
+                    ts.id,
+                    ts.session_date as date,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.duration,
+                    TRUE as is_individual,
+                    ts.winter_training_type,
+                    ts.trainer_id,
+                    t.full_name as trainer_name,
+                    ts.group_id,
+                    NULL::TEXT as group_name,
+                    ts.max_participants,
+                    ts.skill_level,
+                    ts.price,
+                    ts.status,
+                    COUNT(sp.id) as current_participants,
+                    ts.slope_type,
+                    COALESCE(STRING_AGG(DISTINCT COALESCE(ch.full_name, c.full_name), ', ') FILTER (WHERE sp.id IS NOT NULL), '') as participant_names,
+                    NULL::TEXT as training_source,
+                    NULL::TEXT as kuliga_type
+                FROM training_sessions ts
+                LEFT JOIN trainers t ON ts.trainer_id = t.id
+                LEFT JOIN session_participants sp ON ts.id = sp.session_id 
+                    AND sp.status = 'confirmed'
+                LEFT JOIN clients c ON sp.client_id = c.id AND NOT sp.is_child
+                LEFT JOIN children ch ON sp.child_id = ch.id AND sp.is_child
+                WHERE ts.slope_type = 'natural_slope'
+                    AND ts.training_type = FALSE
+                    AND (
+                        ts.session_date < '${currentDateStr}'::date 
+                        OR (ts.session_date = '${currentDateStr}'::date AND ts.end_time < '${currentTimeStr}'::time)
+                    )
+                GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
+                         ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
+                         ts.group_id, ts.max_participants, 
+                         ts.skill_level, ts.price, ts.status, ts.slope_type
+                
+                UNION ALL
+                
+                -- Групповые тренировки Кулиги (прошедшие)
+                SELECT 
+                    kgt.id,
+                    kgt.date,
+                    kgt.start_time,
+                    kgt.end_time,
+                    EXTRACT(EPOCH FROM (kgt.end_time::time - kgt.start_time::time))/60 as duration,
+                    FALSE as is_individual,
+                    'group' as winter_training_type,
+                    kgt.instructor_id as trainer_id,
+                    ki.full_name as trainer_name,
+                    NULL::INTEGER as group_id,
+                    CASE kgt.sport_type
+                        WHEN 'ski' THEN 'Групповая тренировка (Горные лыжи)'
+                        WHEN 'snowboard' THEN 'Групповая тренировка (Сноуборд)'
+                        ELSE CONCAT('Групповая тренировка (', kgt.sport_type, ')')
+                    END as group_name,
+                    kgt.max_participants,
+                    CASE 
+                        WHEN kgt.level ~ '^[0-9]+$' THEN kgt.level::INTEGER
+                        WHEN kgt.level = 'beginner' THEN 1
+                        WHEN kgt.level = 'intermediate' THEN 2
+                        WHEN kgt.level = 'advanced' THEN 3
+                        ELSE NULL
+                    END::INTEGER as skill_level,
+                    kgt.price_per_person * kgt.max_participants as price,
+                    kgt.status,
+                    COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status IN ('pending', 'confirmed')), 0)::INTEGER as current_participants,
+                    'natural_slope' as slope_type,
+                    COALESCE(
+                        STRING_AGG(
+                            DISTINCT array_to_string(kb.participants_names, ', '), 
+                            ', '
+                        ) FILTER (WHERE kb.status IN ('pending', 'confirmed') AND kb.participants_names IS NOT NULL),
+                        ''
+                    ) as participant_names,
+                    'kuliga' as training_source,
+                    'group' as kuliga_type
+                FROM kuliga_group_trainings kgt
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id
+                    AND kb.status IN ('pending', 'confirmed', 'cancelled', 'refunded')
+                WHERE (
+                    kgt.date < '${currentDateStr}'::date 
+                    OR (kgt.date = '${currentDateStr}'::date AND kgt.end_time < '${currentTimeStr}'::time)
+                )
+                GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
+                         kgt.max_participants, kgt.level, kgt.price_per_person,
+                         kgt.sport_type, kgt.status, ki.full_name
+                
+                UNION ALL
+                
+                -- Индивидуальные тренировки Кулиги (прошедшие)
+                SELECT 
+                    kb.id,
+                    kb.date,
+                    kb.start_time,
+                    kb.end_time,
+                    EXTRACT(EPOCH FROM (kb.end_time::time - kb.start_time::time))/60 as duration,
+                    TRUE as is_individual,
+                    'individual' as winter_training_type,
+                    kb.instructor_id as trainer_id,
+                    ki.full_name as trainer_name,
+                    NULL::INTEGER as group_id,
+                    NULL::TEXT as group_name,
+                    1 as max_participants,
+                    NULL::INTEGER as skill_level,
+                    kb.price_total as price,
+                    kb.status,
+                    kb.participants_count as current_participants,
+                    'natural_slope' as slope_type,
+                    COALESCE(array_to_string(kb.participants_names, ', '), '') as participant_names,
+                    'kuliga' as training_source,
+                    'individual' as kuliga_type
+                FROM kuliga_bookings kb
+                LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+                WHERE kb.booking_type = 'individual'
+                    AND (
+                        kb.date < '${currentDateStr}'::date 
+                        OR (kb.date = '${currentDateStr}'::date AND kb.end_time < '${currentTimeStr}'::time)
+                    )
+            )
+            SELECT * FROM archive_trainings WHERE 1=1
+        `;
+        
+        // Применяем фильтры
         if (date_from) {
-            query += ` AND ts.session_date >= $${paramIndex}`;
+            query += ` AND date >= $${paramIndex}`;
             params.push(date_from);
             paramIndex++;
-        } else {
-            // По умолчанию показываем тренировки за последние 30 дней
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            query += ` AND ts.session_date >= $${paramIndex}`;
-            params.push(thirtyDaysAgo.toISOString().split('T')[0]);
+        } else if (defaultDateFrom) {
+            query += ` AND date >= $${paramIndex}`;
+            params.push(defaultDateFrom);
             paramIndex++;
         }
         
         if (date_to) {
-            query += ` AND ts.session_date <= $${paramIndex}`;
+            query += ` AND date <= $${paramIndex}`;
             params.push(date_to);
+            paramIndex++;
+        } else if (defaultDateTo) {
+            query += ` AND date <= $${paramIndex}`;
+            params.push(defaultDateTo);
             paramIndex++;
         }
         
         if (trainer_id) {
-            query += ` AND ts.trainer_id = $${paramIndex}`;
+            query += ` AND trainer_id = $${paramIndex}`;
             params.push(trainer_id);
             paramIndex++;
         }
         
-        query += `
-            GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, 
-                     ts.training_type, ts.winter_training_type, ts.trainer_id, t.full_name,
-                     ts.group_id, g.name, ts.max_participants, 
-                     ts.skill_level, ts.price, ts.status, ts.slope_type
-            ORDER BY ts.session_date DESC, ts.start_time DESC
-        `;
+        query += ` ORDER BY date DESC, start_time DESC`;
         
         const result = await pool.query(query, params);
         res.json(result.rows);

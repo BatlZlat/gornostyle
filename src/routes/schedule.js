@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db/index');
+const moment = require('moment-timezone');
+
+const TIMEZONE = 'Asia/Yekaterinburg';
 
 // Получение временных слотов для конкретной даты
 router.get('/', async (req, res) => {
@@ -36,6 +39,17 @@ router.get('/admin', async (req, res) => {
         
         console.log('🔍 Запрос расписания для slope_type:', slope_type);
         
+        // Получаем текущее время в часовом поясе Asia/Yekaterinburg для фильтрации будущих тренировок
+        const nowInTimezone = moment().tz(TIMEZONE);
+        const currentDateStr = nowInTimezone.format('YYYY-MM-DD');
+        const currentTimeStr = nowInTimezone.format('HH:mm:ss');
+        
+        // Для natural_slope фильтруем только будущие тренировки
+        const isNaturalSlope = slope_type === 'natural_slope';
+        const futureFilter = isNaturalSlope 
+            ? `AND (ts.session_date > '${currentDateStr}'::date OR (ts.session_date = '${currentDateStr}'::date AND ts.end_time > '${currentTimeStr}'::time))`
+            : `AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))`;
+        
         // Запрос для групповых тренировок из training_sessions
         let groupQuery = `
             SELECT 
@@ -67,7 +81,7 @@ router.get('/admin', async (req, res) => {
                 AND sp.status = 'confirmed'
             WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
                 AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
-                AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))
+                ${futureFilter}
                 AND ts.training_type = TRUE
                 ${slope_type ? `AND ts.slope_type = '${slope_type}'` : ''}
             GROUP BY ts.id, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
@@ -141,7 +155,7 @@ router.get('/admin', async (req, res) => {
             LEFT JOIN children ch ON sp.child_id = ch.id AND sp.is_child
             WHERE ts.session_date >= CURRENT_DATE - INTERVAL '7 days'
                 AND ts.session_date <= CURRENT_DATE + INTERVAL '60 days'
-                AND (ts.status = 'scheduled' OR (ts.status = 'completed' AND (ts.session_date > CURRENT_DATE OR (ts.session_date = CURRENT_DATE AND ts.end_time > CURRENT_TIME))))
+                ${futureFilter}
                 AND ts.training_type = FALSE
                 AND ts.slope_type = 'natural_slope'
             GROUP BY ts.id, ts.session_date, ts.start_time, ts.end_time, ts.duration, ts.trainer_id, ts.simulator_id, ts.max_participants, ts.skill_level, ts.price, ts.equipment_type, ts.with_trainer, t.full_name, s.name, g.name, ts.slope_type, ts.winter_training_type, ts.status
@@ -167,6 +181,7 @@ router.get('/admin', async (req, res) => {
             
             // Запрос для групповых тренировок Кулиги
             // Вычисляем current_participants динамически из активных бронирований
+            // Для natural_slope фильтруем только будущие тренировки
             const kuligaGroupQuery = `
                 SELECT 
                     kgt.id,
@@ -218,6 +233,7 @@ router.get('/admin', async (req, res) => {
                 WHERE kgt.date >= CURRENT_DATE - INTERVAL '7 days'
                     AND kgt.date <= CURRENT_DATE + INTERVAL '60 days'
                     AND kgt.status IN ('open', 'confirmed')
+                    AND (kgt.date > '${currentDateStr}'::date OR (kgt.date = '${currentDateStr}'::date AND kgt.end_time > '${currentTimeStr}'::time))
                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
                          kgt.max_participants, kgt.level, kgt.price_per_person,
                          kgt.sport_type, kgt.status, ki.full_name
@@ -256,6 +272,7 @@ router.get('/admin', async (req, res) => {
                     AND kb.date >= CURRENT_DATE - INTERVAL '7 days'
                     AND kb.date <= CURRENT_DATE + INTERVAL '60 days'
                     AND kb.status IN ('pending', 'confirmed')
+                    AND (kb.date > '${currentDateStr}'::date OR (kb.date = '${currentDateStr}'::date AND kb.end_time > '${currentTimeStr}'::time))
             `;
             
             const [oldGroupResult, oldIndividualResult, kuligaGroupResult, kuligaIndividualResult] = await Promise.all([
