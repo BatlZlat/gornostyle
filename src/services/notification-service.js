@@ -41,7 +41,12 @@ class NotificationService {
                     t.full_name as trainer_name,
                     sp.client_id,
                     sp.child_id,
-                    sp.is_child,
+                    CASE 
+                        WHEN ch.birth_date IS NOT NULL 
+                        THEN (EXTRACT(YEAR FROM AGE(ch.birth_date)) < 18)
+                        ELSE false
+                    END as is_child,
+                    ch.birth_date as participant_birth_date,
                     c.telegram_id,
                     c.full_name as client_name,
                     ch.full_name as participant_name,
@@ -83,7 +88,12 @@ class NotificationService {
                     NULL as trainer_name,
                     its.client_id,
                     its.child_id,
-                    CASE WHEN its.child_id IS NOT NULL THEN true ELSE false END as is_child,
+                    CASE 
+                        WHEN ch.birth_date IS NOT NULL 
+                        THEN (EXTRACT(YEAR FROM AGE(ch.birth_date)) < 18)
+                        ELSE false
+                    END as is_child,
+                    ch.birth_date as participant_birth_date,
                     c.telegram_id,
                     c.full_name as client_name,
                     CASE 
@@ -124,7 +134,12 @@ class NotificationService {
                     t.full_name as trainer_name,
                     sp.client_id,
                     sp.child_id,
-                    sp.is_child,
+                    CASE 
+                        WHEN ch.birth_date IS NOT NULL 
+                        THEN (EXTRACT(YEAR FROM AGE(ch.birth_date)) < 18)
+                        ELSE false
+                    END as is_child,
+                    ch.birth_date as participant_birth_date,
                     c.telegram_id,
                     c.full_name as client_name,
                     CASE 
@@ -170,7 +185,12 @@ class NotificationService {
                     t.full_name as trainer_name,
                     sp.client_id,
                     sp.child_id,
-                    sp.is_child,
+                    CASE 
+                        WHEN ch.birth_date IS NOT NULL 
+                        THEN (EXTRACT(YEAR FROM AGE(ch.birth_date)) < 18)
+                        ELSE false
+                    END as is_child,
+                    ch.birth_date as participant_birth_date,
                     c.telegram_id,
                     c.full_name as client_name,
                     CASE 
@@ -194,6 +214,110 @@ class NotificationService {
                     AND ts.group_id IS NULL
                     AND ts.training_type = FALSE
                     AND ts.slope_type = 'natural_slope'
+                    AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Индивидуальные тренировки Кулиги (kuliga_bookings)
+                SELECT 
+                    kb.id as training_id,
+                    'individual' as training_type,
+                    kb.date,
+                    kb.start_time,
+                    kb.end_time,
+                    EXTRACT(EPOCH FROM (kb.end_time - kb.start_time)) / 60 as duration,
+                    kb.sport_type as equipment_type,
+                    NULL as skill_level,
+                    kb.price_total as price,
+                    TRUE as with_trainer, -- Индивидуальные тренировки всегда с инструктором
+                    1 as max_participants,
+                    1 as current_participants,
+                    NULL as simulator_name,
+                    NULL as group_name,
+                    ki.full_name as trainer_name,
+                    kb.client_id,
+                    NULL as child_id,
+                    FALSE as is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    COALESCE(
+                        CASE 
+                            WHEN kb.participants_names IS NOT NULL AND array_length(kb.participants_names, 1) > 0 
+                            THEN kb.participants_names[1]
+                            ELSE c.full_name
+                        END,
+                        c.full_name
+                    ) as participant_name,
+                    COALESCE(
+                        CASE 
+                            WHEN kb.participants_names IS NOT NULL AND array_length(kb.participants_names, 1) > 0 
+                            THEN kb.participants_names[1]
+                            ELSE c.full_name
+                        END,
+                        c.full_name
+                    ) as display_name,
+                    'kuliga_natural_slope' as slope_type,
+                    kb.location
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
+                WHERE kb.date = $1
+                    AND kb.booking_type = 'individual'
+                    AND kb.status IN ('pending', 'confirmed')
+                    AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Групповые тренировки Кулиги (kuliga_bookings)
+                SELECT 
+                    kb.id as training_id,
+                    'group' as training_type,
+                    kb.date,
+                    kb.start_time,
+                    kb.end_time,
+                    EXTRACT(EPOCH FROM (kb.end_time - kb.start_time)) / 60 as duration,
+                    kb.sport_type as equipment_type,
+                    kgt.level as skill_level,
+                    kb.price_total as price,
+                    TRUE as with_trainer, -- Групповые тренировки всегда с инструктором
+                    kgt.max_participants,
+                    (SELECT COALESCE(SUM(kb2.participants_count), 0)::INTEGER
+                     FROM kuliga_bookings kb2
+                     WHERE kb2.group_training_id = kgt.id 
+                       AND kb2.status IN ('pending', 'confirmed')) as current_participants,
+                    NULL as simulator_name,
+                    kgt.level as group_name,
+                    ki.full_name as trainer_name,
+                    kb.client_id,
+                    NULL as child_id,
+                    FALSE as is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    COALESCE(
+                        CASE 
+                            WHEN kb.participants_names IS NOT NULL AND array_length(kb.participants_names, 1) > 0 
+                            THEN array_to_string(kb.participants_names, ', ')
+                            ELSE c.full_name
+                        END,
+                        c.full_name
+                    ) as participant_name,
+                    COALESCE(
+                        CASE 
+                            WHEN kb.participants_names IS NOT NULL AND array_length(kb.participants_names, 1) > 0 
+                            THEN array_to_string(kb.participants_names, ', ')
+                            ELSE c.full_name
+                        END,
+                        c.full_name
+                    ) as display_name,
+                    'kuliga_natural_slope' as slope_type,
+                    kb.location
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                WHERE kb.date = $1
+                    AND kb.booking_type = 'group'
+                    AND kb.status IN ('pending', 'confirmed')
                     AND c.telegram_id IS NOT NULL
             )
             SELECT * FROM trainings_on_date
@@ -298,7 +422,15 @@ class NotificationService {
             }
 
             // Тренажер или место
-            if (training.slope_type === 'natural_slope') {
+            if (training.slope_type === 'kuliga_natural_slope') {
+                // Для тренировок Кулиги используем location из данных (если доступно)
+                const locationNames = {
+                    'kuliga': 'База отдыха «Кулига-Клуб»',
+                    'vorona': 'Воронинские горки'
+                };
+                const locationName = training.location ? locationNames[training.location] || 'Кулига Парк' : 'Кулига Парк';
+                message += `🏔 Место: ${locationName}\n`;
+            } else if (training.slope_type === 'natural_slope') {
                 message += `🏔 Место: Кулига Парк\n`;
             } else if (training.simulator_name) {
                 message += `🏔 Тренажер: ${training.simulator_name}\n`;

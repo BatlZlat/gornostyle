@@ -5999,6 +5999,12 @@ async function handleTextMessage(msg) {
                             sp.session_id,
                             sp.child_id,
                             COALESCE(c.full_name, cl.full_name) as participant_name,
+                            CASE 
+                                WHEN c.birth_date IS NOT NULL 
+                                THEN (EXTRACT(YEAR FROM AGE(c.birth_date)) < 18)
+                                ELSE false
+                            END as is_child,
+                            c.birth_date as participant_birth_date,
                             ts.session_date,
                             ts.start_time,
                             ts.duration,
@@ -6044,6 +6050,12 @@ async function handleTextMessage(msg) {
                             its.child_id,
                             its.simulator_id,
                             COALESCE(ch.full_name, cl.full_name) as participant_name,
+                            CASE 
+                                WHEN ch.birth_date IS NOT NULL 
+                                THEN (EXTRACT(YEAR FROM AGE(ch.birth_date)) < 18)
+                                ELSE false
+                            END as is_child,
+                            ch.birth_date as participant_birth_date,
                             its.preferred_date as session_date,
                             its.preferred_time as start_time,
                             (its.preferred_time + (its.duration || ' minutes')::interval)::time as end_time,
@@ -6075,6 +6087,12 @@ async function handleTextMessage(msg) {
                             sp.session_id,
                             sp.child_id,
                             COALESCE(c.full_name, cl.full_name) as participant_name,
+                            CASE 
+                                WHEN c.birth_date IS NOT NULL 
+                                THEN (EXTRACT(YEAR FROM AGE(c.birth_date)) < 18)
+                                ELSE false
+                            END as is_child,
+                            c.birth_date as participant_birth_date,
                             ts.session_date,
                             ts.start_time,
                             ts.end_time,
@@ -6136,7 +6154,10 @@ async function handleTextMessage(msg) {
                             const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                             const [hours, minutes] = session.start_time.split(':');
                             const formattedTime = `${hours}:${minutes}`;
-                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            const participantDisplayName = session.is_child 
+                                ? `${session.participant_name} (ребенок)` 
+                                : session.participant_name;
+                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                             message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                             message += `⏰ *Время:* ${formattedTime}\n`;
                             message += `👥 *Группа:* ${session.group_name}\n`;
@@ -6157,7 +6178,10 @@ async function handleTextMessage(msg) {
                             const [hours, minutes] = session.start_time.split(':');
                             const formattedTime = `${hours}:${minutes}`;
                             const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
-                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            const participantDisplayName = session.is_child 
+                                ? `${session.participant_name} (ребенок)` 
+                                : session.participant_name;
+                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                             message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                             message += `⏰ *Время:* ${formattedTime}\n`;
                             message += `👥 *Группа:* ${session.group_name}\n`;
@@ -6184,7 +6208,10 @@ async function handleTextMessage(msg) {
                             const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                             const [hours, minutes] = session.start_time.split(':');
                             const formattedTime = `${hours}:${minutes}`;
-                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            const participantDisplayName = session.is_child 
+                                ? `${session.participant_name} (ребенок)` 
+                                : session.participant_name;
+                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                             message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                             message += `⏰ *Время:* ${formattedTime}\n`;
                             message += `🎿 *Снаряжение:* ${session.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
@@ -6204,7 +6231,10 @@ async function handleTextMessage(msg) {
                             const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                             const [hours, minutes] = session.start_time.split(':');
                             const formattedTime = `${hours}:${minutes}`;
-                            message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                            const participantDisplayName = session.is_child 
+                                ? `${session.participant_name} (ребенок)` 
+                                : session.participant_name;
+                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                             message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                             message += `⏰ *Время:* ${formattedTime}\n`;
                             message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
@@ -10307,6 +10337,12 @@ async function showMyBookings(chatId) {
                     sp.session_id,
                     sp.child_id,
                     COALESCE(c.full_name, cl.full_name) as participant_name,
+                    CASE 
+                        WHEN c.birth_date IS NOT NULL 
+                        THEN (EXTRACT(YEAR FROM AGE(c.birth_date)) < 18)
+                        ELSE false
+                    END as is_child,
+                    c.birth_date as participant_birth_date,
                     ts.session_date,
                     ts.start_time,
                     ts.duration,
@@ -10517,7 +10553,10 @@ async function showMyBookings(chatId) {
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
-                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                const participantDisplayName = session.is_child 
+                    ? `${session.participant_name} (ребенок)` 
+                    : session.participant_name;
+                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                 message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `👥 *Группа:* ${session.group_name}\n`;
@@ -10539,7 +10578,10 @@ async function showMyBookings(chatId) {
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
                 const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
-                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                const participantDisplayName = session.is_child 
+                    ? `${session.participant_name} (ребенок)` 
+                    : session.participant_name;
+                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                 message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `👥 *Группа:* ${session.group_name}\n`;
@@ -10567,7 +10609,10 @@ async function showMyBookings(chatId) {
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
-                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                const participantDisplayName = session.is_child 
+                    ? `${session.participant_name} (ребенок)` 
+                    : session.participant_name;
+                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                 message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `🎿 *Снаряжение:* ${session.equipment_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂'}\n`;
@@ -10588,7 +10633,10 @@ async function showMyBookings(chatId) {
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
                 const [hours, minutes] = session.start_time.split(':');
                 const formattedTime = `${hours}:${minutes}`;
-                message += `\n${counter}. 👤 *${session.participant_name}*\n`;
+                const participantDisplayName = session.is_child 
+                    ? `${session.participant_name} (ребенок)` 
+                    : session.participant_name;
+                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
                 message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
@@ -13928,10 +13976,24 @@ async function createKuligaOwnGroupBooking(chatId, state) {
 
         let groupTrainingId;
         
+        let selectedInstructorId = state.data.selected_instructor_id;
+        let locationFromTraining = state.data.location || 'kuliga';
+        
         if (existingTrainingCheck.rows.length > 0) {
             // Слот уже занят групповой тренировкой - используем существующую
             const existingTraining = existingTrainingCheck.rows[0];
             groupTrainingId = existingTraining.id;
+            
+            // Получаем instructor_id и location из существующей тренировки
+            const existingTrainingDetails = await client.query(
+                'SELECT instructor_id, location FROM kuliga_group_trainings WHERE id = $1',
+                [groupTrainingId]
+            );
+            
+            if (existingTrainingDetails.rows.length > 0) {
+                selectedInstructorId = existingTrainingDetails.rows[0].instructor_id || selectedInstructorId;
+                locationFromTraining = existingTrainingDetails.rows[0].location || locationFromTraining;
+            }
             
             // Проверяем, есть ли свободные места
             const freePlaces = existingTraining.max_participants - existingTraining.current_participants;
@@ -13951,7 +14013,7 @@ async function createKuligaOwnGroupBooking(chatId, state) {
                 );
             }
             
-            console.log(`ℹ️ Используем существующую групповую тренировку id=${groupTrainingId} для слота ${state.data.selected_slot_id}`);
+            console.log(`ℹ️ Используем существующую групповую тренировку id=${groupTrainingId} для слота ${state.data.selected_slot_id}, инструктор ID: ${selectedInstructorId}`);
         } else {
             // Создаем новую групповую тренировку (ЗАКРЫТУЮ для "У меня своя группа")
             // is_private = TRUE означает, что к этой тренировке нельзя добавиться
@@ -13997,7 +14059,8 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         const participantsBirthYears = state.data.selected_participants.map(p => p.birthYear);
 
         // Получаем location из групповой тренировки или из state
-        const location = state.data.location || 'kuliga';
+        // locationFromTraining уже получен выше для существующей тренировки
+        const location = locationFromTraining;
         
         const bookingResult = await client.query(
             `INSERT INTO kuliga_bookings (
@@ -14043,9 +14106,10 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         await client.query('COMMIT');
 
         // Получаем данные инструктора для уведомления
+        // selectedInstructorId может быть из существующей тренировки или из state
         const instructorResult = await pool.query(
             'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
-            [state.data.selected_instructor_id]
+            [selectedInstructorId]
         );
         const instructor = instructorResult.rows[0] || {};
         const adminPercentage = instructor.admin_percentage !== null && instructor.admin_percentage !== undefined 
@@ -14056,6 +14120,7 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         setImmediate(async () => {
             try {
                 if (instructor.telegram_id) {
+                    // location уже получен выше (locationFromTraining)
                     await notifyInstructorKuligaTrainingBooking({
                         instructor_telegram_id: instructor.telegram_id,
                         instructor_name: instructor.full_name || state.data.selected_instructor_name,
@@ -14068,6 +14133,7 @@ async function createKuligaOwnGroupBooking(chatId, state) {
                         booking_type: 'group',
                         price: totalPrice,
                         admin_percentage: adminPercentage,
+                        location: location, // МИГРАЦИЯ 038: Передаем location
                     });
                 }
 
@@ -14082,6 +14148,7 @@ async function createKuligaOwnGroupBooking(chatId, state) {
                     price: totalPrice,
                     booking_type: 'group',
                     participants_count: state.data.selected_participants.length,
+                    location: location, // МИГРАЦИЯ 038: Передаем location для корректного отображения места
                 });
             } catch (notificationError) {
                 console.error('Ошибка при отправке уведомлений:', notificationError);
@@ -14281,6 +14348,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         setImmediate(async () => {
             try {
                 if (instructor.telegram_id) {
+                    // location уже получен выше на строке 14228
                     await notifyInstructorKuligaTrainingBooking({
                         instructor_telegram_id: instructor.telegram_id,
                         instructor_name: instructor.full_name || state.data.selected_instructor_name,
@@ -14292,6 +14360,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
                         booking_type: 'group',
                         price: totalPrice,
                         admin_percentage: Number(instructor.admin_percentage || 20),
+                        location: location, // МИГРАЦИЯ 038: Передаем location
                     });
                 }
 
@@ -14306,6 +14375,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
                     price: totalPrice,
                     booking_type: 'group',
                     participants_count: participants.length,
+                    location: location, // МИГРАЦИЯ 038: Передаем location для корректного отображения места
                 });
             } catch (notificationError) {
                 console.error('Ошибка при отправке уведомлений:', notificationError);

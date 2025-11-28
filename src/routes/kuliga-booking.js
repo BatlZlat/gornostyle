@@ -640,7 +640,8 @@ const createIndividualBooking = async (req, res) => {
                         admin_percentage: instructor.admin_percentage,
                         date: slot.date,
                         time: slot.start_time,
-                        price: totalPrice
+                        price: totalPrice,
+                        location: slotLocation // МИГРАЦИЯ 038: Передаем location
                     });
                 }
             } catch (notifyError) {

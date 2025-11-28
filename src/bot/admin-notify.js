@@ -671,13 +671,21 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
 // Функция для отправки уведомления инструктору о новой записи
 async function notifyInstructorKuligaTrainingBooking(trainingData) {
     try {
+        console.log(`[NOTIFY] Вызов notifyInstructorKuligaTrainingBooking для инструктора: ${trainingData.instructor_name || 'Не указан'}`);
+        console.log(`[NOTIFY] Данные:`, {
+            instructor_telegram_id: trainingData.instructor_telegram_id,
+            location: trainingData.location,
+            booking_type: trainingData.booking_type,
+            date: trainingData.date
+        });
+        
         if (!instructorBot) {
-            console.log('Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            console.log('[NOTIFY] ❌ Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
             return;
         }
 
         if (!trainingData.instructor_telegram_id) {
-            console.log(`Инструктор ${trainingData.instructor_name} не зарегистрирован в Telegram боте`);
+            console.log(`[NOTIFY] ❌ Инструктор ${trainingData.instructor_name} не зарегистрирован в Telegram боте (telegram_id отсутствует)`);
             return;
         }
 
@@ -720,9 +728,15 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
         await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
-        console.log(`✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (ID: ${trainingData.instructor_telegram_id})`);
+        console.log(`[NOTIFY] ✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (Telegram ID: ${trainingData.instructor_telegram_id}, Location: ${locationName})`);
     } catch (error) {
-        console.error('Ошибка при отправке уведомления инструктору:', error);
+        console.error('[NOTIFY] ❌ Ошибка при отправке уведомления инструктору:', error);
+        console.error('[NOTIFY] Детали ошибки:', {
+            instructor_name: trainingData.instructor_name,
+            instructor_telegram_id: trainingData.instructor_telegram_id,
+            error_message: error.message,
+            error_stack: error.stack
+        });
     }
 }
 

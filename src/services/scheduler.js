@@ -11,6 +11,12 @@ const scheduledMessagesService = require('./scheduled-messages-service');
 class Scheduler {
     constructor() {
         this.tasks = [];
+        this.isRunning = {
+            trainingReminders: false,
+            reviewRequests: false,
+            statusUpdates: false,
+            scheduledMessages: false
+        };
     }
 
     /**
@@ -42,6 +48,13 @@ class Scheduler {
         // Время в UTC для 21:00 Екатеринбурга: 21:00 - 5:00 = 16:00 UTC
         // Но для надежности используем timezone в cron
         const task = cron.schedule('0 21 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.trainingReminders) {
+                console.log(`[${new Date().toISOString()}] Задача отправки напоминаний уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.trainingReminders = true;
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
             
@@ -60,6 +73,8 @@ class Scheduler {
                 
                 // Уведомляем администратора об ошибке
                 await this.notifyAdminError(error);
+            } finally {
+                this.isRunning.trainingReminders = false;
             }
         }, {
             scheduled: true,
@@ -83,6 +98,13 @@ class Scheduler {
     scheduleReviewRequests() {
         // Запускаем в 21:00 - сразу после завершения тренировок
         const task = cron.schedule('0 21 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.reviewRequests) {
+                console.log(`[${new Date().toISOString()}] Задача отправки запросов на отзывы уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.reviewRequests = true;
             const today = new Date();
             
             try {
@@ -100,6 +122,8 @@ class Scheduler {
                 
                 // Уведомляем администратора об ошибке
                 await this.notifyAdminErrorReviews(error);
+            } finally {
+                this.isRunning.reviewRequests = false;
             }
         }, {
             scheduled: true,
