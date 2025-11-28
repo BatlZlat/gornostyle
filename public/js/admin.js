@@ -2130,6 +2130,14 @@ async function editKuligaInstructorForTrainersPage(id) {
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="kuliga_location">Место работы:</label>
+                        <select id="kuliga_location" name="location" required>
+                            <option value="kuliga" ${(instructor.location || 'kuliga') === 'kuliga' ? 'selected' : ''}>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona" ${instructor.location === 'vorona' ? 'selected' : ''}>Воронинские горки</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">Место проведения тренировок инструктора</small>
+                    </div>
+                    <div class="form-group">
                         <label for="kuliga_phone">Телефон:</label>
                         <input type="tel" id="kuliga_phone" name="phone" value="${instructor.phone}" required>
                     </div>
@@ -2231,6 +2239,7 @@ async function editKuligaInstructorForTrainersPage(id) {
                     photoUrl: photoUrl || null,
                     description: formData.get('description') || null,
                     sportType: formData.get('sport_type'),
+                    location: formData.get('location') || 'kuliga',
                     adminPercentage: adminPercentage,
                     hireDate: formData.get('hire_date'),
                     isActive: formData.get('is_active') === 'true'

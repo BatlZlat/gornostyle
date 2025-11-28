@@ -28,6 +28,16 @@
         <form id="kuligaBookingForm" class="kuliga-booking-form" novalidate>
             <section class="kuliga-booking-section">
                 <h2>1. Параметры тренировки</h2>
+                <div class="kuliga-form-grid">
+                    <label class="kuliga-field kuliga-field--full">
+                        <span>Место проведения тренировки *</span>
+                        <select id="kuligaLocation" class="kuliga-select" required>
+                            <option value="kuliga" selected>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona">Воронинские горки</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">Выберите место, где будет проходить тренировка</small>
+                    </label>
+                </div>
                 <div id="kuligaSelectionSummary" class="kuliga-selection-card">
                     <div class="kuliga-selection-card__title" data-selection-title>Загрузка параметров...</div>
                     <ul class="kuliga-selection-card__details" data-selection-details></ul>
@@ -213,6 +223,7 @@
             botUsername: '<%= kuligaClientBotUsername || '' %>'
         };
     </script>
+    <script src="/js/location-mapper.js"></script>
     <script src="/js/kuliga-booking.js" defer></script>
     <%- include('partials/analytics'); %>
 </body>

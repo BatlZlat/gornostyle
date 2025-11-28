@@ -168,6 +168,7 @@ function renderKuligaInstructors() {
                 <div class="kuliga-instructor-info">
                     <h4>${instructor.full_name}</h4>
                     <p><strong>Вид спорта:</strong> ${mapSportLabel(instructor.sport_type)}</p>
+                    <p><strong>Место работы:</strong> ${instructor.location === 'vorona' ? 'Воронинские горки' : 'База отдыха «Кулига-Клуб»'}</p>
                     <p><strong>Телефон:</strong> ${instructor.phone}</p>
                     ${instructor.email ? `<p><strong>Email:</strong> ${instructor.email}</p>` : ''}
                     <p><strong>Процент администратора:</strong> ${Number(instructor.admin_percentage).toFixed(2)}%</p>
@@ -270,6 +271,7 @@ function openKuligaInstructorModal(instructorId = null) {
         document.getElementById('kuliga-instructor-email').value = instructor.email || '';
         document.getElementById('kuliga-instructor-description').value = instructor.description || '';
         document.getElementById('kuliga-instructor-sport').value = instructor.sport_type;
+        document.getElementById('kuliga-instructor-location').value = instructor.location || 'kuliga';
         document.getElementById('kuliga-instructor-percentage').value = Number(instructor.admin_percentage).toFixed(2);
         document.getElementById('kuliga-instructor-hire-date').value = instructor.hire_date || '';
         document.getElementById('kuliga-instructor-active').checked = instructor.is_active;
@@ -338,6 +340,7 @@ async function handleKuligaInstructorSubmit(event) {
         photoUrl: kuligaRemovePhoto ? null : document.getElementById('kuliga-instructor-photo-url').value || null,
         description: document.getElementById('kuliga-instructor-description').value.trim() || null,
         sportType: document.getElementById('kuliga-instructor-sport').value,
+        location: document.getElementById('kuliga-instructor-location').value || 'kuliga',
         adminPercentage: percentageValue,
         hireDate: document.getElementById('kuliga-instructor-hire-date').value || null,
         isActive: document.getElementById('kuliga-instructor-active').checked,

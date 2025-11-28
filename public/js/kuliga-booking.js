@@ -39,6 +39,7 @@
     const telegramHint = document.getElementById('kuligaTelegramHint');
     const telegramLink = document.getElementById('kuligaTelegramLink');
     const consentCheckbox = document.getElementById('kuligaConsent');
+    const locationSelect = document.getElementById('kuligaLocation');
 
     const botUsername = (window.KULIGA_BOOKING_CONFIG && window.KULIGA_BOOKING_CONFIG.botUsername) || '';
     if (botUsername) {
@@ -83,6 +84,7 @@
         payerParticipation: 'self', // self | other
         participants: [],
         sportType: 'ski',
+        location: 'kuliga', // МИГРАЦИЯ 038: Место проведения тренировки
         date: '',
         slot: null,
         availability: [],
@@ -438,6 +440,10 @@
             radio.checked = radio.value === state.sportType;
         });
 
+        if (locationSelect) {
+            locationSelect.value = state.location || 'kuliga';
+        }
+
         dateInput.value = state.date || '';
 
         notifyEmailCheckbox.checked = Boolean(state.notification.email);
@@ -496,6 +502,21 @@
         scheduleSaveState();
         if (state.date) {
             loadAvailability();
+        }
+    }
+
+    function handleLocationChange() {
+        if (!locationSelect) return;
+        const newLocation = locationSelect.value || 'kuliga';
+        if (state.location !== newLocation) {
+            state.location = newLocation;
+            state.slot = null;
+            state.availability = [];
+            renderAvailability();
+            scheduleSaveState();
+            if (state.date) {
+                loadAvailability();
+            }
         }
     }
 
@@ -687,6 +708,7 @@
             date: state.date,
             slotId: state.slot.slot_id,
             instructorId: state.slot.instructor_id,
+            location: state.location || 'kuliga', // МИГРАЦИЯ 038: Передаем location при создании бронирования
             startTime: state.slot.start_time,
             endTime: state.slot.end_time,
             participantsCount: participants.length,
@@ -756,6 +778,7 @@
             date: state.date,
             sport: state.sportType,
             duration: String(state.selection.duration),
+            location: state.location || 'kuliga', // МИГРАЦИЯ 038: Передаем location в API
         });
 
         try {
@@ -809,6 +832,10 @@
 
         notifyEmailCheckbox.addEventListener('change', handleNotificationChange);
         notifyTelegramCheckbox.addEventListener('change', handleNotificationChange);
+
+        if (locationSelect) {
+            locationSelect.addEventListener('change', handleLocationChange);
+        }
 
         dateInput.addEventListener('change', handleDateChange);
         form.addEventListener('submit', handleSubmit);

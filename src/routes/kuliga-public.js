@@ -1,6 +1,7 @@
 const express = require('express');
 const moment = require('moment-timezone');
 const { pool } = require('../db');
+const { isValidLocation } = require('../utils/location-mapper');
 
 moment.locale('ru');
 
@@ -119,18 +120,27 @@ router.get('/api/kuliga/prices', async (_req, res) => {
     }
 });
 
-router.get('/api/kuliga/group-trainings', async (_req, res) => {
+router.get('/api/kuliga/group-trainings', async (req, res) => {
+    const { location } = req.query;
+    
     try {
-        const { rows } = await pool.query(
-            `SELECT id, instructor_id, date, start_time, end_time,
+        let query = `SELECT id, instructor_id, date, start_time, end_time,
                     sport_type, level, description, price_per_person,
-                    max_participants, min_participants, current_participants, status
+                    max_participants, min_participants, current_participants, status, location
              FROM kuliga_group_trainings
              WHERE date >= CURRENT_DATE
-               AND status IN ('open', 'confirmed')
-             ORDER BY date, start_time
-             LIMIT 20`
-        );
+               AND status IN ('open', 'confirmed')`;
+        const params = [];
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            query += ` AND location = $${params.length}`;
+        }
+        
+        query += ' ORDER BY date, start_time LIMIT 20';
+        
+        const { rows } = await pool.query(query, params);
         res.json({ success: true, data: rows });
     } catch (error) {
         console.error('Ошибка получения групповых тренировок Кулиги:', error);
@@ -140,19 +150,29 @@ router.get('/api/kuliga/group-trainings', async (_req, res) => {
 
 router.get('/api/kuliga/instructors', async (req, res) => {
     try {
+        const { location } = req.query;
+        
         // Поддержка навигации по неделям (weekOffset: 0 = текущая неделя, 1 = следующая и т.д.)
         const weekOffset = parseInt(req.query.weekOffset || '0', 10);
         const days = buildWeekContext(weekOffset);
         const startDate = days[0].iso;
         const endDate = days[days.length - 1].iso;
 
-        const instructorsResult = await pool.query(
-            `SELECT id, full_name, phone, email, photo_url, description,
-                    sport_type, admin_percentage, telegram_registered
+        let instructorsQuery = `SELECT id, full_name, phone, email, photo_url, description,
+                    sport_type, admin_percentage, telegram_registered, location
              FROM kuliga_instructors
-             WHERE is_active = TRUE
-             ORDER BY full_name`
-        );
+             WHERE is_active = TRUE`;
+        const params = [];
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            instructorsQuery += ` AND location = $${params.length}`;
+        }
+        
+        instructorsQuery += ' ORDER BY full_name';
+        
+        const instructorsResult = await pool.query(instructorsQuery, params);
 
         const instructorIds = instructorsResult.rows.map((i) => i.id);
         let slots = [];

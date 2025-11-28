@@ -1184,15 +1184,15 @@ async function promptNaturalSlopeInstructor(chatId, state) {
 }
 
 function showNaturalSlopeTrainingMenu(chatId) {
-    userStates.set(chatId, { step: 'natural_slope_training_menu', data: {} });
+    userStates.set(chatId, { step: 'natural_slope_location_selection', data: {} });
     return bot.sendMessage(chatId,
-        '🏔️ *Естественный склон (Кулига Парк)*\n\nВыберите тип тренировки:',
+        '🏔️ *Естественный склон*\n\nВыберите место проведения тренировки:',
         {
             parse_mode: 'Markdown',
             reply_markup: {
                 keyboard: [
-                    ['🏔️ Индивидуальная тренировка'],
-                    ['👥 Групповая тренировка'],
+                    ['🏔️ База отдыха «Кулига-Клуб»'],
+                    ['⛰️ Воронинские горки'],
                     ['🔙 Назад']
                 ],
                 resize_keyboard: true
@@ -1605,10 +1605,13 @@ async function handleTextMessage(msg) {
             return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
         }
 
+        const currentState = userStates.get(chatId);
+        const location = currentState?.data?.location || 'kuliga';
+
         // Показываем выбор типа групповой тренировки
         userStates.set(chatId, {
             step: 'kuliga_group_type_selection',
-            data: { client_id: client.id }
+            data: { client_id: client.id, location: location }
         });
             
             return bot.sendMessage(chatId,
@@ -1637,8 +1640,11 @@ async function handleTextMessage(msg) {
             return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
         }
 
+        const currentState = userStates.get(chatId);
+        const location = currentState?.data?.location || 'kuliga';
+
         // Показываем доступные групповые тренировки на естественном склоне
-        return showAvailableGroupTrainings(chatId, client.id);
+        return showAvailableGroupTrainings(chatId, client.id, location);
     }
 
     // Обработка выбора участника для индивидуальной тренировки (естественный склон)
@@ -8020,18 +8026,75 @@ async function handleTextMessage(msg) {
             return;
         }
 
-        case 'natural_slope_training_menu': {
+        case 'natural_slope_location_selection': {
             if (msg.text === '🔙 Назад') {
                 userStates.delete(chatId);
                 return showMainMenu(chatId);
+            }
+            
+            let location = null;
+            if (msg.text === '🏔️ База отдыха «Кулига-Клуб»') {
+                location = 'kuliga';
+            } else if (msg.text === '⛰️ Воронинские горки') {
+                location = 'vorona';
+            } else {
+                return bot.sendMessage(chatId, 'Пожалуйста, выберите место проведения или нажмите "🔙 Назад".');
+            }
+            
+            const client = await getClientByTelegramId(msg.from.id.toString());
+            if (!client) {
+                return bot.sendMessage(chatId, '❌ Пожалуйста, сначала зарегистрируйтесь.');
+            }
+            
+            state.data = state.data || {};
+            state.data.location = location;
+            state.step = 'natural_slope_training_menu';
+            userStates.set(chatId, state);
+            
+            return bot.sendMessage(chatId,
+                `🏔️ *Естественный склон${location === 'kuliga' ? ' (Кулига)' : ' (Воронинские горки)'}*\n\nВыберите тип тренировки:`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['🏔️ Индивидуальная тренировка'],
+                            ['👥 Групповая тренировка'],
+                            ['🔙 Назад']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        case 'natural_slope_training_menu': {
+            if (msg.text === '🔙 Назад') {
+                state.step = 'natural_slope_location_selection';
+                userStates.set(chatId, state);
+                return showNaturalSlopeTrainingMenu(chatId);
             }
             return bot.sendMessage(chatId, 'Пожалуйста, выберите тип тренировки или нажмите "🔙 Назад".');
         }
 
         case 'kuliga_group_type_selection': {
             if (msg.text === '🔙 Назад') {
-                userStates.delete(chatId);
-                return showNaturalSlopeTrainingMenu(chatId);
+                state.step = 'natural_slope_training_menu';
+                userStates.set(chatId, state);
+                const location = state.data?.location || 'kuliga';
+                return bot.sendMessage(chatId,
+                    `🏔️ *Естественный склон${location === 'kuliga' ? ' (Кулига)' : ' (Воронинские горки)'}*\n\nВыберите тип тренировки:`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🏔️ Индивидуальная тренировка'],
+                                ['👥 Групповая тренировка'],
+                                ['🔙 Назад']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
             }
 
             if (msg.text === '👥 У меня своя группа') {
@@ -8140,7 +8203,8 @@ async function handleTextMessage(msg) {
                 state.data.selected_sport = msg.text === '🏂 Сноуборд' ? 'snowboard' : 'ski';
                 state.step = 'kuliga_group_existing_date';
                 userStates.set(chatId, state);
-                return showKuligaGroupTrainingDates(chatId, state.data.client_id, state.data.selected_sport);
+                const location = state.data.location || 'kuliga';
+                return showKuligaGroupTrainingDates(chatId, state.data.client_id, state.data.selected_sport, location);
             }
 
             return bot.sendMessage(chatId, 'Пожалуйста, выберите вид спорта или нажмите "🔙 Назад".');
@@ -8472,7 +8536,8 @@ async function handleTextMessage(msg) {
 
         case 'kuliga_group_existing_time': {
             if (msg.text === '🔙 Назад') {
-                return showKuligaGroupTrainingDates(chatId, state.data.client_id);
+                const location = state.data.location || 'kuliga';
+                return showKuligaGroupTrainingDates(chatId, state.data.client_id, null, location);
             }
 
             // Находим выбранную тренировку
@@ -12536,12 +12601,19 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
 }
 
 // Функция показа доступных групповых тренировок для зимнего направления
-async function showAvailableGroupTrainings(chatId, clientId) {
+async function showAvailableGroupTrainings(chatId, clientId, location = 'kuliga') {
     try {
         // Получаем групповые тренировки на естественном склоне из kuliga_group_trainings
         const startDate = new Date();
         const endDate = new Date();
         endDate.setDate(startDate.getDate() + 14); // Увеличиваем до 14 дней для соответствия сайту
+        
+        const params = [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]];
+        let locationFilter = '';
+        if (location && (location === 'kuliga' || location === 'vorona')) {
+            params.push(location);
+            locationFilter = `AND kgt.location = $${params.length}`;
+        }
         
         const result = await pool.query(
             `SELECT 
@@ -12567,6 +12639,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                 AND kgt.is_private = FALSE
                 AND kgt.date >= $1::date
                 AND kgt.date <= $2::date
+                ${locationFilter}
                 AND (
                     kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                     OR (
@@ -12579,7 +12652,7 @@ async function showAvailableGroupTrainings(chatId, clientId) {
                      kgt.max_participants, kgt.status, ki.full_name, ki.phone
             HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
             ORDER BY kgt.date, kgt.start_time`,
-            [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
+            params
         );
         
         if (result.rows.length === 0) {
@@ -13077,8 +13150,16 @@ async function purchaseSubscription(chatId, clientId, subscriptionTypeId) {
 async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
     try {
         const sportType = data.selected_sport || 'ski';
+        const location = data.location || 'kuliga';
         const now = moment().tz('Asia/Yekaterinburg');
         const endDate = now.clone().add(30, 'days');
+
+        const params = [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD'), sportType];
+        let locationFilter = '';
+        if (location && (location === 'kuliga' || location === 'vorona')) {
+            params.push(location);
+            locationFilter = `AND ks.location = $${params.length}`;
+        }
 
         // Получаем даты с доступными слотами
         const slotsResult = await pool.query(
@@ -13090,6 +13171,7 @@ async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
                AND ks.status = 'available'
                AND ki.is_active = TRUE
                AND (ki.sport_type = $3 OR ki.sport_type = 'both')
+               ${locationFilter}
                AND (
                    ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                    OR (
@@ -13099,7 +13181,7 @@ async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
                )
              ORDER BY ks.date
              LIMIT 30`,
-            [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD'), sportType]
+            params
         );
 
         if (slotsResult.rows.length === 0) {
@@ -13175,6 +13257,14 @@ async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
 async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
     try {
         const sportType = data.selected_sport || 'ski';
+        const location = data.location || 'kuliga';
+
+        const params = [selectedDate, sportType];
+        let locationFilter = '';
+        if (location && (location === 'kuliga' || location === 'vorona')) {
+            params.push(location);
+            locationFilter = `AND ks.location = $${params.length}`;
+        }
 
         // Получаем доступные слоты на выбранную дату
         const slotsResult = await pool.query(
@@ -13190,6 +13280,7 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
                )
                AND ki.is_active = TRUE
                AND (ki.sport_type = $2 OR ki.sport_type = 'both')
+               ${locationFilter}
                AND (
                    ks.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                    OR (
@@ -13198,7 +13289,7 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
                    )
                )
              ORDER BY ks.start_time`,
-            [selectedDate, sportType]
+            params
         );
 
         if (slotsResult.rows.length === 0) {
@@ -13280,7 +13371,7 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
 /**
  * Показ дат с групповыми тренировками для "Записаться в группу"
  */
-async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null) {
+async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null, location = 'kuliga') {
     try {
         const now = moment().tz('Asia/Yekaterinburg');
         const endDate = now.clone().add(30, 'days');
@@ -13289,10 +13380,16 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null) 
         // ВАЖНО: Исключаем приватные тренировки (is_private = TRUE) - к ним нельзя добавиться
         // ВАЖНО: Подсчитываем участников из активных бронирований (status IN ('pending', 'confirmed'))
         let sportFilter = '';
+        let locationFilter = '';
         const params = [now.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')];
         if (sportType) {
             sportFilter = 'AND kgt.sport_type = $3';
             params.push(sportType);
+        }
+        if (location && (location === 'kuliga' || location === 'vorona')) {
+            const paramIndex = params.length + 1;
+            locationFilter = `AND kgt.location = $${paramIndex}`;
+            params.push(location);
         }
 
         const datesResult = await pool.query(
@@ -13307,6 +13404,7 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null) 
                AND kgt.is_private = FALSE
                AND ki.is_active = TRUE
                ${sportFilter}
+               ${locationFilter}
                AND (
                    kgt.date > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::date
                    OR (
@@ -13824,13 +13922,16 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         const participantsNames = state.data.selected_participants.map(p => p.fullName);
         const participantsBirthYears = state.data.selected_participants.map(p => p.birthYear);
 
+        // Получаем location из групповой тренировки или из state
+        const location = state.data.location || 'kuliga';
+        
         const bookingResult = await client.query(
             `INSERT INTO kuliga_bookings (
                 client_id, booking_type, instructor_id, slot_id, group_training_id,
                 date, start_time, end_time, sport_type,
                 participants_count, participants_names, participants_birth_years,
-                price_id, price_total, price_per_person, status
-            ) VALUES ($1, 'group', NULL, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'confirmed')
+                price_id, price_total, price_per_person, location, status
+            ) VALUES ($1, 'group', NULL, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'confirmed')
             RETURNING id`,
             [
                 state.data.client_id,
@@ -13845,6 +13946,7 @@ async function createKuligaOwnGroupBooking(chatId, state) {
                 state.data.price_id,
                 totalPrice,
                 state.data.price_per_person,
+                location, // МИГРАЦИЯ 038: Передаем location
             ]
         );
 
@@ -14044,13 +14146,20 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         const participantsNames = participants.map(p => p.fullName);
         const participantsBirthYears = participants.map(p => p.birthYear);
 
+        // Получаем location из групповой тренировки
+        const trainingLocationResult = await client.query(
+            'SELECT location FROM kuliga_group_trainings WHERE id = $1',
+            [state.data.selected_training_id]
+        );
+        const location = trainingLocationResult.rows[0]?.location || state.data.location || 'kuliga';
+        
         const bookingResult = await client.query(
             `INSERT INTO kuliga_bookings (
                 client_id, booking_type, group_training_id,
                 date, start_time, end_time, sport_type,
                 participants_count, participants_names, participants_birth_years,
-                price_total, price_per_person, status
-            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'confirmed')
+                price_total, price_per_person, location, status
+            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'confirmed')
             RETURNING id`,
             [
                 state.data.client_id,
@@ -14064,6 +14173,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
                 participantsBirthYears,
                 totalPrice,
                 training.price_per_person,
+                location, // МИГРАЦИЯ 038: Передаем location
             ]
         );
 

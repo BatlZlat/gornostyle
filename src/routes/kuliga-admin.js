@@ -6,6 +6,7 @@ const sharp = require('sharp');
 const bcrypt = require('bcrypt');
 const { pool } = require('../db');
 const { verifyToken } = require('../middleware/auth');
+const { isValidLocation } = require('../utils/location-mapper');
 
 const router = express.Router();
 
@@ -126,24 +127,31 @@ router.use(verifyToken);
 // ВАЖНО: Этот endpoint используется для общего списка инструкторов (без фильтрации по слотам)
 // Для фильтрации по дате и виду спорта используется другой endpoint ниже
 router.get('/instructors', async (req, res) => {
-    const { status = 'active', sport = 'all', date, sport_type } = req.query;
+    const { status = 'active', sport = 'all', date, sport_type, location } = req.query;
 
     // Если переданы date и sport_type, используем логику фильтрации по слотам
     if (date && sport_type && ['ski', 'snowboard'].includes(sport_type)) {
         try {
-            console.log('🔍 Запрос инструкторов с фильтрацией по слотам:', { date, sport_type });
+            console.log('🔍 Запрос инструкторов с фильтрацией по слотам:', { date, sport_type, location });
             
-            const { rows } = await pool.query(
-                `SELECT DISTINCT i.id, i.full_name, i.sport_type, i.photo_url
+            let query = `SELECT DISTINCT i.id, i.full_name, i.sport_type, i.photo_url, i.location
                  FROM kuliga_instructors i
                  JOIN kuliga_schedule_slots s ON s.instructor_id = i.id
                  WHERE s.date = $1
                    AND s.status = 'available'
                    AND i.is_active = TRUE
-                   AND (i.sport_type = $2 OR i.sport_type = 'both')
-                 ORDER BY i.full_name ASC`,
-                [date, sport_type]
-            );
+                   AND (i.sport_type = $2 OR i.sport_type = 'both')`;
+            const params = [date, sport_type];
+            
+            // Фильтр по location, если указан
+            if (location && isValidLocation(location)) {
+                params.push(location);
+                query += ` AND i.location = $${params.length}`;
+            }
+            
+            query += ' ORDER BY i.full_name ASC';
+            
+            const { rows } = await pool.query(query, params);
             
             console.log('📊 Найденные инструкторы из БД:', rows);
             
@@ -163,10 +171,10 @@ router.get('/instructors', async (req, res) => {
 
     // Обычный список инструкторов без фильтрации по слотам
     try {
-        // Явно указываем все поля, включая plain_password, чтобы гарантировать его возврат
+        // Явно указываем все поля, включая plain_password и location
         let query = `SELECT id, full_name, phone, email, photo_url, description, sport_type, 
                             admin_percentage, hire_date, dismissal_date, is_active, 
-                            username, password_hash, plain_password, telegram_id,
+                            username, password_hash, plain_password, telegram_id, location,
                             created_at, updated_at
                      FROM kuliga_instructors WHERE 1=1`;
         const params = [];
@@ -180,6 +188,12 @@ router.get('/instructors', async (req, res) => {
         if (sport !== 'all') {
             params.push(sport);
             query += ` AND (sport_type = $${params.length} OR sport_type = 'both')`;
+        }
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            query += ` AND location = $${params.length}`;
         }
 
         query += ' ORDER BY full_name ASC';
@@ -201,11 +215,11 @@ router.get('/instructors/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Явно указываем все поля, включая plain_password
+        // Явно указываем все поля, включая plain_password и location
         const { rows } = await pool.query(
             `SELECT id, full_name, phone, email, photo_url, description, sport_type, 
                     admin_percentage, hire_date, dismissal_date, is_active, 
-                    username, password_hash, plain_password, telegram_id,
+                    username, password_hash, plain_password, telegram_id, location,
                     created_at, updated_at
              FROM kuliga_instructors WHERE id = $1`, 
             [id]
@@ -235,6 +249,7 @@ router.post('/instructors', async (req, res) => {
         adminPercentage = 20.0,
         hireDate,
         isActive = true,
+        location = 'kuliga',
     } = req.body;
 
     if (!fullName || !phone || !sportType) {
@@ -246,6 +261,10 @@ router.post('/instructors', async (req, res) => {
     if (!['ski', 'snowboard', 'both'].includes(sportType)) {
         return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
     }
+    
+    if (!isValidLocation(location)) {
+        return res.status(400).json({ success: false, error: 'Недопустимое место работы. Укажите: kuliga или vorona' });
+    }
 
     try {
         const normalizedHireDate = normalizeDate(hireDate);
@@ -255,8 +274,8 @@ router.post('/instructors', async (req, res) => {
         const { rows } = await pool.query(
             `INSERT INTO kuliga_instructors (
                 full_name, phone, email, photo_url, description, sport_type, 
-                admin_percentage, hire_date, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                admin_percentage, hire_date, is_active, location
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *`,
             [
                 fullName,
@@ -268,6 +287,7 @@ router.post('/instructors', async (req, res) => {
                 percentage,
                 normalizedHireDate,
                 isActive,
+                location,
             ]
         );
 
@@ -297,6 +317,7 @@ router.put('/instructors/:id', async (req, res) => {
         isActive,
         username,
         password,
+        location,
     } = req.body;
 
     if (!fullName || !phone || !sportType) {
@@ -305,6 +326,11 @@ router.put('/instructors/:id', async (req, res) => {
 
     if (!['ski', 'snowboard', 'both'].includes(sportType)) {
         return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+    
+    // Валидация location, если указан
+    if (location !== undefined && !isValidLocation(location)) {
+        return res.status(400).json({ success: false, error: 'Недопустимое место работы. Укажите: kuliga или vorona' });
     }
 
     try {
@@ -363,6 +389,57 @@ router.put('/instructors/:id', async (req, res) => {
             // Сохраняем также plain password для удобства администратора
             updateFields.push(`plain_password = $${paramIndex}`);
             updateValues.push(password.trim());
+            paramIndex++;
+        }
+        
+        // Обработка location с проверкой на активные слоты/тренировки
+        if (location !== undefined) {
+            // Получаем текущего инструктора
+            const currentInstructor = await pool.query(
+                'SELECT location FROM kuliga_instructors WHERE id = $1',
+                [id]
+            );
+            
+            if (currentInstructor.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Инструктор не найден' });
+            }
+            
+            const currentLocation = currentInstructor.rows[0].location;
+            
+            // Если location меняется, проверяем наличие активных слотов/тренировок в будущем
+            if (currentLocation !== location) {
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Проверяем наличие активных слотов в будущем
+                const activeSlotsResult = await pool.query(
+                    `SELECT COUNT(*) as count FROM kuliga_schedule_slots
+                     WHERE instructor_id = $1 AND date >= $2`,
+                    [id, today]
+                );
+                
+                // Проверяем наличие активных групповых тренировок в будущем
+                const activeTrainingsResult = await pool.query(
+                    `SELECT COUNT(*) as count FROM kuliga_group_trainings kgt
+                     JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
+                     WHERE kss.instructor_id = $1 AND kgt.date >= $2
+                       AND kgt.status IN ('open', 'confirmed')`,
+                    [id, today]
+                );
+                
+                const activeSlotsCount = parseInt(activeSlotsResult.rows[0].count, 10);
+                const activeTrainingsCount = parseInt(activeTrainingsResult.rows[0].count, 10);
+                
+                if (activeSlotsCount > 0 || activeTrainingsCount > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Невозможно изменить место работы инструктора. Найдено активных слотов: ${activeSlotsCount}, активных групповых тренировок: ${activeTrainingsCount}. Сначала удалите или завершите все будущие тренировки.`
+                    });
+                }
+            }
+            
+            // Добавляем location в UPDATE
+            updateFields.push(`location = $${paramIndex}`);
+            updateValues.push(location);
             paramIndex++;
         }
         

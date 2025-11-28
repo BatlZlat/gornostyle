@@ -1,8 +1,8 @@
 -- ============================================================================
 -- СХЕМА БАЗЫ ДАННЫХ
 -- ============================================================================
--- Последнее обновление: 18 ноября 2025
--- Версия: 2.1.1
+-- Последнее обновление: 2025
+-- Версия: 2.1.2
 --
 -- СТРУКТУРА ФАЙЛА:
 -- 1. ТАБЛИЦЫ (CREATE TABLE)
@@ -51,6 +51,12 @@
 --      - Поддержка периодов выплат, статусов, способов выплаты
 --      - Интеграция с kuliga_bookings для расчета заработка
 --      - Автоматический расчет комиссии администратора
+-- 038: ДОБАВЛЕНИЕ ПОЛЯ LOCATION ДЛЯ ПОДДЕРЖКИ ВОРОНИНСКИХ ГОРОК (2025)
+--      - Добавлено поле location VARCHAR(20) во все таблицы kuliga_*
+--      - Поддерживаемые значения: 'kuliga' (База отдыха «Кулига-Клуб»), 'vorona' (Воронинские горки)
+--      - Все существующие записи получили location = 'kuliga'
+--      - Созданы триггеры для автоматического заполнения location из инструктора/слота
+--      - Добавлены индексы для быстрого поиска по location
 -- ============================================================================
 
 -- ============================================================================
@@ -611,6 +617,14 @@ CREATE TABLE certificate_stats (
 --    - Поддержка индивидуальных и групповых тренировок
 --    - Автоматическая проверка групповых тренировок в 22:00
 --    - Telegram-боты для уведомлений клиентов и инструкторов
+--
+-- 038_add_location_to_kuliga_tables.sql (2025)
+--    - Добавлено поле location VARCHAR(20) во все таблицы kuliga_*
+--    - Поддерживаемые значения: 'kuliga' (База отдыха «Кулига-Клуб»), 'vorona' (Воронинские горки)
+--    - Все существующие записи получили location = 'kuliga'
+--    - Созданы триггеры для автоматического заполнения location из инструктора/слота
+--    - Добавлены индексы для быстрого поиска по location
+--    - Позволяет расширить сервис для работы с несколькими локациями
 -- ============================================================================
 
 -- ============================================================================
@@ -1428,19 +1442,22 @@ CREATE INDEX IF NOT EXISTS idx_subscription_usage_participant ON natural_slope_s
 CREATE INDEX IF NOT EXISTS idx_natural_slope_active_subscriptions ON natural_slope_subscriptions(client_id, status, expires_at) WHERE status = 'active'; 
 
 -- ============================================================================
--- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027, обновлено в МИГРАЦИИ 033)
+-- ТАБЛИЦЫ СИСТЕМЫ КУЛИГИ (МИГРАЦИЯ 027, обновлено в МИГРАЦИЯХ 033 и 038)
 -- ============================================================================
 -- Создано: 9 ноября 2025
--- Обновлено: 18 ноября 2025 (МИГРАЦИЯ 033)
+-- Обновлено: 18 ноября 2025 (МИГРАЦИЯ 033), 2025 (МИГРАЦИЯ 038)
 -- Описание: Служба инструкторов Кулиги Горностайл72 для базы отдыха
+--           Поддержка нескольких локаций: Кулига и Воронинские горки
 -- Домен: gornostyle.ru/instruktora-kuliga
 --
 -- ВАЖНО: Клиенты хранятся в основной таблице clients (не в отдельной kuliga_clients)
 -- Участники-дети хранятся в таблице children с parent_id -> clients.id
+-- МИГРАЦИЯ 038: Добавлено поле location во все таблицы для поддержки нескольких локаций
 -- ============================================================================
 
 -- Таблица инструкторов Кулиги (управляются администратором)
 -- МИГРАЦИЯ 030: Добавлены поля username и password_hash для авторизации в личном кабинете
+-- МИГРАЦИЯ 038: Добавлено поле location для поддержки Воронинских горок
 CREATE TABLE IF NOT EXISTS kuliga_instructors (
     id SERIAL PRIMARY KEY,
     full_name VARCHAR(100) NOT NULL,
@@ -1449,6 +1466,7 @@ CREATE TABLE IF NOT EXISTS kuliga_instructors (
     photo_url VARCHAR(255),
     description TEXT,
     sport_type VARCHAR(20) NOT NULL CHECK (sport_type IN ('ski', 'snowboard', 'both')),
+    location VARCHAR(20) NOT NULL DEFAULT 'kuliga' CHECK (location IN ('kuliga', 'vorona')), -- МИГРАЦИЯ 038: Место работы инструктора
     is_active BOOLEAN DEFAULT TRUE,
     hire_date DATE NOT NULL DEFAULT CURRENT_DATE,
     dismissal_date DATE,
@@ -1464,6 +1482,7 @@ CREATE TABLE IF NOT EXISTS kuliga_instructors (
 );
 
 -- Таблица временных слотов расписания инструкторов
+-- МИГРАЦИЯ 038: Добавлено поле location (наследуется от инструктора, автоматически заполняется триггером)
 CREATE TABLE IF NOT EXISTS kuliga_schedule_slots (
     id SERIAL PRIMARY KEY,
     instructor_id INTEGER NOT NULL REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
@@ -1471,12 +1490,14 @@ CREATE TABLE IF NOT EXISTS kuliga_schedule_slots (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'booked', 'group', 'blocked')),
+    location VARCHAR(20) NOT NULL CHECK (location IN ('kuliga', 'vorona')), -- МИГРАЦИЯ 038: Место проведения тренировки
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT unique_instructor_slot UNIQUE(instructor_id, date, start_time)
 );
 
 -- Таблица групповых тренировок
+-- МИГРАЦИЯ 038: Добавлено поле location (наследуется из слота, автоматически заполняется триггером)
 CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
     id SERIAL PRIMARY KEY,
     instructor_id INTEGER NOT NULL REFERENCES kuliga_instructors(id) ON DELETE CASCADE,
@@ -1492,6 +1513,7 @@ CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
     min_participants INTEGER NOT NULL CHECK (min_participants > 0 AND min_participants <= max_participants),
     current_participants INTEGER DEFAULT 0 CHECK (current_participants >= 0),
     status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'confirmed', 'cancelled', 'completed')),
+    location VARCHAR(20) NOT NULL CHECK (location IN ('kuliga', 'vorona')), -- МИГРАЦИЯ 038: Место проведения групповой тренировки
     is_private BOOLEAN NOT NULL DEFAULT FALSE,
     cancellation_reason TEXT,
     cancelled_at TIMESTAMP,
@@ -1501,6 +1523,7 @@ CREATE TABLE IF NOT EXISTS kuliga_group_trainings (
 
 -- Таблица бронирований (индивидуальные и групповые)
 -- МИГРАЦИЯ 033: client_id теперь ссылается на clients.id (не kuliga_clients)
+-- МИГРАЦИЯ 038: Добавлено поле location (наследуется из слота или групповой тренировки)
 CREATE TABLE IF NOT EXISTS kuliga_bookings (
     id SERIAL PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -1519,6 +1542,7 @@ CREATE TABLE IF NOT EXISTS kuliga_bookings (
     price_total DECIMAL(10,2) NOT NULL CHECK (price_total > 0),
     price_per_person DECIMAL(10,2) NOT NULL CHECK (price_per_person > 0),
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed', 'refunded')),
+    location VARCHAR(20) NOT NULL CHECK (location IN ('kuliga', 'vorona')), -- МИГРАЦИЯ 038: Место проведения бронирования
     cancellation_reason TEXT,
     cancelled_at TIMESTAMP,
         notification_method VARCHAR(20),
@@ -1643,22 +1667,29 @@ CREATE TABLE IF NOT EXISTS kuliga_instructor_payouts (
 CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_active ON kuliga_instructors(is_active);
 CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_telegram ON kuliga_instructors(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_sport ON kuliga_instructors(sport_type);
+CREATE INDEX IF NOT EXISTS idx_kuliga_instructors_location ON kuliga_instructors(location); -- МИГРАЦИЯ 038
 
 CREATE INDEX IF NOT EXISTS idx_kuliga_slots_instructor ON kuliga_schedule_slots(instructor_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_slots_date ON kuliga_schedule_slots(date);
 CREATE INDEX IF NOT EXISTS idx_kuliga_slots_status ON kuliga_schedule_slots(status);
 CREATE INDEX IF NOT EXISTS idx_kuliga_slots_available ON kuliga_schedule_slots(instructor_id, date, status) WHERE status = 'available';
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_location ON kuliga_schedule_slots(location); -- МИГРАЦИЯ 038
+CREATE INDEX IF NOT EXISTS idx_kuliga_slots_location_date ON kuliga_schedule_slots(location, date); -- МИГРАЦИЯ 038
 
 CREATE INDEX IF NOT EXISTS idx_kuliga_groups_instructor ON kuliga_group_trainings(instructor_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_groups_date ON kuliga_group_trainings(date);
 CREATE INDEX IF NOT EXISTS idx_kuliga_groups_status ON kuliga_group_trainings(status);
 CREATE INDEX IF NOT EXISTS idx_kuliga_groups_open ON kuliga_group_trainings(date, status) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_kuliga_group_trainings_location ON kuliga_group_trainings(location); -- МИГРАЦИЯ 038
+CREATE INDEX IF NOT EXISTS idx_kuliga_group_trainings_location_date ON kuliga_group_trainings(location, date, status) WHERE status IN ('open', 'confirmed'); -- МИГРАЦИЯ 038
 
 CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_client ON kuliga_bookings(client_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_instructor ON kuliga_bookings(instructor_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_group ON kuliga_bookings(group_training_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_date ON kuliga_bookings(date);
 CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_status ON kuliga_bookings(status);
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_location ON kuliga_bookings(location); -- МИГРАЦИЯ 038
+CREATE INDEX IF NOT EXISTS idx_kuliga_bookings_location_date ON kuliga_bookings(location, date, status); -- МИГРАЦИЯ 038
 
 CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_client ON kuliga_transactions(client_id);
 CREATE INDEX IF NOT EXISTS idx_kuliga_transactions_booking ON kuliga_transactions(booking_id);
@@ -1705,6 +1736,10 @@ COMMENT ON COLUMN kuliga_instructor_payouts.payment_method IS 'Способ вы
 
 COMMENT ON COLUMN kuliga_instructors.admin_percentage IS 'Процент администратора от заработка инструктора (индивидуальный, по умолчанию из kuliga_admin_settings)';
 COMMENT ON COLUMN kuliga_instructors.telegram_registered IS 'Зарегистрирован ли в Telegram-боте для получения уведомлений (уволенные не получают)';
+COMMENT ON COLUMN kuliga_instructors.location IS 'Место работы инструктора: kuliga (База отдыха «Кулига-Клуб»), vorona (Воронинские горки). МИГРАЦИЯ 038';
+COMMENT ON COLUMN kuliga_schedule_slots.location IS 'Место проведения тренировки: kuliga (База отдыха «Кулига-Клуб»), vorona (Воронинские горки). Наследуется от инструктора. МИГРАЦИЯ 038';
+COMMENT ON COLUMN kuliga_group_trainings.location IS 'Место проведения групповой тренировки: kuliga (База отдыха «Кулига-Клуб»), vorona (Воронинские горки). Наследуется из слота. МИГРАЦИЯ 038';
+COMMENT ON COLUMN kuliga_bookings.location IS 'Место проведения бронирования: kuliga (База отдыха «Кулига-Клуб»), vorona (Воронинские горки). Наследуется из слота или групповой тренировки. МИГРАЦИЯ 038';
 COMMENT ON COLUMN kuliga_group_trainings.min_participants IS 'Минимум участников для проведения (если меньше - автоотмена в 22:00)';
 COMMENT ON COLUMN kuliga_bookings.participants_names IS 'Массив имен участников для семейного бронирования (например: {"Иван", "Мария", "Петр"})';
 COMMENT ON COLUMN kuliga_transactions.tinkoff_payment_id IS 'ID платежа в системе Tinkoff Acquiring для отслеживания статуса';

@@ -3,6 +3,7 @@ const moment = require('moment-timezone');
 const { pool } = require('../db');
 const { initPayment } = require('../services/kuligaPaymentService');
 const { normalizePhone } = require('../utils/phone-normalizer');
+const { isValidLocation } = require('../utils/location-mapper');
 const { 
     notifyAdminNaturalSlopeTrainingBooking, 
     notifyInstructorKuligaTrainingBooking 
@@ -149,7 +150,7 @@ const createGroupBooking = async (req, res) => {
 
         const groupResult = await client.query(
             `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
-                    price_per_person, max_participants, current_participants, status
+                    price_per_person, max_participants, current_participants, status, location
              FROM kuliga_group_trainings
              WHERE id = $1
              FOR UPDATE`,
@@ -202,8 +203,9 @@ const createGroupBooking = async (req, res) => {
                 participants_names,
                 price_total,
                 price_per_person,
+                location,
                 status
-            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
             RETURNING id`,
             [
                 clientRecord.id,
@@ -216,6 +218,7 @@ const createGroupBooking = async (req, res) => {
                 namesArray,
                 totalPrice,
                 pricePerPerson,
+                training.location || 'kuliga', // МИГРАЦИЯ 038: Используем location из групповой тренировки
             ]
         );
 
@@ -305,6 +308,7 @@ const createIndividualBooking = async (req, res) => {
         date,
         slotId,
         instructorId,
+        location, // МИГРАЦИЯ 038: Место проведения тренировки
         participants = [],
         notification = {},
         payerParticipation = 'self',
@@ -427,6 +431,7 @@ const createIndividualBooking = async (req, res) => {
                     s.start_time,
                     s.end_time,
                     s.status,
+                    s.location AS slot_location,
                     i.full_name AS instructor_name,
                     i.sport_type AS instructor_sport_type,
                     i.is_active AS instructor_active
@@ -465,6 +470,14 @@ const createIndividualBooking = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Инструктор не проводит тренировки по выбранному виду спорта' });
         }
 
+        // МИГРАЦИЯ 038: Проверка location
+        const slotLocation = slot.slot_location || 'kuliga';
+        const requestedLocation = location || 'kuliga';
+        if (slotLocation !== requestedLocation) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: 'Выбранный слот не соответствует выбранному месту проведения' });
+        }
+
         const slotDuration = minutesBetween(slot.date, slot.start_time, slot.end_time);
         const requiredDuration = Number(price.duration) || 60;
 
@@ -501,8 +514,9 @@ const createIndividualBooking = async (req, res) => {
                 price_id,
                 notification_method,
                 payer_rides,
+                location,
                 status
-            ) VALUES ($1, 'individual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending')
+            ) VALUES ($1, 'individual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'pending')
             RETURNING id`,
             [
                 clientRecord.id,
@@ -520,6 +534,7 @@ const createIndividualBooking = async (req, res) => {
                 price.id,
                 notificationMethod,
                 payerRides,
+                slotLocation, // МИГРАЦИЯ 038: Используем location из слота
             ]
         );
 
@@ -648,7 +663,7 @@ const createIndividualBooking = async (req, res) => {
 };
 
 router.get('/availability', async (req, res) => {
-    const { date, sport = 'ski', duration = 60 } = req.query || {};
+    const { date, sport = 'ski', duration = 60, location } = req.query || {};
 
     if (!date) {
         return res.status(400).json({ success: false, error: 'Укажите дату' });
@@ -662,8 +677,7 @@ router.get('/availability', async (req, res) => {
     const requiredDuration = Math.max(30, Math.min(180, parseInt(duration, 10) || 60));
 
     try {
-        const { rows } = await pool.query(
-            `SELECT s.id AS slot_id,
+        let query = `SELECT s.id AS slot_id,
                     s.instructor_id,
                     s.date,
                     s.start_time,
@@ -673,16 +687,25 @@ router.get('/availability', async (req, res) => {
                     i.sport_type AS instructor_sport_type,
                     i.photo_url AS instructor_photo_url,
                     i.description AS instructor_description,
-                    i.is_active AS instructor_active
+                    i.is_active AS instructor_active,
+                    s.location
              FROM kuliga_schedule_slots s
              JOIN kuliga_instructors i ON i.id = s.instructor_id
              WHERE s.date = $1
                AND s.status = 'available'
                AND i.is_active = TRUE
-               AND (i.sport_type = $2 OR i.sport_type = 'both')
-             ORDER BY s.start_time ASC`,
-            [date, normalizedSport]
-        );
+               AND (i.sport_type = $2 OR i.sport_type = 'both')`;
+        const params = [date, normalizedSport];
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            query += ` AND s.location = $${params.length}`;
+        }
+        
+        query += ' ORDER BY s.start_time ASC';
+        
+        const { rows } = await pool.query(query, params);
 
         const available = rows
             .filter((slot) => minutesBetween(date, slot.start_time, slot.end_time) >= requiredDuration)
