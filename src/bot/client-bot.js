@@ -13,13 +13,13 @@ const moment = require('moment-timezone');
 // Функция для получения названия места по location
 function getLocationDisplayName(location) {
     if (!location) {
-        return 'Кулига Парк';
+        return 'База отдыха «Кулига-Клуб»'; // Fallback
     }
     const locationNames = {
         'kuliga': 'База отдыха «Кулига-Клуб»',
         'vorona': 'Воронинские горки'
     };
-    return locationNames[location] || 'Кулига Парк';
+    return locationNames[location] || 'База отдыха «Кулига-Клуб»';
 }
 
 // Настройка подключения к БД
@@ -5026,7 +5026,8 @@ async function handleTextMessage(msg) {
                 message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
                 message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
                 message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
-                message += `🏔️ *Место:* Кулига Парк\n`;
+                const location = selectedTraining.location || state.data?.location || 'kuliga';
+                message += `🏔️ *Место:* ${getLocationDisplayName(location)}\n`;
                 if (selectedTraining.trainer_name) {
                     message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
                 }
@@ -5126,7 +5127,8 @@ async function handleTextMessage(msg) {
                 message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
                 message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
                 message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
-                message += `🏔️ *Место:* Кулига Парк\n`;
+                const location = selectedTraining.location || state.data?.location || 'kuliga';
+                message += `🏔️ *Место:* ${getLocationDisplayName(location)}\n`;
                 if (selectedTraining.trainer_name) {
                     message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
                 }
@@ -5236,7 +5238,8 @@ async function handleTextMessage(msg) {
             message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
             message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
             message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
-            message += `🏔️ *Место:* Кулига Парк\n`;
+            const location = selectedTraining.location || state.data?.location || 'kuliga';
+            message += `🏔️ *Место:* ${getLocationDisplayName(location)}\n`;
             if (selectedTraining.trainer_name) {
                 message += `👨‍🏫 *Тренер:* ${selectedTraining.trainer_name}\n`;
             }
@@ -5604,7 +5607,7 @@ async function handleTextMessage(msg) {
                                     walletId, 
                                     0, 
                                     'subscription_usage', 
-                                    `Запись по абонементу: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин. Занятий осталось: ${remainingAfter}/${totalSessions}`
+                                    `Запись по абонементу: Групповая тренировка в ${getLocationDisplayName(selectedTraining.location || state.data?.location || 'kuliga')}, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин. Занятий осталось: ${remainingAfter}/${totalSessions}`
                                 ]
                             );
                         }
@@ -5632,7 +5635,7 @@ async function handleTextMessage(msg) {
                             // Создаем запись в транзакциях (используем уже объявленную participantName)
                             await client.query(
                                 'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
-                                [walletId, pricePerPerson, 'payment', `Запись: Групповая тренировка в Кулига Парк, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин.`]
+                                [walletId, pricePerPerson, 'payment', `Запись: Групповая тренировка в ${getLocationDisplayName(selectedTraining.location || state.data?.location || 'kuliga')}, ${participantName}, Дата: ${formattedDate}, Время: ${timeStr}, Длительность: 60 мин.`]
                             );
                         }
                     }
@@ -5669,13 +5672,15 @@ async function handleTextMessage(msg) {
                     const newBalance = balance - amountCharged;
 
                     // Формируем сообщение в зависимости от способа оплаты
-                    let message = '✅ *Тренировка В КУЛИГА ПАРКЕ успешно забронирована!*\n\n' +
+                    const location = selectedTraining.location || state.data?.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
+                    let message = `✅ *Тренировка в ${locationName} успешно забронирована!*\n\n` +
                         `👤 *Участник:* ${participantName}\n` +
                         `📅 *Дата:* ${dateStr} (${dayName})\n` +
                         `⏰ *Время:* ${timeStr}\n` +
                         `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n` +
                         `👥 *Мест:* ${parseInt(participantsResult.rows[0].count) + 1}/${selectedTraining.max_participants}\n` +
-                        `🏔️ *Место:* Кулига Парк\n`;
+                        `🏔️ *Место:* ${locationName}\n`;
                     
                     if (useSubscription) {
                         message += `🎫 *Оплата:* По абонементу "${subscriptionInfo.subscription_name}"\n` +
@@ -6208,24 +6213,37 @@ async function handleTextMessage(msg) {
                         });
                     }
                     if (winterGroupSessions.length > 0) {
-                        message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+                        // Группируем по location для заголовков
+                        const groupedByLocation = {};
                         winterGroupSessions.forEach(session => {
-                            const date = new Date(session.session_date);
-                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                            const [hours, minutes] = session.start_time.split(':');
-                            const formattedTime = `${hours}:${minutes}`;
-                            const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
-                            const participantDisplayName = session.is_child 
-                                ? `${session.participant_name} (ребенок)` 
-                                : session.participant_name;
-                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
-                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
-                            message += `⏰ *Время:* ${formattedTime}\n`;
-                            message += `👥 *Группа:* ${session.group_name}\n`;
-                            if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
-                            if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
-                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            const loc = session.location || 'kuliga';
+                            if (!groupedByLocation[loc]) {
+                                groupedByLocation[loc] = [];
+                            }
+                            groupedByLocation[loc].push(session);
+                        });
+                        
+                        Object.entries(groupedByLocation).forEach(([loc, sessions]) => {
+                            const locationName = getLocationDisplayName(loc);
+                            message += `\n👥 *Групповые тренировки (${locationName}):*\n`;
+                            sessions.forEach(session => {
+                                const date = new Date(session.session_date);
+                                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                                const [hours, minutes] = session.start_time.split(':');
+                                const formattedTime = `${hours}:${minutes}`;
+                                const pricePerPerson = session.max_participants ? (Number(session.price) / session.max_participants).toFixed(2) : Number(session.price).toFixed(2);
+                                const participantDisplayName = session.is_child 
+                                    ? `${session.participant_name} (ребенок)` 
+                                    : session.participant_name;
+                                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
+                                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                                message += `⏰ *Время:* ${formattedTime}\n`;
+                                message += `👥 *Группа:* ${session.group_name}\n`;
+                                if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
+                                if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
+                                const sessionLocation = session.location || loc;
+                                message += `🏔️ *Место:* ${getLocationDisplayName(sessionLocation)}\n`;
                             if (session.used_subscription) {
                                 message += `🎫 *Оплата:* По абонементу "${session.subscription_name}"\n`;
                                 if (session.subscription_remaining_sessions != null && session.subscription_total_sessions != null) {
@@ -6236,6 +6254,7 @@ async function handleTextMessage(msg) {
                             }
                             allSessions.push({ ...session, session_type: 'group_winter' });
                             counter++;
+                            });
                         });
                     }
                     if (individualSessions.length > 0) {
@@ -6262,26 +6281,40 @@ async function handleTextMessage(msg) {
                         });
                     }
                     if (naturalSlopeIndividualSessions.length > 0) {
-                        message += '\n🏔️ *Индивидуальные тренировки (Кулига Парк):*\n';
+                        // Группируем по location для заголовков
+                        const groupedByLocation = {};
                         naturalSlopeIndividualSessions.forEach(session => {
-                            const date = new Date(session.session_date);
-                            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-                            const [hours, minutes] = session.start_time.split(':');
-                            const formattedTime = `${hours}:${minutes}`;
-                            const participantDisplayName = session.is_child 
-                                ? `${session.participant_name} (ребенок)` 
-                                : session.participant_name;
-                            message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
-                            message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
-                            message += `⏰ *Время:* ${formattedTime}\n`;
-                            message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
-                            message += `👨‍🏫 *С тренером*\n`;
-                            message += `🏔️ *Место:* Кулига Парк\n`;
+                            const loc = session.location || 'kuliga';
+                            if (!groupedByLocation[loc]) {
+                                groupedByLocation[loc] = [];
+                            }
+                            groupedByLocation[loc].push(session);
+                        });
+                        
+                        Object.entries(groupedByLocation).forEach(([loc, sessions]) => {
+                            const locationName = getLocationDisplayName(loc);
+                            message += `\n🏔️ *Индивидуальные тренировки (${locationName}):*\n`;
+                            sessions.forEach(session => {
+                                const date = new Date(session.session_date);
+                                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                                const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                                const [hours, minutes] = session.start_time.split(':');
+                                const formattedTime = `${hours}:${minutes}`;
+                                const participantDisplayName = session.is_child 
+                                    ? `${session.participant_name} (ребенок)` 
+                                    : session.participant_name;
+                                message += `\n${counter}. 👤 *Участник:* ${participantDisplayName}\n`;
+                                message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+                                message += `⏰ *Время:* ${formattedTime}\n`;
+                                message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
+                                message += `👨‍🏫 *С тренером*\n`;
+                                const sessionLocation = session.location || loc;
+                                message += `🏔️ *Место:* ${getLocationDisplayName(sessionLocation)}\n`;
                             message += `⏱ *Длительность:* ${session.duration} мин\n`;
                             message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                             allSessions.push({ ...session, session_type: 'individual_natural_slope' });
                             counter++;
+                            });
                         });
                     }
                     message += '\nДля отмены тренировки нажмите "Отменить тренировку"';
@@ -6784,7 +6817,7 @@ async function handleTextMessage(msg) {
                                     walletId,
                                     0,
                                     'subscription_return',
-                                    `Возврат занятия в абонемент: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин. Занятий осталось: ${returnedSubscription.remaining}/${returnedSubscription.total}`
+                                    `Возврат занятия в абонемент: Группа ${getLocationDisplayName(selectedSession.location || groupInfo?.location || 'kuliga')}: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин. Занятий осталось: ${returnedSubscription.remaining}/${returnedSubscription.total}`
                                 ]
                             );
                         }
@@ -6805,7 +6838,7 @@ async function handleTextMessage(msg) {
                                     walletId,
                                     pricePerPerson,
                                     'amount',
-                                    `Возврат: Группа Кулига Парк: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
+                                    `Возврат: Группа ${getLocationDisplayName(selectedSession.location || groupInfo?.location || 'kuliga')}: ${groupInfo.group_name}, ${selectedSession.participant_name}, Дата: ${formattedDate}, Время: ${formattedTime}, Длительность: ${selectedSession.duration} мин.`
                                 ]
                             );
                         }
@@ -6814,13 +6847,15 @@ async function handleTextMessage(msg) {
                     }
 
                     // Сообщение для клиента
+                    const location = selectedSession.location || groupInfo?.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
                     const clientMessage = 
-                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `✅ *Тренировка в ${locationName} успешно отменена!*\n\n` +
                         `👤 *Участник:* ${selectedSession.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
                         `👥 *Группа:* ${groupInfo.group_name}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
+                        `🏔️ *Место:* ${locationName}\n` +
                         refundMessage +
                         '\n' + (returnedSubscription ? 'Занятие возвращено в абонемент.' : 'Средства возвращены на ваш баланс.');
 
@@ -6895,12 +6930,14 @@ async function handleTextMessage(msg) {
                     }
 
                     // Сообщение для клиента
+                    const location = selectedSession.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
                     const clientMessage = 
-                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `✅ *Тренировка в ${locationName} успешно отменена!*\n\n` +
                         `👤 *Участник:* ${selectedSession.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
+                        `🏔️ *Место:* ${locationName}\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
 
@@ -7023,12 +7060,14 @@ async function handleTextMessage(msg) {
                     }
 
                     // Сообщение для клиента
+                    const location = selectedSession.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
                     const clientMessage = 
-                        '✅ *Тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `✅ *Тренировка в ${locationName} успешно отменена!*\n\n` +
                         `👤 *Участник:* ${selectedSession.participant_name}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
+                        `🏔️ *Место:* ${locationName}\n` +
                         `💰 *Возвращено:* ${Number(selectedSession.price_total).toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
 
@@ -7223,12 +7262,14 @@ async function handleTextMessage(msg) {
                     });
 
                     // Сообщение для клиента
+                    const location = selectedSession.location || groupInfo?.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
                     const clientMessage = 
-                        '✅ *Групповая тренировка в Кулига Парке успешно отменена!*\n\n' +
+                        `✅ *Групповая тренировка в ${locationName} успешно отменена!*\n\n` +
                         `👤 *Участники (${participantsCount}):* ${participantsList}\n` +
                         `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                         `⏰ *Время:* ${formattedTime}\n` +
-                        `🏔️ *Место:* Кулига Парк\n` +
+                        `🏔️ *Место:* ${locationName}\n` +
                         `💰 *Возвращено:* ${refundAmount.toFixed(2)} руб.\n\n` +
                         'Средства возвращены на ваш баланс.';
 
@@ -9578,7 +9619,7 @@ async function handleTextMessage(msg) {
                 `• Длительность: 60 минут ⏱️\n` +
                 `• Дата: ${formattedDate}\n` +
                 `• Время: ${selectedTime}\n` +
-                `• Место: Кулига Парк\n` +
+                `• Место: ${getLocationDisplayName(state.data.location || 'kuliga')}\n` +
                 `• Стоимость: ${price.toFixed(2)} руб. 💰\n` +
                 `• Ваш баланс: ${balance.toFixed(2)} руб. 💳\n\n` +
                 `*Выберите действие:*`,
@@ -10608,8 +10649,20 @@ async function showMyBookings(chatId) {
         }
         
         if (winterGroupSessions.length > 0) {
-            message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+            // Группируем по location
+            const groupedByLocation = {};
             winterGroupSessions.forEach(session => {
+                const loc = session.location || 'kuliga';
+                if (!groupedByLocation[loc]) {
+                    groupedByLocation[loc] = [];
+                }
+                groupedByLocation[loc].push(session);
+            });
+            
+            Object.entries(groupedByLocation).forEach(([loc, sessions]) => {
+                const locationName = getLocationDisplayName(loc);
+                message += `\n👥 *Групповые тренировки (${locationName}):*\n`;
+                sessions.forEach(session => {
                 const date = new Date(session.session_date);
                 const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                 const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
@@ -10625,7 +10678,8 @@ async function showMyBookings(chatId) {
                 message += `👥 *Группа:* ${session.group_name}\n`;
                 if (session.trainer_name) message += `👨‍🏫 *Тренер:* ${session.trainer_name}\n`;
                 if (session.skill_level) message += `📊 *Уровень:* ${session.skill_level}\n`;
-                message += `🏔️ *Место:* Кулига Парк\n`;
+                const sessionLocation = session.location || loc;
+                message += `🏔️ *Место:* ${getLocationDisplayName(sessionLocation)}\n`;
                 if (session.used_subscription) {
                     message += `🎫 *Оплата:* По абонементу "${session.subscription_name}"\n`;
                     if (session.subscription_remaining_sessions != null && session.subscription_total_sessions != null) {
@@ -10636,6 +10690,7 @@ async function showMyBookings(chatId) {
                 }
                 allSessions.push({ ...session, session_type: 'group_winter' });
                 counter++;
+            });
             });
         }
         
@@ -10679,7 +10734,8 @@ async function showMyBookings(chatId) {
                 message += `⏰ *Время:* ${formattedTime}\n`;
                 message += `🎿 *Снаряжение:* Горные лыжи 🎿\n`;
                 message += `👨‍🏫 *С тренером*\n`;
-                message += `🏔️ *Место:* Кулига Парк\n`;
+                const sessionLocation = session.location || 'kuliga';
+                message += `🏔️ *Место:* ${getLocationDisplayName(sessionLocation)}\n`;
                 message += `⏱ *Длительность:* ${session.duration} мин\n`;
                 message += `💰 *Стоимость:* ${Number(session.price).toFixed(2)} руб.\n`;
                 allSessions.push({ ...session, session_type: 'individual_natural_slope' });
@@ -10694,8 +10750,20 @@ async function showMyBookings(chatId) {
             const kuligaGroup = kuligaBookings.filter(b => b.booking_type === 'group');
             
             if (kuligaIndividual.length > 0) {
-                message += '\n🏔️ *Индивидуальные тренировки (Кулига Парк):*\n';
+                // Группируем по location
+                const groupedByLocation = {};
                 kuligaIndividual.forEach(booking => {
+                    const loc = booking.location || 'kuliga';
+                    if (!groupedByLocation[loc]) {
+                        groupedByLocation[loc] = [];
+                    }
+                    groupedByLocation[loc].push(booking);
+                });
+                
+                Object.entries(groupedByLocation).forEach(([loc, bookings]) => {
+                    const locationName = getLocationDisplayName(loc);
+                    message += `\n🏔️ *Индивидуальные тренировки (${locationName}):*\n`;
+                    bookings.forEach(booking => {
                     const date = new Date(booking.date);
                     const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
@@ -10713,7 +10781,8 @@ async function showMyBookings(chatId) {
                     if (booking.instructor_name) {
                         message += `👨‍🏫 *Инструктор:* ${booking.instructor_name}\n`;
                     }
-                    message += `🏔️ *Место:* Кулига Парк\n`;
+                    const bookingLocation = booking.location || loc;
+                    message += `🏔️ *Место:* ${getLocationDisplayName(bookingLocation)}\n`;
                     message += `💰 *Стоимость:* ${Number(booking.price_total).toFixed(2)} руб.\n`;
                     allSessions.push({ 
                         ...booking, 
@@ -10725,8 +10794,20 @@ async function showMyBookings(chatId) {
             }
             
             if (kuligaGroup.length > 0) {
-                message += '\n👥 *Групповые тренировки (Кулига Парк):*\n';
+                // Группируем по location
+                const groupedByLocation = {};
                 kuligaGroup.forEach(booking => {
+                    const loc = booking.location || 'kuliga';
+                    if (!groupedByLocation[loc]) {
+                        groupedByLocation[loc] = [];
+                    }
+                    groupedByLocation[loc].push(booking);
+                });
+                
+                Object.entries(groupedByLocation).forEach(([loc, bookings]) => {
+                    const locationName = getLocationDisplayName(loc);
+                    message += `\n👥 *Групповые тренировки (${locationName}):*\n`;
+                    bookings.forEach(booking => {
                     const date = new Date(booking.date);
                     const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
@@ -10756,7 +10837,8 @@ async function showMyBookings(chatId) {
                     if (groupLevelRu) {
                         message += `👥 *Группа:* ${groupLevelRu}\n`;
                     }
-                    message += `🏔️ *Место:* Кулига Парк\n`;
+                    const bookingLocation = booking.location || loc;
+                    message += `🏔️ *Место:* ${getLocationDisplayName(bookingLocation)}\n`;
                     message += `💰 *Стоимость:*\n`;
                     message += `• За человека: ${Number(booking.price_per_person).toFixed(2)} ₽\n`;
                     message += `• Всего: ${Number(booking.price_total).toFixed(2)} ₽\n`;
@@ -12826,7 +12908,8 @@ async function showAvailableGroupTrainings(chatId, clientId, location = 'kuliga'
         }
         
         // Формируем сообщение с доступными тренировками
-        let message = '👥 *Доступные групповые тренировки на естественном склоне в Кулига Парк:*\n\n';
+        const locationName = getLocationDisplayName(location);
+        let message = `👥 *Доступные групповые тренировки на естественном склоне в ${locationName}:*\n\n`;
         
         result.rows.forEach((training, index) => {
             const date = new Date(training.date);
@@ -13811,12 +13894,14 @@ async function calculateAndConfirmKuligaOwnGroupBooking(chatId, state) {
         const endTimeStr = String(state.data.selected_end_time).substring(0, 5);
         const sportType = state.data.selected_sport === 'ski' ? '⛷️ Горные лыжи' : '🏂 Сноуборд';
 
+        const location = state.data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
         let message = '📋 *Подтверждение бронирования групповой тренировки*\n\n';
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr} - ${endTimeStr}\n`;
         message += `🎿 *Вид спорта:* ${sportType}\n`;
         message += `👨‍🏫 *Инструктор:* ${state.data.selected_instructor_name}\n`;
-        message += `🏔️ *Место:* Кулига Парк\n\n`;
+        message += `🏔️ *Место:* ${locationName}\n\n`;
         message += `👥 *Участники (${participantsCount}):*\n`;
         participants.forEach((p, index) => {
             message += `${index + 1}. ${p.fullName} (${p.age})\n`;
@@ -13907,12 +13992,14 @@ async function confirmAndPayKuligaExistingGroupBooking(chatId, state) {
         const freePlaces = state.data.max_participants - state.data.current_participants;
         const totalPrice = state.data.price_per_person * participants.length;
 
+        const location = state.data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
         let message = '📋 *Подтверждение бронирования групповой тренировки*\n\n';
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr} - ${endTimeStr}\n`;
         message += `🎿 *Вид спорта:* ${sportType}\n`;
         message += `👨‍🏫 *Инструктор:* ${state.data.selected_instructor_name}\n`;
-        message += `🏔️ *Место:* Кулига Парк\n`;
+        message += `🏔️ *Место:* ${locationName}\n`;
         const occupiedPlacesAfter = (state.data.current_participants || 0) + participants.length;
         message += `👥 *Занято мест:* ${occupiedPlacesAfter}/${state.data.max_participants}\n`;
         if (state.data.training_description) {
@@ -14202,13 +14289,15 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         // Формируем список участников с возрастом
         const participantsWithAge = state.data.selected_participants.map(p => `${p.fullName} (${p.age})`).join(', ');
 
-        let message = '✅ *Групповая тренировка в Кулига Парке успешно забронирована!*\n\n';
+        const location = state.data.location || locationFromTraining || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        let message = `✅ *Групповая тренировка в ${locationName} успешно забронирована!*\n\n`;
         message += `👤 *Участники:* ${participantsWithAge}\n`;
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr}\n`;
         message += `🎿 *Вид спорта:* ${state.data.selected_sport === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
         message += `👨‍🏫 *Инструктор:* ${instructor.full_name || state.data.selected_instructor_name}\n`;
-        message += `🏔️ *Место:* Кулига Парк\n`;
+        message += `🏔️ *Место:* ${locationName}\n`;
         message += `💰 *Стоимость:* ${totalPrice.toFixed(2)} руб.\n`;
         message += `💳 *Остаток на балансе:* ${(balance - totalPrice).toFixed(2)} руб.\n\n`;
         message += `🎿 Удачной тренировки!`;
@@ -14428,13 +14517,15 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         // Формируем список участников с возрастом
         const participantsWithAge = participants.map(p => `${p.fullName} (${p.age})`).join(', ');
 
-        let message = '✅ *Групповая тренировка в Кулига Парке успешно забронирована!*\n\n';
+        const location = training.location || state.data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        let message = `✅ *Групповая тренировка в ${locationName} успешно забронирована!*\n\n`;
         message += `👤 *Участник:* ${participantsWithAge}\n`;
         message += `📅 *Дата:* ${dateStr} (${dayName})\n`;
         message += `⏰ *Время:* ${timeStr}\n`;
         message += `🎿 *Вид спорта:* ${training.sport_type === 'ski' ? 'Горные лыжи' : 'Сноуборд'}\n`;
         message += `👨‍🏫 *Инструктор:* ${instructor.full_name || state.data.selected_instructor_name}\n`;
-        message += `🏔️ *Место:* Кулига Парк\n`;
+        message += `🏔️ *Место:* ${locationName}\n`;
         message += `💰 *Стоимость:* ${totalPrice.toFixed(2)} руб.\n`;
         message += `💳 *Остаток на балансе:* ${(balance - totalPrice).toFixed(2)} руб.\n\n`;
         message += `🎿 Удачной тренировки!`;

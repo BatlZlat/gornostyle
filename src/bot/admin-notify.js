@@ -26,13 +26,13 @@ function formatTime(timeStr) {
 // Функция для получения названия места по location
 function getLocationDisplayName(location) {
     if (!location) {
-        return 'Кулига Парк'; // Fallback
+        return 'База отдыха «Кулига-Клуб»'; // Fallback
     }
     const locationNames = {
         'kuliga': 'База отдыха «Кулига-Клуб»',
         'vorona': 'Воронинские горки'
     };
-    return locationNames[location] || 'Кулига Парк';
+    return locationNames[location] || 'База отдыха «Кулига-Клуб»';
 }
 
 // Функция для отправки уведомления о создании расписания
@@ -415,7 +415,10 @@ async function notifyAdminGroupTrainingCancellation(trainingData) {
         // Формируем строку с информацией о тренажере/месте
         let locationLine = '';
         if (isWinterTraining) {
-            locationLine = '🏔️ *Место:* Кулига Парк\n';
+            // Получаем location из данных или используем fallback
+            const location = trainingData.location || 'kuliga';
+            const locationName = getLocationDisplayName(location);
+            locationLine = `🏔️ *Место:* ${locationName}\n`;
         } else {
             locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
         }
@@ -461,15 +464,22 @@ async function notifyAdminParticipantRemoved(trainingData) {
         // Определяем, является ли тренировка зимней (естественный склон)
         const isWinterTraining = !trainingData.simulator_id;
         
+        // Получаем location для зимних тренировок
+        let locationName = '';
+        if (isWinterTraining) {
+            const location = trainingData.location || 'kuliga';
+            locationName = getLocationDisplayName(location);
+        }
+        
         // Заголовок зависит от типа тренировки
         const header = isWinterTraining 
-            ? '👥 *Удаление участника из тренировки на естественном склоне в Кулига Парк!*'
+            ? `👥 *Удаление участника из тренировки на естественном склоне в ${locationName}!*`
             : '👥 *Удаление участника из тренировки!*';
         
         // Формируем строку с информацией о тренажере/месте
         let locationLine = '';
         if (isWinterTraining) {
-            locationLine = '🏔️ *Место:* Кулига Парк\n';
+            locationLine = `🏔️ *Место:* ${locationName}\n`;
         } else {
             locationLine = `🎿 *Тренажер:* ${trainingData.simulator_name}\n`;
         }
@@ -596,7 +606,10 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             message += `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || trainingData.trainer_name}\n`;
         }
         
-        message += `🏔️ *Место:* Кулига Парк\n` +
+        // Получаем location из данных или используем fallback
+        const location = trainingData.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        message += `🏔️ *Место:* ${locationName}\n` +
             refundLine;
 
         for (const adminId of adminIds) {
@@ -814,6 +827,10 @@ async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
         // Определяем, кто отменил тренировку (клиент или администратор)
         const cancelledBy = cancellationData.cancelled_by === 'admin' ? 'администратором' : 'клиентом';
         
+        // Получаем location из данных или используем fallback
+        const location = cancellationData.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        
         const message = 
             '❌ *Отмена тренировки*\n\n' +
             `👨‍💼 *Клиент:* ${cancellationData.client_name}\n` +
@@ -821,7 +838,7 @@ async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
             `📱 *Телефон:* ${cancellationData.client_phone || 'не указан'}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
             `⏰ *Время:* ${formattedTime}\n` +
-            `🏔️ *Место:* Кулига Парк\n\n` +
+            `🏔️ *Место:* ${locationName}\n\n` +
             `Тренировка была отменена ${cancelledBy}.`;
 
         await instructorBot.sendMessage(cancellationData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
@@ -1193,9 +1210,15 @@ async function notifyTomorrowTrainings(trainings) {
                 const equipmentStr = training.equipment_type === 'ski' ? '🎿' : '🏂';
                 
                 // Определяем место проведения
-                const locationStr = training.simulator_name 
-                    ? `🎿 Тренажер: ${training.simulator_name}` 
-                    : `🏔️ Место: Кулига Парк`;
+                let locationStr = '';
+                if (training.simulator_name) {
+                    locationStr = `🎿 Тренажер: ${training.simulator_name}`;
+                } else {
+                    // Для зимних тренировок используем location из данных или fallback
+                    const location = training.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
+                    locationStr = `🏔️ Место: ${locationName}`;
+                }
                 
                 // Для зимних групповых тренировок показываем цену за человека
                 let priceStr = training.price;
@@ -1224,9 +1247,15 @@ async function notifyTomorrowTrainings(trainings) {
                 const participantStr = training.participants_list || 'Участник не указан';
                 
                 // Определяем место проведения
-                const locationStr = training.simulator_name 
-                    ? `🎿 Тренажер: ${training.simulator_name}` 
-                    : `🏔️ Место: Кулига Парк`;
+                let locationStr = '';
+                if (training.simulator_name) {
+                    locationStr = `🎿 Тренажер: ${training.simulator_name}`;
+                } else {
+                    // Для зимних тренировок используем location из данных или fallback
+                    const location = training.location || 'kuliga';
+                    const locationName = getLocationDisplayName(location);
+                    locationStr = `🏔️ Место: ${locationName}`;
+                }
                 
                 message += `• ${timeStr} - ${participantStr} (${equipmentStr})\n`;
                 message += `  ${locationStr}\n`;
@@ -1631,15 +1660,22 @@ async function notifyAdminParticipantTransferred(trainingData) {
         // Определяем, является ли тренировка зимней (естественный склон)
         const isWinterTraining = trainingData.slope_type === 'natural_slope';
         
+        // Получаем location для зимних тренировок
+        let locationName = '';
+        if (isWinterTraining) {
+            const location = trainingData.location || trainingData.target_location || 'kuliga';
+            locationName = getLocationDisplayName(location);
+        }
+        
         // Заголовок зависит от типа тренировки
         const header = isWinterTraining 
-            ? '🔄 *Перенос участника между тренировками на естественном склоне в Кулига Парк!*'
+            ? `🔄 *Перенос участника между тренировками на естественном склоне в ${locationName}!*`
             : '🔄 *Перенос участника между тренировками!*';
         
         // Формируем строку с информацией о тренажере/месте
         let locationLine = '';
         if (isWinterTraining) {
-            locationLine = '🏔️ *Место:* Кулига Парк\n';
+            locationLine = `🏔️ *Место:* ${locationName}\n`;
         } else {
             locationLine = `🎿 *Тренажер:* ${trainingData.target_simulator_name || 'Не указан'}\n`;
         }

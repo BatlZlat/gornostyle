@@ -12,6 +12,22 @@ class NotificationService {
     }
 
     /**
+     * Получает название места по location
+     * @param {string} location - Код места ('kuliga' или 'vorona')
+     * @returns {string} Название места
+     */
+    getLocationDisplayName(location) {
+        if (!location) {
+            return 'База отдыха «Кулига-Клуб»'; // Fallback
+        }
+        const locationNames = {
+            'kuliga': 'База отдыха «Кулига-Клуб»',
+            'vorona': 'Воронинские горки'
+        };
+        return locationNames[location] || 'База отдыха «Кулига-Клуб»';
+    }
+
+    /**
      * Получает все тренировки на указанную дату
      * @param {Date} date - Дата для поиска тренировок
      * @returns {Promise<Array>} Массив тренировок
@@ -422,16 +438,11 @@ class NotificationService {
             }
 
             // Тренажер или место
-            if (training.slope_type === 'kuliga_natural_slope') {
-                // Для тренировок Кулиги используем location из данных (если доступно)
-                const locationNames = {
-                    'kuliga': 'База отдыха «Кулига-Клуб»',
-                    'vorona': 'Воронинские горки'
-                };
-                const locationName = training.location ? locationNames[training.location] || 'Кулига Парк' : 'Кулига Парк';
+            if (training.slope_type === 'kuliga_natural_slope' || training.slope_type === 'natural_slope') {
+                // Для тренировок на естественном склоне используем location из данных или fallback
+                const location = training.location || 'kuliga'; // Fallback для старых тренировок
+                const locationName = this.getLocationDisplayName(location);
                 message += `🏔 Место: ${locationName}\n`;
-            } else if (training.slope_type === 'natural_slope') {
-                message += `🏔 Место: Кулига Парк\n`;
             } else if (training.simulator_name) {
                 message += `🏔 Тренажер: ${training.simulator_name}\n`;
             }
