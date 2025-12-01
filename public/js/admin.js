@@ -993,12 +993,21 @@ function initializeEventListeners() {
                 return;
             }
             
+            // Фиункция для нормализации номера кошелька (убирает дефисы и пробелы)
+            const normalizeWalletNumber = (wallet) => {
+                if (!wallet) return '';
+                return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+            };
+            
+            const normalizedSearchTerm = normalizeWalletNumber(searchTerm);
+            
             // Фильтруем клиентов
             const filteredClients = allClientsForNotify.filter(client => {
                 const name = client.full_name ? client.full_name.toLowerCase() : '';
                 const phone = client.phone ? client.phone.toLowerCase() : '';
-                const wallet = client.wallet_number ? client.wallet_number.toLowerCase() : '';
-                return name.includes(searchTerm) || phone.includes(searchTerm) || wallet.includes(searchTerm);
+                // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+                const wallet = normalizeWalletNumber(client.wallet_number);
+                return name.includes(searchTerm) || phone.includes(searchTerm) || (wallet && wallet.includes(normalizedSearchTerm));
             }).slice(0, 10); // Ограничиваем до 10 результатов
             
             if (filteredClients.length === 0) {
@@ -2991,11 +3000,21 @@ function displayClients() {
     const sortValue = sortSelect.value;
 
     // Фильтруем клиентов
+    // Функция для нормализации номера кошелька (убирает дефисы и пробелы)
+    const normalizeWalletNumber = (wallet) => {
+        if (!wallet) return '';
+        return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+    };
+    
+    const normalizedSearchTerm = normalizeWalletNumber(searchTerm);
+    
     let filteredClients = allClients.filter(client => {
         const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(searchTerm) : false;
         const phoneMatch = client.phone ? client.phone.toLowerCase().includes(searchTerm) : false;
         const childNameMatch = client.child_name ? client.child_name.toLowerCase().includes(searchTerm) : false;
-        const walletMatch = client.wallet_number ? client.wallet_number.toLowerCase().includes(searchTerm) : false;
+        // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+        const walletNumber = normalizeWalletNumber(client.wallet_number);
+        const walletMatch = walletNumber && walletNumber.includes(normalizedSearchTerm);
         return fullNameMatch || phoneMatch || childNameMatch || walletMatch;
     });
 
@@ -5914,10 +5933,20 @@ function initializeWalletRefill() {
     function searchClients(query) {
         const queryLower = query.toLowerCase();
         
+        // Функция для нормализации номера кошелька (убирает дефисы и пробелы)
+        const normalizeWalletNumber = (wallet) => {
+            if (!wallet) return '';
+            return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+        };
+        
+        const normalizedQuery = normalizeWalletNumber(queryLower);
+        
         const filteredClients = allClients.filter(client => {
             const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(queryLower) : false;
             const phoneMatch = client.phone ? client.phone.toLowerCase().includes(queryLower) : false;
-            const walletMatch = client.wallet_number ? client.wallet_number.toLowerCase().includes(queryLower) : false;
+            // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+            const walletNumber = normalizeWalletNumber(client.wallet_number);
+            const walletMatch = walletNumber && walletNumber.includes(normalizedQuery);
             return fullNameMatch || phoneMatch || walletMatch;
         });
 
