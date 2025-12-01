@@ -333,74 +333,112 @@ async function registerClient(data) {
             }
         }
         
-        // МИГРАЦИЯ 033: Проверяем, есть ли уже клиент с таким телефоном
-        // (возможно, зарегистрирован через сайт Кулиги)
-        const normalizedPhone = data.phone.replace(/[\s\-\(\)]/g, '');
-        const existingClientResult = await dbClient.query(
-            `SELECT id, telegram_id, birth_date FROM clients 
-             WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1 
+        // Проверяем, есть ли уже клиент с таким telegram_id (приоритетная проверка)
+        let existingClientResult = await dbClient.query(
+            `SELECT id, telegram_id, birth_date, phone FROM clients 
+             WHERE telegram_id = $1 
              LIMIT 1`,
-            [normalizedPhone]
+            [data.telegram_id]
         );
         
         let clientId;
+        let existingClient = null;
         
         if (existingClientResult.rows.length > 0) {
-            // Клиент найден, обновляем его telegram_id и связанные данные
-            const existingClient = existingClientResult.rows[0];
+            // Клиент найден по telegram_id
+            existingClient = existingClientResult.rows[0];
             clientId = existingClient.id;
             
-            console.log(`✅ МИГРАЦИЯ 033: Найден существующий клиент (ID: ${clientId}), обновляем telegram_id`);
+            console.log(`✅ Найден существующий клиент по telegram_id (ID: ${clientId}), обновляем данные`);
             
             await dbClient.query(
                 `UPDATE clients 
-                 SET telegram_id = $1, 
-                     telegram_username = $2, 
-                     nickname = $3,
-                     full_name = $4,
-                     birth_date = $5,
-                     email = $6,
+                 SET telegram_username = $1, 
+                     nickname = $2,
+                     full_name = $3,
+                     birth_date = $4,
+                     email = $5,
+                     phone = COALESCE(phone, $6),
                      referral_code = COALESCE(referral_code, $7),
                      referred_by = COALESCE(referred_by, $8),
                      skill_level = COALESCE(skill_level, 1),
                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = $9`,
-                [data.telegram_id, data.username || null, data.nickname, data.full_name, data.birth_date, data.email, newReferralCode, referrerId, clientId]
+                [data.username || null, data.nickname, data.full_name, data.birth_date, data.email, data.phone, newReferralCode, referrerId, clientId]
             );
             
             console.log('✅ Клиент обновлен для интеграции с ботом');
         } else {
-            // Клиент не найден, создаем нового
-        const res = await dbClient.query(
-            `INSERT INTO clients (full_name, birth_date, phone, email, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9) RETURNING id`,
-            [data.full_name, data.birth_date, data.phone, data.email, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
-        );
-        
-        console.log('Клиент создан, ID:', res.rows[0].id);
-            clientId = res.rows[0].id;
+            // МИГРАЦИЯ 033: Проверяем, есть ли уже клиент с таким телефоном
+            // (возможно, зарегистрирован через сайт Кулиги, но не имеет telegram_id)
+            const normalizedPhone = data.phone.replace(/[\s\-\(\)]/g, '');
+            existingClientResult = await dbClient.query(
+                `SELECT id, telegram_id, birth_date FROM clients 
+                 WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = $1 
+                   AND (telegram_id IS NULL OR telegram_id = '')
+                 LIMIT 1`,
+                [normalizedPhone]
+            );
+            
+            if (existingClientResult.rows.length > 0) {
+                // Клиент найден по телефону, но без telegram_id
+                existingClient = existingClientResult.rows[0];
+                clientId = existingClient.id;
+                
+                console.log(`✅ МИГРАЦИЯ 033: Найден существующий клиент по телефону (ID: ${clientId}), добавляем telegram_id`);
+                
+                await dbClient.query(
+                    `UPDATE clients 
+                     SET telegram_id = $1, 
+                         telegram_username = $2, 
+                         nickname = $3,
+                         full_name = $4,
+                         birth_date = $5,
+                         email = $6,
+                         referral_code = COALESCE(referral_code, $7),
+                         referred_by = COALESCE(referred_by, $8),
+                         skill_level = COALESCE(skill_level, 1),
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $9`,
+                    [data.telegram_id, data.username || null, data.nickname, data.full_name, data.birth_date, data.email, newReferralCode, referrerId, clientId]
+                );
+                
+                console.log('✅ Клиент обновлен для интеграции с ботом');
+            } else {
+                // Клиент не найден, создаем нового
+                const res = await dbClient.query(
+                    `INSERT INTO clients (full_name, birth_date, phone, email, telegram_id, telegram_username, nickname, skill_level, referral_code, referred_by) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9) RETURNING id`,
+                    [data.full_name, data.birth_date, data.phone, data.email, data.telegram_id, data.username || null, data.nickname, newReferralCode, referrerId]
+                );
+                
+                console.log('Клиент создан, ID:', res.rows[0].id);
+                clientId = res.rows[0].id;
+            }
         }
         
         // Проверяем, есть ли уже кошелек у клиента (может быть создан через сайт)
         const walletCheckResult = await dbClient.query(
-            'SELECT id FROM wallets WHERE client_id = $1 LIMIT 1',
+            'SELECT id, wallet_number FROM wallets WHERE client_id = $1 LIMIT 1',
             [clientId]
         );
         
         let walletId;
+        let walletNumber;
         if (walletCheckResult.rows.length > 0) {
             // Кошелек уже существует
             walletId = walletCheckResult.rows[0].id;
-            console.log('✅ Кошелек уже существует, ID:', walletId);
+            walletNumber = walletCheckResult.rows[0].wallet_number;
+            console.log('✅ Кошелек уже существует, ID:', walletId, 'номер:', walletNumber);
         } else {
-        // Создаем кошелек
-        const walletNumber = await generateUniqueWalletNumber();
-        console.log('Создание кошелька:', walletNumber);
-        const walletResult = await dbClient.query(
-            `INSERT INTO wallets (client_id, wallet_number, balance) 
-             VALUES ($1, $2, 0) RETURNING id`,
-            [clientId, walletNumber]
-        );
+            // Создаем кошелек
+            walletNumber = await generateUniqueWalletNumber();
+            console.log('Создание кошелька:', walletNumber);
+            const walletResult = await dbClient.query(
+                `INSERT INTO wallets (client_id, wallet_number, balance) 
+                 VALUES ($1, $2, 0) RETURNING id`,
+                [clientId, walletNumber]
+            );
             walletId = walletResult.rows[0].id;
         }
         
@@ -583,7 +621,7 @@ async function registerClient(data) {
         
         await dbClient.query('COMMIT');
         console.log('Транзакция успешно завершена');
-        return { walletNumber: formatWalletNumber(walletNumber), referralCode: newReferralCode };
+        return { id: clientId, walletNumber: formatWalletNumber(walletNumber), referralCode: newReferralCode };
     } catch (e) {
         console.error('Ошибка при регистрации клиента:', e);
         await dbClient.query('ROLLBACK');
@@ -12184,7 +12222,7 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
             '🌟 Я - ваш персональный помощник в мире горнолыжного спорта!\n\n' +
             'Я помогу вам:\n' +
             '• 📝 Записаться на тренировки на горнолыжном тренажере\n' +
-            '• ⛷ Забронировать занятия в Кулиге зимой\n' +
+            '• ⛷ Забронировать занятия с инструктором в Кулиге или на Воронинских горках зимой\n' +
             '• 💳 Управлять вашим балансом\n' +
             '• 🎁 Приобрести подарочные сертификаты\n\n';
         
