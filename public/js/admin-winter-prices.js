@@ -164,9 +164,9 @@ function displayWinterPrices(prices) {
         html += '</div>';
     }
 
-    // Обычная группа
+    // Групповая тренировка
     if (grouped.group.length > 0) {
-        html += '<div class="price-group" style="margin-bottom:30px;"><h4>Обычная группа</h4>';
+        html += '<div class="price-group" style="margin-bottom:30px;"><h4>Групповая тренировка</h4>';
         grouped.group.sort((a, b) => a.participants - b.participants).forEach(price => {
             html += renderWinterPriceItem(price);
         });
@@ -219,7 +219,7 @@ function renderWinterPriceItem(price) {
     const typeLabels = {
         individual: 'Индивидуальное',
         sport_group: 'Спортивная группа',
-        group: 'Обычная группа'
+        group: 'Групповая тренировка'
     };
 
     const participantsText = price.participants ? `(${price.participants} чел)` : '';
