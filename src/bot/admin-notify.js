@@ -23,6 +23,18 @@ function formatTime(timeStr) {
     return timeStr.toString().slice(0, 5);
 }
 
+// Функция для получения названия места по location
+function getLocationDisplayName(location) {
+    if (!location) {
+        return 'Кулига Парк'; // Fallback
+    }
+    const locationNames = {
+        'kuliga': 'База отдыха «Кулига-Клуб»',
+        'vorona': 'Воронинские горки'
+    };
+    return locationNames[location] || 'Кулига Парк';
+}
+
 // Функция для отправки уведомления о создании расписания
 async function notifyScheduleCreated(month) {
     try {
@@ -262,8 +274,12 @@ async function notifyAdminWinterGroupTrainingCreatedByAdmin(data) {
             ? (totalPrice / maxParticipants)
             : null;
 
+        // Получаем location из данных или используем fallback
+        const location = data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        
         // Формируем сообщение о создании тренировки
-        let message = '✅ *Создана зимняя групповая тренировка на естественном склоне в Кулига Парк*\n\n';
+        let message = `✅ *Создана зимняя групповая тренировка на естественном склоне в ${locationName}*\n\n`;
         
         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
         message += `⏰ *Время:* ${timeFormatted}\n`;
@@ -335,8 +351,12 @@ async function notifyAdminWinterGroupTrainingCreated(data) {
             ? (totalPrice / maxParticipants)
             : null;
 
+        // Получаем location из данных или используем fallback
+        const location = data.location || 'kuliga';
+        const locationName = getLocationDisplayName(location);
+        
         // Формируем сообщение согласно требованиям
-        let message = '👥 *Новая запись на групповую Зимнюю тренировку в Кулига Парк!*\n\n';
+        let message = `👥 *Новая запись на групповую Зимнюю тренировку в ${locationName}!*\n\n`;
         
         if (data.client_name) {
             message += `👤 *Клиент:* ${data.client_name}\n`;

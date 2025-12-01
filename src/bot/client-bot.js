@@ -134,7 +134,7 @@ async function showMainMenu(chatId, telegramId = null) {
                 ['📝 Записаться на тренировку'],
                 ['📋 Мои записи', '👤 Личный кабинет'],
                 ['🎁 Сертификаты', '💰 Кошелек'],
-                ['🎫 Абонементы'],
+                // ['🎫 Абонементы'], // Временно закомментировано
                 ['📤 Поделиться ботом', '⚙️ Настройка уведомлений']
             ],
             resize_keyboard: true,
@@ -1399,71 +1399,71 @@ async function handleTextMessage(msg) {
         return showCertificatesMenu(chatId);
     }
 
-    // Обработка кнопки "Абонементы"
-    if (msg.text === '🎫 Абонементы') {
-        const client = await getClientByTelegramId(msg.from.id.toString());
-        if (client) {
-            return showSubscriptionsMenu(chatId, client.id);
-        } else {
-            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
-        }
-    }
+    // Обработка кнопки "Абонементы" - ВРЕМЕННО ЗАКОММЕНТИРОВАНО
+    // if (msg.text === '🎫 Абонементы') {
+    //     const client = await getClientByTelegramId(msg.from.id.toString());
+    //     if (client) {
+    //         return showSubscriptionsMenu(chatId, client.id);
+    //     } else {
+    //         return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+    //     }
+    // }
 
-    // Обработка кнопки "Купить абонемент"
-    if (msg.text === '🛒 Купить абонемент') {
-        const client = await getClientByTelegramId(msg.from.id.toString());
-        if (client) {
-            return showAvailableSubscriptions(chatId, client.id);
-        } else {
-            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
-        }
-    }
+    // Обработка кнопки "Купить абонемент" - ВРЕМЕННО ЗАКОММЕНТИРОВАНО
+    // if (msg.text === '🛒 Купить абонемент') {
+    //     const client = await getClientByTelegramId(msg.from.id.toString());
+    //     if (client) {
+    //         return showAvailableSubscriptions(chatId, client.id);
+    //     } else {
+    //         return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+    //     }
+    // }
 
-    // Обработка кнопки "Мои абонементы"
-    if (msg.text === '📋 Мои абонементы') {
-        const client = await getClientByTelegramId(msg.from.id.toString());
-        if (client) {
-            return showMySubscriptions(chatId, client.id);
-        } else {
-            return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
-        }
-    }
+    // Обработка кнопки "Мои абонементы" - ВРЕМЕННО ЗАКОММЕНТИРОВАНО
+    // if (msg.text === '📋 Мои абонементы') {
+    //     const client = await getClientByTelegramId(msg.from.id.toString());
+    //     if (client) {
+    //         return showMySubscriptions(chatId, client.id);
+    //     } else {
+    //         return bot.sendMessage(chatId, '❌ Пользователь не найден. Пожалуйста, зарегистрируйтесь сначала.');
+    //     }
+    // }
 
-    // Обработка выбора абонемента для покупки
-    if (state && state.step === 'subscription_purchase_selection') {
-        // Проверяем кнопку "Назад" перед проверкой номера
-        if (msg.text === '🔙 Назад в меню') {
-            const clientId = state.data?.client_id;
-            userStates.delete(chatId);
-            if (clientId) {
-                return showSubscriptionsMenu(chatId, clientId);
-            } else {
-                // Если clientId нет в состоянии, получаем из telegram_id
-                const client = await getClientByTelegramId(msg.from.id.toString());
-                if (client) {
-                    return showSubscriptionsMenu(chatId, client.id);
-                }
-            }
-        }
-
-        const selectedIndex = parseInt(msg.text) - 1;
-        const subscriptions = state.data?.available_subscriptions || [];
-
-        if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= subscriptions.length) {
-            return bot.sendMessage(chatId,
-                '❌ Неверный номер абонемента. Пожалуйста, выберите номер из списка.',
-                {
-                    reply_markup: {
-                        keyboard: [['🔙 Назад в меню']],
-                        resize_keyboard: true
-                    }
-                }
-            );
-        }
-
-        const selectedType = subscriptions[selectedIndex];
-        return purchaseSubscription(chatId, state.data.client_id, selectedType.id);
-    }
+    // Обработка выбора абонемента для покупки - ВРЕМЕННО ЗАКОММЕНТИРОВАНО
+    // if (state && state.step === 'subscription_purchase_selection') {
+    //     // Проверяем кнопку "Назад" перед проверкой номера
+    //     if (msg.text === '🔙 Назад в меню') {
+    //         const clientId = state.data?.client_id;
+    //         userStates.delete(chatId);
+    //         if (clientId) {
+    //             return showSubscriptionsMenu(chatId, clientId);
+    //         } else {
+    //             // Если clientId нет в состоянии, получаем из telegram_id
+    //             const client = await getClientByTelegramId(msg.from.id.toString());
+    //             if (client) {
+    //                 return showSubscriptionsMenu(chatId, client.id);
+    //             }
+    //         }
+    //     }
+    //
+    //     const selectedIndex = parseInt(msg.text) - 1;
+    //     const subscriptions = state.data?.available_subscriptions || [];
+    //
+    //     if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= subscriptions.length) {
+    //         return bot.sendMessage(chatId,
+    //             '❌ Неверный номер абонемента. Пожалуйста, выберите номер из списка.',
+    //             {
+    //                 reply_markup: {
+    //                     keyboard: [['🔙 Назад в меню']],
+    //                     resize_keyboard: true
+    //                 }
+    //             }
+    //         );
+    //     }
+    //
+    //     const selectedType = subscriptions[selectedIndex];
+    //     return purchaseSubscription(chatId, state.data.client_id, selectedType.id);
+    // }
 
     // Обработка кнопки "Подарить еще сертификат"
     if (msg.text === '💝 Подарить еще сертификат') {
@@ -5366,12 +5366,12 @@ async function handleTextMessage(msg) {
                             `❌ Недостаточно средств на балансе.\n\n` +
                             `Требуется: ${pricePerPerson.toFixed(2)} руб.\n` +
                             `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                            `Пожалуйста, пополните баланс или используйте абонемент.`,
+                            `Пожалуйста, пополните баланс.`,
                             {
                                 reply_markup: {
                                     keyboard: [
                                         ['💳 Пополнить баланс'],
-                                        ['🎫 Абонементы'],
+                                        // ['🎫 Абонементы'], // Временно закомментировано
                                         ['🔙 Назад в меню']
                                     ],
                                     resize_keyboard: true
