@@ -51,6 +51,15 @@ async function generateUniqueCertificateNumber() {
 
 // 1. Создание (покупка) сертификата
 router.post('/purchase', async (req, res) => {
+    console.log('📦 [certificates/purchase] Получен запрос на покупку сертификата');
+    console.log('📦 [certificates/purchase] Тело запроса:', {
+        purchaser_id: req.body.purchaser_id,
+        nominal_value: req.body.nominal_value,
+        design_id: req.body.design_id,
+        recipient_name: req.body.recipient_name ? req.body.recipient_name.substring(0, 50) : null,
+        message: req.body.message ? req.body.message.substring(0, 50) : null
+    });
+    
     const client = await pool.connect();
     
     try {
@@ -215,6 +224,13 @@ router.post('/purchase', async (req, res) => {
         );
 
         await client.query('COMMIT');
+        
+        console.log('✅ [certificates/purchase] Сертификат успешно создан:', {
+            id: certificate.id,
+            certificate_number: certificateNumber,
+            purchaser_id: purchaser_id,
+            email: purchaser.email
+        });
 
         // Формируем URL сертификата
         const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${certificateNumber}`;
@@ -241,12 +257,46 @@ router.post('/purchase', async (req, res) => {
             }
         });
 
-        // Email будет отправлен автоматически через database trigger
-        console.log(`✅ Сертификат создан, email будет отправлен автоматически через триггер`);
+        // Отправляем email с сертификатом (асинхронно)
         if (purchaser.email) {
-            console.log(`📧 Email будет отправлен на: ${purchaser.email}`);
+            setImmediate(async () => {
+                try {
+                    console.log(`📧 Отправка email с сертификатом на: ${purchaser.email}`);
+                    
+                    // Получаем данные дизайна
+                    const designQuery = await pool.query(
+                        'SELECT name FROM certificate_designs WHERE id = $1',
+                        [design_id]
+                    );
+                    const designName = designQuery.rows[0]?.name || 'Неизвестный дизайн';
+                    
+                    // Подготавливаем данные для email
+                    const certificateData = {
+                        certificateId: certificate.id,
+                        certificateCode: certificateNumber,
+                        recipientName: recipient_name || purchaser.full_name,
+                        amount: nominal_value,
+                        message: message || null,
+                        pdfUrl: certificate.pdf_url,
+                        imageUrl: certificate.image_url,
+                        expiry_date: expiryDate.toISOString(),
+                        designImageUrl: null, // Можно добавить если нужно
+                        certificate_url: certificateUrl
+                    };
+                    
+                    const emailResult = await emailService.sendCertificateEmail(purchaser.email, certificateData);
+                    
+                    if (emailResult.success) {
+                        console.log(`✅ Email с сертификатом успешно отправлен на ${purchaser.email}`);
+                    } else {
+                        console.error(`❌ Ошибка отправки email на ${purchaser.email}:`, emailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('❌ Ошибка при отправке email с сертификатом:', emailError);
+                }
+            });
         } else {
-            console.log(`⚠️  Email не указан для покупателя ${purchaser.full_name}`);
+            console.log(`⚠️  Email не указан для покупателя ${purchaser.full_name}, отправка email пропущена`);
         }
 
         // Отправляем уведомление администратору (асинхронно)

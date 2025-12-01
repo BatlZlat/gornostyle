@@ -8079,11 +8079,21 @@ async function handleTextMessage(msg) {
             }
 
             if (msg.text === '✅ Купить сертификат') {
+                console.log(`[certificate_purchase_confirmation] Обработка покупки сертификата, chatId: ${chatId}`);
+                
                 // Защита от множественных покупок
                 const currentState = userStates.get(chatId);
+                console.log(`[certificate_purchase_confirmation] Текущее состояние:`, {
+                    hasState: !!currentState,
+                    step: currentState?.step,
+                    processing: currentState?.processing,
+                    hasPurchaseData: !!purchaseData
+                });
+                
                 if (currentState && currentState.step === 'certificate_purchase_confirmation') {
                     // Проверяем, не идет ли уже процесс покупки
                     if (currentState.processing) {
+                        console.log(`[certificate_purchase_confirmation] Покупка уже обрабатывается`);
                         return bot.sendMessage(chatId, '⏳ Покупка уже обрабатывается, пожалуйста, подождите...');
                     }
                     
@@ -8096,10 +8106,22 @@ async function handleTextMessage(msg) {
                     // Показываем индикатор загрузки
                     await bot.sendMessage(chatId, '⏳ Обрабатываем покупку...');
                     
+                    console.log(`[certificate_purchase_confirmation] Вызов createCertificate...`);
                     // Выполняем покупку
-                    return createCertificate(chatId, purchaseData);
+                    return createCertificate(chatId, purchaseData).catch(error => {
+                        console.error(`[certificate_purchase_confirmation] Ошибка в createCertificate:`, error);
+                        // Очищаем состояние при ошибке
+                        userStates.delete(chatId);
+                        return bot.sendMessage(chatId, '❌ Произошла ошибка при создании сертификата. Пожалуйста, попробуйте позже.', {
+                            reply_markup: {
+                                keyboard: [['🔙 В главное меню']],
+                                resize_keyboard: true
+                            }
+                        });
+                    });
                 }
                 
+                console.log(`[certificate_purchase_confirmation] Сессия истекла или состояние неверное`);
                 return bot.sendMessage(chatId, '❌ Сессия истекла. Начните покупку заново.', {
                     reply_markup: {
                         keyboard: [['🔙 В главное меню']],
@@ -8128,7 +8150,9 @@ async function handleTextMessage(msg) {
                     }
                 );
             }
-            break;
+            
+            // Если текст не соответствует ни одной кнопке, игнорируем
+            return Promise.resolve();
         }
 
         case 'certificate_activation': {
@@ -11808,6 +11832,16 @@ async function showPurchaseConfirmation(chatId, purchaseData) {
 
 // Создать сертификат
 async function createCertificate(chatId, purchaseData) {
+    console.log(`[createCertificate] Начало создания сертификата для клиента ${purchaseData.client_id}`);
+    console.log(`[createCertificate] Данные покупки:`, {
+        client_id: purchaseData.client_id,
+        nominal_value: purchaseData.nominal_value,
+        design_id: purchaseData.design_id,
+        recipient_name: purchaseData.recipient_name,
+        message: purchaseData.message?.substring(0, 50),
+        email: purchaseData.email
+    });
+    
     try {
         // Обновляем email клиента, если он был указан
         if (purchaseData.email) {
@@ -11835,7 +11869,19 @@ async function createCertificate(chatId, purchaseData) {
             }
         }
 
-        const response = await fetch(`${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`, {
+        const apiUrl = `${process.env.BASE_URL || 'http://localhost:8080'}/api/certificates/purchase`;
+        console.log(`[createCertificate] Отправка запроса на API: ${apiUrl}`);
+        
+        const requestBody = {
+            purchaser_id: purchaseData.client_id,
+            nominal_value: purchaseData.nominal_value,
+            design_id: purchaseData.design_id,
+            recipient_name: purchaseData.recipient_name || null,
+            message: purchaseData.message || null
+        };
+        console.log(`[createCertificate] Тело запроса:`, requestBody);
+        
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${getJWTToken()}`,
@@ -11882,14 +11928,19 @@ async function createCertificate(chatId, purchaseData) {
             });
         }
 
+        console.log(`[createCertificate] Сертификат успешно создан: номер ${result.certificate?.certificate_number}, ID: ${result.certificate?.id}`);
+        
         // Показываем результат успешной покупки (передаем purchaseData для проверки email)
         await showCertificateResult(chatId, result.certificate, purchaseData);
+        
+        console.log(`[createCertificate] Процесс создания сертификата завершен успешно`);
 
     } catch (error) {
         // Очищаем состояние при ошибке
         userStates.delete(chatId);
         
-        console.error('Ошибка при создании сертификата:', error);
+        console.error('[createCertificate] ❌ ОШИБКА при создании сертификата:', error);
+        console.error('[createCertificate] Stack trace:', error.stack);
         return bot.sendMessage(chatId, '❌ Произошла ошибка при создании сертификата. Попробуйте позже.', {
             reply_markup: {
                 keyboard: [['🔙 В главное меню']],
