@@ -5098,6 +5098,85 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
         return;
     }
 
+    // Проверка: если отправляем всем пользователям, запрашиваем подтверждение
+    if (recipientType === 'all') {
+        // Создаем модальное окно подтверждения с HTML-форматированием
+        const confirmed = await new Promise((resolve) => {
+            const confirmModal = document.createElement('div');
+            confirmModal.className = 'modal';
+            confirmModal.style.display = 'flex';
+            confirmModal.style.zIndex = '10002';
+            confirmModal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <h3 style="margin-top: 0;">Подтверждение отправки</h3>
+                    <p style="font-size: 16px; line-height: 1.6;">
+                        Вы уверены, что хотите отправить это сообщение <strong style="font-weight: bold; font-size: 18px;">ВСЕМ ПОЛЬЗОВАТЕЛЯМ</strong>?
+                    </p>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button class="btn-secondary" id="confirm-cancel-btn" style="padding: 10px 20px;">Отмена</button>
+                        <button class="btn-primary" id="confirm-send-btn" style="padding: 10px 20px;">Да, отправить</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(confirmModal);
+
+            const cleanup = () => {
+                confirmModal.remove();
+            };
+
+            const cancelBtn = confirmModal.querySelector('#confirm-cancel-btn');
+            const sendBtn = confirmModal.querySelector('#confirm-send-btn');
+
+            cancelBtn.addEventListener('click', () => {
+                cleanup();
+                resolve(false);
+            });
+
+            sendBtn.addEventListener('click', () => {
+                cleanup();
+                resolve(true);
+            });
+
+            // Закрытие по клику вне модального окна
+            confirmModal.addEventListener('click', (e) => {
+                if (e.target === confirmModal) {
+                    cleanup();
+                    resolve(false);
+                }
+            });
+        });
+
+        if (!confirmed) {
+            return; // Пользователь отменил отправку
+        }
+    }
+
+    // Проверяем, что медиафайл все еще доступен после подтверждения
+    // Если файл недоступен, пытаемся получить его из input элемента
+    let finalMediaFile = mediaFile;
+    let finalMediaType = mediaType;
+    
+    if (!finalMediaFile) {
+        // Пытаемся получить файл из input элемента
+        const mediaUploadInput = form.querySelector('#media-upload');
+        if (mediaUploadInput && mediaUploadInput.files && mediaUploadInput.files.length > 0) {
+            finalMediaFile = mediaUploadInput.files[0];
+            finalMediaType = finalMediaFile.type.startsWith('image/') ? 'photo' : 'video';
+            console.log('[handleNotifyFormSubmitWithMedia] Медиафайл восстановлен из input:', {
+                name: finalMediaFile.name,
+                type: finalMediaFile.type,
+                size: finalMediaFile.size
+            });
+        }
+    } else {
+        console.log('[handleNotifyFormSubmitWithMedia] Медиафайл после подтверждения:', {
+            name: finalMediaFile.name,
+            type: finalMediaFile.type,
+            size: finalMediaFile.size,
+            mediaType: finalMediaType
+        });
+    }
+
     // Конвертируем Markdown в HTML перед отправкой
     const message = markdownToHtml(rawMessage);
 
@@ -5142,9 +5221,9 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             const scheduledDateTime = new Date(scheduleDatetime.value);
             formData.append('scheduled_at', scheduledDateTime.toISOString());
             
-            if (mediaFile) {
-                formData.append('media', mediaFile);
-                formData.append('media_type', mediaType);
+            if (finalMediaFile) {
+                formData.append('media', finalMediaFile);
+                formData.append('media_type', finalMediaType);
             }
             
             const response = await fetch('/api/trainings/scheduled-messages', {
@@ -5247,11 +5326,20 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
         showLoading('Отправка сообщения...');
 
         // Если есть медиа, используем FormData
-        if (mediaFile) {
+        if (finalMediaFile) {
+            console.log('[handleNotifyFormSubmitWithMedia] Отправка с медиафайлом:', {
+                endpoint: endpoint,
+                fileName: finalMediaFile.name,
+                fileType: finalMediaFile.type,
+                fileSize: finalMediaFile.size,
+                mediaType: finalMediaType,
+                messageLength: message.length
+            });
+            
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('media', mediaFile);
-            formData.append('mediaType', mediaType);
+            formData.append('media', finalMediaFile);
+            formData.append('mediaType', finalMediaType);
             formData.append('parse_mode', 'HTML'); // Используем HTML для поддержки <u>
 
             const response = await fetch(endpoint, {

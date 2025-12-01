@@ -2167,11 +2167,28 @@ router.post('/notify-clients', upload.single('media'), async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка при рассылке:', error);
+        console.error('Детали ошибки:', {
+            message: error.message,
+            stack: error.stack,
+            mediaFile: mediaFile ? {
+                originalname: mediaFile.originalname,
+                mimetype: mediaFile.mimetype,
+                size: mediaFile.size,
+                path: mediaFile.path
+            } : null
+        });
         // Удаляем файл в случае ошибки
-        if (mediaFile && fs.existsSync(mediaFile.path)) {
-            fs.unlinkSync(mediaFile.path);
+        if (mediaFile && mediaFile.path && fs.existsSync(mediaFile.path)) {
+            try {
+                fs.unlinkSync(mediaFile.path);
+            } catch (unlinkError) {
+                console.error('Ошибка при удалении файла:', unlinkError);
+            }
         }
-        res.status(500).json({ error: 'Ошибка при рассылке' });
+        res.status(500).json({ 
+            error: 'Ошибка при рассылке',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
