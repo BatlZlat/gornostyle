@@ -848,7 +848,8 @@ async function testNotifications() {
         }
 
         testResults.notifications = results;
-        return results.functionExists && results.noHardcodedLocation;
+        // Возвращаем true только если все ключевые тесты прошли
+        return results.functionExists && results.noHardcodedLocation && (results.notificationStructure !== false);
 
     } catch (error) {
         log(`\n❌ Ошибка при проверке уведомлений: ${error.message}`, 'red');
