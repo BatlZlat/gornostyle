@@ -11931,9 +11931,12 @@ async function createCertificate(chatId, purchaseData) {
         console.log(`[createCertificate] Сертификат успешно создан: номер ${result.certificate?.certificate_number}, ID: ${result.certificate?.id}`);
         
         // Показываем результат успешной покупки (передаем purchaseData для проверки email)
-        await showCertificateResult(chatId, result.certificate, purchaseData);
+        const resultMessage = await showCertificateResult(chatId, result.certificate, purchaseData);
         
         console.log(`[createCertificate] Процесс создания сертификата завершен успешно`);
+        
+        // Возвращаем результат для handleTextMessage
+        return resultMessage;
 
     } catch (error) {
         // Очищаем состояние при ошибке
