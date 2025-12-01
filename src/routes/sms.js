@@ -136,12 +136,56 @@ async function processPendingCertificate(walletNumber, amount, dbClient) {
         console.log(`🔍 [processPendingCertificate] Завершаем транзакцию COMMIT`);
         await dbClient.query('COMMIT');
 
-        // Email будет отправлен автоматически через database trigger
-        console.log(`✅ [processPendingCertificate] Сертификат создан, email будет отправлен автоматически через триггер`);
+        // Отправляем email с сертификатом (асинхронно, явно)
         if (pendingCert.email) {
-            console.log(`📧 [processPendingCertificate] Email будет отправлен на: ${pendingCert.email}`);
+            setImmediate(async () => {
+                try {
+                    console.log(`📧 [processPendingCertificate] Отправка email с сертификатом на: ${pendingCert.email}`);
+                    
+                    // Получаем данные созданного сертификата
+                    const certData = await pool.query(
+                        `SELECT id, certificate_number, nominal_value, recipient_name, message, 
+                                pdf_url, image_url, expiry_date, purchase_date
+                         FROM certificates WHERE id = $1`,
+                        [certificateId]
+                    );
+                    
+                    if (certData.rows.length === 0) {
+                        console.error(`❌ [processPendingCertificate] Сертификат ${certificateId} не найден для отправки email`);
+                        return;
+                    }
+                    
+                    const cert = certData.rows[0];
+                    const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+                    const certificateUrl = `${baseUrl}/certificate/${cert.certificate_number}`;
+                    
+                    // Подготавливаем данные для email
+                    const certificateData = {
+                        certificateId: cert.id,
+                        certificateCode: cert.certificate_number,
+                        recipientName: cert.recipient_name || pendingCert.full_name,
+                        amount: cert.nominal_value,
+                        message: cert.message || null,
+                        pdfUrl: cert.pdf_url,
+                        imageUrl: cert.image_url,
+                        expiry_date: cert.expiry_date.toISOString(),
+                        designImageUrl: pendingCert.design_image_url || null,
+                        certificate_url: certificateUrl
+                    };
+                    
+                    const emailResult = await emailService.sendCertificateEmail(pendingCert.email, certificateData);
+                    
+                    if (emailResult.success) {
+                        console.log(`✅ [processPendingCertificate] Email с сертификатом успешно отправлен на ${pendingCert.email}`);
+                    } else {
+                        console.error(`❌ [processPendingCertificate] Ошибка отправки email на ${pendingCert.email}:`, emailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('❌ [processPendingCertificate] Ошибка при отправке email с сертификатом:', emailError);
+                }
+            });
         } else {
-            console.log(`⚠️  [processPendingCertificate] Email не указан для клиента ${pendingCert.full_name}`);
+            console.log(`⚠️  [processPendingCertificate] Email не указан для клиента ${pendingCert.full_name}, отправка email пропущена`);
         }
 
         // Отправляем уведомление администратору о покупке через сайт
