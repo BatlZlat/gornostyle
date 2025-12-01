@@ -43,7 +43,7 @@ kuliga_admin_settings    -- Настройки (процент админа, в�
 
 ### 🔥 НЕДЕЛЯ 1 (10-16 ноября) - КРИТИЧНЫЙ ФУНКЦИОНАЛ
 
-#### 1. Лендинг `/instruktora-kuliga` (2-3 дня)
+#### 1. Лендинг `/instruktor-po-gornym-lyzham-snoubordy-tyumen` (2-3 дня)
 **Файлы для создания:**
 - `views/kuliga-landing.ejs` - Главная страница
 - `public/css/kuliga.css` - Стили (в стиле Горностайл72)
@@ -274,7 +274,7 @@ font-family: 'Roboto', 'Inter', -apple-system, sans-serif;
 ### Структура routes
 ```javascript
 // Пример структуры
-src/routes/kuliga-public.js      // GET /instruktora-kuliga
+src/routes/kuliga-public.js      // GET /instruktor-po-gornym-lyzham-snoubordy-tyumen
 src/routes/kuliga-booking.js     // POST /api/kuliga/booking
 src/routes/kuliga-payment.js     // POST /api/kuliga/payment/*
 ```

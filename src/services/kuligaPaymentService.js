@@ -4,8 +4,8 @@ const crypto = require('crypto');
 const TERMINAL_KEY = process.env.TINKOFF_TERMINAL_KEY;
 const PASSWORD = process.env.TINKOFF_PASSWORD;
 const API_URL = process.env.TINKOFF_API_URL || 'https://securepay.tinkoff.ru/v2';
-const SUCCESS_URL = process.env.KULIGA_PAYMENT_SUCCESS_URL || `${process.env.DOMAIN || ''}/instruktora-kuliga/booking/success`;
-const FAIL_URL = process.env.KULIGA_PAYMENT_FAIL_URL || `${process.env.DOMAIN || ''}/instruktora-kuliga/booking/fail`;
+const SUCCESS_URL = process.env.KULIGA_PAYMENT_SUCCESS_URL || `${process.env.DOMAIN || ''}/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/success`;
+const FAIL_URL = process.env.KULIGA_PAYMENT_FAIL_URL || `${process.env.DOMAIN || ''}/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/fail`;
 const CALLBACK_URL = process.env.KULIGA_PAYMENT_CALLBACK_URL || `${process.env.DOMAIN || ''}/api/kuliga/payment/callback`;
 
 if (!TERMINAL_KEY || !PASSWORD) {

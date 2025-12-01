@@ -29,7 +29,7 @@ const buildWeekContext = (weekOffset = 0) => {
     });
 };
 
-router.get('/instruktora-kuliga', (req, res) => {
+router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen', (req, res) => {
     res.render('kuliga-landing', {
         pageTitle: 'Служба инструкторов Горностайл72',
         adminPhone: process.env.ADMIN_PHONE,
@@ -47,7 +47,7 @@ router.get('/instruktora-kuliga', (req, res) => {
     });
 });
 
-router.get('/instruktora-kuliga/booking', (req, res) => {
+router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', (req, res) => {
     res.render('kuliga-booking', {
         pageTitle: 'Бронирование тренировки на Кулиге | Горностайл72',
         adminPhone: process.env.ADMIN_PHONE,

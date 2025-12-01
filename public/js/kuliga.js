@@ -290,7 +290,7 @@
                 const date = button.getAttribute('data-program-date');
                 const time = button.getAttribute('data-program-time');
 
-                const url = new URL('/instruktora-kuliga/booking', window.location.origin);
+                const url = new URL('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', window.location.origin);
                 if (programId) url.searchParams.set('programId', programId);
                 if (date) url.searchParams.set('date', date);
                 if (time) url.searchParams.set('time', time);
@@ -309,7 +309,7 @@
                 const duration = button.getAttribute('data-price-duration');
                 const participants = button.getAttribute('data-price-participants');
 
-                const url = new URL('/instruktora-kuliga/booking', window.location.origin);
+                const url = new URL('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', window.location.origin);
                 if (priceId) url.searchParams.set('priceId', priceId);
                 if (priceType) url.searchParams.set('type', priceType);
                 if (priceValue) url.searchParams.set('price', priceValue);
@@ -621,7 +621,7 @@
         if (!button) return;
         button.addEventListener('click', (event) => {
             event.preventDefault();
-            window.location.href = '/instruktora-kuliga/booking';
+            window.location.href = '/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking';
         });
     };
 
