@@ -1045,6 +1045,8 @@ router.get('/payouts/:id/trainings', async (req, res) => {
                 c.full_name as client_name,
                 c.phone as client_phone,
                 ki.admin_percentage,
+                kgt.max_participants,
+                kgt.price_per_person,
                 (kb.price_total * (1 - COALESCE(ki.admin_percentage, 20) / 100)) as instructor_earnings
             FROM kuliga_bookings kb
             LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
@@ -1063,19 +1065,88 @@ router.get('/payouts/:id/trainings', async (req, res) => {
             payout.period_end
         ]);
 
-        // Подсчитываем статистику по типам тренировок
-        let individualCount = 0;
-        let groupCount = 0;
-        const uniqueGroupTrainings = new Set();
+        // Группируем групповые тренировки по group_training_id для подсчета общего количества участников
+        const groupTrainingsMap = new Map();
+        const individualTrainings = [];
         
         trainingsResult.rows.forEach(row => {
             if (row.booking_type === 'group' && row.group_training_id) {
-                uniqueGroupTrainings.add(row.group_training_id);
+                const key = row.group_training_id;
+                if (!groupTrainingsMap.has(key)) {
+                    groupTrainingsMap.set(key, {
+                        group_training_id: row.group_training_id,
+                        date: row.date,
+                        start_time: row.start_time,
+                        end_time: row.end_time,
+                        max_participants: row.max_participants,
+                        price_per_person: parseFloat(row.price_per_person || 0),
+                        total_participants: 0,
+                        total_price: 0,
+                        total_earnings: 0,
+                        bookings: []
+                    });
+                }
+                const groupTraining = groupTrainingsMap.get(key);
+                groupTraining.total_participants += row.participants_count || 1;
+                groupTraining.total_price += parseFloat(row.price_total || 0);
+                groupTraining.total_earnings += parseFloat(row.instructor_earnings || 0);
+                groupTraining.bookings.push({
+                    id: row.id,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    participants_count: row.participants_count || 1,
+                    participants_names: row.participants_names,
+                    price_total: parseFloat(row.price_total || 0),
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0)
+                });
             } else if (row.booking_type === 'individual') {
-                individualCount++;
+                individualTrainings.push({
+                    id: row.id,
+                    date: row.date,
+                    start_time: row.start_time,
+                    end_time: row.end_time,
+                    booking_type: row.booking_type,
+                    client_name: row.client_name,
+                    client_phone: row.client_phone,
+                    participants_count: row.participants_count || 1,
+                    participants_names: row.participants_names,
+                    price_per_person: parseFloat(row.price_total || 0),
+                    price_total: parseFloat(row.price_total || 0),
+                    instructor_earnings: parseFloat(row.instructor_earnings || 0)
+                });
             }
         });
-        groupCount = uniqueGroupTrainings.size;
+        
+        // Преобразуем групповые тренировки в формат для ответа
+        const groupTrainings = Array.from(groupTrainingsMap.values()).map(gt => ({
+            id: gt.group_training_id,
+            date: gt.date,
+            start_time: gt.start_time,
+            end_time: gt.end_time,
+            booking_type: 'group',
+            group_training_id: gt.group_training_id,
+            client_name: gt.bookings.map(b => b.client_name).join(', '),
+            participants_count: gt.total_participants,
+            max_participants: gt.max_participants,
+            price_per_person: gt.price_per_person,
+            price_total: gt.total_price,
+            instructor_earnings: gt.total_earnings,
+            bookings: gt.bookings
+        }));
+        
+        // Подсчитываем статистику
+        const individualCount = individualTrainings.length;
+        const groupCount = groupTrainings.length;
+        
+        // Объединяем все тренировки (сначала групповые, потом индивидуальные)
+        const allTrainings = [...groupTrainings, ...individualTrainings].sort((a, b) => {
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            if (dateA.getTime() !== dateB.getTime()) {
+                return dateA.getTime() - dateB.getTime();
+            }
+            return String(a.start_time).localeCompare(String(b.start_time));
+        });
 
         res.json({
             success: true,
@@ -1089,20 +1160,7 @@ router.get('/payouts/:id/trainings', async (req, res) => {
                 individual_trainings: individualCount,
                 group_trainings: groupCount
             },
-            trainings: trainingsResult.rows.map(row => ({
-                id: row.id,
-                date: row.date,
-                start_time: row.start_time,
-                end_time: row.end_time,
-                booking_type: row.booking_type,
-                group_training_id: row.group_training_id,
-                client_name: row.client_name,
-                client_phone: row.client_phone,
-                participants_count: row.participants_count || 1,
-                participants_names: row.participants_names,
-                price_total: parseFloat(row.price_total || 0),
-                instructor_earnings: parseFloat(row.instructor_earnings || 0)
-            }))
+            trainings: allTrainings
         });
     } catch (error) {
         console.error('Ошибка получения детализации тренировок:', error);

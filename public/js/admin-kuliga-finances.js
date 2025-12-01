@@ -896,33 +896,67 @@ function showPayoutDetailsModal(data) {
                     <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Время</th>
                     <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Тип</th>
                     <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Клиент</th>
-                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Стоимость</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Стоимость за чел.</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Общая стоимость</th>
                     <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6;">Заработок</th>
                 </tr>
             </thead>
             <tbody>
-                ${trainings.map(t => `
+                ${trainings.map(t => {
+                    // Формируем текст типа тренировки
+                    let typeText = '';
+                    if (t.booking_type === 'group') {
+                        const maxParticipants = t.max_participants || 0;
+                        const actualParticipants = t.participants_count || 0;
+                        typeText = `👥 Групповая (${maxParticipants}/${actualParticipants})`;
+                    } else {
+                        typeText = '👤 Индивидуальная';
+                    }
+                    
+                    // Определяем стоимость за человека
+                    let pricePerPersonText = '-';
+                    if (t.booking_type === 'group' && t.price_per_person) {
+                        pricePerPersonText = formatCurrency(t.price_per_person) + ' ₽';
+                    } else if (t.booking_type === 'individual') {
+                        pricePerPersonText = formatCurrency(t.price_total) + ' ₽';
+                    }
+                    
+                    // Формируем информацию о клиентах
+                    let clientsHtml = '';
+                    if (t.booking_type === 'group' && t.bookings && Array.isArray(t.bookings) && t.bookings.length > 0) {
+                        // Для групповых тренировок показываем всех клиентов
+                        clientsHtml = t.bookings.map(booking => {
+                            const names = booking.participants_names && Array.isArray(booking.participants_names) 
+                                ? booking.participants_names.join(', ')
+                                : '';
+                            return `${escapeHtml(booking.client_name || 'Неизвестно')}${names ? `<br><small style="color: #666;">${escapeHtml(names)}</small>` : ''}`;
+                        }).join('<br><br>');
+                    } else {
+                        // Для индивидуальных тренировок
+                        clientsHtml = escapeHtml(t.client_name || 'Неизвестно');
+                        if (t.participants_names && Array.isArray(t.participants_names) && t.participants_names.length > 0) {
+                            clientsHtml += `<br><small style="color: #666;">${escapeHtml(t.participants_names.join(', '))}</small>`;
+                        }
+                    }
+                    
+                    return `
                     <tr style="border-bottom: 1px solid #dee2e6;">
                         <td style="padding: 12px;">${formatDate(t.date)}</td>
                         <td style="padding: 12px;">${String(t.start_time).substring(0, 5)} - ${String(t.end_time).substring(0, 5)}</td>
-                        <td style="padding: 12px;">
-                            ${t.booking_type === 'group' ? '👥 Групповая' : '👤 Индивидуальная'}
-                            ${t.participants_count > 1 ? ` (${t.participants_count} чел.)` : ''}
-                        </td>
-                        <td style="padding: 12px;">
-                            ${escapeHtml(t.client_name || 'Неизвестно')}
-                            ${t.participants_names && t.participants_names.length > 0 ? `<br><small style="color: #666;">${escapeHtml(t.participants_names.join(', '))}</small>` : ''}
-                        </td>
+                        <td style="padding: 12px;">${typeText}</td>
+                        <td style="padding: 12px;">${clientsHtml}</td>
+                        <td style="padding: 12px; text-align: right;">${pricePerPersonText}</td>
                         <td style="padding: 12px; text-align: right;">${formatCurrency(t.price_total)} ₽</td>
                         <td style="padding: 12px; text-align: right; font-weight: 600;">${formatCurrency(t.instructor_earnings)} ₽</td>
                     </tr>
-                `).join('')}
+                `;
+                }).join('')}
             </tbody>
         </table>
     ` : '<div style="padding: 20px; text-align: center; color: #666;">Нет тренировок</div>';
 
     modal.innerHTML = `
-        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 900px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 1200px; width: 95%; max-height: 90vh; overflow-y: auto;">
             <h2 style="margin-top: 0;">Детализация выплаты</h2>
             <div style="margin-bottom: 20px;">
                 <div><strong>Период:</strong> ${formatDate(payout.period_start)} - ${formatDate(payout.period_end)}</div>

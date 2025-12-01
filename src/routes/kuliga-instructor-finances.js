@@ -56,6 +56,10 @@ router.get('/earnings', async (req, res) => {
             const currentMonth = moment().tz(TIMEZONE).format('YYYY-MM');
             dateFilter = `AND TO_CHAR(kb.date, 'YYYY-MM') = $2`;
             params.push(currentMonth);
+        } else if (period === 'last_month') {
+            const lastMonth = moment().tz(TIMEZONE).subtract(1, 'month').format('YYYY-MM');
+            dateFilter = `AND TO_CHAR(kb.date, 'YYYY-MM') = $2`;
+            params.push(lastMonth);
         } else if (period === 'all_time') {
             dateFilter = '';
         } else if (from && to) {
@@ -85,10 +89,14 @@ router.get('/earnings', async (req, res) => {
 
         // Статистика по типам тренировок
         // Включаем только прошедшие тренировки (completed или confirmed/pending, которые уже прошли по времени)
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные kb.id
         const statsQuery = `
             SELECT 
                 kb.booking_type,
-                COUNT(*) as trainings_count,
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
                 SUM(kb.price_total) as total_revenue,
                 SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as instructor_earnings,
                 SUM(kb.price_total * (ki.admin_percentage / 100)) as admin_commission
@@ -128,54 +136,110 @@ router.get('/earnings', async (req, res) => {
             }
         });
 
-        // Получаем сумму выплаченных средств
-        let payoutsQuery = `
+        // Получаем сумму выплаченных средств ЗА ВЫБРАННЫЙ ПЕРИОД (для отображения в карточке "Выплачено")
+        let payoutsQueryForPeriod = `
             SELECT COALESCE(SUM(instructor_earnings), 0) as total_paid
             FROM kuliga_instructor_payouts
             WHERE instructor_id = $1
               AND status = 'paid'
         `;
-        let payoutsParams = [instructorId];
+        let payoutsParamsForPeriod = [instructorId];
 
         if (period === 'current_month') {
             const currentMonth = moment().tz(TIMEZONE).format('YYYY-MM');
-            payoutsQuery += ` AND TO_CHAR(period_start, 'YYYY-MM') = $2`;
-            payoutsParams.push(currentMonth);
+            payoutsQueryForPeriod += ` AND TO_CHAR(period_start, 'YYYY-MM') = $2`;
+            payoutsParamsForPeriod.push(currentMonth);
+        } else if (period === 'last_month') {
+            const lastMonth = moment().tz(TIMEZONE).subtract(1, 'month').format('YYYY-MM');
+            payoutsQueryForPeriod += ` AND TO_CHAR(period_start, 'YYYY-MM') = $2`;
+            payoutsParamsForPeriod.push(lastMonth);
         } else if (from && to) {
-            payoutsQuery += ` AND period_start >= $2::date AND period_end <= $3::date`;
-            payoutsParams.push(from, to);
+            payoutsQueryForPeriod += ` AND period_start >= $2::date AND period_end <= $3::date`;
+            payoutsParamsForPeriod.push(from, to);
         } else if (period !== 'all_time') {
             const currentMonth = moment().tz(TIMEZONE).format('YYYY-MM');
-            payoutsQuery += ` AND TO_CHAR(period_start, 'YYYY-MM') = $2`;
-            payoutsParams.push(currentMonth);
+            payoutsQueryForPeriod += ` AND TO_CHAR(period_start, 'YYYY-MM') = $2`;
+            payoutsParamsForPeriod.push(currentMonth);
         }
 
-        let totalPaid = 0;
+        let totalPaidForPeriod = 0;
         try {
-            const payoutsResult = await pool.query(payoutsQuery, payoutsParams);
-            totalPaid = parseFloat(payoutsResult.rows[0]?.total_paid || 0);
+            const payoutsResultForPeriod = await pool.query(payoutsQueryForPeriod, payoutsParamsForPeriod);
+            totalPaidForPeriod = parseFloat(payoutsResultForPeriod.rows[0]?.total_paid || 0);
         } catch (error) {
-            console.error('Ошибка получения выплат (таблица может не существовать):', error);
-            // Если таблица не существует, просто используем 0
-            totalPaid = 0;
+            console.error('Ошибка получения выплат за период (таблица может не существовать):', error);
+            totalPaidForPeriod = 0;
         }
 
-        // Долг = заработок - выплачено
-        const debt = totalEarnings - totalPaid;
+        // Получаем ВСЮ сумму выплаченных средств за ВСЕ ВРЕМЯ (для расчета долга)
+        let totalPaidAllTime = 0;
+        try {
+            const payoutsResultAllTime = await pool.query(
+                `SELECT COALESCE(SUM(instructor_earnings), 0) as total_paid
+                 FROM kuliga_instructor_payouts
+                 WHERE instructor_id = $1 AND status = 'paid'`,
+                [instructorId]
+            );
+            totalPaidAllTime = parseFloat(payoutsResultAllTime.rows[0]?.total_paid || 0);
+        } catch (error) {
+            console.error('Ошибка получения всех выплат (таблица может не существовать):', error);
+            totalPaidAllTime = 0;
+        }
+
+        // Получаем ВЕСЬ заработок за ВСЕ ВРЕМЯ (для расчета долга)
+        const allTimeEarningsQuery = `
+            SELECT 
+                SUM(kb.price_total * (1 - ki.admin_percentage / 100)) as total_earnings
+            FROM kuliga_bookings kb
+            LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            JOIN kuliga_instructors ki ON ${BOOKING_INSTRUCTOR_ID} = ki.id
+            WHERE ${BOOKING_INSTRUCTOR_ID} = $1
+              ${COMPLETION_CONDITION}
+        `;
+        
+        let totalEarningsAllTime = 0;
+        try {
+            const allTimeEarningsResult = await pool.query(allTimeEarningsQuery, [instructorId]);
+            totalEarningsAllTime = parseFloat(allTimeEarningsResult.rows[0]?.total_earnings || 0);
+        } catch (error) {
+            console.error('Ошибка получения заработка за все время:', error);
+            totalEarningsAllTime = 0;
+        }
+
+        // Долг = весь заработок за все время - все выплаты за все время
+        const debt = totalEarningsAllTime - totalPaidAllTime;
 
         logFinancesDebug('GET /earnings result:', {
             totalTrainings,
             totalEarnings: totalEarnings.toFixed(2),
-            totalPaid: totalPaid.toFixed(2),
+            totalEarningsAllTime: totalEarningsAllTime.toFixed(2),
+            totalPaidForPeriod: totalPaidForPeriod.toFixed(2),
+            totalPaidAllTime: totalPaidAllTime.toFixed(2),
             debt: debt.toFixed(2),
             statsRows: statsResult.rowCount
         });
 
+        // Определяем период для отображения
+        let periodStart, periodEnd;
+        if (from && to) {
+            periodStart = from;
+            periodEnd = to;
+        } else if (period === 'last_month') {
+            periodStart = moment().tz(TIMEZONE).subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+            periodEnd = moment().tz(TIMEZONE).subtract(1, 'month').endOf('month').format('YYYY-MM-DD');
+        } else if (period === 'all_time') {
+            periodStart = null;
+            periodEnd = null;
+        } else {
+            periodStart = moment().tz(TIMEZONE).startOf('month').format('YYYY-MM-DD');
+            periodEnd = moment().tz(TIMEZONE).endOf('month').format('YYYY-MM-DD');
+        }
+
         res.json({
             success: true,
             period: period || (from && to ? 'custom' : 'current_month'),
-            period_start: from || moment().tz(TIMEZONE).startOf('month').format('YYYY-MM-DD'),
-            period_end: to || moment().tz(TIMEZONE).endOf('month').format('YYYY-MM-DD'),
+            period_start: periodStart,
+            period_end: periodEnd,
             statistics: {
                 total_trainings: totalTrainings,
                 individual_trainings: individualTrainings,
@@ -184,7 +248,7 @@ router.get('/earnings', async (req, res) => {
                 instructor_earnings: totalEarnings.toFixed(2),
                 admin_commission: totalAdminCommission.toFixed(2),
                 admin_percentage: adminPercentage,
-                total_paid: totalPaid.toFixed(2),
+                total_paid: totalPaidForPeriod.toFixed(2),
                 debt: debt.toFixed(2)
             }
         });
