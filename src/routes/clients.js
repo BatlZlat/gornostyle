@@ -29,6 +29,7 @@ router.get('/', async (req, res) => {
                 ch.birth_date as child_birth_date,
                 ch.skill_level as child_skill_level,
                 w.balance,
+                w.wallet_number,
                 -- Подсчет индивидуальных тренировок клиента
                 COALESCE((
                     SELECT COUNT(*) 

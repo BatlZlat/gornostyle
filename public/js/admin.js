@@ -403,7 +403,7 @@ function initializeEventListeners() {
                         <div id="client-select-container" class="form-group" style="display: none;">
                             <label for="notify-client-search-input">Выберите пользователя:</label>
                             <div id="notify-client-search-wrapper" style="position: relative !important; z-index: 1000;">
-                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите имя для поиска..." autocomplete="off">
+                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите ФИО, телефон или номер кошелька..." autocomplete="off">
                                 <input type="hidden" id="notify-client-select" name="client_id">
                                 <div id="notify-client-search-results" class="search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; width: 100%; background: white; border: 1px solid #ccc; border-top: none; max-height: 200px; overflow-y: auto; z-index: 10001 !important; border-radius: 0 0 4px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 0; padding: 0;"></div>
                             </div>
@@ -997,7 +997,8 @@ function initializeEventListeners() {
             const filteredClients = allClientsForNotify.filter(client => {
                 const name = client.full_name ? client.full_name.toLowerCase() : '';
                 const phone = client.phone ? client.phone.toLowerCase() : '';
-                return name.includes(searchTerm) || phone.includes(searchTerm);
+                const wallet = client.wallet_number ? client.wallet_number.toLowerCase() : '';
+                return name.includes(searchTerm) || phone.includes(searchTerm) || wallet.includes(searchTerm);
             }).slice(0, 10); // Ограничиваем до 10 результатов
             
             if (filteredClients.length === 0) {
@@ -2991,10 +2992,11 @@ function displayClients() {
 
     // Фильтруем клиентов
     let filteredClients = allClients.filter(client => {
-        const fullNameMatch = client.full_name.toLowerCase().includes(searchTerm);
-        const phoneMatch = client.phone.toLowerCase().includes(searchTerm);
+        const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(searchTerm) : false;
+        const phoneMatch = client.phone ? client.phone.toLowerCase().includes(searchTerm) : false;
         const childNameMatch = client.child_name ? client.child_name.toLowerCase().includes(searchTerm) : false;
-        return fullNameMatch || phoneMatch || childNameMatch;
+        const walletMatch = client.wallet_number ? client.wallet_number.toLowerCase().includes(searchTerm) : false;
+        return fullNameMatch || phoneMatch || childNameMatch || walletMatch;
     });
 
     // Сортируем клиентов
@@ -5913,9 +5915,10 @@ function initializeWalletRefill() {
         const queryLower = query.toLowerCase();
         
         const filteredClients = allClients.filter(client => {
-            const fullNameMatch = client.full_name.toLowerCase().includes(queryLower);
-            const phoneMatch = client.phone.toLowerCase().includes(queryLower);
-            return fullNameMatch || phoneMatch;
+            const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(queryLower) : false;
+            const phoneMatch = client.phone ? client.phone.toLowerCase().includes(queryLower) : false;
+            const walletMatch = client.wallet_number ? client.wallet_number.toLowerCase().includes(queryLower) : false;
+            return fullNameMatch || phoneMatch || walletMatch;
         });
 
         displaySearchResults(filteredClients);
