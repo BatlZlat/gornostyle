@@ -972,16 +972,19 @@ function renderKuligaFinances(finances) {
                 <tbody>
                     ${details
                         .map(
-                            (item) => `
+                            (item) => {
+                                const locationName = item.location === 'vorona' ? 'Воронинские горки' : 'Кулига';
+                                return `
                         <tr>
-                            <td>${item.instructor_name}</td>
+                            <td>${item.instructor_name} (${locationName})</td>
                             <td>${item.trainings_count || 0}</td>
                             <td>${Number(item.total_amount || 0).toLocaleString('ru-RU')}</td>
                             <td>${item.admin_percentage || 0}%</td>
                             <td>${Number(item.admin_revenue || 0).toLocaleString('ru-RU')}</td>
                             <td>${Number(item.instructor_revenue || 0).toLocaleString('ru-RU')}</td>
                         </tr>
-                    `
+                    `;
+                            }
                         )
                         .join('')}
                 </tbody>

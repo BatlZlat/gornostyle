@@ -658,14 +658,33 @@ router.get('/finances', async (req, res) => {
     }
 
     try {
+        const TIMEZONE = 'Asia/Yekaterinburg';
+        const BOOKING_INSTRUCTOR_ID = 'COALESCE(kb.instructor_id, kgt.instructor_id)';
+        // Условие для определения прошедших тренировок
+        const COMPLETION_CONDITION = `
+            AND (
+                kb.status = 'completed'
+                OR (
+                    kb.status IN ('confirmed', 'pending')
+                    AND (kb.date::timestamp + kb.end_time::interval) <= (NOW() AT TIME ZONE '${TIMEZONE}')
+                )
+            )
+        `;
+
         // Общая статистика
+        // Для групповых тренировок считаем уникальные group_training_id, для индивидуальных - уникальные kb.id
         const summaryResult = await pool.query(
             `SELECT 
-                COUNT(DISTINCT b.id) as total_trainings,
-                COALESCE(SUM(b.price_total), 0) as total_revenue
-             FROM kuliga_bookings b
-             WHERE b.status = 'confirmed'
-               AND b.date BETWEEN $1 AND $2`,
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as total_trainings,
+                COALESCE(SUM(kb.price_total), 0) as total_revenue
+             FROM kuliga_bookings kb
+             LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+             WHERE ${BOOKING_INSTRUCTOR_ID} IS NOT NULL
+               ${COMPLETION_CONDITION}
+               AND kb.date BETWEEN $1 AND $2`,
             [from, to]
         );
 
@@ -673,21 +692,31 @@ router.get('/finances', async (req, res) => {
         const totalRevenue = parseFloat(summary.total_revenue || 0);
 
         // Детализация по инструкторам
+        // Учитываем как индивидуальные, так и групповые тренировки
         const detailsResult = await pool.query(
             `SELECT 
                 i.id as instructor_id,
                 i.full_name as instructor_name,
+                i.location,
                 i.admin_percentage,
-                COUNT(b.id) as trainings_count,
-                COALESCE(SUM(b.price_total), 0) as total_amount,
-                COALESCE(SUM(b.price_total * i.admin_percentage / 100), 0) as admin_revenue,
-                COALESCE(SUM(b.price_total * (1 - i.admin_percentage / 100)), 0) as instructor_revenue
-             FROM kuliga_instructors i
-             LEFT JOIN kuliga_bookings b ON b.instructor_id = i.id
-                 AND b.status = 'confirmed'
-                 AND b.date BETWEEN $1 AND $2
-             GROUP BY i.id, i.full_name, i.admin_percentage
-             HAVING COUNT(b.id) > 0
+                COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) as trainings_count,
+                COALESCE(SUM(kb.price_total), 0) as total_amount,
+                COALESCE(SUM(kb.price_total * i.admin_percentage / 100), 0) as admin_revenue,
+                COALESCE(SUM(kb.price_total * (1 - i.admin_percentage / 100)), 0) as instructor_revenue
+             FROM kuliga_bookings kb
+             LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+             INNER JOIN kuliga_instructors i ON ${BOOKING_INSTRUCTOR_ID} = i.id
+             WHERE ${BOOKING_INSTRUCTOR_ID} IS NOT NULL
+               ${COMPLETION_CONDITION}
+               AND kb.date BETWEEN $1 AND $2
+             GROUP BY i.id, i.full_name, i.location, i.admin_percentage
+             HAVING COUNT(DISTINCT CASE 
+                    WHEN kb.booking_type = 'group' THEN kb.group_training_id
+                    ELSE kb.id
+                END) > 0
              ORDER BY total_amount DESC`,
             [from, to]
         );

@@ -635,6 +635,44 @@ function logout() {
     window.location.href = '/kuliga-instructor-login.html';
 }
 
+// Загрузка информации об инструкторе и обновление заголовка
+async function loadInstructorInfo() {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const response = await fetch('/api/kuliga/instructor/me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить информацию об инструкторе');
+        }
+
+        const instructor = await response.json();
+        
+        // Определяем название места работы
+        const locationName = instructor.location === 'vorona' 
+            ? 'Воронинские горки' 
+            : 'Кулига';
+        
+        // Обновляем заголовок страницы
+        document.title = `Финансы - Личный кабинет инструктора (${locationName})`;
+        
+        // Обновляем заголовок на странице
+        const header = document.getElementById('page-header');
+        if (header) {
+            header.textContent = `💰 Финансы - Личный кабинет инструктора ${instructor.full_name} (${locationName})`;
+        }
+        
+        console.log('[Finances] Информация об инструкторе загружена:', instructor);
+    } catch (error) {
+        console.error('Ошибка загрузки информации об инструкторе:', error);
+    }
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[Finances] init start');
@@ -642,6 +680,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const instructorId = await checkAuth();
     if (!instructorId) return;
     console.log('[Finances] auth OK', instructorId);
+
+    // Загрузка информации об инструкторе
+    await loadInstructorInfo();
 
     // Обработчики событий
     document.querySelectorAll('.period-btn').forEach(btn => {
