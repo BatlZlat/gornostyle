@@ -676,11 +676,7 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
 
         // Получаем название места
         const location = trainingData.location || 'kuliga';
-        const locationNames = {
-            'kuliga': 'База отдыха «Кулига-Клуб»',
-            'vorona': 'Воронинские горки'
-        };
-        const locationName = locationNames[location] || 'Кулига Парк';
+        const locationName = getLocationDisplayName(location);
         
         const message = 
             `✅ *Новая запись на ${trainingType} тренировку!*\n\n` +
@@ -743,11 +739,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
 
         // Получаем название места
         const location = trainingData.location || 'kuliga';
-        const locationNames = {
-            'kuliga': 'База отдыха «Кулига-Клуб»',
-            'vorona': 'Воронинские горки'
-        };
-        const locationName = locationNames[location] || 'Кулига Парк';
+        const locationName = getLocationDisplayName(location);
         
         const message = 
             '🎉 *Новая запись на вашу тренировку!*\n\n' +

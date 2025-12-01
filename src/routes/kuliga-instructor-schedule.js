@@ -288,12 +288,19 @@ router.post('/slots/create', async (req, res) => {
 
             // Создаем новый слот
             // ВАЖНО: Используем date::date для явного приведения типа
-            console.log(`   💾 Создание слота: instructorId=${instructorId}, date=${date}, time=${time}, endTime=${endTime}`);
+            // Получаем location инструктора для наследования
+            const instructorLocationResult = await client.query(
+                'SELECT location FROM kuliga_instructors WHERE id = $1',
+                [instructorId]
+            );
+            const instructorLocation = instructorLocationResult.rows[0]?.location || 'kuliga';
+            
+            console.log(`   💾 Создание слота: instructorId=${instructorId}, date=${date}, time=${time}, endTime=${endTime}, location=${instructorLocation}`);
             await client.query(
                 `INSERT INTO kuliga_schedule_slots 
-                 (instructor_id, date, start_time, end_time, status)
-                 VALUES ($1, $2::date, $3, $4, 'available')`,
-                [instructorId, date, time, endTime]
+                 (instructor_id, date, start_time, end_time, status, location)
+                 VALUES ($1, $2::date, $3, $4, 'available', $5)`,
+                [instructorId, date, time, endTime, instructorLocation]
             );
 
             created++;
@@ -454,12 +461,19 @@ router.post('/slots/create-bulk', async (req, res) => {
 
                 // Создаем новый слот
                 // ВАЖНО: Используем dateStr::date для явного приведения типа, чтобы PostgreSQL правильно интерпретировал дату
-                console.log(`   💾 Сохранение слота: date=${dateStr}, time=${time}, endTime=${endTime}`);
+                // Получаем location инструктора для наследования
+                const instructorLocationResult = await client.query(
+                    'SELECT location FROM kuliga_instructors WHERE id = $1',
+                    [instructorId]
+                );
+                const instructorLocation = instructorLocationResult.rows[0]?.location || 'kuliga';
+                
+                console.log(`   💾 Сохранение слота: date=${dateStr}, time=${time}, endTime=${endTime}, location=${instructorLocation}`);
                 await client.query(
                     `INSERT INTO kuliga_schedule_slots 
-                     (instructor_id, date, start_time, end_time, status)
-                     VALUES ($1, $2::date, $3, $4, 'available')`,
-                    [instructorId, dateStr, time, endTime]
+                     (instructor_id, date, start_time, end_time, status, location)
+                     VALUES ($1, $2::date, $3, $4, 'available', $5)`,
+                    [instructorId, dateStr, time, endTime, instructorLocation]
                 );
 
                 created++;
@@ -1406,13 +1420,20 @@ router.post('/regular-group-trainings', async (req, res) => {
             } else {
                 // Создаем новый слот
                 // ВАЖНО: Используем dateStr::date для явного приведения типа
-                console.log(`   💾 Создание слота для регулярной тренировки: date=${dateStr}, time=${time}, endTime=${endTime}`);
+                // Получаем location инструктора для наследования
+                const instructorLocationResult = await client.query(
+                    'SELECT location FROM kuliga_instructors WHERE id = $1',
+                    [instructorId]
+                );
+                const instructorLocation = instructorLocationResult.rows[0]?.location || 'kuliga';
+                
+                console.log(`   💾 Создание слота для регулярной тренировки: date=${dateStr}, time=${time}, endTime=${endTime}, location=${instructorLocation}`);
                 const slotResult = await client.query(
                     `INSERT INTO kuliga_schedule_slots 
-                     (instructor_id, date, start_time, end_time, status)
-                     VALUES ($1, $2::date, $3, $4, 'blocked')
+                     (instructor_id, date, start_time, end_time, status, location)
+                     VALUES ($1, $2::date, $3, $4, 'blocked', $5)
                      RETURNING id`,
-                    [instructorId, dateStr, time, endTime]
+                    [instructorId, dateStr, time, endTime, instructorLocation]
                 );
 
                 slotId = slotResult.rows[0].id;
