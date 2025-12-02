@@ -1324,6 +1324,16 @@ async function loadPageContent(page) {
                 initWinterTrainingsPage();
             }
             break;
+        case 'analytics':
+            // Аналитика загружается автоматически при открытии вкладки
+            // Инициализация происходит в admin-analytics.js
+            // Явно вызываем загрузку данных
+            if (typeof loadAllAnalytics === 'function') {
+                setTimeout(() => {
+                    loadAllAnalytics();
+                }, 100);
+            }
+            break;
     }
     
     if (page === 'finances') {
