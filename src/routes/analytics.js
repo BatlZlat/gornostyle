@@ -66,42 +66,66 @@ router.get('/attendance', async (req, res) => {
                     ts.id,
                     CASE WHEN ts.training_type THEN ts.id ELSE NULL END as group_training_id,
                     CASE WHEN ts.training_type THEN 'group' ELSE 'individual' END as booking_type,
-                    tsp.client_id,
-                    tsp.child_id
+                    sp.client_id,
+                    CASE WHEN sp.child_id IS NOT NULL THEN 'ts-' || sp.child_id::text ELSE NULL END as child_id
                 FROM training_sessions ts
-                JOIN training_session_participants tsp ON ts.id = tsp.training_session_id
+                JOIN session_participants sp ON ts.id = sp.session_id
                 WHERE ts.status = 'completed'
                   AND (ts.slope_type = 'simulator' OR ts.slope_type IS NULL)
-                ${dateCondition.replace('session_date', 'ts.session_date')}
+                  ${dateCondition.replace(/session_date/g, 'ts.session_date')}
                 
                 UNION ALL
                 
-                -- Индивидуальные зимние тренировки (Кулига)
+                -- Индивидуальные зимние тренировки (Кулига) - разворачиваем участников
                 SELECT 
                     kb.date as session_date,
                     kb.id,
                     NULL as group_training_id,
                     'individual' as booking_type,
                     kb.client_id,
-                    kb.child_id
+                    CASE 
+                        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - birth_year < 18 THEN 'kb-' || kb.id::text || '-' || idx::text
+                        ELSE NULL
+                    END as child_id
                 FROM kuliga_bookings kb
-                WHERE kb.status = 'completed'
-                ${dateCondition.replace('session_date', 'kb.date')}
+                CROSS JOIN LATERAL (
+                    SELECT 
+                        birth_year,
+                        idx
+                    FROM unnest(
+                        COALESCE(kb.participants_birth_years, ARRAY[]::integer[])
+                    ) WITH ORDINALITY AS t(birth_year, idx)
+                ) participants
+                WHERE kb.status = 'confirmed'
+                  AND kb.booking_type = 'individual'
+                  ${dateCondition.replace(/session_date/g, 'kb.date')}
                 
                 UNION ALL
                 
-                -- Групповые зимние тренировки (Кулига)
+                -- Групповые зимние тренировки (Кулига) - разворачиваем участников
                 SELECT 
                     kb.date as session_date,
                     NULL as id,
                     kb.group_training_id,
                     'group' as booking_type,
                     kb.client_id,
-                    kb.child_id
+                    CASE 
+                        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - birth_year < 18 THEN 'kb-' || kb.id::text || '-' || idx::text
+                        ELSE NULL
+                    END as child_id
                 FROM kuliga_bookings kb
-                WHERE kb.status = 'completed'
+                CROSS JOIN LATERAL (
+                    SELECT 
+                        birth_year,
+                        idx
+                    FROM unnest(
+                        COALESCE(kb.participants_birth_years, ARRAY[]::integer[])
+                    ) WITH ORDINALITY AS t(birth_year, idx)
+                ) participants
+                WHERE kb.status = 'confirmed'
+                  AND kb.booking_type = 'group'
                   AND kb.group_training_id IS NOT NULL
-                ${dateCondition.replace('session_date', 'kb.date')}
+                  ${dateCondition.replace(/session_date/g, 'kb.date')}
             ) all_trainings
             GROUP BY DATE(session_date)
             ORDER BY date ASC
@@ -120,13 +144,13 @@ router.get('/attendance', async (req, res) => {
                     ts.id,
                     CASE WHEN ts.training_type THEN ts.id ELSE NULL END as group_training_id,
                     CASE WHEN ts.training_type THEN 'group' ELSE 'individual' END as booking_type,
-                    tsp.client_id,
-                    tsp.child_id
+                    sp.client_id,
+                    CASE WHEN sp.child_id IS NOT NULL THEN 'ts-' || sp.child_id::text ELSE NULL END as child_id
                 FROM training_sessions ts
-                JOIN training_session_participants tsp ON ts.id = tsp.training_session_id
+                JOIN session_participants sp ON ts.id = sp.session_id
                 WHERE ts.status = 'completed'
                   AND (ts.slope_type = 'simulator' OR ts.slope_type IS NULL)
-                ${dateCondition.replace('session_date', 'ts.session_date')}
+                  ${dateCondition.replace(/session_date/g, 'ts.session_date')}
                 
                 UNION ALL
                 
@@ -135,11 +159,22 @@ router.get('/attendance', async (req, res) => {
                     NULL as group_training_id,
                     'individual' as booking_type,
                     kb.client_id,
-                    kb.child_id
+                    CASE 
+                        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - birth_year < 18 THEN 'kb-' || kb.id::text || '-' || idx::text
+                        ELSE NULL
+                    END as child_id
                 FROM kuliga_bookings kb
-                WHERE kb.status = 'completed'
+                CROSS JOIN LATERAL (
+                    SELECT 
+                        birth_year,
+                        idx
+                    FROM unnest(
+                        COALESCE(kb.participants_birth_years, ARRAY[]::integer[])
+                    ) WITH ORDINALITY AS t(birth_year, idx)
+                ) participants
+                WHERE kb.status = 'confirmed'
                   AND kb.booking_type = 'individual'
-                ${dateCondition.replace('session_date', 'kb.date')}
+                  ${dateCondition.replace(/session_date/g, 'kb.date')}
                 
                 UNION ALL
                 
@@ -148,12 +183,23 @@ router.get('/attendance', async (req, res) => {
                     kb.group_training_id,
                     'group' as booking_type,
                     kb.client_id,
-                    kb.child_id
+                    CASE 
+                        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - birth_year < 18 THEN 'kb-' || kb.id::text || '-' || idx::text
+                        ELSE NULL
+                    END as child_id
                 FROM kuliga_bookings kb
-                WHERE kb.status = 'completed'
+                CROSS JOIN LATERAL (
+                    SELECT 
+                        birth_year,
+                        idx
+                    FROM unnest(
+                        COALESCE(kb.participants_birth_years, ARRAY[]::integer[])
+                    ) WITH ORDINALITY AS t(birth_year, idx)
+                ) participants
+                WHERE kb.status = 'confirmed'
                   AND kb.booking_type = 'group'
                   AND kb.group_training_id IS NOT NULL
-                ${dateCondition.replace('session_date', 'kb.date')}
+                  ${dateCondition.replace(/session_date/g, 'kb.date')}
             ) all_trainings
         `;
 
@@ -198,6 +244,16 @@ router.get('/trainers', async (req, res) => {
             const endOfLastMonth = moment().tz(TIMEZONE).subtract(1, 'month').endOf('month').format('YYYY-MM-DD');
             dateCondition = `AND session_date >= $1 AND session_date <= $2`;
             queryParams = [startOfLastMonth, endOfLastMonth];
+        } else if (period === 'last_3_months') {
+            const startDate = moment().tz(TIMEZONE).subtract(3, 'months').startOf('month').format('YYYY-MM-DD');
+            const endDate = moment().tz(TIMEZONE).endOf('month').format('YYYY-MM-DD');
+            dateCondition = `AND session_date >= $1 AND session_date <= $2`;
+            queryParams = [startDate, endDate];
+        } else if (period === 'last_6_months') {
+            const startDate = moment().tz(TIMEZONE).subtract(6, 'months').startOf('month').format('YYYY-MM-DD');
+            const endDate = moment().tz(TIMEZONE).endOf('month').format('YYYY-MM-DD');
+            dateCondition = `AND session_date >= $1 AND session_date <= $2`;
+            queryParams = [startDate, endDate];
         } else if (period === 'year') {
             const startOfYear = moment().tz(TIMEZONE).startOf('year').format('YYYY-MM-DD');
             const endOfYear = moment().tz(TIMEZONE).endOf('year').format('YYYY-MM-DD');
@@ -218,8 +274,8 @@ router.get('/trainers', async (req, res) => {
             LEFT JOIN training_sessions ts ON t.id = ts.trainer_id 
                 AND ts.status = 'completed'
                 AND (ts.slope_type = 'simulator' OR ts.slope_type IS NULL)
-                ${dateCondition.replace('session_date', 'ts.session_date')}
-            LEFT JOIN training_session_participants tsp ON ts.id = tsp.training_session_id
+                  ${dateCondition.replace(/session_date/g, 'ts.session_date')}
+            LEFT JOIN session_participants tsp ON ts.id = tsp.session_id
             GROUP BY t.id, t.full_name
             HAVING COUNT(DISTINCT ts.id) > 0
             ORDER BY total_trainings DESC
@@ -250,8 +306,8 @@ router.get('/trainers', async (req, res) => {
                     WHERE kgt.id = kb.group_training_id AND kgt.instructor_id = ki.id
                 ))
             )
-            AND kb.status = 'completed'
-            ${dateCondition.replace('session_date', 'kb.date')}
+            AND kb.status = 'confirmed'
+            ${dateCondition.replace(/session_date/g, 'kb.date')}
             GROUP BY ki.id, ki.full_name, ki.location
             HAVING COUNT(DISTINCT CASE 
                 WHEN kb.booking_type = 'individual' THEN kb.id
@@ -313,28 +369,28 @@ router.get('/training-types', async (req, res) => {
             SELECT 
                 'Тренажер - Индивидуальные' as type,
                 COUNT(DISTINCT ts.id) as trainings_count,
-                COUNT(DISTINCT tsp.client_id) as unique_clients,
+                COUNT(DISTINCT sp.client_id) as unique_clients,
                 0 as total_revenue
             FROM training_sessions ts
-            JOIN training_session_participants tsp ON ts.id = tsp.training_session_id
+            JOIN session_participants sp ON ts.id = sp.session_id
             WHERE ts.status = 'completed' 
               AND (ts.training_type = false OR ts.training_type IS NULL)
               AND (ts.slope_type = 'simulator' OR ts.slope_type IS NULL)
-            ${dateCondition.replace('session_date', 'ts.session_date')}
+            ${dateCondition.replace(/session_date/g, 'ts.session_date')}
             
             UNION ALL
             
             SELECT 
                 'Тренажер - Групповые' as type,
                 COUNT(DISTINCT ts.id) as trainings_count,
-                COUNT(DISTINCT tsp.client_id) as unique_clients,
+                COUNT(DISTINCT sp.client_id) as unique_clients,
                 0 as total_revenue
             FROM training_sessions ts
-            JOIN training_session_participants tsp ON ts.id = tsp.training_session_id
+            JOIN session_participants sp ON ts.id = sp.session_id
             WHERE ts.status = 'completed' 
               AND ts.training_type = true
               AND (ts.slope_type = 'simulator' OR ts.slope_type IS NULL)
-            ${dateCondition.replace('session_date', 'ts.session_date')}
+            ${dateCondition.replace(/session_date/g, 'ts.session_date')}
             
             UNION ALL
             
@@ -344,8 +400,8 @@ router.get('/training-types', async (req, res) => {
                 COUNT(DISTINCT kb.client_id) as unique_clients,
                 COALESCE(SUM(kb.price_total), 0) as total_revenue
             FROM kuliga_bookings kb
-            WHERE kb.status = 'completed' AND kb.booking_type = 'individual'
-            ${dateCondition.replace('session_date', 'kb.date')}
+            WHERE kb.status = 'confirmed' AND kb.booking_type = 'individual'
+            ${dateCondition.replace(/session_date/g, 'kb.date')}
             
             UNION ALL
             
@@ -356,8 +412,8 @@ router.get('/training-types', async (req, res) => {
                 COALESCE(SUM(DISTINCT kgt.price_per_person * kgt.max_participants), 0) as total_revenue
             FROM kuliga_bookings kb
             JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
-            WHERE kb.status = 'completed' AND kb.booking_type = 'group'
-            ${dateCondition.replace('session_date', 'kb.date')}
+            WHERE kb.status = 'confirmed' AND kb.booking_type = 'group'
+            ${dateCondition.replace(/session_date/g, 'kb.date')}
             
             ORDER BY trainings_count DESC
         `;
@@ -409,78 +465,78 @@ router.get('/referrals', async (req, res) => {
             queryParams = [startOfYear, endOfYear];
         }
 
-        // Общая статистика реферальной программы
-        const statsQuery = `
-            SELECT 
-                COUNT(DISTINCT referrer_id) as total_referrers,
-                COUNT(DISTINCT referee_id) as total_referred,
-                COUNT(DISTINCT CASE WHEN status = 'registered' THEN referee_id END) as registered,
-                COUNT(DISTINCT CASE WHEN status = 'deposited' THEN referee_id END) as deposited,
-                COUNT(DISTINCT CASE WHEN status = 'trained' THEN referee_id END) as trained,
-                COUNT(DISTINCT CASE WHEN status = 'completed' THEN referee_id END) as completed,
-                COALESCE(SUM(CASE WHEN status = 'completed' THEN referrer_bonus ELSE 0 END), 0) as total_bonuses_paid,
-                COALESCE(SUM(CASE WHEN status = 'completed' THEN referee_bonus ELSE 0 END), 0) as total_bonuses_received
-            FROM referral_transactions
-            WHERE 1=1 ${dateCondition}
-        `;
+            // Общая статистика реферальной программы
+            const statsQuery = `
+                SELECT 
+                    COUNT(DISTINCT r.referrer_id) as total_referrers,
+                    COUNT(DISTINCT r.referee_id) as total_referred,
+                    COUNT(DISTINCT CASE WHEN r.status = 'registered' THEN r.referee_id END) as registered,
+                    COUNT(DISTINCT CASE WHEN r.status = 'deposited' THEN r.referee_id END) as deposited,
+                    COUNT(DISTINCT CASE WHEN r.status = 'trained' THEN r.referee_id END) as trained,
+                    COUNT(DISTINCT CASE WHEN r.status = 'completed' THEN r.referee_id END) as completed,
+                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN r.referrer_bonus ELSE 0 END), 0) as total_bonuses_paid,
+                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN r.referee_bonus ELSE 0 END), 0) as total_bonuses_received
+                FROM referral_transactions r
+                WHERE 1=1 ${dateCondition.replace(/created_at/g, 'r.created_at')}
+            `;
 
         const statsResult = await pool.query(statsQuery, queryParams);
 
-        // Конверсия по этапам
-        const conversionQuery = `
-            SELECT 
-                'registered' as stage,
-                COUNT(DISTINCT referee_id) as count,
-                ROUND(COUNT(DISTINCT referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT referee_id) FROM referral_transactions WHERE 1=1 ${dateCondition}), 0), 2) as conversion_rate
-            FROM referral_transactions
-            WHERE status = 'registered' ${dateCondition.replace('created_at', 'created_at')}
-            
-            UNION ALL
-            
-            SELECT 
-                'deposited' as stage,
-                COUNT(DISTINCT referee_id) as count,
-                ROUND(COUNT(DISTINCT referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT referee_id) FROM referral_transactions WHERE status = 'registered' ${dateCondition.replace('created_at', 'created_at')}), 0), 2) as conversion_rate
-            FROM referral_transactions
-            WHERE status = 'deposited' ${dateCondition.replace('created_at', 'created_at')}
-            
-            UNION ALL
-            
-            SELECT 
-                'trained' as stage,
-                COUNT(DISTINCT referee_id) as count,
-                ROUND(COUNT(DISTINCT referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT referee_id) FROM referral_transactions WHERE status = 'deposited' ${dateCondition.replace('created_at', 'created_at')}), 0), 2) as conversion_rate
-            FROM referral_transactions
-            WHERE status = 'trained' ${dateCondition.replace('created_at', 'created_at')}
-            
-            UNION ALL
-            
-            SELECT 
-                'completed' as stage,
-                COUNT(DISTINCT referee_id) as count,
-                ROUND(COUNT(DISTINCT referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT referee_id) FROM referral_transactions WHERE status = 'trained' ${dateCondition.replace('created_at', 'created_at')}), 0), 2) as conversion_rate
-            FROM referral_transactions
-            WHERE status = 'completed' ${dateCondition.replace('created_at', 'created_at')}
-        `;
+            // Конверсия по этапам
+            const conversionQuery = `
+                SELECT 
+                    'registered' as stage,
+                    COUNT(DISTINCT r.referee_id) as count,
+                    ROUND(COUNT(DISTINCT r.referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT r2.referee_id) FROM referral_transactions r2 WHERE 1=1 ${dateCondition.replace(/created_at/g, 'r2.created_at')}), 0), 2) as conversion_rate
+                FROM referral_transactions r
+                WHERE r.status = 'registered' ${dateCondition.replace(/created_at/g, 'r.created_at')}
+                
+                UNION ALL
+                
+                SELECT 
+                    'deposited' as stage,
+                    COUNT(DISTINCT r.referee_id) as count,
+                    ROUND(COUNT(DISTINCT r.referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT r2.referee_id) FROM referral_transactions r2 WHERE r2.status = 'registered' ${dateCondition.replace(/created_at/g, 'r2.created_at')}), 0), 2) as conversion_rate
+                FROM referral_transactions r
+                WHERE r.status = 'deposited' ${dateCondition.replace(/created_at/g, 'r.created_at')}
+                
+                UNION ALL
+                
+                SELECT 
+                    'trained' as stage,
+                    COUNT(DISTINCT r.referee_id) as count,
+                    ROUND(COUNT(DISTINCT r.referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT r2.referee_id) FROM referral_transactions r2 WHERE r2.status = 'deposited' ${dateCondition.replace(/created_at/g, 'r2.created_at')}), 0), 2) as conversion_rate
+                FROM referral_transactions r
+                WHERE r.status = 'trained' ${dateCondition.replace(/created_at/g, 'r.created_at')}
+                
+                UNION ALL
+                
+                SELECT 
+                    'completed' as stage,
+                    COUNT(DISTINCT r.referee_id) as count,
+                    ROUND(COUNT(DISTINCT r.referee_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT r2.referee_id) FROM referral_transactions r2 WHERE r2.status = 'trained' ${dateCondition.replace(/created_at/g, 'r2.created_at')}), 0), 2) as conversion_rate
+                FROM referral_transactions r
+                WHERE r.status = 'completed' ${dateCondition.replace(/created_at/g, 'r.created_at')}
+            `;
 
         const conversionResult = await pool.query(conversionQuery, queryParams);
 
-        // ТОП рефереров
-        const topReferrersQuery = `
-            SELECT 
-                c.id as referrer_id,
-                c.full_name as referrer_name,
-                COUNT(DISTINCT r.referee_id) as total_referred,
-                COUNT(DISTINCT CASE WHEN r.status = 'completed' THEN r.referee_id END) as completed,
-                COALESCE(SUM(CASE WHEN r.status = 'completed' THEN r.referrer_bonus ELSE 0 END), 0) as total_bonus_earned
-            FROM referral_transactions r
-            JOIN clients c ON r.referrer_id = c.id
-            WHERE 1=1 ${dateCondition}
-            GROUP BY c.id, c.full_name
-            HAVING COUNT(DISTINCT r.referee_id) > 0
-            ORDER BY total_referred DESC
-            LIMIT 10
-        `;
+            // ТОП рефереров
+            const topReferrersQuery = `
+                SELECT 
+                    c.id as referrer_id,
+                    c.full_name as referrer_name,
+                    COUNT(DISTINCT r.referee_id) as total_referred,
+                    COUNT(DISTINCT CASE WHEN r.status = 'completed' THEN r.referee_id END) as completed,
+                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN r.referrer_bonus ELSE 0 END), 0) as total_bonus_earned
+                FROM referral_transactions r
+                JOIN clients c ON r.referrer_id = c.id
+                WHERE 1=1 ${dateCondition.replace(/created_at/g, 'r.created_at')}
+                GROUP BY c.id, c.full_name
+                HAVING COUNT(DISTINCT r.referee_id) > 0
+                ORDER BY total_referred DESC
+                LIMIT 10
+            `;
 
         const topReferrersResult = await pool.query(topReferrersQuery, queryParams);
 
