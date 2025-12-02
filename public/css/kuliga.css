@@ -885,6 +885,20 @@
     text-overflow: ellipsis;
 }
 
+/* Скрываем текст статуса на всех экранах (он и так виден по цвету фона) */
+.kuliga-slot__status {
+    display: none;
+}
+
+/* Уменьшаем шрифт для десктоп версии, чтобы время полностью помещалось */
+@media (min-width: 768px) {
+    .kuliga-slot {
+        font-size: 0.72rem;
+        padding: 5px 6px;
+        gap: 4px;
+    }
+}
+
 .kuliga-slot--available {
     background: rgba(39, 174, 96, 0.12);
     color: var(--kuliga-green-dark);

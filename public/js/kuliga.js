@@ -434,7 +434,8 @@
                                             <div class="kuliga-slot-list">
                                                 ${daySchedule.length > 0 ? daySchedule.map((slot) => `
                                                     <span class="kuliga-slot ${statusClasses[slot.status] || ''}">
-                                                        ${formatTime(slot.startTime)} — ${statusLabels[slot.status] || ''}
+                                                        <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
+                                                        <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
                                                     </span>
                                                 `).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет слотов</span>'}
                                             </div>
