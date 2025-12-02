@@ -432,12 +432,30 @@
                                                 ${slotCounter}
                                             </div>
                                             <div class="kuliga-slot-list">
-                                                ${daySchedule.length > 0 ? daySchedule.map((slot) => `
-                                                    <span class="kuliga-slot ${statusClasses[slot.status] || ''}">
-                                                        <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
-                                                        <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
-                                                    </span>
-                                                `).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет слотов</span>'}
+                                                ${daySchedule.length > 0 ? daySchedule.map((slot) => {
+                                                    // Делаем слот кликабельным только если он доступен или групповая тренировка
+                                                    const isClickable = slot.status === 'available' || slot.status === 'group';
+                                                    const clickableClass = isClickable ? 'kuliga-slot--clickable' : '';
+                                                    const cursorStyle = isClickable ? 'cursor: pointer;' : '';
+                                                    const dataAttrs = isClickable 
+                                                        ? `data-slot-id="${slot.id}" 
+                                                           data-instructor-id="${instructor.id}" 
+                                                           data-date="${day.iso}" 
+                                                           data-start-time="${slot.startTime}" 
+                                                           data-end-time="${slot.endTime || ''}" 
+                                                           data-status="${slot.status}"
+                                                           data-location="${instructor.location || 'kuliga'}"` 
+                                                        : '';
+                                                    return `
+                                                        <span class="kuliga-slot ${statusClasses[slot.status] || ''} ${clickableClass}" 
+                                                              ${dataAttrs}
+                                                              style="${cursorStyle}"
+                                                              title="${isClickable ? 'Нажмите для записи на тренировку' : ''}">
+                                                            <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
+                                                            <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
+                                                        </span>
+                                                    `;
+                                                }).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет слотов</span>'}
                                             </div>
                                         </div>
                                     `;
@@ -460,6 +478,7 @@
             container.appendChild(fragment);
             initScheduleNavigation();
             initScheduleTouchPrevention();
+            initSlotClicks();
             
             // На мобильной версии прокручиваем к первому дню с расписанием
             if (window.innerWidth <= 767) {
@@ -623,6 +642,64 @@
         button.addEventListener('click', (event) => {
             event.preventDefault();
             window.location.href = '/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking';
+        });
+    };
+
+    const initSlotClicks = () => {
+        // Обработчик клика на слоты для записи на тренировку
+        document.querySelectorAll('.kuliga-slot--clickable').forEach((slotElement) => {
+            slotElement.addEventListener('click', (event) => {
+                event.preventDefault();
+                
+                const slotId = slotElement.getAttribute('data-slot-id');
+                const instructorId = slotElement.getAttribute('data-instructor-id');
+                const date = slotElement.getAttribute('data-date');
+                const startTime = slotElement.getAttribute('data-start-time');
+                const endTime = slotElement.getAttribute('data-end-time');
+                const status = slotElement.getAttribute('data-status');
+                const location = slotElement.getAttribute('data-location');
+                
+                if (!slotId || !instructorId || !date || !startTime) {
+                    console.error('Недостаточно данных для перехода к бронированию');
+                    return;
+                }
+                
+                // Определяем тип тренировки
+                const bookingType = status === 'group' ? 'group' : 'individual';
+                const priceType = status === 'group' ? 'group' : 'individual';
+                
+                // Сохраняем данные слота в localStorage для предзаполнения формы
+                const slotData = {
+                    slotId: parseInt(slotId),
+                    instructorId: parseInt(instructorId),
+                    date: date,
+                    startTime: startTime,
+                    endTime: endTime,
+                    location: location || 'kuliga',
+                    bookingType: bookingType,
+                    priceType: priceType,
+                    fromSlotClick: true
+                };
+                
+                try {
+                    localStorage.setItem('kuligaSlotPreset', JSON.stringify(slotData));
+                } catch (error) {
+                    console.warn('Не удалось сохранить данные слота в localStorage:', error);
+                }
+                
+                // Переходим на страницу бронирования с параметрами
+                const bookingUrl = new URL('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', window.location.origin);
+                bookingUrl.searchParams.set('slotId', slotId);
+                bookingUrl.searchParams.set('instructorId', instructorId);
+                bookingUrl.searchParams.set('date', date);
+                bookingUrl.searchParams.set('startTime', startTime);
+                if (endTime) bookingUrl.searchParams.set('endTime', endTime);
+                bookingUrl.searchParams.set('location', location || 'kuliga');
+                bookingUrl.searchParams.set('bookingType', bookingType);
+                bookingUrl.searchParams.set('priceType', priceType);
+                
+                window.location.href = bookingUrl.toString();
+            });
         });
     };
 

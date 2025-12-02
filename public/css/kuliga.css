@@ -919,6 +919,23 @@
     color: var(--kuliga-gray-500);
 }
 
+/* Кликабельные слоты */
+.kuliga-slot--clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.kuliga-slot--clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0.9;
+}
+
+.kuliga-slot--clickable:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
 /* Мобильная версия расписания */
 @media (max-width: 767px) {
     .kuliga-schedule__nav--desktop {

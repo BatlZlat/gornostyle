@@ -240,9 +240,36 @@
         const params = new URLSearchParams(window.location.search);
         const priceIdParam = params.get('priceId');
         const participantsParam = Number(params.get('participants'));
+        
+        // Проверяем параметры слота из URL (при переходе с клика на слот)
+        const slotIdParam = params.get('slotId');
+        const instructorIdParam = params.get('instructorId');
+        const dateParam = params.get('date');
+        const startTimeParam = params.get('startTime');
+        const locationParam = params.get('location');
+        const bookingTypeParam = params.get('bookingType'); // individual или group
+        const priceTypeParam = params.get('priceType'); // individual или group
+
+        // Если перешли по клику на слот - предзаполняем данные
+        if (slotIdParam && dateParam) {
+            state.date = dateParam;
+            if (locationParam) {
+                state.location = locationParam;
+            }
+            // Сохраняем информацию о слоте для последующего автоматического выбора
+            state.presetSlot = {
+                slotId: parseInt(slotIdParam),
+                instructorId: instructorIdParam ? parseInt(instructorIdParam) : null,
+                startTime: startTimeParam || '',
+            };
+        }
 
         let price;
-        if (priceIdParam && priceMap.has(priceIdParam)) {
+        
+        // Если есть priceType из URL (при клике на слот), ищем подходящий тариф
+        if (priceTypeParam && prices.length > 0) {
+            price = prices.find((item) => item.type === priceTypeParam) || prices[0];
+        } else if (priceIdParam && priceMap.has(priceIdParam)) {
             price = priceMap.get(priceIdParam);
         } else if (state.selection.priceId && priceMap.has(String(state.selection.priceId))) {
             price = priceMap.get(String(state.selection.priceId));
@@ -285,7 +312,10 @@
             state.syncMainParticipant = true;
         }
 
-        state.slot = null;
+        // Если нет presetSlot, сбрасываем слот
+        if (!state.presetSlot) {
+            state.slot = null;
+        }
         state.availability = [];
     }
 
@@ -573,7 +603,13 @@
         timeSlotsContainer.appendChild(fragment);
         availabilityMessage.textContent = `Свободных слотов найдено: ${state.availability.length}`;
 
+        // Если слот выбран, автоматически отмечаем его в UI и показываем карточку инструктора
         if (state.slot) {
+            // Находим radio кнопку для выбранного слота и отмечаем её
+            const slotRadio = timeSlotsContainer.querySelector(`input[name="kuligaTimeSlot"][value="${state.slot.slot_id}"]`);
+            if (slotRadio) {
+                slotRadio.checked = true;
+            }
             renderInstructorCard(state.slot);
         }
     }
@@ -696,7 +732,7 @@
                 : state.selection.pricePerPerson * participants.length;
 
         return {
-            bookingType: 'individual',
+            bookingType: state.selection.priceType === 'group' ? 'group' : 'individual',
             fullName: state.client.fullName.trim(),
             birthDate: state.client.birthDate,
             phone: normalizePhone(state.client.phone),
@@ -795,7 +831,20 @@
 
             state.availability = data.data || [];
 
-            if (state.slot) {
+            // Если есть presetSlot (переход по клику на слот), пытаемся найти и выбрать его
+            if (state.presetSlot && !state.slot) {
+                const targetSlot = state.availability.find((slot) => 
+                    slot.slot_id === state.presetSlot.slotId ||
+                    (state.presetSlot.instructorId && slot.instructor_id === state.presetSlot.instructorId && 
+                     slot.start_time === state.presetSlot.startTime)
+                );
+                if (targetSlot) {
+                    state.slot = targetSlot;
+                    // Очищаем presetSlot, так как слот найден
+                    delete state.presetSlot;
+                }
+            } else if (state.slot) {
+                // Сохраняем текущий выбранный слот, если он доступен
                 const preserved = state.availability.find((slot) => slot.slot_id === state.slot.slot_id);
                 state.slot = preserved || null;
             }
