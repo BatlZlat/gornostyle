@@ -176,17 +176,31 @@ router.get('/api/kuliga/instructors', async (req, res) => {
 
         const instructorIds = instructorsResult.rows.map((i) => i.id);
         let slots = [];
+        let groupTrainings = [];
 
         if (instructorIds.length > 0) {
-            const slotResult = await pool.query(
-                `SELECT id, instructor_id, date, start_time, end_time, status
-                 FROM kuliga_schedule_slots
-                 WHERE instructor_id = ANY($1)
-                   AND date BETWEEN $2 AND $3
-                 ORDER BY date, start_time`,
-                [instructorIds, startDate, endDate]
-            );
+            const [slotResult, groupTrainingResult] = await Promise.all([
+                pool.query(
+                    `SELECT id, instructor_id, date, start_time, end_time, status
+                     FROM kuliga_schedule_slots
+                     WHERE instructor_id = ANY($1)
+                       AND date BETWEEN $2 AND $3
+                     ORDER BY date, start_time`,
+                    [instructorIds, startDate, endDate]
+                ),
+                pool.query(
+                    `SELECT id, instructor_id, slot_id, date, start_time, end_time, status, sport_type, 
+                            max_participants, current_participants, price_per_person, description
+                     FROM kuliga_group_trainings
+                     WHERE instructor_id = ANY($1)
+                       AND date BETWEEN $2 AND $3
+                       AND status IN ('open', 'confirmed')
+                     ORDER BY date, start_time`,
+                    [instructorIds, startDate, endDate]
+                )
+            ]);
             slots = slotResult.rows;
+            groupTrainings = groupTrainingResult.rows;
         }
 
         const scheduleByInstructor = instructorIds.reduce((acc, id) => {
@@ -197,6 +211,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             return acc;
         }, {});
 
+        // Добавляем слоты
         slots.forEach((slot) => {
             const dateKey = formatDate(slot.date);
             if (!scheduleByInstructor[slot.instructor_id]) return;
@@ -208,6 +223,28 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 startTime: slot.start_time,
                 endTime: slot.end_time,
                 status: slot.status,
+                type: 'slot'
+            });
+        });
+
+        // Добавляем групповые тренировки (даже если slot_id = null)
+        groupTrainings.forEach((training) => {
+            const dateKey = formatDate(training.date);
+            if (!scheduleByInstructor[training.instructor_id]) return;
+            if (!scheduleByInstructor[training.instructor_id][dateKey]) {
+                scheduleByInstructor[training.instructor_id][dateKey] = [];
+            }
+            scheduleByInstructor[training.instructor_id][dateKey].push({
+                id: training.id,
+                startTime: training.start_time,
+                endTime: training.end_time,
+                status: training.status,
+                type: 'group_training',
+                sportType: training.sport_type,
+                maxParticipants: training.max_participants,
+                currentParticipants: training.current_participants,
+                pricePerPerson: training.price_per_person,
+                description: training.description
             });
         });
 
@@ -223,17 +260,33 @@ router.get('/api/kuliga/instructors', async (req, res) => {
     }
 });
 
-router.get('/api/kuliga/programs', async (_req, res) => {
+router.get('/api/kuliga/programs', async (req, res) => {
     try {
-        const { rows } = await pool.query(
-            `SELECT id, name, description, sport_type, max_participants,
-                    training_duration, warmup_duration, practice_duration,
-                    weekdays, time_slots, equipment_provided,
-                    skipass_provided, price, is_active, created_at
-             FROM kuliga_programs
-             WHERE is_active = TRUE
-             ORDER BY created_at DESC`
-        );
+        const { location } = req.query || {};
+        const { isValidLocation } = require('../utils/location-mapper');
+        
+        let query = `SELECT p.id, p.name, p.description, p.sport_type, p.location, p.max_participants,
+                    p.training_duration, p.warmup_duration, p.practice_duration,
+                    p.weekdays, p.time_slots, p.equipment_provided,
+                    p.skipass_provided, p.price, p.is_active, p.created_at,
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             WHERE p.is_active = TRUE`;
+        const params = [];
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            query += ` AND p.location = $${params.length}`;
+        }
+        
+        query += ` GROUP BY p.id ORDER BY p.created_at DESC`;
+        
+        const { rows } = await pool.query(query, params);
 
         const now = moment().tz(TIMEZONE);
         const end = now.clone().add(14, 'days').endOf('day');
@@ -241,6 +294,7 @@ router.get('/api/kuliga/programs', async (_req, res) => {
         const programs = rows.map((program) => ({
             ...program,
             price: Number(program.price),
+            instructor_ids: Array.isArray(program.instructor_ids) ? program.instructor_ids : [],
             practice_duration:
                 program.practice_duration !== null
                     ? Number(program.practice_duration)
@@ -249,7 +303,9 @@ router.get('/api/kuliga/programs', async (_req, res) => {
 
         const schedule = [];
 
-        programs.forEach((program, index) => {
+        // Создаем расписание для всех программ без проверки наличия слотов
+        // При бронировании система сама найдет подходящего инструктора с доступным слотом
+        for (const program of programs) {
             const programSchedule = [];
             const weekdaysArray = Array.isArray(program.weekdays) ? program.weekdays : [];
             const weekdays = weekdaysArray.map((day) => Number(day)).filter((day) => !Number.isNaN(day));
@@ -287,13 +343,16 @@ router.get('/api/kuliga/programs', async (_req, res) => {
                 }
             }
 
-            programs[index] = {
-                ...program,
-                schedule: programSchedule,
-                weekdays,
-                time_slots: timeSlots,
-            };
-        });
+            const programIndex = programs.findIndex(p => p.id === program.id);
+            if (programIndex !== -1) {
+                programs[programIndex] = {
+                    ...program,
+                    schedule: programSchedule,
+                    weekdays,
+                    time_slots: timeSlots,
+                };
+            }
+        }
 
         schedule.sort((a, b) => a.sort_key - b.sort_key);
 

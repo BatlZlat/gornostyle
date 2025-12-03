@@ -1705,6 +1705,86 @@ async function notifyAdminParticipantTransferred(trainingData) {
     }
 }
 
+/**
+ * Уведомление инструктору о назначении на тренировку из программы
+ */
+async function notifyInstructorKuligaAssignment({
+    instructor_name,
+    instructor_telegram_id,
+    training_type,
+    sport_type,
+    date,
+    day_of_week,
+    time,
+    location,
+    max_participants,
+    description
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            console.log('⚠️ Бот инструкторов недоступен или нет telegram_id');
+            return;
+        }
+
+        const locationName = getLocationDisplayName(location);
+
+        let message = `✅ *Вы назначены на тренировку*\n\n`;
+        message += `🎯 *Тип:* ${training_type}\n`;
+        message += `🎿 *Вид спорта:* ${sport_type}\n`;
+        message += `📅 *Дата:* ${date} (${day_of_week})\n`;
+        message += `⏰ *Время:* ${time}\n`;
+        message += `📍 *Место:* ${locationName}\n`;
+        message += `👥 *Макс. участников:* ${max_participants} чел.\n`;
+
+        if (description) {
+            message += `📝 *Описание:* ${description}\n`;
+        }
+
+        message += `\n💼 Администратор назначил вас инструктором на эту тренировку. `;
+        message += `Следите за бронированиями клиентов!`;
+
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление о назначении отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору о назначении:', error);
+    }
+}
+
+/**
+ * Уведомление администратору о назначении инструктора на тренировку
+ */
+async function notifyAdminInstructorAssigned({
+    instructor_name,
+    training_type,
+    sport_type,
+    date,
+    day_of_week,
+    time,
+    location,
+    training_id
+}) {
+    try {
+        const locationName = getLocationDisplayName(location);
+
+        let message = `👨‍🏫 *Инструктор назначен*\n\n`;
+        message += `🎯 *Инструктор:* ${instructor_name}\n`;
+        message += `📌 *Тип:* ${training_type}\n`;
+        message += `🎿 *Вид спорта:* ${sport_type}\n`;
+        message += `📅 *Дата:* ${date} (${day_of_week})\n`;
+        message += `⏰ *Время:* ${time}\n`;
+        message += `📍 *Место:* ${locationName}\n`;
+        message += `🆔 *ID тренировки:* ${training_id}\n`;
+
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление о назначении инструктора отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору о назначении инструктора:', error);
+    }
+}
+
 module.exports = {
     bot,
     instructorBot,
@@ -1742,7 +1822,9 @@ module.exports = {
     notifyInstructorKuligaTrainingCancellation,
     notifyAdminWinterGroupTrainingCreated,
     notifyAdminWinterGroupTrainingCreatedByAdmin,
-    notifyAdminSubscriptionPurchase
+    notifyAdminSubscriptionPurchase,
+    notifyInstructorKuligaAssignment,
+    notifyAdminInstructorAssigned
 };
 
 // Функция для отправки уведомления о покупке абонемента

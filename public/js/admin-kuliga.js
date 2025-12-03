@@ -647,7 +647,49 @@ function resetKuligaProgramForm() {
     }
 }
 
-function openKuligaProgramModal(programId = null) {
+async function loadInstructorsForProgram(location = 'kuliga', sportType = 'ski', selectedIds = []) {
+    try {
+        const response = await fetch(`${KULIGA_API.instructors}?status=active&location=${location}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
+        });
+        if (!response.ok) throw new Error('Ошибка загрузки инструкторов');
+        
+        const data = await response.json();
+        let instructors = data.data || [];
+        
+        // Фильтруем инструкторов по виду спорта (совместимые с программой)
+        instructors = instructors.filter(instructor => 
+            instructor.sport_type === 'both' || instructor.sport_type === sportType
+        );
+        
+        const select = document.getElementById('kuliga-program-instructors');
+        if (!select) return;
+        
+        select.innerHTML = '';
+        instructors.forEach(instructor => {
+            const option = document.createElement('option');
+            option.value = instructor.id;
+            const sportLabel = instructor.sport_type === 'ski' ? 'Лыжи' : instructor.sport_type === 'snowboard' ? 'Сноуборд' : 'Оба';
+            option.textContent = `${instructor.full_name} (${sportLabel})`;
+            if (selectedIds.includes(instructor.id) || selectedIds.includes(String(instructor.id))) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+        
+        if (instructors.length === 0) {
+            select.innerHTML = '<option value="">Нет доступных инструкторов для выбранного места и вида спорта</option>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки инструкторов:', error);
+        const select = document.getElementById('kuliga-program-instructors');
+        if (select) {
+            select.innerHTML = '<option value="">Ошибка загрузки инструкторов</option>';
+        }
+    }
+}
+
+async function openKuligaProgramModal(programId = null) {
     const modal = document.getElementById('kuliga-program-modal');
     const title = document.getElementById('kuliga-program-modal-title');
     const submitBtn = document.getElementById('kuliga-program-submit');
@@ -663,10 +705,13 @@ function openKuligaProgramModal(programId = null) {
         title.textContent = 'Редактировать программу';
         submitBtn.textContent = 'Сохранить';
 
+        const location = program.location || 'kuliga';
+        
         document.getElementById('kuliga-program-id').value = program.id;
         document.getElementById('kuliga-program-name').value = program.name || '';
         document.getElementById('kuliga-program-description').value = program.description || '';
         document.getElementById('kuliga-program-sport').value = program.sport_type || 'ski';
+        document.getElementById('kuliga-program-location').value = location;
         document.getElementById('kuliga-program-max-participants').value = program.max_participants || 4;
         document.getElementById('kuliga-program-training-duration').value = program.training_duration || 90;
         document.getElementById('kuliga-program-warmup-duration').value = program.warmup_duration || 30;
@@ -677,10 +722,39 @@ function openKuligaProgramModal(programId = null) {
 
         setSelectedWeekdays(program.weekdays || []);
         setProgramTimeslots(program.time_slots || []);
+        
+        // Загружаем назначенных инструкторов
+        const sportType = program.sport_type || 'ski';
+        const selectedInstructorIds = program.instructor_ids || [];
+        await loadInstructorsForProgram(location, sportType, selectedInstructorIds);
     } else {
         title.textContent = 'Создать программу';
         submitBtn.textContent = 'Создать';
         document.getElementById('kuliga-program-id').value = '';
+        
+        // Загружаем инструкторов для выбранного места по умолчанию
+        await loadInstructorsForProgram('kuliga', 'ski', []);
+    }
+
+    // Обновляем список инструкторов при изменении места или вида спорта
+    const locationSelect = document.getElementById('kuliga-program-location');
+    const sportSelect = document.getElementById('kuliga-program-sport');
+    const instructorSelect = document.getElementById('kuliga-program-instructors');
+    
+    const updateInstructorsList = async () => {
+        const currentLocation = locationSelect?.value || 'kuliga';
+        const currentSport = sportSelect?.value || 'ski';
+        const selectedIds = Array.from(instructorSelect?.selectedOptions || [])
+            .map(opt => parseInt(opt.value, 10))
+            .filter(id => !isNaN(id));
+        await loadInstructorsForProgram(currentLocation, currentSport, selectedIds);
+    };
+    
+    if (locationSelect) {
+        locationSelect.onchange = updateInstructorsList;
+    }
+    if (sportSelect) {
+        sportSelect.onchange = updateInstructorsList;
     }
 
     modal.style.display = 'flex';
@@ -724,10 +798,22 @@ async function handleKuligaProgramSubmit(event) {
         return;
     }
 
+    // Получаем выбранных инструкторов
+    const instructorSelect = document.getElementById('kuliga-program-instructors');
+    const selectedInstructorIds = Array.from(instructorSelect.selectedOptions)
+        .map(opt => parseInt(opt.value, 10))
+        .filter(id => !isNaN(id));
+    
+    if (selectedInstructorIds.length === 0) {
+        alert('Выберите хотя бы одного инструктора для программы');
+        return;
+    }
+
     const payload = {
         name: document.getElementById('kuliga-program-name').value.trim(),
         description: document.getElementById('kuliga-program-description').value.trim(),
         sportType: document.getElementById('kuliga-program-sport').value,
+        location: document.getElementById('kuliga-program-location').value || 'kuliga',
         maxParticipants: parseInt(document.getElementById('kuliga-program-max-participants').value, 10),
         trainingDuration,
         warmupDuration,
@@ -737,6 +823,7 @@ async function handleKuligaProgramSubmit(event) {
         skipassProvided: document.getElementById('kuliga-program-skipass').checked,
         price: parseFloat(document.getElementById('kuliga-program-price').value) || 1700,
         isActive: document.getElementById('kuliga-program-active').checked,
+        instructorIds: selectedInstructorIds,
     };
 
     if (!payload.name) {

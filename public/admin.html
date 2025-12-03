@@ -1295,14 +1295,25 @@
                     <textarea id="kuliga-program-description" class="form-control" rows="3" required placeholder="Знакомство с снаряжением, получение базовых навыков, торможение, повороты..."></textarea>
                 </div>
 
-                <div class="form-group">
-                    <label for="kuliga-program-sport">Вид спорта *</label>
-                    <select id="kuliga-program-sport" class="form-control" required>
-                        <option value="">Выберите вид спорта</option>
-                        <option value="ski">Горные лыжи</option>
-                        <option value="snowboard">Сноуборд</option>
-                        <option value="both">Лыжи и сноуборд</option>
-                    </select>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="kuliga-program-sport">Вид спорта *</label>
+                        <select id="kuliga-program-sport" class="form-control" required>
+                            <option value="">Выберите вид спорта</option>
+                            <option value="ski">Горные лыжи</option>
+                            <option value="snowboard">Сноуборд</option>
+                            <option value="both">Лыжи и сноуборд</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="kuliga-program-location">Место проведения *</label>
+                        <select id="kuliga-program-location" class="form-control" required>
+                            <option value="kuliga" selected>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona">Воронинские горки</option>
+                        </select>
+                        <small style="color:#666;display:block;margin-top:5px;">Выберите место, где будет проходить программа</small>
+                    </div>
                 </div>
 
                 <div class="form-row">
@@ -1389,6 +1400,14 @@
                 <div class="form-group">
                     <label for="kuliga-program-price">Цена (₽) *</label>
                     <input type="number" id="kuliga-program-price" class="form-control" required min="100" step="50" value="1700" placeholder="1700">
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-program-instructors">Инструкторы *</label>
+                    <select id="kuliga-program-instructors" class="form-control" multiple required style="min-height: 100px;">
+                        <option value="">Загрузка инструкторов...</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">Выберите инструкторов, которые могут проводить эту программу. Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. Тренировки будут создаваться только если у назначенного инструктора есть свободный слот на время программы.</small>
                 </div>
 
                 <div class="form-group">

@@ -754,7 +754,19 @@ router.get('/finances', async (req, res) => {
 router.get('/programs', async (req, res) => {
     try {
         const { rows } = await pool.query(
-            `SELECT * FROM kuliga_programs ORDER BY is_active DESC, created_at DESC`
+            `SELECT p.id, p.name, p.description, p.sport_type, p.location, p.max_participants,
+                    p.training_duration, p.warmup_duration, p.weekdays, p.time_slots,
+                    p.equipment_provided, p.skipass_provided, p.price, p.is_active, p.created_at, p.updated_at,
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             GROUP BY p.id, p.name, p.description, p.sport_type, p.location, p.max_participants,
+                      p.training_duration, p.warmup_duration, p.weekdays, p.time_slots,
+                      p.equipment_provided, p.skipass_provided, p.price, p.is_active, p.created_at, p.updated_at
+             ORDER BY p.is_active DESC, p.created_at DESC`
         );
         res.json({ success: true, data: rows });
     } catch (error) {
@@ -768,6 +780,7 @@ router.post('/programs', async (req, res) => {
         name,
         description,
         sportType,
+        location,
         maxParticipants,
         trainingDuration,
         warmupDuration,
@@ -777,6 +790,7 @@ router.post('/programs', async (req, res) => {
         skipassProvided,
         price,
         isActive = true,
+        instructorIds = [],
     } = req.body;
 
     if (!name || !sportType) {
@@ -785,6 +799,12 @@ router.post('/programs', async (req, res) => {
 
     if (!['ski', 'snowboard', 'both'].includes(sportType)) {
         return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+
+    const { isValidLocation } = require('../utils/location-mapper');
+    const locationValue = location || 'kuliga';
+    if (!isValidLocation(locationValue)) {
+        return res.status(400).json({ success: false, error: 'Недопустимое место проведения. Доступны: kuliga, vorona' });
     }
 
     const maxParticipantsValue = parseInt(maxParticipants, 10);
@@ -811,15 +831,26 @@ router.post('/programs', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
     }
 
+    // Валидация instructorIds
+    const instructorIdsArray = Array.isArray(instructorIds) ? instructorIds.filter(id => Number.isInteger(parseInt(id, 10))) : [];
+    if (instructorIdsArray.length === 0) {
+        return res.status(400).json({ success: false, error: 'Выберите хотя бы одного инструктора для программы' });
+    }
+
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         const normalizedWeekdays = normalizeWeekdays(weekdays);
         const normalizedTimeSlots = normalizeTimeSlots(timeSlots);
 
-        const { rows } = await pool.query(
+        // Создаем программу
+        const { rows } = await client.query(
             `INSERT INTO kuliga_programs (
                 name,
                 description,
                 sport_type,
+                location,
                 max_participants,
                 training_duration,
                 warmup_duration,
@@ -829,12 +860,13 @@ router.post('/programs', async (req, res) => {
                 skipass_provided,
                 price,
                 is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *`,
             [
                 name,
                 description || null,
                 sportType,
+                locationValue,
                 maxParticipantsValue,
                 trainingValue,
                 warmupValue,
@@ -847,10 +879,81 @@ router.post('/programs', async (req, res) => {
             ]
         );
 
-        res.json({ success: true, data: rows[0] });
+        const program = rows[0];
+
+        // Проверяем и назначаем инструкторов
+        if (instructorIdsArray.length > 0) {
+            // Проверяем, что все инструкторы существуют, активны и имеют тот же location
+            const instructorsCheck = await client.query(
+                `SELECT id, full_name, location, sport_type FROM kuliga_instructors 
+                 WHERE id = ANY($1) AND is_active = TRUE AND location = $2`,
+                [instructorIdsArray, locationValue]
+            );
+
+            if (instructorsCheck.rows.length !== instructorIdsArray.length) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'Один или несколько инструкторов не найдены, неактивны или работают в другом месте' 
+                });
+            }
+
+            // Проверяем совместимость по виду спорта
+            const incompatibleInstructors = instructorsCheck.rows.filter(instructor => {
+                const instructorSport = instructor.sport_type;
+                return instructorSport !== 'both' && instructorSport !== sportType;
+            });
+
+            if (incompatibleInstructors.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Инструктор(ы) ${incompatibleInstructors.map(i => i.full_name).join(', ')} не проводит(ят) тренировки по виду спорта "${sportType === 'ski' ? 'Горные лыжи' : sportType === 'snowboard' ? 'Сноуборд' : 'Оба'}"` 
+                });
+            }
+
+            // Назначаем инструкторов программе
+            for (const instructorId of instructorIdsArray) {
+                await client.query(
+                    'INSERT INTO kuliga_program_instructors (program_id, instructor_id) VALUES ($1, $2)',
+                    [program.id, instructorId]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+
+        // Генерируем тренировки из программы (асинхронно, не блокируем ответ)
+        setImmediate(async () => {
+            try {
+                await generateProgramTrainings(program.id);
+                console.log(`✅ Тренировки для программы ID=${program.id} успешно сгенерированы`);
+            } catch (error) {
+                console.error(`❌ Ошибка генерации тренировок для программы ID=${program.id}:`, error);
+            }
+        });
+
+        // Получаем обновленную программу с инструкторами
+        const finalResult = await pool.query(
+            `SELECT p.*, 
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             WHERE p.id = $1
+             GROUP BY p.id`,
+            [program.id]
+        );
+
+        res.json({ success: true, data: finalResult.rows[0] });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Ошибка создания программы Кулиги:', error);
         res.status(500).json({ success: false, error: error.message || 'Не удалось создать программу' });
+    } finally {
+        client.release();
     }
 });
 
@@ -860,6 +963,7 @@ router.put('/programs/:id', async (req, res) => {
         name,
         description,
         sportType,
+        location,
         maxParticipants,
         trainingDuration,
         warmupDuration,
@@ -869,6 +973,7 @@ router.put('/programs/:id', async (req, res) => {
         skipassProvided,
         price,
         isActive = true,
+        instructorIds = [],
     } = req.body;
 
     if (!name || !sportType) {
@@ -877,6 +982,12 @@ router.put('/programs/:id', async (req, res) => {
 
     if (!['ski', 'snowboard', 'both'].includes(sportType)) {
         return res.status(400).json({ success: false, error: 'Недопустимый вид спорта' });
+    }
+
+    const { isValidLocation } = require('../utils/location-mapper');
+    const locationValue = location || 'kuliga';
+    if (!isValidLocation(locationValue)) {
+        return res.status(400).json({ success: false, error: 'Недопустимое место проведения. Доступны: kuliga, vorona' });
     }
 
     const maxParticipantsValue = parseInt(maxParticipants, 10);
@@ -903,31 +1014,43 @@ router.put('/programs/:id', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
     }
 
+    // Валидация instructorIds
+    const instructorIdsArray = Array.isArray(instructorIds) ? instructorIds.filter(id => Number.isInteger(parseInt(id, 10))) : [];
+    if (instructorIdsArray.length === 0) {
+        return res.status(400).json({ success: false, error: 'Выберите хотя бы одного инструктора для программы' });
+    }
+
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         const normalizedWeekdays = normalizeWeekdays(weekdays);
         const normalizedTimeSlots = normalizeTimeSlots(timeSlots);
 
-        const { rows } = await pool.query(
+        // Обновляем программу
+        const { rows } = await client.query(
             `UPDATE kuliga_programs
              SET name = $1,
                  description = $2,
                  sport_type = $3,
-                 max_participants = $4,
-                 training_duration = $5,
-                 warmup_duration = $6,
-                 weekdays = $7,
-                 time_slots = $8,
-                 equipment_provided = $9,
-                 skipass_provided = $10,
-                 price = $11,
-                 is_active = $12,
+                 location = $4,
+                 max_participants = $5,
+                 training_duration = $6,
+                 warmup_duration = $7,
+                 weekdays = $8,
+                 time_slots = $9,
+                 equipment_provided = $10,
+                 skipass_provided = $11,
+                 price = $12,
+                 is_active = $13,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $13
+             WHERE id = $14
              RETURNING *`,
             [
                 name,
                 description || null,
                 sportType,
+                locationValue,
                 maxParticipantsValue,
                 trainingValue,
                 warmupValue,
@@ -942,13 +1065,79 @@ router.put('/programs/:id', async (req, res) => {
         );
 
         if (rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Программа не найдена' });
         }
 
-        res.json({ success: true, data: rows[0] });
+        // Удаляем старые связи с инструкторами
+        await client.query(
+            'DELETE FROM kuliga_program_instructors WHERE program_id = $1',
+            [id]
+        );
+
+        // Проверяем и назначаем новых инструкторов
+        if (instructorIdsArray.length > 0) {
+            // Проверяем, что все инструкторы существуют, активны и имеют тот же location
+            const instructorsCheck = await client.query(
+                `SELECT id, full_name, location, sport_type FROM kuliga_instructors 
+                 WHERE id = ANY($1) AND is_active = TRUE AND location = $2`,
+                [instructorIdsArray, locationValue]
+            );
+
+            if (instructorsCheck.rows.length !== instructorIdsArray.length) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'Один или несколько инструкторов не найдены, неактивны или работают в другом месте' 
+                });
+            }
+
+            // Проверяем совместимость по виду спорта
+            const incompatibleInstructors = instructorsCheck.rows.filter(instructor => {
+                const instructorSport = instructor.sport_type;
+                return instructorSport !== 'both' && instructorSport !== sportType;
+            });
+
+            if (incompatibleInstructors.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Инструктор(ы) ${incompatibleInstructors.map(i => i.full_name).join(', ')} не проводит(ят) тренировки по виду спорта "${sportType === 'ski' ? 'Горные лыжи' : sportType === 'snowboard' ? 'Сноуборд' : 'Оба'}"` 
+                });
+            }
+
+            // Назначаем инструкторов программе
+            for (const instructorId of instructorIdsArray) {
+                await client.query(
+                    'INSERT INTO kuliga_program_instructors (program_id, instructor_id) VALUES ($1, $2)',
+                    [id, instructorId]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+
+        // Получаем обновленную программу с инструкторами
+        const finalResult = await pool.query(
+            `SELECT p.*, 
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             WHERE p.id = $1
+             GROUP BY p.id`,
+            [id]
+        );
+
+        res.json({ success: true, data: finalResult.rows[0] });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Ошибка обновления программы Кулиги:', error);
         res.status(500).json({ success: false, error: error.message || 'Не удалось обновить программу' });
+    } finally {
+        client.release();
     }
 });
 
@@ -1256,13 +1445,17 @@ router.get('/training/:id', async (req, res) => {
     try {
         if (type === 'group') {
             // Получаем основную информацию о групповой тренировке
+            // МИГРАЦИЯ 041: Добавляем информацию о программе
             const trainingResult = await pool.query(`
                 SELECT 
                     kgt.*,
                     ki.full_name as instructor_name,
-                    ki.phone as instructor_phone
+                    ki.phone as instructor_phone,
+                    kp.id as program_id,
+                    kp.name as program_name
                 FROM kuliga_group_trainings kgt
                 LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                LEFT JOIN kuliga_programs kp ON kgt.program_id = kp.id
                 WHERE kgt.id = $1
             `, [id]);
 
@@ -1975,8 +2168,93 @@ router.put('/training/:id', async (req, res) => {
 
         } else if (type === 'group') {
             // Редактирование групповой тренировки
+            // Получаем текущую тренировку для сравнения
+            const currentTrainingResult = await client.query(
+                'SELECT * FROM kuliga_group_trainings WHERE id = $1',
+                [id]
+            );
+
+            if (currentTrainingResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ success: false, error: 'Групповая тренировка не найдена' });
+            }
+
+            const currentTraining = currentTrainingResult.rows[0];
+            const isAssigningInstructor = updateData.instructor_id && !currentTraining.instructor_id;
+            const isChangingInstructor = updateData.instructor_id && currentTraining.instructor_id && 
+                                         updateData.instructor_id !== currentTraining.instructor_id;
+
+            let slotId = updateData.slot_id;
+            let instructorData = null;
+
+            // Если назначается или меняется инструктор
+            if (isAssigningInstructor || isChangingInstructor) {
+                const instructorId = updateData.instructor_id;
+
+                // Получаем данные инструктора
+                const instructorResult = await client.query(
+                    'SELECT id, full_name, telegram_id FROM kuliga_instructors WHERE id = $1 AND is_active = TRUE',
+                    [instructorId]
+                );
+
+                if (instructorResult.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ success: false, error: 'Инструктор не найден или неактивен' });
+                }
+
+                instructorData = instructorResult.rows[0];
+
+                // Проверяем, есть ли у инструктора слот на это время
+                const trainingDate = updateData.date || currentTraining.date;
+                const trainingStartTime = updateData.start_time || currentTraining.start_time;
+                const trainingEndTime = updateData.end_time || currentTraining.end_time;
+
+                const existingSlotResult = await client.query(
+                    `SELECT id, status FROM kuliga_schedule_slots
+                     WHERE instructor_id = $1 AND date = $2 AND start_time = $3
+                     FOR UPDATE`,
+                    [instructorId, trainingDate, trainingStartTime]
+                );
+
+                if (existingSlotResult.rows.length > 0) {
+                    // Слот существует
+                    const existingSlot = existingSlotResult.rows[0];
+
+                    // Проверяем, свободен ли слот
+                    if (existingSlot.status === 'available') {
+                        // Используем существующий свободный слот
+                        slotId = existingSlot.id;
+                        console.log(`✅ Используется существующий свободный слот ID=${slotId} для инструктора ${instructorData.full_name}`);
+                    } else {
+                        // Слот занят
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `У инструктора ${instructorData.full_name} на это время уже есть тренировка. Слот занят (статус: ${existingSlot.status}).`
+                        });
+                    }
+                } else {
+                    // Слота нет — создаем автоматически
+                    const newSlotResult = await client.query(
+                        `INSERT INTO kuliga_schedule_slots (instructor_id, date, start_time, end_time, status, created_by_admin)
+                         VALUES ($1, $2, $3, $4, 'available', TRUE)
+                         RETURNING id`,
+                        [instructorId, trainingDate, trainingStartTime, trainingEndTime]
+                    );
+                    slotId = newSlotResult.rows[0].id;
+                    console.log(`✅ Автоматически создан слот ID=${slotId} для инструктора ${instructorData.full_name}`);
+                }
+
+                // Обновляем статус слота на 'group'
+                await client.query(
+                    `UPDATE kuliga_schedule_slots SET status = 'group', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+                    [slotId]
+                );
+            }
+
+            // Формируем список обновляемых полей
             const allowedFields = ['date', 'start_time', 'end_time', 'sport_type', 'level', 'description', 
-                                   'price_per_person', 'min_participants', 'max_participants', 'instructor_id', 'slot_id'];
+                                   'price_per_person', 'min_participants', 'max_participants', 'instructor_id'];
             const updates = [];
             const values = [];
             let paramIndex = 1;
@@ -1987,6 +2265,13 @@ router.put('/training/:id', async (req, res) => {
                     values.push(updateData[field]);
                     paramIndex++;
                 }
+            }
+
+            // Если был создан/найден слот, добавляем его
+            if (slotId) {
+                updates.push(`slot_id = $${paramIndex}`);
+                values.push(slotId);
+                paramIndex++;
             }
 
             if (updates.length === 0) {
@@ -2009,7 +2294,55 @@ router.put('/training/:id', async (req, res) => {
                 return res.status(404).json({ success: false, error: 'Групповая тренировка не найдена' });
             }
 
+            const updatedTraining = result.rows[0];
+
             await client.query('COMMIT');
+
+            // Отправляем уведомления асинхронно
+            if (instructorData) {
+                setImmediate(async () => {
+                    try {
+                        const { notifyInstructorKuligaAssignment, notifyAdminInstructorAssigned } = require('../bot/admin-notify');
+                        const moment = require('moment-timezone');
+                        const TIMEZONE = 'Asia/Yekaterinburg';
+
+                        const trainingDateMoment = moment(updatedTraining.date).tz(TIMEZONE);
+                        const formattedDate = trainingDateMoment.format('DD.MM.YYYY');
+                        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][trainingDateMoment.day()];
+                        const formattedTime = String(updatedTraining.start_time).substring(0, 5);
+
+                        // Уведомляем инструктора
+                        if (instructorData.telegram_id) {
+                            await notifyInstructorKuligaAssignment({
+                                instructor_name: instructorData.full_name,
+                                instructor_telegram_id: instructorData.telegram_id,
+                                training_type: 'Групповая тренировка',
+                                sport_type: updatedTraining.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд',
+                                date: formattedDate,
+                                day_of_week: dayOfWeek,
+                                time: formattedTime,
+                                location: updatedTraining.location || 'kuliga',
+                                max_participants: updatedTraining.max_participants,
+                                description: updatedTraining.description
+                            });
+                        }
+
+                        // Уведомляем администратора
+                        await notifyAdminInstructorAssigned({
+                            instructor_name: instructorData.full_name,
+                            training_type: 'Групповая тренировка',
+                            sport_type: updatedTraining.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд',
+                            date: formattedDate,
+                            day_of_week: dayOfWeek,
+                            time: formattedTime,
+                            location: updatedTraining.location || 'kuliga',
+                            training_id: updatedTraining.id
+                        });
+                    } catch (error) {
+                        console.error('Ошибка отправки уведомлений о назначении инструктора:', error);
+                    }
+                });
+            }
 
             res.json({
                 success: true,
@@ -2740,6 +3073,168 @@ router.delete('/booking/:bookingId', async (req, res) => {
         res.status(500).json({ success: false, error: 'Не удалось удалить бронирование: ' + error.message });
     } finally {
         client.release();
+    }
+});
+
+/**
+ * Генерация тренировок из программы
+ * Создает тренировки на основе расписания программы (weekdays, time_slots)
+ * на ближайшие 14 дней вперед
+ */
+async function generateProgramTrainings(programId) {
+    const moment = require('moment-timezone');
+    const TIMEZONE = 'Asia/Yekaterinburg';
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Получаем информацию о программе
+        const programResult = await client.query(
+            `SELECT * FROM kuliga_programs WHERE id = $1 AND is_active = TRUE`,
+            [programId]
+        );
+        
+        if (programResult.rows.length === 0) {
+            throw new Error(`Программа ID=${programId} не найдена или неактивна`);
+        }
+        
+        const program = programResult.rows[0];
+        
+        // Подготавливаем параметры
+        const weekdays = Array.isArray(program.weekdays) ? program.weekdays.map(Number) : [];
+        const timeSlots = Array.isArray(program.time_slots) ? program.time_slots : [];
+        
+        if (weekdays.length === 0 || timeSlots.length === 0) {
+            console.log(`⚠️ Программа ID=${programId} не имеет дней недели или временных слотов`);
+            await client.query('COMMIT');
+            return { created: 0, skipped: 0 };
+        }
+        
+        // Цена в программе уже указана за человека, не нужно делить на количество участников
+        const pricePerPerson = Number(program.price);
+        
+        // Генерируем тренировки на 14 дней вперед
+        const now = moment().tz(TIMEZONE);
+        const endDate = now.clone().add(14, 'days').endOf('day');
+        
+        let created = 0;
+        let skipped = 0;
+        
+        // Проходим по каждому дню в диапазоне
+        const cursor = now.clone().startOf('day');
+        while (cursor.isSameOrBefore(endDate, 'day')) {
+            const weekday = cursor.day(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+            
+            // Проверяем, входит ли этот день недели в расписание программы
+            if (weekdays.includes(weekday)) {
+                // Создаем тренировки для каждого временного слота в этот день
+                for (const timeSlot of timeSlots) {
+                    // Обрабатываем разные форматы времени: "10:00:00" или "10:00"
+                    const timeParts = timeSlot.split(':');
+                    const hours = timeParts[0] || '00';
+                    const minutes = timeParts[1] || '00';
+                    
+                    const startMoment = cursor.clone().hour(Number(hours)).minute(Number(minutes)).second(0);
+                    const endMoment = startMoment.clone().add(program.training_duration, 'minutes');
+                    
+                    // Пропускаем прошедшие слоты
+                    if (startMoment.isSameOrBefore(now)) {
+                        skipped++;
+                        continue;
+                    }
+                    
+                    const dateStr = startMoment.format('YYYY-MM-DD');
+                    const startTimeStr = startMoment.format('HH:mm:ss');
+                    const endTimeStr = endMoment.format('HH:mm:ss');
+                    
+                    // Проверяем, существует ли уже тренировка для этой программы в это время
+                    const existingCheck = await client.query(
+                        `SELECT id FROM kuliga_group_trainings
+                         WHERE program_id = $1 
+                           AND date = $2 
+                           AND start_time = $3
+                           AND status IN ('open', 'confirmed')`,
+                        [programId, dateStr, startTimeStr]
+                    );
+                    
+                    if (existingCheck.rows.length > 0) {
+                        skipped++;
+                        continue;
+                    }
+                    
+                    // Создаем тренировку БЕЗ назначенного инструктора (instructor_id = NULL)
+                    // Администратор назначит инструктора позже
+                    await client.query(
+                        `INSERT INTO kuliga_group_trainings (
+                            program_id,
+                            instructor_id,
+                            slot_id,
+                            date,
+                            start_time,
+                            end_time,
+                            sport_type,
+                            level,
+                            description,
+                            price_per_person,
+                            min_participants,
+                            max_participants,
+                            current_participants,
+                            status,
+                            is_private,
+                            location
+                        ) VALUES ($1, NULL, NULL, $2, $3, $4, $5, 'beginner', $6, $7, 2, $8, 0, 'open', FALSE, $9)`,
+                        [
+                            programId,
+                            dateStr,
+                            startTimeStr,
+                            endTimeStr,
+                            program.sport_type,
+                            program.description || `Программа "${program.name}"`,
+                            pricePerPerson,
+                            program.max_participants,
+                            program.location || 'kuliga'
+                        ]
+                    );
+                    
+                    created++;
+                }
+            }
+            
+            cursor.add(1, 'day');
+        }
+        
+        await client.query('COMMIT');
+        
+        console.log(`✅ Для программы ID=${programId} создано ${created} тренировок, пропущено ${skipped}`);
+        
+        return { created, skipped };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`❌ Ошибка генерации тренировок для программы ID=${programId}:`, error);
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+// API для ручной генерации тренировок из программы
+router.post('/programs/:id/generate-trainings', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const result = await generateProgramTrainings(parseInt(id, 10));
+        res.json({ 
+            success: true, 
+            message: `Создано тренировок: ${result.created}, пропущено: ${result.skipped}`,
+            ...result
+        });
+    } catch (error) {
+        console.error('Ошибка генерации тренировок:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Не удалось сгенерировать тренировки'
+        });
     }
 });
 

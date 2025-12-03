@@ -182,6 +182,7 @@ router.get('/admin', async (req, res) => {
             // Запрос для групповых тренировок Кулиги
             // Вычисляем current_participants динамически из активных бронирований
             // Для natural_slope фильтруем только будущие тренировки
+            // МИГРАЦИЯ 041: Добавлена поддержка program_id и instructor_id может быть NULL
             const kuligaGroupQuery = `
                 SELECT 
                     kgt.id,
@@ -207,9 +208,10 @@ router.get('/admin', async (req, res) => {
                     kgt.price_per_person * kgt.max_participants as price,
                     NULL::TEXT as equipment_type,
                     NULL::BOOLEAN as with_trainer,
-                    CASE kgt.sport_type
-                        WHEN 'ski' THEN 'Групповая тренировка (Горные лыжи)'
-                        WHEN 'snowboard' THEN 'Групповая тренировка (Сноуборд)'
+                    CASE 
+                        WHEN kgt.program_id IS NOT NULL AND kp.name IS NOT NULL THEN CONCAT('Программа: ', kp.name)
+                        WHEN kgt.sport_type = 'ski' THEN 'Групповая тренировка (Горные лыжи)'
+                        WHEN kgt.sport_type = 'snowboard' THEN 'Групповая тренировка (Сноуборд)'
                         ELSE CONCAT('Групповая тренировка (', kgt.sport_type, ')')
                     END as group_name,
                     'natural_slope' as slope_type,
@@ -225,9 +227,13 @@ router.get('/admin', async (req, res) => {
                         ''
                     ) as participant_names,
                     'kuliga' as training_source,
-                    'group' as kuliga_type
+                    'group' as kuliga_type,
+                    kgt.program_id,
+                    kp.name as program_name,
+                    kgt.location
                 FROM kuliga_group_trainings kgt
                 LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                LEFT JOIN kuliga_programs kp ON kgt.program_id = kp.id
                 LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id
                     AND kb.status IN ('pending', 'confirmed')
                 WHERE kgt.date >= CURRENT_DATE - INTERVAL '7 days'
@@ -236,7 +242,7 @@ router.get('/admin', async (req, res) => {
                     AND (kgt.date > '${currentDateStr}'::date OR (kgt.date = '${currentDateStr}'::date AND kgt.end_time > '${currentTimeStr}'::time))
                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
                          kgt.max_participants, kgt.level, kgt.price_per_person,
-                         kgt.sport_type, kgt.status, ki.full_name
+                         kgt.sport_type, kgt.status, ki.full_name, kgt.program_id, kp.name, kgt.location
             `;
             
             // Запрос для индивидуальных тренировок Кулиги

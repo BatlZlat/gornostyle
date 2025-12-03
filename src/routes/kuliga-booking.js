@@ -780,8 +780,255 @@ router.post('/pre-register-client', async (req, res) => {
     }
 });
 
+/**
+ * Создание бронирования для программы
+ * Находит свободный слот у назначенного инструктора, создает групповую тренировку и бронирование
+ */
+const createProgramBooking = async (req, res) => {
+    const {
+        programId,
+        date,
+        time,
+        fullName,
+        birthDate,
+        phone,
+        email,
+        participantsCount = 1,
+        participantsNames = [],
+        consentConfirmed,
+    } = req.body || {};
+
+    if (!consentConfirmed) {
+        return res.status(400).json({ success: false, error: 'Необходимо согласие на обработку персональных данных' });
+    }
+
+    if (!fullName || !birthDate || !phone || !email) {
+        return res.status(400).json({ success: false, error: 'Укажите ФИО, дату рождения, телефон и email' });
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ success: false, error: 'Неверный формат email' });
+    }
+
+    if (!programId || !date || !time) {
+        return res.status(400).json({ success: false, error: 'Укажите программу, дату и время' });
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    const safeCount = Math.max(1, Math.min(8, Number(participantsCount) || 1));
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Получаем информацию о программе
+        const programResult = await client.query(
+            `SELECT p.*, 
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             WHERE p.id = $1 AND p.is_active = TRUE
+             GROUP BY p.id`,
+            [programId]
+        );
+
+        if (!programResult.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Программа не найдена или неактивна' });
+        }
+
+        const program = programResult.rows[0];
+
+        // Вычисляем время окончания тренировки
+        const startTime = moment.tz(`${date} ${time}`, 'YYYY-MM-DD HH:mm', TIMEZONE);
+        const endTime = startTime.clone().add(program.training_duration, 'minutes');
+        const dateStr = startTime.format('YYYY-MM-DD');
+        const startTimeStr = startTime.format('HH:mm:ss');
+        const endTimeStr = endTime.format('HH:mm:ss');
+
+        // НОВАЯ ЛОГИКА: Ищем уже созданную тренировку из программы
+        // Программы автоматически генерируют тренировки без инструктора
+        const existingTrainingResult = await client.query(
+            `SELECT id, current_participants, max_participants, status, instructor_id
+             FROM kuliga_group_trainings
+             WHERE program_id = $1 
+               AND date = $2 
+               AND start_time = $3
+               AND status IN ('open', 'confirmed')
+             FOR UPDATE`,
+            [programId, dateStr, startTimeStr]
+        );
+
+        if (existingTrainingResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            const locationName = program.location === 'vorona' ? 'Воронинских горках' : 'Кулиге';
+            const timeFormatted = formatTime(startTimeStr);
+            const dateFormatted = formatDate(dateStr);
+            
+            return res.status(400).json({ 
+                success: false, 
+                error: `Тренировка программы "${program.name}" на ${dateFormatted} в ${timeFormatted} не найдена. Возможно, тренировки еще не сгенерированы. Обратитесь к администратору.` 
+            });
+        }
+
+        const groupTraining = existingTrainingResult.rows[0];
+
+        // Проверяем наличие мест
+        if (groupTraining.current_participants + safeCount > groupTraining.max_participants) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: 'Недостаточно мест в группе' });
+        }
+
+        // Проверяем, назначен ли инструктор (предупреждение, но не блокируем бронирование)
+        if (!groupTraining.instructor_id) {
+            console.log(`⚠️ Бронирование на тренировку программы ID=${programId} без назначенного инструктора`);
+        }
+
+        // Создаем или обновляем клиента
+        const clientRecord = await upsertClient(
+            { fullName: fullName.trim(), birthDate: birthDate, phone: normalizedPhone, email: email.trim() },
+            client
+        );
+        await ensurePrivacyConsent(clientRecord.id, client);
+
+        const namesArray = Array.from({ length: safeCount }, (_, index) => {
+            if (index === 0) {
+                return fullName.trim();
+            }
+            return (participantsNames[index] || participantsNames[index - 1] || '').toString().trim();
+        }).filter(Boolean);
+
+        const pricePerPerson = Number(groupTraining.price_per_person);
+        const totalPrice = pricePerPerson * safeCount;
+
+        // Создаем бронирование
+        const bookingResult = await client.query(
+            `INSERT INTO kuliga_bookings (
+                client_id,
+                booking_type,
+                group_training_id,
+                date,
+                start_time,
+                end_time,
+                sport_type,
+                participants_count,
+                participants_names,
+                price_total,
+                price_per_person,
+                location,
+                status
+            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+            RETURNING id`,
+            [
+                clientRecord.id,
+                groupTraining.id,
+                dateStr,
+                startTimeStr,
+                endTimeStr,
+                program.sport_type,
+                safeCount,
+                namesArray,
+                totalPrice,
+                pricePerPerson,
+                program.location,
+            ]
+        );
+
+        const bookingId = bookingResult.rows[0].id;
+
+        // Увеличиваем счетчик участников
+        await client.query(
+            `UPDATE kuliga_group_trainings
+             SET current_participants = current_participants + $1
+             WHERE id = $2`,
+            [safeCount, groupTraining.id]
+        );
+
+        const description =
+            `Кулига: Программа "${program.name}", ${program.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(dateStr)}, ${formatTime(startTimeStr)}`;
+
+        const transactionResult = await client.query(
+            `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
+             VALUES ($1, $2, 'payment', $3, 'pending', $4)
+             RETURNING id`,
+            [clientRecord.id, bookingId, totalPrice, description]
+        );
+
+        const transactionId = transactionResult.rows[0].id;
+
+        await client.query('COMMIT');
+
+        let payment;
+        try {
+            payment = await initPayment({
+                orderId: `kuliga-${bookingId}`,
+                amount: totalPrice,
+                description,
+                customerPhone: normalizedPhone,
+                customerEmail: email?.trim() || undefined,
+                items: [
+                    {
+                        Name: `Программа "${program.name}" (${safeCount} чел.)`,
+                        Price: Math.round(pricePerPerson * 100),
+                        Quantity: safeCount,
+                        Amount: Math.round(totalPrice * 100),
+                        Tax: 'none',
+                        PaymentMethod: 'full_payment',
+                        PaymentObject: 'service',
+                    },
+                ],
+            });
+        } catch (paymentError) {
+            await pool.query(
+                `UPDATE kuliga_transactions
+                 SET status = 'failed', tinkoff_status = $1
+                 WHERE id = $2`,
+                [paymentError.message.slice(0, 120), transactionId]
+            );
+            await pool.query(
+                `UPDATE kuliga_bookings
+                 SET status = 'cancelled', cancellation_reason = 'Ошибка инициализации платежа', cancelled_at = CURRENT_TIMESTAMP
+                 WHERE id = $1`,
+                [bookingId]
+            );
+            throw paymentError;
+        }
+
+        await pool.query(
+            `UPDATE kuliga_transactions
+             SET tinkoff_payment_id = $1,
+                 tinkoff_order_id = $2,
+                 tinkoff_status = $3
+             WHERE id = $4`,
+            [payment.paymentId, `kuliga-${bookingId}`, payment.status, transactionId]
+        );
+
+        return res.json({ success: true, bookingId, paymentUrl: payment.paymentURL });
+    } catch (error) {
+        console.error('Ошибка бронирования программы Кулиги:', error);
+        try {
+            await client.query('ROLLBACK');
+        } catch (rollbackError) {
+            console.error('Ошибка при откате транзакции бронирования программы Кулиги:', rollbackError);
+        }
+        return res.status(500).json({ success: false, error: error.message || 'Не удалось создать бронирование программы' });
+    } finally {
+        client.release();
+    }
+};
+
 router.post('/bookings', async (req, res) => {
     const bookingType = (req.body && req.body.bookingType) || 'group';
+    const programId = req.body && req.body.programId;
+
+    // Если передан programId, обрабатываем как бронирование программы
+    if (programId) {
+        return createProgramBooking(req, res);
+    }
 
     if (bookingType === 'individual') {
         return createIndividualBooking(req, res);

@@ -7,6 +7,7 @@ const cron = require('node-cron');
 const notificationService = require('./notification-service');
 const reviewNotificationService = require('./review-notification-service');
 const scheduledMessagesService = require('./scheduled-messages-service');
+const programTrainingsGenerator = require('./program-trainings-generator');
 
 class Scheduler {
     constructor() {
@@ -15,7 +16,8 @@ class Scheduler {
             trainingReminders: false,
             reviewRequests: false,
             statusUpdates: false,
-            scheduledMessages: false
+            scheduledMessages: false,
+            programTrainingsGeneration: false
         };
     }
 
@@ -36,6 +38,9 @@ class Scheduler {
         
         // Запускаем задачу отправки отложенных сообщений
         this.scheduleScheduledMessages();
+        
+        // Запускаем задачу генерации тренировок из программ
+        this.scheduleProgramTrainingsGeneration();
         
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
@@ -214,6 +219,120 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Отправка отложенных сообщений" настроена на каждые 5 минут');
+    }
+
+    /**
+     * Настраивает задачу автоматической генерации тренировок из программ
+     * Запускается каждый день в 02:00 по времени Екатеринбурга
+     * Проверяет все активные программы и создает недостающие тренировки на 14 дней вперед
+     */
+    scheduleProgramTrainingsGeneration() {
+        // Запускаем в 02:00 ночи - в это время мало нагрузки на систему
+        const task = cron.schedule('0 2 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.programTrainingsGeneration) {
+                console.log(`[${new Date().toISOString()}] Задача генерации тренировок из программ уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.programTrainingsGeneration = true;
+            
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: генерация тренировок из программ`);
+                
+                const stats = await programTrainingsGenerator.generateTrainingsForAllPrograms();
+                
+                console.log(`[${new Date().toISOString()}] Задача завершена. Программ обработано: ${stats.programsProcessed}, создано тренировок: ${stats.totalCreated}, пропущено: ${stats.totalSkipped}, ошибок: ${stats.errors.length}`);
+                
+                // Отправляем отчет администратору, если были созданы тренировки или ошибки
+                if (stats.totalCreated > 0 || stats.errors.length > 0) {
+                    await this.notifyAdminProgramGeneration(stats);
+                }
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при выполнении задачи генерации тренировок из программ:`, error);
+                
+                // Уведомляем администратора об ошибке
+                await this.notifyAdminErrorProgramGeneration(error);
+            } finally {
+                this.isRunning.programTrainingsGeneration = false;
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'program_trainings_generation',
+            description: 'Автоматическая генерация тренировок из программ (14 дней вперед)',
+            schedule: '0 2 * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Генерация тренировок из программ" настроена на 02:00 (Екатеринбург)');
+    }
+
+    /**
+     * Отправляет администратору отчет о генерации тренировок из программ
+     * @param {Object} stats - Статистика генерации
+     */
+    async notifyAdminProgramGeneration(stats) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `📋 <b>Отчет о генерации тренировок из программ</b>\n\n`;
+            message += `📊 Программ обработано: ${stats.programsProcessed}\n`;
+            message += `✅ Создано тренировок: ${stats.totalCreated}\n`;
+            message += `⏭️ Пропущено (уже существуют): ${stats.totalSkipped}\n`;
+            message += `❌ Ошибок: ${stats.errors.length}\n\n`;
+            
+            if (stats.errors && stats.errors.length > 0) {
+                message += `<b>Ошибки:</b>\n`;
+                stats.errors.slice(0, 5).forEach((error, index) => {
+                    message += `${index + 1}. Программа "${error.program_name}" (ID: ${error.program_id}): ${error.error}\n`;
+                });
+                if (stats.errors.length > 5) {
+                    message += `... и еще ${stats.errors.length - 5}\n`;
+                }
+            }
+            
+            message += `\n⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Отчет о генерации тренировок отправлен администратору');
+        } catch (error) {
+            console.error('Ошибка при отправке отчета о генерации тренировок администратору:', error.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору уведомление об ошибке при генерации тренировок из программ
+     * @param {Error} error - Объект ошибки
+     */
+    async notifyAdminErrorProgramGeneration(error) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `⚠️ <b>Ошибка при генерации тренировок из программ</b>\n\n`;
+            message += `<code>${error.message}</code>\n\n`;
+            message += `⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Уведомление об ошибке генерации тренировок отправлено администратору');
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления об ошибке генерации тренировок администратору:', notifyError.message);
+        }
     }
 
     /**

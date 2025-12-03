@@ -124,55 +124,131 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
         }
 
         // Получаем расписание инструктора
-        // ВАЖНО: Если статус слота = 'group', значит на нем есть групповая тренировка, 
-        // поэтому JOIN должен возвращать групповую тренировку даже если ее статус не 'open' или 'confirmed'
-        const scheduleRes = await pool.query(
-            `SELECT 
-                ks.id,
-                ks.date,
-                ks.start_time,
-                ks.end_time,
-                ks.status,
-                kb.id as booking_id,
-                kb.participants_names,
-                kb.price_total,
-                kb.sport_type,
-                kb.payer_rides,
-                c.full_name as client_name,
-                c.phone as client_phone,
-                ki.admin_percentage,
-                kgt.id as group_training_id,
-                kgt.is_private,
-                kgt.max_participants,
-                kgt.price_per_person,
-                kgt.level as group_level,
-                kgt.sport_type as group_sport_type,
-                kgt.status as group_training_status,
-                -- Реальное количество участников из активных бронирований
-                (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
-                 FROM kuliga_bookings kb_gr
-                 WHERE kb_gr.group_training_id = kgt.id 
-                   AND kb_gr.status IN ('pending', 'confirmed')) as real_participants_count,
-                -- Реальная сумма из активных бронирований
-                (SELECT COALESCE(SUM(kb_gr.price_total), 0)::DECIMAL
-                 FROM kuliga_bookings kb_gr
-                 WHERE kb_gr.group_training_id = kgt.id 
-                   AND kb_gr.status IN ('pending', 'confirmed')) as real_total_price
-            FROM kuliga_schedule_slots ks
-            LEFT JOIN kuliga_bookings kb ON ks.id = kb.slot_id AND kb.status IN ('pending', 'confirmed')
-            LEFT JOIN clients c ON kb.client_id = c.id
-            LEFT JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
-            -- Если статус слота = 'group', обязательно возвращаем групповую тренировку (независимо от ее статуса)
-            LEFT JOIN kuliga_group_trainings kgt ON ks.id = kgt.slot_id 
-                AND (kgt.status IN ('open', 'confirmed') OR ks.status = 'group')
-            WHERE ks.instructor_id = $1
-              AND ks.date >= $2
-              AND ks.date <= $3
-            ORDER BY ks.date, ks.start_time`,
-            [instructorId, dateFrom, dateTo]
-        );
+        // ВАЖНО: Получаем и слоты с тренировками, и групповые тренировки напрямую (даже если slot_id = null)
+        const [scheduleRes, directGroupTrainingsRes] = await Promise.all([
+            pool.query(
+                `SELECT 
+                    ks.id,
+                    ks.date,
+                    ks.start_time,
+                    ks.end_time,
+                    ks.status,
+                    kb.id as booking_id,
+                    kb.participants_names,
+                    kb.price_total,
+                    kb.sport_type,
+                    kb.payer_rides,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    ki.admin_percentage,
+                    kgt.id as group_training_id,
+                    kgt.is_private,
+                    kgt.max_participants,
+                    kgt.price_per_person,
+                    kgt.level as group_level,
+                    kgt.sport_type as group_sport_type,
+                    kgt.status as group_training_status,
+                    -- Реальное количество участников из активных бронирований
+                    (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
+                     FROM kuliga_bookings kb_gr
+                     WHERE kb_gr.group_training_id = kgt.id 
+                       AND kb_gr.status IN ('pending', 'confirmed')) as real_participants_count,
+                    -- Реальная сумма из активных бронирований
+                    (SELECT COALESCE(SUM(kb_gr.price_total), 0)::DECIMAL
+                     FROM kuliga_bookings kb_gr
+                     WHERE kb_gr.group_training_id = kgt.id 
+                       AND kb_gr.status IN ('pending', 'confirmed')) as real_total_price
+                FROM kuliga_schedule_slots ks
+                LEFT JOIN kuliga_bookings kb ON ks.id = kb.slot_id AND kb.status IN ('pending', 'confirmed')
+                LEFT JOIN clients c ON kb.client_id = c.id
+                LEFT JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
+                -- Если статус слота = 'group', обязательно возвращаем групповую тренировку (независимо от ее статуса)
+                LEFT JOIN kuliga_group_trainings kgt ON ks.id = kgt.slot_id 
+                    AND (kgt.status IN ('open', 'confirmed') OR ks.status = 'group')
+                WHERE ks.instructor_id = $1
+                  AND ks.date >= $2
+                  AND ks.date <= $3
+                ORDER BY ks.date, ks.start_time`,
+                [instructorId, dateFrom, dateTo]
+            ),
+            // Получаем групповые тренировки напрямую по instructor_id (даже если slot_id = null)
+            pool.query(
+                `SELECT 
+                    kgt.id as group_training_id,
+                    kgt.date,
+                    kgt.start_time,
+                    kgt.end_time,
+                    kgt.status as group_training_status,
+                    kgt.is_private,
+                    kgt.max_participants,
+                    kgt.price_per_person,
+                    kgt.level as group_level,
+                    kgt.sport_type as group_sport_type,
+                    ki.admin_percentage,
+                    -- Реальное количество участников из активных бронирований
+                    (SELECT COALESCE(SUM(kb_gr.participants_count), 0)::INTEGER
+                     FROM kuliga_bookings kb_gr
+                     WHERE kb_gr.group_training_id = kgt.id 
+                       AND kb_gr.status IN ('pending', 'confirmed')) as real_participants_count,
+                    -- Реальная сумма из активных бронирований
+                    (SELECT COALESCE(SUM(kb_gr.price_total), 0)::DECIMAL
+                     FROM kuliga_bookings kb_gr
+                     WHERE kb_gr.group_training_id = kgt.id 
+                       AND kb_gr.status IN ('pending', 'confirmed')) as real_total_price
+                FROM kuliga_group_trainings kgt
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                WHERE kgt.instructor_id = $1
+                  AND kgt.date >= $2
+                  AND kgt.date <= $3
+                  AND kgt.status IN ('open', 'confirmed')
+                  AND (kgt.slot_id IS NULL OR kgt.slot_id NOT IN (
+                      SELECT id FROM kuliga_schedule_slots 
+                      WHERE instructor_id = $1 AND date >= $2 AND date <= $3
+                  ))
+                ORDER BY kgt.date, kgt.start_time`,
+                [instructorId, dateFrom, dateTo]
+            )
+        ]);
 
-        if (scheduleRes.rows.length === 0) {
+        // Объединяем результаты: сначала слоты, потом прямые групповые тренировки
+        const allScheduleRows = [...scheduleRes.rows];
+        
+        // Добавляем прямые групповые тренировки (без слотов), преобразуя их в формат слота
+        directGroupTrainingsRes.rows.forEach(gt => {
+            allScheduleRows.push({
+                id: null, // Нет слота
+                date: gt.date,
+                start_time: gt.start_time,
+                end_time: gt.end_time,
+                status: 'group', // Помечаем как групповую
+                booking_id: null,
+                participants_names: null,
+                price_total: null,
+                sport_type: null,
+                payer_rides: null,
+                client_name: null,
+                client_phone: null,
+                admin_percentage: gt.admin_percentage,
+                group_training_id: gt.group_training_id,
+                is_private: gt.is_private,
+                max_participants: gt.max_participants,
+                price_per_person: gt.price_per_person,
+                group_level: gt.group_level,
+                group_sport_type: gt.group_sport_type,
+                group_training_status: gt.group_training_status,
+                real_participants_count: gt.real_participants_count,
+                real_total_price: gt.real_total_price
+            });
+        });
+
+        // Сортируем по дате и времени
+        allScheduleRows.sort((a, b) => {
+            const dateCompare = a.date.localeCompare(b.date);
+            if (dateCompare !== 0) return dateCompare;
+            return a.start_time.localeCompare(b.start_time);
+        });
+
+        if (allScheduleRows.length === 0) {
             return bot.sendMessage(chatId,
                 '📭 У вас нет расписания на ближайшие 7 дней.\n\n' +
                 'Создайте слоты в вашем личном кабинете:\n' +
@@ -193,7 +269,7 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
         const scheduleByDate = {};
         const seenGroupSlots = new Set(); // Для отслеживания уже обработанных групповых тренировок
         
-        scheduleRes.rows.forEach(row => {
+        allScheduleRows.forEach(row => {
             const dateKey = row.date;
             if (!scheduleByDate[dateKey]) {
                 scheduleByDate[dateKey] = [];

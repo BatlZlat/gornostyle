@@ -328,6 +328,8 @@ function renderWinterTrainingRow(training) {
     
     // Название: для индивидуальных - участники, для групповых - название группы
     let name = '—';
+    const isProgramTraining = training.program_id && training.program_name;
+    
     if (isIndividual) {
         // Для индивидуальных тренировок название - это имя участника
         // Если есть participant_names в данных, используем его
@@ -340,14 +342,22 @@ function renderWinterTrainingRow(training) {
         }
     } else {
         name = training.group_name || 'Групповая тренировка';
+        
+        // Если это тренировка из программы, добавляем метку
+        if (isProgramTraining) {
+            name = `📋 ${training.program_name}`;
+        }
     }
     
     // Участники
     const currentParticipants = training.current_participants || (isIndividual ? 1 : 0);
     const maxParticipants = training.max_participants || (isIndividual ? 1 : 1);
     
-    // Тренер
-    const trainer = training.trainer_name || 'Не назначен';
+    // Тренер: для программных тренировок показываем статус назначения
+    let trainer = training.trainer_name || 'Не назначен';
+    if (isProgramTraining && !training.trainer_name) {
+        trainer = '<span style="color: #e74c3c; font-weight: bold;">⚠️ Не назначен</span>';
+    }
     
     // Место проведения
     const location = training.location || (training.training_source === 'kuliga' ? 'kuliga' : null);
@@ -1009,29 +1019,50 @@ function showKuligaTrainingEditModal(training, type, id) {
         const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
         const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
         
+        // Проверяем, является ли это тренировкой из программы
+        const isProgramTraining = training.program_id && training.program_name;
+        const currentInstructorId = training.instructor_id || '';
+        
         modalContent += `
+            ${isProgramTraining ? `
+            <div class="form-group" style="background: #e8f5e9; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                <strong>📋 Программа:</strong> ${training.program_name}<br>
+                <small style="color: #666;">Эта тренировка создана из программы. Инструктор будет назначен администратором.</small>
+            </div>
+            ` : ''}
             <div class="form-group">
                 <label>Дата:</label>
-                <input type="date" name="date" value="${date}" required>
+                <input type="date" name="date" value="${date}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Дата задана программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Время начала:</label>
-                <input type="time" name="start_time" value="${startTime}" required>
+                <input type="time" name="start_time" value="${startTime}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Время задано программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Время окончания:</label>
-                <input type="time" name="end_time" value="${endTime}" required>
+                <input type="time" name="end_time" value="${endTime}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Время задано программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Вид спорта:</label>
-                <select name="sport_type" required>
+                <select name="sport_type" ${isProgramTraining ? 'disabled' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
                     <option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>Горные лыжи</option>
                     <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
                 </select>
+                ${isProgramTraining ? '<small style="color: #666;">Вид спорта задан программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Инструктор: ${isProgramTraining ? '<span style="color: #e74c3c;">*</span>' : ''}</label>
+                <select name="instructor_id" id="instructor-select-group" ${isProgramTraining ? 'required' : ''}>
+                    <option value="">Загрузка...</option>
+                </select>
+                ${isProgramTraining ? '<small style="color: #666;">Необходимо назначить инструктора для программы</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Уровень (1-10):</label>
-                <select name="level" required>
+                <select name="level" ${isProgramTraining ? 'disabled' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
                     ${Array.from({ length: 10 }, (_, i) => {
                         const levelNum = i + 1;
                         // Преобразуем старое значение уровня (beginner/intermediate/advanced) в число
@@ -1044,22 +1075,27 @@ function showKuligaTrainingEditModal(training, type, id) {
                         return `<option value="${levelNum}" ${isSelected ? 'selected' : ''}>${levelNum} уровень</option>`;
                     }).join('')}
                 </select>
+                ${isProgramTraining ? '<small style="color: #666;">Уровень задан программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Описание:</label>
-                <textarea name="description" rows="3">${training.description || ''}</textarea>
+                <textarea name="description" rows="3" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">${training.description || ''}</textarea>
+                ${isProgramTraining ? '<small style="color: #666;">Описание задано программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Цена за человека:</label>
-                <input type="number" name="price_per_person" value="${training.price_per_person || ''}" step="0.01" min="0">
+                <input type="number" name="price_per_person" value="${training.price_per_person || ''}" step="0.01" min="0" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Цена задана программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Минимум участников:</label>
-                <input type="number" name="min_participants" value="${training.min_participants || ''}" min="1">
+                <input type="number" name="min_participants" value="${training.min_participants || ''}" min="1" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Минимум задан программой</small>' : ''}
             </div>
             <div class="form-group">
                 <label>Максимум участников:</label>
-                <input type="number" name="max_participants" value="${training.max_participants || ''}" min="1">
+                <input type="number" name="max_participants" value="${training.max_participants || ''}" min="1" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Максимум задан программой</small>' : ''}
             </div>
         `;
     }
@@ -1075,6 +1111,61 @@ function showKuligaTrainingEditModal(training, type, id) {
     
     modal.innerHTML = modalContent;
     document.body.appendChild(modal);
+    
+    // Загрузка инструкторов для групповой тренировки (если это тренировка из программы)
+    if (type === 'group' && training.program_id) {
+        const instructorSelect = modal.querySelector('#instructor-select-group');
+        const currentInstructorId = training.instructor_id || '';
+        const currentSportType = training.sport_type || 'ski';
+        const trainingLocation = training.location || 'kuliga';
+        
+        // Функция загрузки инструкторов для программы
+        const loadInstructorsForProgram = async (sportType, location, selectedInstructorId = null) => {
+            instructorSelect.innerHTML = '<option value="">Загрузка...</option>';
+            try {
+                const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+                
+                // Загружаем всех активных инструкторов в нужном месте и с нужным видом спорта
+                const response = await fetch(`/api/kuliga/admin/instructors?location=${location}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    if (result.success && result.data && result.data.length > 0) {
+                        // Фильтруем по виду спорта
+                        const filteredInstructors = result.data.filter(instructor => 
+                            (instructor.sport_type === sportType || instructor.sport_type === 'both') &&
+                            instructor.is_active === true &&
+                            instructor.location === location
+                        );
+                        
+                        instructorSelect.innerHTML = '<option value="">Выберите инструктора</option>';
+                        filteredInstructors.forEach(instructor => {
+                            const selected = instructor.id == selectedInstructorId ? 'selected' : '';
+                            const sportLabel = instructor.sport_type === 'ski' ? 'Лыжи' : instructor.sport_type === 'snowboard' ? 'Сноуборд' : 'Оба';
+                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name} (${sportLabel})</option>`;
+                        });
+                    } else {
+                        instructorSelect.innerHTML = '<option value="">Нет доступных инструкторов</option>';
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('❌ Ошибка загрузки инструкторов:', errorData);
+                    instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                }
+            } catch (error) {
+                console.error('❌ Ошибка загрузки инструкторов:', error);
+                instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        };
+        
+        // Загружаем инструкторов при открытии модального окна
+        loadInstructorsForProgram(currentSportType, trainingLocation, currentInstructorId);
+    }
     
     // Загрузка инструкторов для индивидуальной тренировки
     if (type === 'individual') {
@@ -1167,7 +1258,16 @@ function showKuligaTrainingEditModal(training, type, id) {
         
         const formData = new FormData(form);
         const data = {};
+        
+        // Для тренировок из программ: передаем только instructor_id, остальные поля readonly
+        const isProgramTraining = type === 'group' && training.program_id;
+        
         for (const [key, value] of formData.entries()) {
+            // Для программных тренировок пропускаем readonly поля
+            if (isProgramTraining && ['date', 'start_time', 'end_time', 'sport_type', 'level', 'description', 'price_per_person', 'min_participants', 'max_participants'].includes(key)) {
+                continue;
+            }
+            
             if (value) {
                 if (key === 'participants_names') {
                     // Преобразуем строку участников в массив
@@ -1177,8 +1277,8 @@ function showKuligaTrainingEditModal(training, type, id) {
                     const numValue = parseInt(value);
                     if (!isNaN(numValue)) {
                         data[key] = numValue;
-                    } else if (key === 'instructor_id' && type === 'individual') {
-                        // Для индивидуальных тренировок инструктор обязателен
+                    } else if (key === 'instructor_id' && (type === 'individual' || isProgramTraining)) {
+                        // Для индивидуальных тренировок и программных тренировок инструктор обязателен
                         alert('Пожалуйста, выберите инструктора');
                         return;
                     }
@@ -1191,8 +1291,8 @@ function showKuligaTrainingEditModal(training, type, id) {
             }
         }
         
-        // Для индивидуальных тренировок проверяем наличие инструктора
-        if (type === 'individual' && !data.instructor_id) {
+        // Для индивидуальных тренировок и программных тренировок проверяем наличие инструктора
+        if ((type === 'individual' || isProgramTraining) && !data.instructor_id) {
             alert('Пожалуйста, выберите инструктора');
             return;
         }
