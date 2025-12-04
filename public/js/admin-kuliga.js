@@ -96,7 +96,12 @@ function switchKuligaTab(tabName) {
     if (tabName === 'instructors') {
         loadKuligaInstructors();
     } else if (tabName === 'programs') {
-        loadKuligaPrograms();
+        // Загружаем инструкторов перед программами, чтобы иметь доступ к их именам (для резервного варианта)
+        if (kuligaInstructors.length === 0) {
+            loadKuligaInstructors().then(() => loadKuligaPrograms());
+        } else {
+            loadKuligaPrograms();
+        }
     } else if (tabName === 'settings') {
         loadKuligaSettings();
     } else if (tabName === 'finances') {
@@ -117,13 +122,15 @@ const mapSportLabel = (type) => {
 
 async function loadKuligaInstructors() {
     const container = document.getElementById('kuliga-instructors-list');
-    if (!container) return;
+    const shouldRender = !!container;
 
     const statusFilter = document.getElementById('kuliga-filter-status')?.value || 'active';
     const sportFilter = document.getElementById('kuliga-filter-sport')?.value || 'all';
 
     try {
-        container.innerHTML = '<p>Загрузка инструкторов...</p>';
+        if (shouldRender) {
+            container.innerHTML = '<p>Загрузка инструкторов...</p>';
+        }
 
         const response = await fetch(`${KULIGA_API.instructors}?status=${statusFilter}&sport=${sportFilter}`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
@@ -136,16 +143,20 @@ async function loadKuligaInstructors() {
         const data = await response.json();
         kuligaInstructors = data.data || [];
 
-        if (kuligaInstructors.length === 0) {
-            container.innerHTML =
-                '<p style="text-align:center;color:#999;padding:40px;">Инструкторы не найдены. Добавьте первого инструктора!</p>';
-            return;
-        }
+        if (shouldRender) {
+            if (kuligaInstructors.length === 0) {
+                container.innerHTML =
+                    '<p style="text-align:center;color:#999;padding:40px;">Инструкторы не найдены. Добавьте первого инструктора!</p>';
+                return;
+            }
 
-        renderKuligaInstructors();
+            renderKuligaInstructors();
+        }
     } catch (error) {
         console.error('Ошибка загрузки инструкторов Кулиги:', error);
-        container.innerHTML = '<p style="color:red;">Не удалось загрузить список инструкторов</p>';
+        if (shouldRender) {
+            container.innerHTML = '<p style="color:red;">Не удалось загрузить список инструкторов</p>';
+        }
     }
 }
 
@@ -601,6 +612,37 @@ function renderKuligaPrograms() {
             const statusText = program.is_active ? 'Активна' : 'Неактивна';
             const weekdays = formatWeekdays(program.weekdays);
             const timeSlots = formatTimeslots(program.time_slots);
+            
+            // Получаем название локации
+            let locationName = 'Не указана';
+            if (program.location) {
+                if (typeof window.getLocationName === 'function') {
+                    locationName = window.getLocationName(program.location);
+                } else {
+                    locationName = program.location === 'vorona' ? 'Воронинские горки' : program.location === 'kuliga' ? 'Кулига Парк' : program.location;
+                }
+            }
+            
+            // Получаем имена инструкторов
+            let instructorsText = 'Не назначен';
+            if (program.instructor_names && Array.isArray(program.instructor_names) && program.instructor_names.length > 0) {
+                // Фильтруем пустые значения (на случай NULL в массиве)
+                const validNames = program.instructor_names.filter(name => name && name.trim());
+                if (validNames.length > 0) {
+                    instructorsText = validNames.join(', ');
+                }
+            } else if (program.instructor_ids && Array.isArray(program.instructor_ids) && program.instructor_ids.length > 0) {
+                // Если имена не пришли с сервера, пытаемся найти их в локальном массиве инструкторов
+                const instructorNames = program.instructor_ids
+                    .map(id => {
+                        const instructor = kuligaInstructors.find(i => i.id === id || i.id === String(id));
+                        return instructor ? instructor.full_name : null;
+                    })
+                    .filter(name => name);
+                if (instructorNames.length > 0) {
+                    instructorsText = instructorNames.join(', ');
+                }
+            }
 
             return `
             <div class="kuliga-program-card" data-id="${program.id}">
@@ -617,6 +659,8 @@ function renderKuligaPrograms() {
                     <span class="tag">${Number(program.price).toLocaleString('ru-RU')} ₽</span>
                 </div>
                 <div class="kuliga-program-details">
+                    <p><strong>Место проведения:</strong> ${locationName}</p>
+                    <p><strong>Инструктор:</strong> ${instructorsText}</p>
                     <p><strong>Дни недели:</strong> ${weekdays}</p>
                     <p><strong>Время:</strong> ${timeSlots}</p>
                     <p><strong>Снаряжение:</strong> ${program.equipment_provided ? 'Предоставляем' : 'Самостоятельно'}</p>
