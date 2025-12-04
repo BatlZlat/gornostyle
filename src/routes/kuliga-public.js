@@ -260,6 +260,88 @@ router.get('/api/kuliga/instructors', async (req, res) => {
     }
 });
 
+// GET /api/kuliga/programs/:id - Получение программы по ID
+router.get('/api/kuliga/programs/:id', async (req, res) => {
+    try {
+        const programId = parseInt(req.params.id, 10);
+        if (isNaN(programId) || programId <= 0) {
+            return res.status(400).json({ success: false, error: 'Некорректный ID программы' });
+        }
+
+        const result = await pool.query(
+            `SELECT p.id, p.name, p.description, p.sport_type, p.location, p.max_participants,
+                    p.training_duration, p.warmup_duration, p.practice_duration,
+                    p.weekdays, p.time_slots, p.equipment_provided,
+                    p.skipass_provided, p.price, p.is_active, p.created_at,
+                    COALESCE(
+                        array_agg(pi.instructor_id) FILTER (WHERE pi.instructor_id IS NOT NULL),
+                        ARRAY[]::integer[]
+                    ) as instructor_ids
+             FROM kuliga_programs p
+             LEFT JOIN kuliga_program_instructors pi ON p.id = pi.program_id
+             WHERE p.id = $1 AND p.is_active = TRUE
+             GROUP BY p.id`,
+            [programId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Программа не найдена или неактивна' });
+        }
+
+        const program = result.rows[0];
+        
+        // Получаем информацию о тренировке на конкретную дату и время (если указаны)
+        const { date, time } = req.query;
+        let trainingInfo = null;
+        
+        if (date && time) {
+            // Нормализуем формат времени: "10:00" -> "10:00:00"
+            let normalizedTime = time.trim();
+            if (normalizedTime.length === 5 && normalizedTime.includes(':')) {
+                normalizedTime = normalizedTime + ':00';
+            }
+            
+            const trainingResult = await pool.query(
+                `SELECT kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.current_participants,
+                        kgt.max_participants, kgt.price_per_person, kgt.status,
+                        kgt.instructor_id, ki.full_name as instructor_name, ki.photo_url as instructor_photo_url,
+                        ki.description as instructor_description
+                 FROM kuliga_group_trainings kgt
+                 LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                 WHERE kgt.program_id = $1
+                   AND kgt.date = $2
+                   AND kgt.start_time = $3
+                   AND kgt.status IN ('open', 'confirmed')
+                 LIMIT 1`,
+                [programId, date, normalizedTime]
+            );
+            
+            if (trainingResult.rows.length > 0) {
+                trainingInfo = trainingResult.rows[0];
+            }
+        }
+
+        const programData = {
+            ...program,
+            price: Number(program.price),
+            instructor_ids: Array.isArray(program.instructor_ids) ? program.instructor_ids : [],
+            practice_duration:
+                program.practice_duration !== null
+                    ? Number(program.practice_duration)
+                    : Number(program.training_duration) - Number(program.warmup_duration),
+            training: trainingInfo
+        };
+
+        res.json({
+            success: true,
+            data: programData
+        });
+    } catch (error) {
+        console.error('Ошибка получения программы Кулиги:', error);
+        res.status(500).json({ success: false, error: 'Не удалось получить информацию о программе' });
+    }
+});
+
 router.get('/api/kuliga/programs', async (req, res) => {
     try {
         const { location } = req.query || {};
@@ -354,9 +436,85 @@ router.get('/api/kuliga/programs', async (req, res) => {
             }
         }
 
-        schedule.sort((a, b) => a.sort_key - b.sort_key);
+        // Получаем реальные созданные тренировки из программ
+        const createdTrainingsResult = await pool.query(
+            `SELECT 
+                kgt.id as training_id,
+                kgt.program_id,
+                kgt.date,
+                kgt.start_time,
+                kgt.end_time,
+                kgt.price_per_person,
+                kgt.max_participants,
+                kgt.current_participants,
+                kgt.status,
+                kgt.instructor_id,
+                kgt.location,
+                ki.full_name as instructor_name,
+                kp.name as program_name,
+                kp.sport_type
+             FROM kuliga_group_trainings kgt
+             JOIN kuliga_programs kp ON kgt.program_id = kp.id
+             LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+             WHERE kgt.program_id IS NOT NULL
+               AND kgt.date >= $1
+               AND kgt.date <= $2
+               AND kgt.status IN ('open', 'confirmed')
+             ORDER BY kgt.date, kgt.start_time`,
+            [now.format('YYYY-MM-DD'), end.format('YYYY-MM-DD')]
+        );
 
-        const responseSchedule = schedule.map(({ sort_key, ...rest }) => rest);
+        // Объединяем расписание программ с реальными тренировками
+        // Сначала добавляем все элементы расписания
+        const allScheduleItems = schedule.map(({ sort_key, ...rest }) => rest);
+        
+        // Добавляем реальные тренировки, заменяя или дополняя расписание
+        createdTrainingsResult.rows.forEach((training) => {
+            const dateStr = moment(training.date).tz(TIMEZONE).format('YYYY-MM-DD');
+            const timeStr = moment(training.start_time, 'HH:mm:ss').format('HH:mm');
+            const dateLabel = moment(training.date).tz(TIMEZONE).format('D MMMM');
+            const weekdayShort = moment(training.date).tz(TIMEZONE).format('dd');
+            
+            // Ищем существующий элемент расписания для этой программы, даты и времени
+            const existingIndex = allScheduleItems.findIndex(
+                item => item.program_id === training.program_id && 
+                        item.date_iso === dateStr && 
+                        item.time === timeStr
+            );
+            
+            const scheduleItem = {
+                program_id: training.program_id,
+                program_name: training.program_name,
+                sport_type: training.sport_type,
+                date_iso: dateStr,
+                date_label: dateLabel,
+                weekday_short: weekdayShort,
+                time: timeStr,
+                available_slots: training.max_participants - (training.current_participants || 0),
+                max_participants: training.max_participants,
+                current_participants: training.current_participants || 0,
+                price_per_person: Number(training.price_per_person),
+                instructor_id: training.instructor_id,
+                instructor_name: training.instructor_name,
+                training_id: training.training_id,
+                location: training.location,
+            };
+            
+            if (existingIndex >= 0) {
+                // Заменяем расписание реальными данными тренировки
+                allScheduleItems[existingIndex] = scheduleItem;
+            } else {
+                // Добавляем новую тренировку
+                allScheduleItems.push(scheduleItem);
+            }
+        });
+        
+        // Сортируем по дате и времени
+        allScheduleItems.sort((a, b) => {
+            const dateCompare = a.date_iso.localeCompare(b.date_iso);
+            if (dateCompare !== 0) return dateCompare;
+            return a.time.localeCompare(b.time);
+        });
 
         res.json({
             success: true,
@@ -366,7 +524,7 @@ router.get('/api/kuliga/programs', async (req, res) => {
                     weekdays,
                     time_slots,
                 })),
-                schedule: responseSchedule,
+                schedule: allScheduleItems,
             },
         });
     } catch (error) {

@@ -6,6 +6,7 @@
         availability: '/api/kuliga/availability',
         createBooking: '/api/kuliga/bookings',
         preRegisterClient: '/api/kuliga/pre-register-client',
+        program: '/api/kuliga/programs',
     };
 
     const STORAGE_KEY = 'kuligaBookingDraft';
@@ -40,6 +41,7 @@
     const telegramLink = document.getElementById('kuligaTelegramLink');
     const consentCheckbox = document.getElementById('kuligaConsent');
     const locationSelect = document.getElementById('kuligaLocation');
+    const addParticipantBtn = document.getElementById('kuligaAddParticipantBtn');
 
     const botUsername = (window.KULIGA_BOOKING_CONFIG && window.KULIGA_BOOKING_CONFIG.botUsername) || '';
     if (botUsername) {
@@ -75,6 +77,7 @@
             title: '',
             description: '',
         },
+        program: null, // Данные программы (если бронирование через программу)
         client: {
             fullName: '',
             birthDate: '',
@@ -236,8 +239,31 @@
         }
     }
 
-    function initializeSelection() {
+    async function loadProgramData(programId, date, time) {
+        try {
+            const params = new URLSearchParams();
+            if (date) params.set('date', date);
+            if (time) params.set('time', time);
+            
+            const response = await fetch(`${API.program}/${programId}${params.toString() ? '?' + params.toString() : ''}`, {
+                headers: { Accept: 'application/json' }
+            });
+            
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось загрузить данные программы');
+            }
+            
+            return data.data;
+        } catch (error) {
+            console.error('Ошибка загрузки программы:', error);
+            throw error;
+        }
+    }
+
+    async function initializeSelection() {
         const params = new URLSearchParams(window.location.search);
+        const programIdParam = params.get('programId');
         const priceIdParam = params.get('priceId');
         const participantsParam = Number(params.get('participants'));
         
@@ -264,6 +290,67 @@
             };
         }
 
+        // Обработка программы (приоритет выше, чем priceId)
+        if (programIdParam) {
+            try {
+                const programData = await loadProgramData(programIdParam, dateParam, startTimeParam);
+                state.program = programData;
+                
+                // Предзаполняем данные из программы
+                state.selection = {
+                    priceId: null,
+                    priceType: 'group',
+                    duration: Number(programData.training_duration) || 90,
+                    baseParticipants: Number(programData.max_participants) || 4,
+                    currentParticipants: 1,
+                    priceValue: 0,
+                    pricePerPerson: Number(programData.price) || 0, // Цена за человека из программы
+                    title: programData.name || 'Групповая тренировка',
+                    description: programData.description || '',
+                };
+                
+                // Устанавливаем дату и время, если переданы
+                if (dateParam) {
+                    state.date = dateParam;
+                }
+                if (startTimeParam) {
+                    // startTimeParam может быть в формате "10:00", сохраняем его
+                    state.programTime = startTimeParam;
+                }
+                
+                // Устанавливаем location из программы
+                if (programData.location) {
+                    state.location = programData.location;
+                }
+                
+                // Устанавливаем sportType из программы
+                if (programData.sport_type) {
+                    state.sportType = programData.sport_type === 'snowboard' ? 'snowboard' : 'ski';
+                }
+                
+                // Если есть информация о тренировке (уже созданной), показываем инструктора
+                if (programData.training) {
+                    state.programTraining = programData.training;
+                }
+                
+                state.participants = [{ fullName: '', age: '' }];
+                state.selection.currentParticipants = 1;
+                if (!state.client.fullName) {
+                    state.syncMainParticipant = true;
+                }
+                
+                // Обновляем цену после инициализации программы
+                updateTotalPrice();
+                
+                return; // Выходим, так как для программы не нужно загружать прайсы
+            } catch (error) {
+                console.error('Ошибка загрузки программы:', error);
+                setMessage(error.message || 'Не удалось загрузить данные программы. Вернитесь к выбору программы.', 'error');
+                return;
+            }
+        }
+
+        // Обычная логика инициализации для тарифов
         let price;
         
         // Если есть priceType из URL (при клике на слот), ищем подходящий тариф
@@ -320,6 +407,31 @@
     }
 
     function renderSelectionSummary() {
+        // Если это программа, показываем информацию о программе
+        if (state.program) {
+            selectionTitle.textContent = state.program.name || 'Групповая тренировка';
+            
+            const {
+                duration,
+                pricePerPerson,
+            } = state.selection;
+            
+            const participantCount = Math.max(1, state.participants.length || 1);
+            const totalPrice = pricePerPerson * participantCount;
+            
+            const details = [
+                `<span><i class="fa-regular fa-clock"></i>${duration} мин.</span>`,
+                `<span><i class="fa-solid fa-users"></i>${participantCount} участник${participantCount === 1 ? '' : participantCount < 5 ? 'а' : 'ов'}</span>`,
+                `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson)}</span>`,
+                `<span><i class="fa-solid fa-receipt"></i>Общая стоимость: ${formatCurrency(totalPrice)}</span>`,
+            ];
+            
+            selectionDetails.innerHTML = details.join('');
+            updateParticipantsHint();
+            updateTotalPrice();
+            return;
+        }
+        
         if (!state.selection.priceId) {
             selectionTitle.textContent = 'Не выбран тариф';
             selectionDetails.innerHTML = '';
@@ -357,6 +469,17 @@
     }
 
     function updateParticipantsHint() {
+        if (state.program) {
+            const participantCount = Math.max(1, state.participants.length || 1);
+            const maxParticipants = state.program.max_participants || 4;
+            if (state.payerParticipation === 'self') {
+                participantsHint.textContent = `Заполните данные участников. Вы можете добавить до ${maxParticipants} человек.`;
+            } else {
+                participantsHint.textContent = `Заполните данные участников. Вы можете добавить до ${maxParticipants} человек. Заказчик в тренировке не участвует.`;
+            }
+            return;
+        }
+        
         const { currentParticipants, baseParticipants } = state.selection;
         if (state.payerParticipation === 'self') {
             participantsHint.textContent = `Заполните данные на ${currentParticipants} участника, включая заказчика.`;
@@ -386,7 +509,7 @@
     }
 
     function renderParticipants() {
-        const count = Math.max(1, state.selection.currentParticipants);
+        const count = Math.max(1, state.participants.length || state.selection.currentParticipants);
         ensureParticipantsLength(count);
 
         participantsContainer.innerHTML = '';
@@ -408,7 +531,10 @@
                     : `Участник ${index + 1}`;
 
             card.innerHTML = `
-                <div class="kuliga-participant-card__header">${title}</div>
+                <div class="kuliga-participant-card__header">
+                    ${title}
+                    ${index > 0 ? `<button type="button" class="kuliga-participant-remove" data-index="${index}" aria-label="Удалить участника" style="float: right; background: none; border: none; color: #dc3545; cursor: pointer; font-size: 1.2rem; padding: 0 8px;">&times;</button>` : ''}
+                </div>
                 <div class="kuliga-form-grid kuliga-form-grid--compact">
                     <label class="kuliga-field">
                         <span>ФИО *</span>
@@ -425,14 +551,60 @@
         });
 
         participantsContainer.appendChild(fragment);
+        
+        // Показываем/скрываем кнопку "Добавить участника" для программ
+        if (state.program && addParticipantBtn) {
+            const maxParticipants = state.program.max_participants || 4;
+            if (state.participants.length < maxParticipants) {
+                addParticipantBtn.style.display = 'block';
+            } else {
+                addParticipantBtn.style.display = 'none';
+            }
+        } else if (addParticipantBtn) {
+            addParticipantBtn.style.display = 'none';
+        }
+        
+        // Добавляем обработчики для кнопок удаления
+        participantsContainer.querySelectorAll('.kuliga-participant-remove').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                const index = Number(btn.dataset.index);
+                if (index > 0 && state.participants.length > index) {
+                    state.participants.splice(index, 1);
+                    renderParticipants();
+                    updateTotalPrice();
+                    scheduleSaveState();
+                }
+            });
+        });
+    }
+    
+    function handleAddParticipant() {
+        if (!state.program) return;
+        
+        const maxParticipants = state.program.max_participants || 4;
+        if (state.participants.length >= maxParticipants) {
+            setMessage(`Максимальное количество участников: ${maxParticipants}`, 'info');
+            return;
+        }
+        
+        state.participants.push({ fullName: '', age: '' });
+        state.selection.currentParticipants = state.participants.length;
+        renderParticipants();
+        updateTotalPrice();
+        scheduleSaveState();
     }
 
     function updateTotalPrice() {
-        const count = Math.max(1, state.selection.currentParticipants);
+        // Для программ считаем по количеству реальных участников
+        const count = state.program 
+            ? Math.max(1, state.participants.length || 1)
+            : Math.max(1, state.selection.currentParticipants);
         const total =
-            state.selection.priceType === 'individual'
-                ? state.selection.priceValue
-                : state.selection.pricePerPerson * count;
+            state.program
+                ? state.selection.pricePerPerson * count
+                : (state.selection.priceType === 'individual'
+                    ? state.selection.priceValue
+                    : state.selection.pricePerPerson * count);
         totalPriceLabel.textContent = formatCurrency(total);
     }
 
@@ -451,6 +623,12 @@
             }
         } else if (field === 'age') {
             state.participants[index].age = target.value.trim();
+        }
+
+        // Обновляем цену при изменении данных участников (для программ)
+        if (state.program) {
+            updateTotalPrice();
+            renderSelectionSummary();
         }
 
         scheduleSaveState();
@@ -683,6 +861,28 @@
             return false;
         }
 
+        // Валидация для программ
+        if (state.program) {
+            if (!state.date) {
+                setMessage('Дата тренировки не указана. Вернитесь к выбору программы и выберите дату.', 'error');
+                return false;
+            }
+            
+            if (!state.programTime) {
+                setMessage('Время тренировки не указано. Вернитесь к выбору программы и выберите время.', 'error');
+                return false;
+            }
+            
+            const participants = buildParticipantsPayload();
+            if (!participants.length) {
+                setMessage('Заполните ФИО и возраст хотя бы одного участника.', 'error');
+                return false;
+            }
+            
+            return true;
+        }
+
+        // Валидация для обычных тренировок
         if (!state.date) {
             setMessage('Выберите дату тренировки.', 'error');
             return false;
@@ -726,6 +926,26 @@
 
     function buildPayload() {
         const participants = buildParticipantsPayload();
+        
+        // Для программ
+        if (state.program) {
+            const totalPrice = state.selection.pricePerPerson * participants.length;
+            
+            return {
+                programId: state.program.id,
+                date: state.date,
+                time: state.programTime,
+                fullName: state.client.fullName.trim(),
+                birthDate: state.client.birthDate,
+                phone: normalizePhone(state.client.phone),
+                email: state.client.email.trim(),
+                participantsCount: participants.length,
+                participantsNames: participants.map(({ fullName }) => fullName),
+                consentConfirmed: consentCheckbox.checked,
+            };
+        }
+        
+        // Для обычных тренировок
         const totalPrice =
             state.selection.priceType === 'individual'
                 ? state.selection.priceValue
@@ -760,6 +980,148 @@
         };
     }
 
+    function showConfirmationModal(payload) {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'kuliga-confirmation-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+            `;
+            
+            const participants = buildParticipantsPayload();
+            const totalPrice = state.program 
+                ? state.selection.pricePerPerson * participants.length
+                : (state.selection.priceType === 'individual'
+                    ? state.selection.priceValue
+                    : state.selection.pricePerPerson * participants.length);
+            
+            const dateStr = state.date ? new Date(state.date + 'T00:00:00').toLocaleDateString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                weekday: 'long'
+            }) : '';
+            
+            const locationNames = {
+                'kuliga': 'База отдыха «Кулига-Клуб»',
+                'vorona': 'Воронинские горки'
+            };
+            const locationName = state.program 
+                ? (locationNames[state.program.location] || state.program.location || 'База отдыха «Кулига-Клуб»')
+                : (locationNames[state.location] || state.location || 'База отдыха «Кулига-Клуб»');
+            
+            let modalContent = `
+                <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                    <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b;">Подтверждение бронирования</h2>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="margin-bottom: 12px; color: #334155;">Информация о тренировке</h3>
+                        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
+                            ${state.program 
+                                ? `<p><strong>Программа:</strong> ${state.program.name}</p>`
+                                : `<p><strong>Тип:</strong> ${state.selection.title}</p>`
+                            }
+                            <p><strong>Вид спорта:</strong> ${sportLabels[state.program ? state.program.sport_type : state.sportType] || 'Инструктор'}</p>
+                            <p><strong>Место:</strong> ${locationName}</p>
+                            ${dateStr ? `<p><strong>Дата:</strong> ${dateStr}</p>` : ''}
+                            ${state.programTime 
+                                ? `<p><strong>Время:</strong> ${state.programTime}</p>`
+                                : (state.slot ? `<p><strong>Время:</strong> ${formatTime(state.slot.start_time)} - ${formatTime(state.slot.end_time)}</p>` : '')
+                            }
+                            ${state.programTraining && state.programTraining.instructor_name
+                                ? `<p><strong>Инструктор:</strong> ${state.programTraining.instructor_name}</p>`
+                                : (state.slot && state.slot.instructor_name
+                                    ? `<p><strong>Инструктор:</strong> ${state.slot.instructor_name}</p>`
+                                    : '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
+                                )
+                            }
+                            <p><strong>Цена за человека:</strong> ${formatCurrency(state.program ? state.program.price : state.selection.pricePerPerson)}</p>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="margin-bottom: 12px; color: #334155;">Участники (${participants.length} ${participants.length === 1 ? 'человек' : participants.length < 5 ? 'человека' : 'человек'})</h3>
+                        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
+                            ${participants.map((p, idx) => `
+                                <p style="margin: 8px 0;">
+                                    <strong>${idx + 1}.</strong> ${p.fullName} (${p.age} ${p.age === 1 ? 'год' : p.age < 5 ? 'года' : 'лет'})
+                                </p>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="margin-bottom: 12px; color: #334155;">Заказчик</h3>
+                        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
+                            <p><strong>ФИО:</strong> ${state.client.fullName}</p>
+                            <p><strong>Телефон:</strong> ${state.client.phone}</p>
+                            ${state.client.email ? `<p><strong>Email:</strong> ${state.client.email}</p>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px; padding: 16px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196f3;">
+                        <p style="margin: 0; font-size: 1.1rem;">
+                            <strong>К оплате: ${formatCurrency(totalPrice)}</strong>
+                        </p>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button type="button" class="kuliga-button kuliga-button--secondary" id="kuligaConfirmCancel" style="padding: 12px 24px;">
+                            Отмена
+                        </button>
+                        <button type="button" class="kuliga-button kuliga-button--primary" id="kuligaConfirmPay" style="padding: 12px 24px;">
+                            Перейти к оплате
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            modal.innerHTML = modalContent;
+            document.body.appendChild(modal);
+            
+            const cancelBtn = modal.querySelector('#kuligaConfirmCancel');
+            const payBtn = modal.querySelector('#kuligaConfirmPay');
+            
+            cancelBtn.addEventListener('click', () => {
+                modal.remove();
+                resolve(false);
+            });
+            
+            payBtn.addEventListener('click', () => {
+                modal.remove();
+                resolve(true);
+            });
+            
+            // Закрытие по клику вне модального окна
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve(false);
+                }
+            });
+            
+            // Закрытие по Escape
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    modal.remove();
+                    document.removeEventListener('keydown', escapeHandler);
+                    resolve(false);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+        });
+    }
+
     async function handleSubmit(event) {
         event.preventDefault();
         clearMessage();
@@ -774,6 +1136,13 @@
         }
 
         const payload = buildPayload();
+        
+        // Показываем модальное окно подтверждения
+        const confirmed = await showConfirmationModal(payload);
+        if (!confirmed) {
+            return;
+        }
+        
         setMessage('Создаём бронирование и перенаправляем на оплату...', 'neutral');
 
         try {
@@ -891,6 +1260,11 @@
 
         // Обработчик клика на ссылку бота - создаем клиента заранее
         telegramLink.addEventListener('click', handleTelegramLinkClick);
+        
+        // Обработчик кнопки "Добавить участника"
+        if (addParticipantBtn) {
+            addParticipantBtn.addEventListener('click', handleAddParticipant);
+        }
     }
 
     async function handleTelegramLinkClick(event) {
@@ -965,17 +1339,77 @@
 
     (async function bootstrap() {
         await loadPrices();
-        initializeSelection();
+        await initializeSelection(); // Теперь async
         ensureDateRange();
         setClientFieldValues();
         renderParticipants();
         renderSelectionSummary();
-        renderAvailability();
+        
+        // Для программ не показываем выбор слотов, а показываем информацию о тренировке
+        if (state.program) {
+            renderProgramInfo();
+        } else {
+            renderAvailability();
+        }
+        
         attachListeners();
         scheduleSaveState();
 
-        if (state.date) {
+        if (state.date && !state.program) {
             loadAvailability();
         }
     })();
+    
+    function renderProgramInfo() {
+        // Для программ заменяем "Свободные слоты" на фиксированное время
+        if (state.program) {
+            const program = state.program;
+            const timeStr = state.programTime || '';
+            
+            // Показываем фиксированное время вместо "Свободные слоты"
+            if (timeStr) {
+                const timeSlotLabel = timeSlotsContainer.parentElement;
+                if (timeSlotLabel) {
+                    const labelSpan = timeSlotLabel.querySelector('span');
+                    if (labelSpan) {
+                        labelSpan.textContent = 'Время тренировки *';
+                    }
+                }
+                
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1.1rem; font-weight: 600; color: #1976d2; text-align: center;">
+                        ${timeStr}
+                    </div>
+                `;
+            }
+            
+            // Скрываем сообщение о доступности, так как время фиксировано
+            availabilityMessage.innerHTML = '';
+            availabilityMessage.style.display = 'none';
+            
+            // Если есть инструктор, показываем карточку инструктора с фото
+            if (state.programTraining && state.programTraining.instructor_name) {
+                instructorPhoto.src = state.programTraining.instructor_photo_url || '/images/gornosyle72_logo.webp';
+                instructorPhoto.alt = state.programTraining.instructor_name;
+                instructorName.textContent = state.programTraining.instructor_name;
+                instructorSport.textContent = sportLabels[program.sport_type] || 'Инструктор';
+                instructorDescription.textContent = state.programTraining.instructor_description || program.description || 'Описание появится позже.';
+                instructorCard.hidden = false;
+            } else {
+                instructorCard.hidden = true;
+            }
+        } else {
+            // Для обычных тренировок показываем "Свободные слоты"
+            const timeSlotLabel = timeSlotsContainer.parentElement;
+            if (timeSlotLabel) {
+                const labelSpan = timeSlotLabel.querySelector('span');
+                if (labelSpan) {
+                    labelSpan.textContent = 'Свободные слоты *';
+                }
+            }
+            if (availabilityMessage) {
+                availabilityMessage.style.display = '';
+            }
+        }
+    }
 })();

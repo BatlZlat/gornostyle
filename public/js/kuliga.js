@@ -250,7 +250,9 @@
                                 <div class="kuliga-group-item__meta">
                                     <span><i class="fa-regular fa-clock"></i> ${item.time}</span>
                                     <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[item.sport_type] || 'Инструктор'}</span>
-                                    <span><i class="fa-solid fa-seat-airline"></i> Свободно ${item.available_slots} мест</span>
+                                    <span><i class="fa-solid fa-seat-airline"></i> Свободно ${item.available_slots || item.max_participants - (item.current_participants || 0)} мест</span>
+                                    ${item.price_per_person ? `<span><i class="fa-solid fa-coins"></i> ${Number(item.price_per_person).toLocaleString('ru-RU')} ₽</span>` : ''}
+                                    ${item.instructor_name ? `<span><i class="fa-solid fa-user-tie"></i> ${item.instructor_name}</span>` : '<span><i class="fa-solid fa-user-tie"></i> Инструктор будет назначен</span>'}
                                 </div>
                                 <div class="kuliga-group-item__actions">
                                     <button 
