@@ -290,6 +290,13 @@
             };
         }
 
+        // Очищаем state.program если в URL нет programId (чтобы не показывались данные программы из сохраненного состояния)
+        if (!programIdParam) {
+            state.program = null;
+            state.programTime = null;
+            state.programTraining = null;
+        }
+        
         // Обработка программы (приоритет выше, чем priceId)
         if (programIdParam) {
             try {
@@ -1409,10 +1416,12 @@
 
         const payload = buildPayload();
         
-        // Показываем модальное окно подтверждения
-        const confirmed = await showConfirmationModal(payload);
-        if (!confirmed) {
-            return;
+        // Показываем модальное окно подтверждения только для программ
+        if (state.program) {
+            const confirmed = await showConfirmationModal(payload);
+            if (!confirmed) {
+                return;
+            }
         }
         
         setMessage('Создаём бронирование и перенаправляем на оплату...', 'neutral');
