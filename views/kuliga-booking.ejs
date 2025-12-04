@@ -49,7 +49,21 @@
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>2. Данные заказчика</h2>
+                <h2>2. Вид спорта</h2>
+                <div class="kuliga-choice kuliga-choice--inline">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="ski" checked>
+                        <span>Горные лыжи</span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="snowboard">
+                        <span>Сноуборд</span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>3. Данные заказчика</h2>
                 <div class="kuliga-form-grid">
                     <label class="kuliga-field">
                         <span>ФИО заказчика *</span>
@@ -82,25 +96,7 @@
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>3. Участники тренировки</h2>
-                <div id="kuligaParticipantsContainer" class="kuliga-participants-grid"></div>
-                <button type="button" id="kuligaAddParticipantBtn" class="kuliga-button kuliga-button--secondary" style="margin-top: 16px; display: none;">
-                    <i class="fa-solid fa-plus"></i> Добавить участника
-                </button>
-            </section>
-
-            <section class="kuliga-booking-section">
                 <h2>4. Дата и время</h2>
-                <div class="kuliga-choice kuliga-choice--inline">
-                    <label class="kuliga-radio">
-                        <input type="radio" name="kuligaSportType" value="ski" checked>
-                        <span>Горные лыжи</span>
-                    </label>
-                    <label class="kuliga-radio">
-                        <input type="radio" name="kuligaSportType" value="snowboard">
-                        <span>Сноуборд</span>
-                    </label>
-                </div>
                 <div class="kuliga-form-grid kuliga-form-grid--compact">
                     <label class="kuliga-field">
                         <span>Дата тренировки *</span>
@@ -125,7 +121,15 @@
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>5. Уведомления</h2>
+                <h2>5. Участники тренировки</h2>
+                <div id="kuligaParticipantsContainer" class="kuliga-participants-grid"></div>
+                <button type="button" id="kuligaAddParticipantBtn" class="kuliga-button kuliga-button--secondary" style="margin-top: 16px; display: none;">
+                    <i class="fa-solid fa-plus"></i> Добавить участника
+                </button>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>6. Уведомления</h2>
                 <p class="kuliga-section-hint">Выберите, как получать подтверждение, изменения расписания и чек.</p>
                 <label class="kuliga-checkbox">
                     <input type="checkbox" id="kuligaNotifyEmail" checked>
@@ -145,7 +149,7 @@
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>6. Согласие</h2>
+                <h2>7. Согласие</h2>
                 <label class="kuliga-checkbox">
                     <input type="checkbox" id="kuligaConsent" required>
                     <span>
