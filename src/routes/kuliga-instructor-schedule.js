@@ -310,6 +310,44 @@ router.post('/slots/create', async (req, res) => {
         
         console.log(`   ✅ Создано слотов: ${created}, пропущено: ${skipped}`);
         
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (created > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsCreated, notifyAdminSlotsCreated } = require('../bot/admin-notify');
+                    
+                    // Получаем данные инструктора
+                    const instructorResult = await pool.query(
+                        'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    
+                    if (instructorResult.rows.length > 0) {
+                        const instructor = instructorResult.rows[0];
+                        
+                        // Уведомление инструктору
+                        await notifyInstructorSlotsCreated({
+                            instructor_telegram_id: instructor.telegram_id,
+                            instructor_name: instructor.full_name,
+                            date: date,
+                            times: newTimes.slice(0, 10), // Ограничиваем до 10 для читаемости
+                            count: created
+                        });
+                        
+                        // Уведомление администратору
+                        await notifyAdminSlotsCreated({
+                            instructor_name: instructor.full_name,
+                            date: date,
+                            count: created,
+                            times: newTimes.slice(0, 10)
+                        });
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений о создании слотов:', error);
+                }
+            });
+        }
+        
         res.json({ 
             success: true, 
             created,
@@ -484,6 +522,44 @@ router.post('/slots/create-bulk', async (req, res) => {
 
         await client.query('COMMIT');
         
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (created > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsCreated, notifyAdminSlotsCreated } = require('../bot/admin-notify');
+                    
+                    // Получаем данные инструктора
+                    const instructorResult = await pool.query(
+                        'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    
+                    if (instructorResult.rows.length > 0) {
+                        const instructor = instructorResult.rows[0];
+                        
+                        // Уведомление инструктору
+                        await notifyInstructorSlotsCreated({
+                            instructor_telegram_id: instructor.telegram_id,
+                            instructor_name: instructor.full_name,
+                            date: fromDate === toDate ? fromDate : `${fromDate} - ${toDate}`,
+                            times: validTimes.slice(0, 10),
+                            count: created
+                        });
+                        
+                        // Уведомление администратору
+                        await notifyAdminSlotsCreated({
+                            instructor_name: instructor.full_name,
+                            date: fromDate === toDate ? fromDate : `${fromDate} - ${toDate}`,
+                            count: created,
+                            times: validTimes.slice(0, 10)
+                        });
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений о массовом создании слотов:', error);
+                }
+            });
+        }
+        
         res.json({ 
             success: true, 
             created,
@@ -552,6 +628,48 @@ router.patch('/slots/:id', async (req, res) => {
             'UPDATE kuliga_schedule_slots SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             [status, slotId]
         );
+
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                const { notifyInstructorSlotStatusChanged, notifyAdminSlotStatusChanged } = require('../bot/admin-notify');
+                
+                // Получаем данные слота и инструктора
+                const slotResult = await pool.query(
+                    `SELECT s.date, s.start_time, i.full_name, i.telegram_id
+                     FROM kuliga_schedule_slots s
+                     JOIN kuliga_instructors i ON s.instructor_id = i.id
+                     WHERE s.id = $1`,
+                    [slotId]
+                );
+                
+                if (slotResult.rows.length > 0) {
+                    const slot = slotResult.rows[0];
+                    const timeStr = String(slot.start_time).substring(0, 5); // "HH:MM"
+                    
+                    // Уведомление инструктору
+                    await notifyInstructorSlotStatusChanged({
+                        instructor_telegram_id: slot.telegram_id,
+                        instructor_name: slot.full_name,
+                        date: slot.date,
+                        time: timeStr,
+                        old_status: currentStatus,
+                        new_status: status
+                    });
+                    
+                    // Уведомление администратору
+                    await notifyAdminSlotStatusChanged({
+                        instructor_name: slot.full_name,
+                        date: slot.date,
+                        time: timeStr,
+                        old_status: currentStatus,
+                        new_status: status
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений об изменении статуса слота:', error);
+            }
+        });
 
         res.json({ 
             success: true, 
@@ -622,11 +740,52 @@ router.delete('/slots/:id', async (req, res) => {
             }
         }
 
+        // Получаем данные слота и инструктора для уведомлений ДО удаления
+        const slotInfoResult = await pool.query(
+            `SELECT s.date, s.start_time, i.full_name, i.telegram_id
+             FROM kuliga_schedule_slots s
+             JOIN kuliga_instructors i ON s.instructor_id = i.id
+             WHERE s.id = $1`,
+            [slotId]
+        );
+        
+        const slotInfo = slotInfoResult.rows[0];
+
         // Удаляем слот только если на нем нет групповой тренировки
         await pool.query(
             'DELETE FROM kuliga_schedule_slots WHERE id = $1',
             [slotId]
         );
+
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (slotInfo) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsDeleted, notifyAdminSlotsDeleted } = require('../bot/admin-notify');
+                    
+                    const timeStr = String(slotInfo.start_time).substring(0, 5); // "HH:MM"
+                    
+                    // Уведомление инструктору
+                    await notifyInstructorSlotsDeleted({
+                        instructor_telegram_id: slotInfo.telegram_id,
+                        instructor_name: slotInfo.full_name,
+                        from_date: slotInfo.date,
+                        to_date: slotInfo.date,
+                        count: 1
+                    });
+                    
+                    // Уведомление администратору
+                    await notifyAdminSlotsDeleted({
+                        instructor_name: slotInfo.full_name,
+                        from_date: slotInfo.date,
+                        to_date: slotInfo.date,
+                        count: 1
+                    });
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений об удалении слота:', error);
+                }
+            });
+        }
 
         res.json({ 
             success: true, 
@@ -790,6 +949,68 @@ router.post('/group-trainings', async (req, res) => {
 
         console.log(`✅ Инструктор ${instructorId} создал групповую тренировку: ID=${training.id}, дата=${slot.date}, время=${slot.start_time}`);
 
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                const { notifyInstructorKuligaAssignment, notifyAdminInstructorAssigned } = require('../bot/admin-notify');
+                
+                // Получаем данные инструктора
+                const instructorResult = await pool.query(
+                    'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                    [instructorId]
+                );
+                
+                if (instructorResult.rows.length > 0) {
+                    const instructor = instructorResult.rows[0];
+                    const trainingDateMoment = moment(training.date).tz(TIMEZONE);
+                    const formattedDate = trainingDateMoment.format('DD.MM.YYYY');
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][trainingDateMoment.day()];
+                    const formattedTime = String(training.start_time).substring(0, 5);
+                    
+                    // Получаем location из слота
+                    const locationResult = await client.query(
+                        'SELECT location FROM kuliga_schedule_slots WHERE id = $1',
+                        [slot_id]
+                    );
+                    const location = locationResult.rows[0]?.location || 'kuliga';
+                    
+                    // Уведомление инструктору (подтверждение создания)
+                    if (instructor.telegram_id) {
+                        const { instructorBot } = require('../bot/admin-notify');
+                        if (instructorBot) {
+                            const message = `✅ *Создана групповая тренировка*\n\n` +
+                                `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                                `⏰ *Время:* ${formattedTime}\n` +
+                                `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n` +
+                                `👥 *Макс. участников:* ${maxParticipantsValue}\n` +
+                                `💰 *Цена за человека:* ${pricePerPersonValue.toFixed(2)} ₽\n\n` +
+                                `Тренировка доступна для записи клиентам!`;
+                            
+                            await instructorBot.sendMessage(instructor.telegram_id, message, { parse_mode: 'Markdown' });
+                        }
+                    }
+                    
+                    // Уведомление администратору
+                    const { bot } = require('../bot/admin-notify');
+                    const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+                    for (const adminId of adminIds) {
+                        const message = `✅ *Инструктор создал групповую тренировку*\n\n` +
+                            `👨‍🏫 *Инструктор:* ${instructor.full_name}\n` +
+                            `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                            `⏰ *Время:* ${formattedTime}\n` +
+                            `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n` +
+                            `👥 *Макс. участников:* ${maxParticipantsValue}\n` +
+                            `💰 *Цена за человека:* ${pricePerPersonValue.toFixed(2)} ₽\n` +
+                            `🆔 *ID тренировки:* ${training.id}`;
+                        
+                        await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений о создании групповой тренировки инструктором:', error);
+            }
+        });
+
         // Преобразуем дату в строку YYYY-MM-DD
         if (training.date instanceof Date) {
             training.date = moment.tz(training.date, TIMEZONE).format('YYYY-MM-DD');
@@ -898,6 +1119,44 @@ router.post('/slots/delete-bulk', async (req, res) => {
         await client.query('COMMIT');
 
         console.log(`✅ Инструктор ${instructorId} удалил ${deletedCount} слотов, пропущено ${skippedWithTraining} (${fromDate} - ${toDate})`);
+
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (deletedCount > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsDeleted, notifyAdminSlotsDeleted } = require('../bot/admin-notify');
+                    
+                    // Получаем данные инструктора
+                    const instructorResult = await pool.query(
+                        'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    
+                    if (instructorResult.rows.length > 0) {
+                        const instructor = instructorResult.rows[0];
+                        
+                        // Уведомление инструктору
+                        await notifyInstructorSlotsDeleted({
+                            instructor_telegram_id: instructor.telegram_id,
+                            instructor_name: instructor.full_name,
+                            from_date: fromDate,
+                            to_date: toDate,
+                            count: deletedCount
+                        });
+                        
+                        // Уведомление администратору
+                        await notifyAdminSlotsDeleted({
+                            instructor_name: instructor.full_name,
+                            from_date: fromDate,
+                            to_date: toDate,
+                            count: deletedCount
+                        });
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений об удалении слотов:', error);
+                }
+            });
+        }
 
         res.json({ 
             success: true, 
@@ -1277,6 +1536,43 @@ router.delete('/group-trainings/:id', async (req, res) => {
         
         console.log(`✅ Инструктор ${instructorId} удалил групповую тренировку ${id} и освободил слот ${training.slot_id}`);
 
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                const { notifyInstructorGroupTrainingDeleted, notifyAdminGroupTrainingDeletedByInstructor } = require('../bot/admin-notify');
+                
+                // Получаем данные инструктора
+                const instructorResult = await pool.query(
+                    'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                    [instructorId]
+                );
+                
+                if (instructorResult.rows.length > 0) {
+                    const instructor = instructorResult.rows[0];
+                    const timeStr = String(training.start_time).substring(0, 5); // "HH:MM"
+                    
+                    // Уведомление инструктору
+                    await notifyInstructorGroupTrainingDeleted({
+                        instructor_telegram_id: instructor.telegram_id,
+                        instructor_name: instructor.full_name,
+                        date: training.date,
+                        time: timeStr,
+                        training_id: id
+                    });
+                    
+                    // Уведомление администратору
+                    await notifyAdminGroupTrainingDeletedByInstructor({
+                        instructor_name: instructor.full_name,
+                        date: training.date,
+                        time: timeStr,
+                        training_id: id
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений об удалении групповой тренировки:', error);
+            }
+        });
+
         res.json({ 
             success: true, 
             message: 'Групповая тренировка успешно удалена, слот освобожден' 
@@ -1462,6 +1758,45 @@ router.post('/regular-group-trainings', async (req, res) => {
         }
 
         await client.query('COMMIT');
+        
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (createdSlots > 0 || createdTrainings > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsCreated, notifyAdminSlotsCreated } = require('../bot/admin-notify');
+                    
+                    // Получаем данные инструктора
+                    const instructorResult = await pool.query(
+                        'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    
+                    if (instructorResult.rows.length > 0) {
+                        const instructor = instructorResult.rows[0];
+                        
+                        // Уведомление инструктору (массовое создание)
+                        await notifyInstructorSlotsCreated({
+                            instructor_telegram_id: instructor.telegram_id,
+                            instructor_name: instructor.full_name,
+                            date: fromDate === toDate ? fromDate : `${fromDate} - ${toDate}`,
+                            times: [time], // Одно время для регулярных тренировок
+                            count: createdSlots
+                        });
+                        
+                        // Уведомление администратору (массовое создание)
+                        await notifyAdminSlotsCreated({
+                            instructor_name: instructor.full_name,
+                            date: fromDate === toDate ? fromDate : `${fromDate} - ${toDate}`,
+                            count: createdSlots,
+                            times: [time]
+                        });
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений о создании регулярных тренировок:', error);
+                }
+            });
+        }
+        
         res.json({ 
             success: true, 
             created: createdSlots, 
@@ -1569,6 +1904,54 @@ router.post('/group-trainings/delete-bulk', async (req, res) => {
         }
 
         await client.query('COMMIT');
+
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        if (deletedTrainings > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorGroupTrainingDeleted, notifyAdminGroupTrainingDeletedByInstructor } = require('../bot/admin-notify');
+                    
+                    // Получаем данные инструктора
+                    const instructorResult = await pool.query(
+                        'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    
+                    if (instructorResult.rows.length > 0) {
+                        const instructor = instructorResult.rows[0];
+                        
+                        // Для массового удаления отправляем одно обобщенное уведомление
+                        // Уведомление инструктору
+                        if (instructor.telegram_id) {
+                            const { instructorBot } = require('../bot/admin-notify');
+                            if (instructorBot) {
+                                const message = `🗑️ *Удалены групповые тренировки*\n\n` +
+                                    `📅 *Период:* ${fromDate} - ${toDate}\n` +
+                                    `📊 *Удалено тренировок:* ${deletedTrainings}\n` +
+                                    `📅 *Освобождено слотов:* ${freedSlots}`;
+                                
+                                await instructorBot.sendMessage(instructor.telegram_id, message, { parse_mode: 'Markdown' });
+                            }
+                        }
+                        
+                        // Уведомление администратору
+                        const { bot } = require('../bot/admin-notify');
+                        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+                        for (const adminId of adminIds) {
+                            const message = `🗑️ *Инструктор удалил групповые тренировки*\n\n` +
+                                `👨‍🏫 *Инструктор:* ${instructor.full_name}\n` +
+                                `📅 *Период:* ${fromDate} - ${toDate}\n` +
+                                `📊 *Удалено тренировок:* ${deletedTrainings}\n` +
+                                `📅 *Освобождено слотов:* ${freedSlots}`;
+                            
+                            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений о массовом удалении тренировок:', error);
+                }
+            });
+        }
 
         let message = `Удалено тренировок: ${deletedTrainings}`;
         if (skippedWithBookings > 0) {

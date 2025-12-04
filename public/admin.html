@@ -790,8 +790,12 @@
                             <select id="winter-status-filter" class="filter-select">
                                 <option value="">Все статусы</option>
                                 <option value="scheduled">Запланирована</option>
+                                <option value="open">Открыта (для записи)</option>
+                                <option value="confirmed">Подтверждена</option>
+                                <option value="pending">Ожидание</option>
                                 <option value="completed">Завершена</option>
                                 <option value="cancelled">Отменена</option>
+                                <option value="refunded">Возврат</option>
                             </select>
                             <select id="winter-location-filter" class="filter-select">
                                 <option value="">Все места</option>
@@ -1405,11 +1409,11 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="kuliga-program-instructors">Инструкторы *</label>
-                    <select id="kuliga-program-instructors" class="form-control" multiple required style="min-height: 100px;">
+                    <label for="kuliga-program-instructors">Инструкторы</label>
+                    <select id="kuliga-program-instructors" class="form-control" multiple style="min-height: 100px;">
                         <option value="">Загрузка инструкторов...</option>
                     </select>
-                    <small style="color:#666;display:block;margin-top:5px;">Выберите инструкторов, которые могут проводить эту программу. Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. Тренировки будут создаваться только если у назначенного инструктора есть свободный слот на время программы.</small>
+                    <small style="color:#666;display:block;margin-top:5px;">Выберите инструкторов, которые могут проводить эту программу (необязательно). Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. Инструкторов можно назначить позже при редактировании программы или точечно на странице "Тренировки зима". Тренировки будут создаваться только если у назначенного инструктора есть свободный слот на время программы.</small>
                 </div>
 
                 <div class="form-group">

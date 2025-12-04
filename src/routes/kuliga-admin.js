@@ -836,11 +836,8 @@ router.post('/programs', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
     }
 
-    // Валидация instructorIds
+    // Валидация instructorIds (необязательное поле - инструкторов можно назначить позже)
     const instructorIdsArray = Array.isArray(instructorIds) ? instructorIds.filter(id => Number.isInteger(parseInt(id, 10))) : [];
-    if (instructorIdsArray.length === 0) {
-        return res.status(400).json({ success: false, error: 'Выберите хотя бы одного инструктора для программы' });
-    }
 
     const client = await pool.connect();
     try {
@@ -1024,11 +1021,8 @@ router.put('/programs/:id', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Укажите корректную цену' });
     }
 
-    // Валидация instructorIds
+    // Валидация instructorIds (необязательное поле - инструкторов можно назначить позже)
     const instructorIdsArray = Array.isArray(instructorIds) ? instructorIds.filter(id => Number.isInteger(parseInt(id, 10))) : [];
-    if (instructorIdsArray.length === 0) {
-        return res.status(400).json({ success: false, error: 'Выберите хотя бы одного инструктора для программы' });
-    }
 
     const client = await pool.connect();
     try {
@@ -1568,6 +1562,67 @@ router.post('/group-trainings', async (req, res) => {
         await client.query('COMMIT');
 
         console.log(`✅ Создана групповая тренировка через админ панель: ID=${training.id}, инструктор=${instructorCheck.rows[0].full_name}, дата=${date}, время=${slot.start_time}`);
+
+        // Отправляем уведомления инструктору и администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                const { notifyInstructorKuligaAssignment, notifyAdminInstructorAssigned } = require('../bot/admin-notify');
+                
+                // Получаем данные инструктора с telegram_id
+                const instructorResult = await pool.query(
+                    'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                    [instructor_id]
+                );
+                
+                if (instructorResult.rows.length > 0) {
+                    const instructor = instructorResult.rows[0];
+                    const moment = require('moment-timezone');
+                    const TIMEZONE = 'Asia/Yekaterinburg';
+                    
+                    const trainingDateMoment = moment(training.date).tz(TIMEZONE);
+                    const formattedDate = trainingDateMoment.format('DD.MM.YYYY');
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][trainingDateMoment.day()];
+                    const formattedTime = String(training.start_time).substring(0, 5);
+                    
+                    // Получаем location из слота или тренировки
+                    const locationResult = await pool.query(
+                        'SELECT location FROM kuliga_schedule_slots WHERE id = $1',
+                        [slot_id]
+                    );
+                    const location = locationResult.rows[0]?.location || 'kuliga';
+                    
+                    // Уведомление инструктору
+                    if (instructor.telegram_id) {
+                        await notifyInstructorKuligaAssignment({
+                            instructor_name: instructor.full_name,
+                            instructor_telegram_id: instructor.telegram_id,
+                            training_type: 'Групповая тренировка',
+                            sport_type: sport_type === 'ski' ? 'Лыжи' : 'Сноуборд',
+                            date: formattedDate,
+                            day_of_week: dayOfWeek,
+                            time: formattedTime,
+                            location: location,
+                            max_participants: maxParticipantsValue,
+                            description: description
+                        });
+                    }
+                    
+                    // Уведомление администратору
+                    await notifyAdminInstructorAssigned({
+                        instructor_name: instructor.full_name,
+                        training_type: 'Групповая тренировка',
+                        sport_type: sport_type === 'ski' ? 'Лыжи' : 'Сноуборд',
+                        date: formattedDate,
+                        day_of_week: dayOfWeek,
+                        time: formattedTime,
+                        location: location,
+                        training_id: training.id
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений о создании групповой тренировки:', error);
+            }
+        });
 
         res.status(201).json({ success: true, data: training });
     } catch (error) {
@@ -3338,6 +3393,10 @@ async function generateProgramTrainings(programId) {
         let skipped = 0;
         let slotsCreated = 0;
         
+        // Собираем информацию об удаленных слотах и пропущенных тренировках для уведомлений
+        // Структура: { instructorId: { deletedSlots: [...], conflicts: [...] } }
+        const notificationsData = {};
+        
         // Проходим по каждому дню в диапазоне
         const cursor = now.clone().startOf('day');
         while (cursor.isSameOrBefore(endDate, 'day')) {
@@ -3355,7 +3414,6 @@ async function generateProgramTrainings(programId) {
                         const minutes = timeParts[1] || '00';
                         
                         const startMoment = cursor.clone().hour(Number(hours)).minute(Number(minutes)).second(0);
-                        const endMoment = startMoment.clone().add(program.training_duration, 'minutes');
                         
                         // Пропускаем прошедшие слоты
                         if (startMoment.isSameOrBefore(now)) {
@@ -3365,7 +3423,8 @@ async function generateProgramTrainings(programId) {
                         
                         const dateStr = startMoment.format('YYYY-MM-DD');
                         const startTimeStr = startMoment.format('HH:mm:ss');
-                        const endTimeStr = endMoment.format('HH:mm:ss');
+                        // Программа всегда длится 1 час практики
+                        const endTimeStr = startMoment.clone().add(60, 'minutes').format('HH:mm:ss');
                         
                         // Проверяем, существует ли уже тренировка для этой программы с этим инструктором в это время
                         const existingCheck = await client.query(
@@ -3383,53 +3442,117 @@ async function generateProgramTrainings(programId) {
                             continue;
                         }
                         
-                        // Проверяем, есть ли у инструктора слот на эту дату и время
-                        let slotId = null;
-                        const slotCheck = await client.query(
-                            `SELECT id, status FROM kuliga_schedule_slots
+                        // НОВАЯ ЛОГИКА: Проверяем пересечения с существующими слотами через OVERLAPS
+                        const overlappingSlots = await client.query(
+                            `SELECT id, status, start_time, end_time
+                             FROM kuliga_schedule_slots
                              WHERE instructor_id = $1 
                                AND date = $2::date
-                               AND start_time = $3
-                             LIMIT 1`,
-                            [instructorId, dateStr, startTimeStr]
+                               AND (start_time, end_time) OVERLAPS ($3::time, $4::time)`,
+                            [instructorId, dateStr, startTimeStr, endTimeStr]
                         );
                         
-                        if (slotCheck.rows.length > 0) {
-                            // Слот уже существует
-                            slotId = slotCheck.rows[0].id;
-                            const slotStatus = slotCheck.rows[0].status;
+                        // Разделяем пересекающиеся слоты на свободные и занятые
+                        const availableSlots = overlappingSlots.rows.filter(s => s.status === 'available');
+                        const occupiedSlots = overlappingSlots.rows.filter(s => s.status !== 'available');
+                        
+                        // Если есть занятые слоты (booked, blocked, group) - пропускаем тренировку
+                        if (occupiedSlots.length > 0) {
+                            skipped++;
+                            const occupiedStatuses = occupiedSlots.map(s => `${s.start_time}-${s.end_time} (${s.status})`).join(', ');
+                            console.log(`⚠️ Пропущена тренировка ${dateStr} ${startTimeStr} для инструктора ${instructorId}: пересечение с занятыми слотами (${occupiedStatuses})`);
                             
-                            // Если слот занят другой тренировкой, пропускаем
-                            if (slotStatus !== 'available' && slotStatus !== 'group') {
-                                skipped++;
-                                continue;
+                            // Сохраняем информацию о конфликте для уведомлений
+                            if (!notificationsData[instructorId]) {
+                                notificationsData[instructorId] = { deletedSlots: [], conflicts: [] };
                             }
-                        } else {
-                            // Создаем новый слот для инструктора
-                            const slotResult = await client.query(
-                                `INSERT INTO kuliga_schedule_slots (
-                                    instructor_id,
-                                    date,
-                                    start_time,
-                                    end_time,
-                                    status,
-                                    created_by_admin
-                                ) VALUES ($1, $2::date, $3, $4, 'group', TRUE)
-                                RETURNING id`,
-                                [instructorId, dateStr, startTimeStr, endTimeStr]
-                            );
-                            
-                            slotId = slotResult.rows[0].id;
-                            slotsCreated++;
+                            notificationsData[instructorId].conflicts.push({
+                                date: dateStr,
+                                time: startTimeStr,
+                                conflicting_slots: occupiedSlots.map(s => ({
+                                    slot_id: s.id,
+                                    start_time: s.start_time,
+                                    end_time: s.end_time,
+                                    status: s.status
+                                }))
+                            });
+                            continue;
                         }
                         
-                        // Обновляем статус слота на 'group', если он еще не такой
-                        await client.query(
-                            `UPDATE kuliga_schedule_slots
-                             SET status = 'group', updated_at = CURRENT_TIMESTAMP
-                             WHERE id = $1`,
-                            [slotId]
+                        // Если есть только свободные слоты - удаляем их и создаем новый
+                        let slotId = null;
+                        const deletedSlotsInfo = [];
+                        
+                        // Инициализируем структуру для инструктора, если еще не создана
+                        if (!notificationsData[instructorId]) {
+                            notificationsData[instructorId] = { deletedSlots: [], conflicts: [] };
+                        }
+                        
+                        if (availableSlots.length > 0) {
+                            // Удаляем все пересекающиеся свободные слоты
+                            for (const slot of availableSlots) {
+                                // Проверяем, нет ли на слоте групповой тренировки (дополнительная проверка)
+                                const trainingCheck = await client.query(
+                                    'SELECT id FROM kuliga_group_trainings WHERE slot_id = $1',
+                                    [slot.id]
+                                );
+                                
+                                if (trainingCheck.rows.length === 0) {
+                                    // Удаляем слот и записываем информацию для уведомлений
+                                    await client.query(
+                                        'DELETE FROM kuliga_schedule_slots WHERE id = $1',
+                                        [slot.id]
+                                    );
+                                    deletedSlotsInfo.push({
+                                        slot_id: slot.id,
+                                        start_time: slot.start_time,
+                                        end_time: slot.end_time
+                                    });
+                                    console.log(`🗑️ Удален свободный слот ID=${slot.id} (${slot.start_time}-${slot.end_time}) для создания программы`);
+                                    
+                                    // Сохраняем информацию об удаленном слоте для уведомлений
+                                    notificationsData[instructorId].deletedSlots.push({
+                                        slot_id: slot.id,
+                                        date: dateStr,
+                                        start_time: slot.start_time,
+                                        end_time: slot.end_time,
+                                        program_date: dateStr,
+                                        program_time: startTimeStr
+                                    });
+                                }
+                            }
+                        }
+                        
+                        // Создаем новый слот для программы (длительность 1 час)
+                        const slotResult = await client.query(
+                            `INSERT INTO kuliga_schedule_slots (
+                                instructor_id,
+                                date,
+                                start_time,
+                                end_time,
+                                status,
+                                location,
+                                created_by_admin
+                            ) VALUES ($1, $2::date, $3, $4, 'group', $5, TRUE)
+                            RETURNING id`,
+                            [
+                                instructorId, 
+                                dateStr, 
+                                startTimeStr, 
+                                endTimeStr,
+                                program.location || 'kuliga'
+                            ]
                         );
+                        
+                        slotId = slotResult.rows[0].id;
+                        
+                        if (availableSlots.length === 0) {
+                            // Новый слот создан без удаления существующих
+                            slotsCreated++;
+                        } else {
+                            // Слот создан после удаления пересекающихся
+                            // slotsCreated не увеличиваем, т.к. мы удалили столько же или больше
+                        }
                         
                         // Создаем групповую тренировку с назначенным инструктором
                         await client.query(
@@ -3478,7 +3601,108 @@ async function generateProgramTrainings(programId) {
         
         console.log(`✅ Для программы ID=${programId} создано ${created} тренировок, ${slotsCreated} новых слотов, пропущено ${skipped}`);
         
-        return { created, skipped, slotsCreated };
+        // Отправляем уведомления инструкторам и администратору (асинхронно)
+        if (created > 0 || slotsCreated > 0) {
+            setImmediate(async () => {
+                try {
+                    const { notifyInstructorSlotsCreatedByAdmin, notifyAdminProgramTrainingsGenerated } = require('../bot/admin-notify');
+                    
+                    // Получаем данные программы
+                    const programResult = await pool.query(
+                        'SELECT name FROM kuliga_programs WHERE id = $1',
+                        [programId]
+                    );
+                    const programName = programResult.rows[0]?.name || `Программа ID=${programId}`;
+                    
+                    // Отправляем уведомления каждому инструктору
+                    for (const instructorId of instructorIds) {
+                        // Подсчитываем тренировки и слоты для этого инструктора
+                        const instructorStatsResult = await pool.query(
+                            `SELECT 
+                                COUNT(DISTINCT kgt.id) as trainings_count,
+                                COUNT(DISTINCT CASE WHEN kss.created_by_admin = TRUE THEN kss.id END) as slots_count
+                             FROM kuliga_group_trainings kgt
+                             LEFT JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
+                             WHERE kgt.program_id = $1 AND kgt.instructor_id = $2`,
+                            [programId, instructorId]
+                        );
+                        
+                        const stats = instructorStatsResult.rows[0];
+                        const trainingsForInstructor = parseInt(stats.trainings_count || 0);
+                        const slotsForInstructor = parseInt(stats.slots_count || 0);
+                        
+                        // Получаем список дат и времени тренировок для этого инструктора
+                        const trainingsListResult = await pool.query(
+                            `SELECT date, start_time
+                             FROM kuliga_group_trainings
+                             WHERE program_id = $1 AND instructor_id = $2
+                             ORDER BY date ASC, start_time ASC`,
+                            [programId, instructorId]
+                        );
+                        
+                        const trainingsList = trainingsListResult.rows.map(row => ({
+                            date: row.date,
+                            start_time: row.start_time
+                        }));
+                        
+                        // Получаем данные инструктора
+                        const instructorResult = await pool.query(
+                            'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                            [instructorId]
+                        );
+                        
+                        if (instructorResult.rows.length > 0) {
+                            const instructor = instructorResult.rows[0];
+                            
+                            // Получаем данные об удаленных слотах и конфликтах для этого инструктора
+                            const instructorNotificationsData = notificationsData[instructorId] || { deletedSlots: [], conflicts: [] };
+                            
+                            if (trainingsForInstructor > 0 || slotsForInstructor > 0 || instructorNotificationsData.deletedSlots.length > 0) {
+                                // Уведомление инструктору
+                                await notifyInstructorSlotsCreatedByAdmin({
+                                    instructor_telegram_id: instructor.telegram_id,
+                                    instructor_name: instructor.full_name,
+                                    program_name: programName,
+                                    slots_created: slotsForInstructor,
+                                    trainings_created: trainingsForInstructor,
+                                    trainings_list: trainingsList,
+                                    deleted_slots: instructorNotificationsData.deletedSlots
+                                });
+                                
+                                // Уведомление администратору (для каждого инструктора)
+                                await notifyAdminProgramTrainingsGenerated({
+                                    program_name: programName,
+                                    instructor_name: instructor.full_name,
+                                    slots_created: slotsForInstructor,
+                                    trainings_created: trainingsForInstructor,
+                                    trainings_list: trainingsList,
+                                    deleted_slots: instructorNotificationsData.deletedSlots,
+                                    conflicts: instructorNotificationsData.conflicts
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений о генерации тренировок:', error);
+                }
+            });
+        }
+        
+        // Подсчитываем общее количество удаленных слотов и конфликтов
+        let totalDeletedSlots = 0;
+        let totalConflicts = 0;
+        for (const instructorId in notificationsData) {
+            totalDeletedSlots += notificationsData[instructorId].deletedSlots.length;
+            totalConflicts += notificationsData[instructorId].conflicts.length;
+        }
+        
+        return { 
+            created, 
+            skipped, 
+            slotsCreated,
+            deletedSlots: totalDeletedSlots, // НОВОЕ: количество удаленных свободных слотов
+            conflicts: totalConflicts // НОВОЕ: количество пропущенных тренировок из-за конфликтов
+        };
     } catch (error) {
         await client.query('ROLLBACK');
         console.error(`❌ Ошибка генерации тренировок для программы ID=${programId}:`, error);

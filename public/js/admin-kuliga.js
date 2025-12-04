@@ -842,16 +842,11 @@ async function handleKuligaProgramSubmit(event) {
         return;
     }
 
-    // Получаем выбранных инструкторов
+    // Получаем выбранных инструкторов (необязательное поле)
     const instructorSelect = document.getElementById('kuliga-program-instructors');
     const selectedInstructorIds = Array.from(instructorSelect.selectedOptions)
         .map(opt => parseInt(opt.value, 10))
         .filter(id => !isNaN(id));
-    
-    if (selectedInstructorIds.length === 0) {
-        alert('Выберите хотя бы одного инструктора для программы');
-        return;
-    }
 
     const payload = {
         name: document.getElementById('kuliga-program-name').value.trim(),

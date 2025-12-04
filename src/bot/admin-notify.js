@@ -1785,6 +1785,516 @@ async function notifyAdminInstructorAssigned({
     }
 }
 
+/**
+ * Уведомление инструктору о создании слотов в расписании
+ */
+async function notifyInstructorSlotsCreated({
+    instructor_telegram_id,
+    instructor_name,
+    date,
+    times,
+    count
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        
+        let message = `✅ *Созданы слоты в расписании*\n\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📊 *Количество:* ${count} слотов\n`;
+        
+        if (times && times.length > 0 && times.length <= 10) {
+            message += `⏰ *Время:* ${times.join(', ')}\n`;
+        }
+        
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление о создании слотов отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору о создании слотов:', error);
+    }
+}
+
+/**
+ * Уведомление администратору о создании слотов инструктором
+ */
+async function notifyAdminSlotsCreated({
+    instructor_name,
+    date,
+    count,
+    times
+}) {
+    try {
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        
+        let message = `📅 *Инструктор создал слоты в расписании*\n\n`;
+        message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📊 *Количество:* ${count} слотов\n`;
+        
+        if (times && times.length > 0 && times.length <= 10) {
+            message += `⏰ *Время:* ${times.join(', ')}\n`;
+        }
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление о создании слотов отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору о создании слотов:', error);
+    }
+}
+
+/**
+ * Уведомление инструктору об удалении слотов
+ */
+async function notifyInstructorSlotsDeleted({
+    instructor_telegram_id,
+    instructor_name,
+    from_date,
+    to_date,
+    count
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        const formattedFromDate = formatDate(from_date);
+        const formattedToDate = formatDate(to_date);
+        
+        let message = `🗑️ *Слоты удалены из расписания*\n\n`;
+        
+        if (from_date === to_date) {
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(from_date).getDay()];
+            message += `📅 *Дата:* ${formattedFromDate} (${dayOfWeek})\n`;
+        } else {
+            message += `📅 *Период:* ${formattedFromDate} - ${formattedToDate}\n`;
+        }
+        
+        message += `📊 *Удалено слотов:* ${count}\n`;
+        
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление об удалении слотов отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору об удалении слотов:', error);
+    }
+}
+
+/**
+ * Уведомление администратору об удалении слотов инструктором
+ */
+async function notifyAdminSlotsDeleted({
+    instructor_name,
+    from_date,
+    to_date,
+    count
+}) {
+    try {
+        const formattedFromDate = formatDate(from_date);
+        const formattedToDate = formatDate(to_date);
+        
+        let message = `🗑️ *Инструктор удалил слоты из расписания*\n\n`;
+        message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
+        
+        if (from_date === to_date) {
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(from_date).getDay()];
+            message += `📅 *Дата:* ${formattedFromDate} (${dayOfWeek})\n`;
+        } else {
+            message += `📅 *Период:* ${formattedFromDate} - ${formattedToDate}\n`;
+        }
+        
+        message += `📊 *Удалено слотов:* ${count}\n`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление об удалении слотов отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об удалении слотов:', error);
+    }
+}
+
+/**
+ * Уведомление инструктору об изменении статуса слота
+ */
+async function notifyInstructorSlotStatusChanged({
+    instructor_telegram_id,
+    instructor_name,
+    date,
+    time,
+    old_status,
+    new_status
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        
+        const statusNames = {
+            'available': 'Доступен',
+            'blocked': 'Заблокирован',
+            'group': 'Групповая тренировка',
+            'booked': 'Забронирован'
+        };
+        
+        let message = `🔄 *Изменен статус слота*\n\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${time}\n`;
+        message += `📊 *Статус:* ${statusNames[old_status] || old_status} → ${statusNames[new_status] || new_status}\n`;
+        
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление об изменении статуса слота отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору об изменении статуса слота:', error);
+    }
+}
+
+/**
+ * Уведомление администратору об изменении статуса слота инструктором
+ */
+async function notifyAdminSlotStatusChanged({
+    instructor_name,
+    date,
+    time,
+    old_status,
+    new_status
+}) {
+    try {
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        
+        const statusNames = {
+            'available': 'Доступен',
+            'blocked': 'Заблокирован',
+            'group': 'Групповая тренировка',
+            'booked': 'Забронирован'
+        };
+        
+        let message = `🔄 *Инструктор изменил статус слота*\n\n`;
+        message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${time}\n`;
+        message += `📊 *Статус:* ${statusNames[old_status] || old_status} → ${statusNames[new_status] || new_status}\n`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление об изменении статуса слота отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об изменении статуса слота:', error);
+    }
+}
+
+/**
+ * Уведомление инструктору об удалении групповой тренировки
+ */
+async function notifyInstructorGroupTrainingDeleted({
+    instructor_telegram_id,
+    instructor_name,
+    date,
+    time,
+    training_id
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        const formattedTime = formatTime(time);
+        
+        let message = `🗑️ *Групповая тренировка удалена*\n\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${formattedTime}\n`;
+        message += `🆔 *ID тренировки:* ${training_id}\n`;
+        message += `\n⚠️ Вы удалили эту тренировку из своего расписания.`;
+        
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление об удалении групповой тренировки отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору об удалении групповой тренировки:', error);
+    }
+}
+
+/**
+ * Уведомление администратору об удалении групповой тренировки инструктором
+ */
+async function notifyAdminGroupTrainingDeletedByInstructor({
+    instructor_name,
+    date,
+    time,
+    training_id
+}) {
+    try {
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+        const formattedDate = formatDate(date);
+        const formattedTime = formatTime(time);
+        
+        let message = `🗑️ *Инструктор удалил групповую тренировку*\n\n`;
+        message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
+        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `⏰ *Время:* ${formattedTime}\n`;
+        message += `🆔 *ID тренировки:* ${training_id}\n`;
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление об удалении групповой тренировки отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об удалении групповой тренировки:', error);
+    }
+}
+
+/**
+ * Уведомление инструктору о создании групповой тренировки администратором
+ */
+async function notifyInstructorSlotsCreatedByAdmin({
+    instructor_telegram_id,
+    instructor_name,
+    program_name,
+    slots_created,
+    trainings_created,
+    trainings_list = [], // Массив объектов {date, start_time}
+    deleted_slots = [] // НОВОЕ: Массив объектов {date, start_time, end_time, program_date, program_time}
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        let message = `✅ *В расписание добавлены слоты и тренировки*\n\n`;
+        message += `📋 *Программа:* ${program_name}\n`;
+        
+        if (slots_created > 0) {
+            message += `📅 *Создано слотов:* ${slots_created}\n`;
+        }
+        
+        if (trainings_created > 0) {
+            message += `🏃 *Создано тренировок:* ${trainings_created}\n`;
+        }
+        
+        // НОВОЕ: Информация об удаленных свободных слотах
+        if (deleted_slots && deleted_slots.length > 0) {
+            message += `\n🗑️ *Удалены свободные слоты для создания программы:*\n`;
+            // Группируем по датам
+            const slotsByDate = {};
+            for (const slot of deleted_slots) {
+                const dateKey = typeof slot.date === 'string' ? slot.date.split('T')[0] : slot.date;
+                if (!slotsByDate[dateKey]) {
+                    slotsByDate[dateKey] = [];
+                }
+                slotsByDate[dateKey].push(slot);
+            }
+            
+            for (const [dateStr, slots] of Object.entries(slotsByDate)) {
+                const date = new Date(dateStr + 'T12:00:00');
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = formatDate(dateStr);
+                
+                for (const slot of slots) {
+                    const timeStr = formatTime(slot.start_time);
+                    const endTimeStr = formatTime(slot.end_time);
+                    message += `• ${formattedDate} (${dayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
+                }
+            }
+        }
+        
+        // Добавляем список дат и времени тренировок
+        if (trainings_list && trainings_list.length > 0) {
+            message += `\n📅 *Расписание тренировок:*\n`;
+            
+            // Сортируем по дате и времени
+            const sortedTrainings = trainings_list
+                .map(t => ({
+                    date: new Date(t.date),
+                    time: t.start_time,
+                    dateStr: typeof t.date === 'string' ? t.date.split('T')[0] : t.date
+                }))
+                .sort((a, b) => {
+                    if (a.dateStr !== b.dateStr) {
+                        return a.dateStr.localeCompare(b.dateStr);
+                    }
+                    return String(a.time).localeCompare(String(b.time));
+                });
+            
+            // Группируем по датам
+            const trainingsByDate = {};
+            for (const training of sortedTrainings) {
+                const dateKey = training.dateStr;
+                if (!trainingsByDate[dateKey]) {
+                    trainingsByDate[dateKey] = [];
+                }
+                trainingsByDate[dateKey].push(training.time);
+            }
+            
+            // Форматируем даты и времена
+            for (const [dateStr, times] of Object.entries(trainingsByDate)) {
+                const date = new Date(dateStr + 'T12:00:00'); // Добавляем время для корректной работы getDay()
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = formatDate(dateStr);
+                const formattedTimes = times.map(t => formatTime(t)).join(', ');
+                
+                message += `• ${formattedDate} (${dayOfWeek}) — ${formattedTimes}\n`;
+            }
+        }
+        
+        message += `\n💼 Администратор назначил вас на программу "${program_name}". Слоты и тренировки были автоматически добавлены в ваше расписание.`;
+        
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление о создании слотов администратором отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору о создании слотов администратором:', error);
+    }
+}
+
+/**
+ * Уведомление администратору о создании слотов и тренировок из программы
+ */
+async function notifyAdminProgramTrainingsGenerated({
+    program_name,
+    instructor_name,
+    slots_created,
+    trainings_created,
+    trainings_list = [], // Массив объектов {date, start_time}
+    deleted_slots = [], // НОВОЕ: Массив объектов {date, start_time, end_time, program_date, program_time}
+    conflicts = [] // НОВОЕ: Массив объектов {date, time, conflicting_slots: [{slot_id, start_time, end_time, status}]}
+}) {
+    try {
+        let message = `✅ *Сгенерированы тренировки из программы*\n\n`;
+        message += `📋 *Программа:* ${program_name}\n`;
+        message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
+        
+        if (slots_created > 0) {
+            message += `📅 *Создано слотов:* ${slots_created}\n`;
+        }
+        
+        if (trainings_created > 0) {
+            message += `🏃 *Создано тренировок:* ${trainings_created}\n`;
+        }
+        
+        // Добавляем список дат и времени тренировок
+        if (trainings_list && trainings_list.length > 0) {
+            message += `\n📅 *Расписание тренировок:*\n`;
+            
+            // Сортируем по дате и времени
+            const sortedTrainings = trainings_list
+                .map(t => ({
+                    date: new Date(t.date),
+                    time: t.start_time,
+                    dateStr: typeof t.date === 'string' ? t.date.split('T')[0] : t.date
+                }))
+                .sort((a, b) => {
+                    if (a.dateStr !== b.dateStr) {
+                        return a.dateStr.localeCompare(b.dateStr);
+                    }
+                    return String(a.time).localeCompare(String(b.time));
+                });
+            
+            // Группируем по датам
+            const trainingsByDate = {};
+            for (const training of sortedTrainings) {
+                const dateKey = training.dateStr;
+                if (!trainingsByDate[dateKey]) {
+                    trainingsByDate[dateKey] = [];
+                }
+                trainingsByDate[dateKey].push(training.time);
+            }
+            
+            // Форматируем даты и времена
+            for (const [dateStr, times] of Object.entries(trainingsByDate)) {
+                const date = new Date(dateStr + 'T12:00:00'); // Добавляем время для корректной работы getDay()
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = formatDate(dateStr);
+                const formattedTimes = times.map(t => formatTime(t)).join(', ');
+                
+                message += `• ${formattedDate} (${dayOfWeek}) — ${formattedTimes}\n`;
+            }
+        }
+        
+        // НОВОЕ: Информация об удаленных свободных слотах
+        if (deleted_slots && deleted_slots.length > 0) {
+            message += `\n🗑️ *Удалены свободные слоты инструктора для создания программы:*\n`;
+            // Группируем по датам
+            const slotsByDate = {};
+            for (const slot of deleted_slots) {
+                const dateKey = typeof slot.date === 'string' ? slot.date.split('T')[0] : slot.date;
+                if (!slotsByDate[dateKey]) {
+                    slotsByDate[dateKey] = [];
+                }
+                slotsByDate[dateKey].push(slot);
+            }
+            
+            for (const [dateStr, slots] of Object.entries(slotsByDate)) {
+                const date = new Date(dateStr + 'T12:00:00');
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = formatDate(dateStr);
+                
+                for (const slot of slots) {
+                    const timeStr = formatTime(slot.start_time);
+                    const endTimeStr = formatTime(slot.end_time);
+                    message += `• ${formattedDate} (${dayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
+                }
+            }
+        }
+        
+        // НОВОЕ: Информация о пропущенных тренировках из-за конфликтов
+        if (conflicts && conflicts.length > 0) {
+            message += `\n⚠️ *Пропущено тренировок из-за занятых слотов:* ${conflicts.length}\n`;
+            
+            // Группируем по датам
+            const conflictsByDate = {};
+            for (const conflict of conflicts) {
+                const dateKey = typeof conflict.date === 'string' ? conflict.date.split('T')[0] : conflict.date;
+                if (!conflictsByDate[dateKey]) {
+                    conflictsByDate[dateKey] = [];
+                }
+                conflictsByDate[dateKey].push(conflict);
+            }
+            
+            for (const [dateStr, conflictsList] of Object.entries(conflictsByDate)) {
+                const date = new Date(dateStr + 'T12:00:00');
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const formattedDate = formatDate(dateStr);
+                
+                for (const conflict of conflictsList) {
+                    const timeStr = formatTime(conflict.time);
+                    message += `• ${formattedDate} (${dayOfWeek}) ${timeStr} - пересечение со слотами:\n`;
+                    
+                    for (const slot of conflict.conflicting_slots) {
+                        const slotTimeStr = formatTime(slot.start_time);
+                        const slotEndTimeStr = formatTime(slot.end_time);
+                        const statusText = slot.status === 'booked' ? 'занят' : 
+                                          slot.status === 'blocked' ? 'заблокирован' : 
+                                          slot.status === 'group' ? 'групповая тренировка' : slot.status;
+                        message += `  └ ${slotTimeStr}-${slotEndTimeStr} (${statusText})\n`;
+                    }
+                }
+            }
+        }
+        
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление о генерации тренировок отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору о генерации тренировок:', error);
+    }
+}
+
 module.exports = {
     bot,
     instructorBot,
@@ -1824,7 +2334,17 @@ module.exports = {
     notifyAdminWinterGroupTrainingCreatedByAdmin,
     notifyAdminSubscriptionPurchase,
     notifyInstructorKuligaAssignment,
-    notifyAdminInstructorAssigned
+    notifyAdminInstructorAssigned,
+    notifyInstructorSlotsCreated,
+    notifyAdminSlotsCreated,
+    notifyInstructorSlotsDeleted,
+    notifyAdminSlotsDeleted,
+    notifyInstructorSlotStatusChanged,
+    notifyAdminSlotStatusChanged,
+    notifyInstructorGroupTrainingDeleted,
+    notifyAdminGroupTrainingDeletedByInstructor,
+    notifyInstructorSlotsCreatedByAdmin,
+    notifyAdminProgramTrainingsGenerated
 };
 
 // Функция для отправки уведомления о покупке абонемента

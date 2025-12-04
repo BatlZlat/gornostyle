@@ -183,6 +183,18 @@ router.get('/admin', async (req, res) => {
             // Вычисляем current_participants динамически из активных бронирований
             // Для natural_slope фильтруем только будущие тренировки
             // МИГРАЦИЯ 041: Добавлена поддержка program_id и instructor_id может быть NULL
+            
+            // Сначала проверим, есть ли вообще тренировки из программ (для отладки)
+            const debugCheck = await pool.query(`
+                SELECT COUNT(*) as total, 
+                       COUNT(*) FILTER (WHERE program_id IS NOT NULL) as with_program,
+                       COUNT(*) FILTER (WHERE status = 'open') as status_open,
+                       COUNT(*) FILTER (WHERE status = 'confirmed') as status_confirmed,
+                       COUNT(*) FILTER (WHERE date >= CURRENT_DATE - INTERVAL '7 days' AND date <= CURRENT_DATE + INTERVAL '60 days') as in_date_range
+                FROM kuliga_group_trainings
+            `);
+            console.log('🔍 Отладочная информация о тренировках Кулиги:', debugCheck.rows[0]);
+            
             const kuligaGroupQuery = `
                 SELECT 
                     kgt.id,
@@ -287,6 +299,29 @@ router.get('/admin', async (req, res) => {
                 pool.query(kuligaGroupQuery),
                 pool.query(kuligaIndividualQuery)
             ]);
+            
+            // Логирование для отладки
+            console.log(`📊 Результаты запросов для natural_slope:`, {
+                oldGroup: oldGroupResult.rows.length,
+                oldIndividual: oldIndividualResult.rows.length,
+                kuligaGroup: kuligaGroupResult.rows.length,
+                kuligaIndividual: kuligaIndividualResult.rows.length
+            });
+            
+            // Логируем тренировки из программ
+            const programTrainings = kuligaGroupResult.rows.filter(t => t.program_id);
+            if (programTrainings.length > 0) {
+                console.log(`📋 Найдено тренировок из программ: ${programTrainings.length}`, programTrainings.map(t => ({
+                    id: t.id,
+                    date: t.date,
+                    time: t.start_time,
+                    program_id: t.program_id,
+                    program_name: t.program_name,
+                    instructor_id: t.trainer_id,
+                    instructor_name: t.trainer_name,
+                    status: t.status
+                })));
+            }
             
             // Объединяем все результаты
             results = [

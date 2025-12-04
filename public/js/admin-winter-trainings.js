@@ -160,6 +160,19 @@ async function loadWinterTrainings() {
             throw new Error('Получены некорректные данные от сервера');
         }
         
+        // Логирование для отладки
+        console.log('📊 Загружено тренировок:', trainings.length);
+        const programTrainings = trainings.filter(t => t.program_id);
+        if (programTrainings.length > 0) {
+            console.log('📋 Найдено тренировок из программ:', programTrainings.length, programTrainings.map(t => ({
+                id: t.id,
+                date: t.date,
+                time: t.start_time,
+                program_name: t.program_name,
+                status: t.status
+            })));
+        }
+        
         // Фильтруем по типу, статусу и месту проведения, если указаны
         const typeFilter = document.getElementById('winter-type-filter');
         const statusFilter = document.getElementById('winter-status-filter');
@@ -172,7 +185,11 @@ async function loadWinterTrainings() {
         }
         
         if (statusFilter && statusFilter.value) {
-            filteredTrainings = filteredTrainings.filter(t => t.status === statusFilter.value);
+            filteredTrainings = filteredTrainings.filter(t => {
+                // Для тренировок Кулиги статус может быть 'open', 'confirmed', 'pending', 'refunded'
+                // Для обычных тренировок: 'scheduled', 'completed', 'cancelled'
+                return t.status === statusFilter.value;
+            });
         }
         
         if (locationFilter && locationFilter.value) {
@@ -374,9 +391,6 @@ function renderWinterTrainingRow(training) {
     }
     
     // Статус - используем правильные метки на русском
-    let status = '—';
-    let statusColor = '#666';
-    
     // Расширенные метки статусов для всех типов тренировок
     const allStatusLabels = {
         // Обычные тренировки
@@ -408,8 +422,8 @@ function renderWinterTrainingRow(training) {
     
     // Определяем статус с учетом всех возможных значений
     const trainingStatus = training.status || '—';
-    status = allStatusLabels[trainingStatus] || trainingStatus || '—';
-    statusColor = allStatusColors[trainingStatus] || '#666';
+    let status = allStatusLabels[trainingStatus] || trainingStatus || '—';
+    let statusColor = allStatusColors[trainingStatus] || '#666';
     
     // Уровень подготовки
     const skillLevel = training.skill_level || '—';
