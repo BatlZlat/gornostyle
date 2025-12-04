@@ -347,6 +347,29 @@
                         const timeFromTraining = String(programData.training.start_time).substring(0, 5);
                         state.programTime = timeFromTraining;
                     }
+                    
+                    // Если есть start_time и end_time, вычисляем фактическую длительность
+                    if (programData.training.start_time && programData.training.end_time) {
+                        const startTime = programData.training.start_time;
+                        const endTime = programData.training.end_time;
+                        // Вычисляем разницу в минутах (формат времени: "HH:mm:ss" или "HH:mm")
+                        try {
+                            const startParts = startTime.split(':').map(Number);
+                            const endParts = endTime.split(':').map(Number);
+                            const startMinutes = startParts[0] * 60 + startParts[1];
+                            const endMinutes = endParts[0] * 60 + endParts[1];
+                            let durationMinutes = endMinutes - startMinutes;
+                            // Если время пересекает полночь
+                            if (durationMinutes < 0) {
+                                durationMinutes += 24 * 60;
+                            }
+                            if (durationMinutes > 0) {
+                                state.selection.duration = durationMinutes;
+                            }
+                        } catch (e) {
+                            console.warn('Не удалось вычислить длительность из времени тренировки:', e);
+                        }
+                    }
                 }
                 
                 state.participants = [{ fullName: '', age: '' }];
@@ -425,15 +448,12 @@
     function renderSelectionSummary() {
         // Если это программа, показываем информацию о программе
         if (state.program) {
-            selectionTitle.textContent = state.program.name || 'Групповая тренировка';
+            selectionTitle.textContent = '';
             
             const {
                 duration,
                 pricePerPerson,
             } = state.selection;
-            
-            const participantCount = Math.max(1, state.participants.length || 1);
-            const totalPrice = pricePerPerson * participantCount;
             
             // Получаем название локации
             let locationName = 'Место не указано';
@@ -448,12 +468,35 @@
                 }
             }
             
+            // Форматируем дату, если она есть
+            let dateStr = '';
+            if (state.date) {
+                const dateObj = new Date(state.date + 'T00:00:00');
+                dateStr = dateObj.toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    weekday: 'long'
+                });
+            }
+            
+            // Определяем имя инструктора
+            const instructorName = (state.programTraining && state.programTraining.instructor_name) 
+                ? state.programTraining.instructor_name 
+                : 'Будет назначен администратором';
+            
+            // Получаем название вида спорта
+            const sportName = sportLabels[state.program.sport_type] || 'Инструктор';
+            
             const details = [
-                `<span><i class="fa-solid fa-location-dot"></i>${locationName}</span>`,
-                `<span><i class="fa-regular fa-clock"></i>${duration} мин.</span>`,
-                `<span><i class="fa-solid fa-users"></i>${participantCount} участник${participantCount === 1 ? '' : participantCount < 5 ? 'а' : 'ов'}</span>`,
-                `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson)}</span>`,
-                `<span><i class="fa-solid fa-receipt"></i>Общая стоимость: ${formatCurrency(totalPrice)}</span>`,
+                `<p style="margin: 0;"><strong>Программа:</strong> ${state.program.name || 'Групповая тренировка'}</p>`,
+                `<p style="margin: 0;"><strong>Вид спорта:</strong> ${sportName}</p>`,
+                `<p style="margin: 0;"><strong>Место:</strong> ${locationName}</p>`,
+                dateStr ? `<p style="margin: 0;"><strong>Дата:</strong> ${dateStr}</p>` : '<p style="margin: 0;"><strong>Дата:</strong></p>',
+                state.programTime ? `<p style="margin: 0;"><strong>Время:</strong> ${state.programTime}</p>` : '<p style="margin: 0;"><strong>Время:</strong></p>',
+                `<p style="margin: 0;"><strong>Длительность тренировки:</strong> ${duration} мин.</p>`,
+                `<p style="margin: 0;"><strong>Инструктор:</strong> ${instructorName}</p>`,
+                `<p style="margin: 0;"><strong>Цена за человека:</strong> ${formatCurrency(pricePerPerson)}</p>`,
             ];
             
             selectionDetails.innerHTML = details.join('');
@@ -1109,6 +1152,102 @@
         };
     }
 
+    function showTelegramBookingModal(payload) {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'kuliga-confirmation-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+            `;
+            
+            const participants = buildParticipantsPayload();
+            const totalPrice = state.selection.pricePerPerson * participants.length;
+            
+            const dateStr = state.date ? new Date(state.date + 'T00:00:00').toLocaleDateString('ru-RU', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            }) : '';
+            
+            const locationNames = {
+                'kuliga': 'База отдыха «Кулига-Клуб»',
+                'vorona': 'Воронинские горки'
+            };
+            const locationName = locationNames[state.program.location] || state.program.location || 'База отдыха «Кулига-Клуб»';
+            
+            let modalContent = `
+                <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                    <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b;">Запись на программу</h2>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
+                            <p style="margin: 8px 0;"><strong>Групповая тренировка:</strong> ${state.program.name}</p>
+                            <p style="margin: 8px 0;"><strong>Место:</strong> ${locationName}</p>
+                            ${dateStr ? `<p style="margin: 8px 0;"><strong>Дата тренировки:</strong> ${dateStr}</p>` : '<p style="margin: 8px 0;"><strong>Дата тренировки:</strong></p>'}
+                            ${state.programTime ? `<p style="margin: 8px 0;"><strong>Время тренировки:</strong> ${state.programTime}</p>` : '<p style="margin: 8px 0;"><strong>Время тренировки:</strong></p>'}
+                            <p style="margin: 8px 0;"><strong>Длительность тренировки:</strong> ${state.selection.duration} мин.</p>
+                            <p style="margin: 8px 0;"><strong>${participants.length} ${participants.length === 1 ? 'участник' : participants.length < 5 ? 'участника' : 'участников'}</strong></p>
+                            <p style="margin: 8px 0;"><strong>Стоимость:</strong> ${formatCurrency(totalPrice)}</p>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button type="button" class="kuliga-button kuliga-button--secondary" id="kuligaTelegramCancel" style="padding: 12px 24px;">
+                            Отмена
+                        </button>
+                        <button type="button" class="kuliga-button kuliga-button--primary" id="kuligaTelegramPay" style="padding: 12px 24px;">
+                            Оплатить
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            modal.innerHTML = modalContent;
+            document.body.appendChild(modal);
+            
+            const cancelBtn = modal.querySelector('#kuligaTelegramCancel');
+            const payBtn = modal.querySelector('#kuligaTelegramPay');
+            
+            cancelBtn.addEventListener('click', () => {
+                modal.remove();
+                resolve(false);
+            });
+            
+            payBtn.addEventListener('click', () => {
+                modal.remove();
+                resolve(true);
+            });
+            
+            // Закрытие по клику вне модального окна
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve(false);
+                }
+            });
+            
+            // Закрытие по Escape
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    modal.remove();
+                    document.removeEventListener('keydown', escapeHandler);
+                    resolve(false);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+        });
+    }
+
     function showConfirmationModal(payload) {
         return new Promise((resolve) => {
             const modal = document.createElement('div');
@@ -1167,8 +1306,12 @@
                                 ? `<p><strong>Время:</strong> ${state.programTime}</p>`
                                 : (state.slot ? `<p><strong>Время:</strong> ${formatTime(state.slot.start_time)} - ${formatTime(state.slot.end_time)}</p>` : '')
                             }
+                            ${state.program ? `<p><strong>Длительность тренировки:</strong> ${state.selection.duration} мин.</p>` : ''}
                             ${state.program 
-                                ? '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
+                                ? (state.programTraining && state.programTraining.instructor_name
+                                    ? `<p><strong>Инструктор:</strong> ${state.programTraining.instructor_name}</p>`
+                                    : '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
+                                )
                                 : (state.slot && state.slot.instructor_name
                                     ? `<p><strong>Инструктор:</strong> ${state.slot.instructor_name}</p>`
                                     : '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
