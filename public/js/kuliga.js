@@ -180,14 +180,15 @@
         }
     };
 
-    const renderProgramsAndSchedule = async () => {
+    const renderProgramsAndSchedule = async (locationFilter = null) => {
         const programContainer = document.getElementById('kuligaProgramList');
         const scheduleContainer = document.getElementById('kuligaGroupList');
 
         if (!programContainer && !scheduleContainer) return;
 
         try {
-            const response = await fetchJson(API_ENDPOINTS.programs);
+            const url = locationFilter ? `${API_ENDPOINTS.programs}?location=${locationFilter}` : API_ENDPOINTS.programs;
+            const response = await fetchJson(url);
             if (!response.success) {
                 throw new Error('API вернуло ошибку');
             }
@@ -197,8 +198,11 @@
 
             if (programContainer) {
                 if (!programs.length) {
+                    const locationName = locationFilter && window.getLocationName 
+                        ? window.getLocationName(locationFilter) 
+                        : '';
                     programContainer.innerHTML =
-                        '<div class="kuliga-empty">Программы ещё не добавлены. Следите за обновлениями в Telegram.</div>';
+                        `<div class="kuliga-empty">${locationName ? `В ${locationName} программы ещё не добавлены. ` : 'Программы ещё не добавлены. '}Следите за обновлениями в Telegram.</div>`;
                 } else {
                     programContainer.innerHTML = programs
                         .map((program) => {
@@ -206,11 +210,15 @@
                             const nextHint = nextSession
                                 ? `<div class="kuliga-program-next"><i class="fa-solid fa-calendar-days"></i> Ближайшее занятие: ${nextSession.date_label} (${nextSession.weekday_short}) в ${nextSession.time}</div>`
                                 : '';
+                            const locationName = program.location && window.getLocationName 
+                                ? window.getLocationName(program.location) 
+                                : 'Место не указано';
                             return `
                                 <article class="kuliga-group-card">
                                     <h3>${program.name}</h3>
                                     ${program.description ? `<p>${program.description}</p>` : '<p>Описание появится в ближайшее время.</p>'}
                                     <div class="kuliga-group-card__meta">
+                                        <span><i class="fa-solid fa-location-dot"></i> ${locationName}</span>
                                         <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[program.sport_type] || 'Инструктор'}</span>
                                         <span><i class="fa-solid fa-users"></i> До ${program.max_participants} человек</span>
                                         <span><i class="fa-solid fa-clock"></i> ${program.training_duration} мин. (практика ${program.practice_duration} мин.)</span>
@@ -236,36 +244,45 @@
 
             if (scheduleContainer) {
                 if (!schedule.length) {
+                    const locationName = locationFilter && window.getLocationName 
+                        ? window.getLocationName(locationFilter) 
+                        : '';
                     scheduleContainer.innerHTML =
-                        '<div class="kuliga-empty">В ближайшие две недели регулярных занятий нет. Оформите подписку на уведомления в Telegram.</div>';
+                        `<div class="kuliga-empty">${locationName ? `В ${locationName} в ближайшие две недели регулярных занятий нет. ` : 'В ближайшие две недели регулярных занятий нет. '}Оформите подписку на уведомления в Telegram.</div>`;
                 } else {
                     scheduleContainer.innerHTML = schedule
                         .map(
-                            (item) => `
-                            <article class="kuliga-group-item">
-                                <div class="kuliga-group-item__top">
-                                    <span class="kuliga-group-item__date">${item.date_label} (${item.weekday_short})</span>
-                                    <strong>${item.program_name}</strong>
-                                </div>
-                                <div class="kuliga-group-item__meta">
-                                    <span><i class="fa-regular fa-clock"></i> ${item.time}</span>
-                                    <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[item.sport_type] || 'Инструктор'}</span>
-                                    <span><i class="fa-solid fa-seat-airline"></i> Свободно ${item.available_slots || item.max_participants - (item.current_participants || 0)} мест</span>
-                                    ${item.price_per_person ? `<span><i class="fa-solid fa-coins"></i> ${Number(item.price_per_person).toLocaleString('ru-RU')} ₽</span>` : ''}
-                                    ${item.instructor_name ? `<span><i class="fa-solid fa-user-tie"></i> ${item.instructor_name}</span>` : '<span><i class="fa-solid fa-user-tie"></i> Инструктор будет назначен</span>'}
-                                </div>
-                                <div class="kuliga-group-item__actions">
-                                    <button 
-                                        class="kuliga-button kuliga-button--ghost"
-                                        data-program-book
-                                        data-program-id="${item.program_id}"
-                                        data-program-date="${item.date_iso}"
-                                        data-program-time="${item.time}">
-                                        Записаться
-                                    </button>
-                                </div>
-                            </article>
-                        `
+                            (item) => {
+                                const locationName = item.location && window.getLocationName 
+                                    ? window.getLocationName(item.location) 
+                                    : '';
+                                return `
+                                <article class="kuliga-group-item">
+                                    <div class="kuliga-group-item__top">
+                                        <span class="kuliga-group-item__date">${item.date_label} (${item.weekday_short})</span>
+                                        <strong>${item.program_name}</strong>
+                                    </div>
+                                    <div class="kuliga-group-item__meta">
+                                        ${locationName ? `<span><i class="fa-solid fa-location-dot"></i> ${locationName}</span>` : ''}
+                                        <span><i class="fa-regular fa-clock"></i> ${item.time}</span>
+                                        <span><i class="fa-solid fa-person-skiing"></i> ${sportLabels[item.sport_type] || 'Инструктор'}</span>
+                                        <span><i class="fa-solid fa-seat-airline"></i> Свободно ${item.available_slots || item.max_participants - (item.current_participants || 0)} мест</span>
+                                        ${item.price_per_person ? `<span><i class="fa-solid fa-coins"></i> ${Number(item.price_per_person).toLocaleString('ru-RU')} ₽</span>` : ''}
+                                        ${item.instructor_name ? `<span><i class="fa-solid fa-user-tie"></i> ${item.instructor_name}</span>` : '<span><i class="fa-solid fa-user-tie"></i> Инструктор будет назначен</span>'}
+                                    </div>
+                                    <div class="kuliga-group-item__actions">
+                                        <button 
+                                            class="kuliga-button kuliga-button--primary"
+                                            data-program-book
+                                            data-program-id="${item.program_id}"
+                                            data-program-date="${item.date_iso}"
+                                            data-program-time="${item.time}">
+                                            Записаться
+                                        </button>
+                                    </div>
+                                </article>
+                            `;
+                            }
                         )
                         .join('');
                 }
@@ -710,5 +727,14 @@
         renderProgramsAndSchedule();
         renderInstructors();
         initBookingButton();
+
+        // Обработчик фильтра по локации
+        const locationFilter = document.getElementById('kuligaLocationFilter');
+        if (locationFilter) {
+            locationFilter.addEventListener('change', (e) => {
+                const selectedLocation = e.target.value || null;
+                renderProgramsAndSchedule(selectedLocation);
+            });
+        }
     });
 })();

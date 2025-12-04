@@ -341,9 +341,15 @@
 }
 
 .kuliga-group-item__actions {
-    margin-top: 12px;
+    margin-top: 16px;
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.kuliga-group-item__actions .kuliga-button {
+    width: 100%;
+    justify-content: center;
 }
 
 .kuliga-selection-card {

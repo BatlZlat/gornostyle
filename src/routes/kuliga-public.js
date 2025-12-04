@@ -437,8 +437,7 @@ router.get('/api/kuliga/programs', async (req, res) => {
         }
 
         // Получаем реальные созданные тренировки из программ
-        const createdTrainingsResult = await pool.query(
-            `SELECT 
+        let createdTrainingsQuery = `SELECT 
                 kgt.id as training_id,
                 kgt.program_id,
                 kgt.date,
@@ -459,10 +458,18 @@ router.get('/api/kuliga/programs', async (req, res) => {
              WHERE kgt.program_id IS NOT NULL
                AND kgt.date >= $1
                AND kgt.date <= $2
-               AND kgt.status IN ('open', 'confirmed')
-             ORDER BY kgt.date, kgt.start_time`,
-            [now.format('YYYY-MM-DD'), end.format('YYYY-MM-DD')]
-        );
+               AND kgt.status IN ('open', 'confirmed')`;
+        const trainingParams = [now.format('YYYY-MM-DD'), end.format('YYYY-MM-DD')];
+        
+        // Применяем фильтр по location к тренировкам, если указан
+        if (location && isValidLocation(location)) {
+            trainingParams.push(location);
+            createdTrainingsQuery += ` AND kgt.location = $${trainingParams.length}`;
+        }
+        
+        createdTrainingsQuery += ` ORDER BY kgt.date, kgt.start_time`;
+        
+        const createdTrainingsResult = await pool.query(createdTrainingsQuery, trainingParams);
 
         // Объединяем расписание программ с реальными тренировками
         // Сначала добавляем все элементы расписания

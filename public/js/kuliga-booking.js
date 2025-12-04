@@ -271,7 +271,7 @@
         const slotIdParam = params.get('slotId');
         const instructorIdParam = params.get('instructorId');
         const dateParam = params.get('date');
-        const startTimeParam = params.get('startTime');
+        const startTimeParam = params.get('startTime') || params.get('time'); // Поддерживаем оба варианта
         const locationParam = params.get('location');
         const bookingTypeParam = params.get('bookingType'); // individual или group
         const priceTypeParam = params.get('priceType'); // individual или group
@@ -318,6 +318,17 @@
                     state.programTime = startTimeParam;
                 }
                 
+                // Если время не передано в URL, берем первое время из time_slots программы
+                if (!state.programTime && programData.time_slots && Array.isArray(programData.time_slots) && programData.time_slots.length > 0) {
+                    // Берем первое время из массива time_slots
+                    const firstTimeSlot = programData.time_slots[0];
+                    if (firstTimeSlot) {
+                        // Убеждаемся, что формат правильный (может быть "10:00" или "10:00:00")
+                        const timeStr = String(firstTimeSlot).trim();
+                        state.programTime = timeStr.length >= 5 ? timeStr.substring(0, 5) : timeStr;
+                    }
+                }
+                
                 // Устанавливаем location из программы
                 if (programData.location) {
                     state.location = programData.location;
@@ -331,6 +342,11 @@
                 // Если есть информация о тренировке (уже созданной), показываем инструктора
                 if (programData.training) {
                     state.programTraining = programData.training;
+                    // Если у тренировки есть время и время еще не установлено, используем его
+                    if (programData.training.start_time && !state.programTime) {
+                        const timeFromTraining = String(programData.training.start_time).substring(0, 5);
+                        state.programTime = timeFromTraining;
+                    }
                 }
                 
                 state.participants = [{ fullName: '', age: '' }];
@@ -419,7 +435,21 @@
             const participantCount = Math.max(1, state.participants.length || 1);
             const totalPrice = pricePerPerson * participantCount;
             
+            // Получаем название локации
+            let locationName = 'Место не указано';
+            if (state.program.location) {
+                if (typeof window.getLocationName === 'function') {
+                    locationName = window.getLocationName(state.program.location);
+                } else {
+                    // Fallback если функция не загружена
+                    locationName = state.program.location === 'vorona' 
+                        ? 'Воронинские горки' 
+                        : (state.program.location === 'kuliga' ? 'База отдыха «Кулига-Клуб»' : state.program.location);
+                }
+            }
+            
             const details = [
+                `<span><i class="fa-solid fa-location-dot"></i>${locationName}</span>`,
                 `<span><i class="fa-regular fa-clock"></i>${duration} мин.</span>`,
                 `<span><i class="fa-solid fa-users"></i>${participantCount} участник${participantCount === 1 ? '' : participantCount < 5 ? 'а' : 'ов'}</span>`,
                 `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson)}</span>`,
@@ -644,15 +674,90 @@
             radio.checked = radio.value === state.payerParticipation;
         });
 
+        // Устанавливаем вид спорта
         sportRadios.forEach((radio) => {
-            radio.checked = radio.value === state.sportType;
+            // Для программ берем вид спорта из программы
+            const sportTypeToSet = state.program 
+                ? (state.program.sport_type === 'snowboard' ? 'snowboard' : 'ski')
+                : state.sportType;
+            
+            radio.checked = radio.value === sportTypeToSet;
+            // Для программ отключаем изменение вида спорта
+            if (state.program) {
+                radio.disabled = true;
+            } else {
+                radio.disabled = false;
+            }
         });
 
         if (locationSelect) {
             locationSelect.value = state.location || 'kuliga';
+            
+            // Для программ скрываем и отключаем поле выбора локации
+            if (state.program) {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = 'none';
+                }
+                locationSelect.disabled = true;
+                locationSelect.removeAttribute('required');
+            } else {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = '';
+                }
+                locationSelect.disabled = false;
+                locationSelect.setAttribute('required', 'required');
+            }
         }
 
         dateInput.value = state.date || '';
+        
+        // Для программ показываем дату в читаемом формате вместо поля ввода
+        if (state.program && state.date) {
+            const dateField = dateInput.closest('.kuliga-field');
+            if (dateField) {
+                // Скрываем input
+                dateInput.style.display = 'none';
+                dateInput.disabled = true;
+                dateInput.removeAttribute('required');
+                
+                // Проверяем, не создан ли уже блок с датой
+                let dateDisplay = dateField.querySelector('.kuliga-date-display');
+                if (!dateDisplay) {
+                    // Создаем блок для отображения даты
+                    dateDisplay = document.createElement('div');
+                    dateDisplay.className = 'kuliga-date-display';
+                    dateDisplay.style.cssText = 'padding: 12px 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1rem; font-weight: 600; color: #1976d2;';
+                    dateInput.parentNode.insertBefore(dateDisplay, dateInput.nextSibling);
+                }
+                
+                // Форматируем и отображаем дату
+                const dateObj = new Date(state.date + 'T00:00:00');
+                const formattedDate = dateObj.toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    weekday: 'long'
+                });
+                dateDisplay.textContent = formattedDate;
+                dateDisplay.style.display = 'block';
+            }
+        } else {
+            // Для обычных тренировок или программ без даты показываем поле ввода
+            const dateField = dateInput.closest('.kuliga-field');
+            if (dateField) {
+                // Удаляем блок с датой, если он существует
+                const dateDisplay = dateField.querySelector('.kuliga-date-display');
+                if (dateDisplay) {
+                    dateDisplay.remove();
+                }
+                
+                dateInput.style.display = '';
+                dateInput.disabled = false;
+                dateInput.setAttribute('required', 'required');
+            }
+        }
 
         notifyEmailCheckbox.checked = Boolean(state.notification.email);
         notifyTelegramCheckbox.checked = Boolean(state.notification.telegram);
@@ -703,6 +808,16 @@
     }
 
     function handleSportChange(event) {
+        // Для программ запрещаем изменение вида спорта
+        if (state.program) {
+            // Восстанавливаем значение из программы
+            sportRadios.forEach((radio) => {
+                const programSportType = state.program.sport_type === 'snowboard' ? 'snowboard' : 'ski';
+                radio.checked = radio.value === programSportType;
+            });
+            return;
+        }
+        
         state.sportType = event.target.value === 'snowboard' ? 'snowboard' : 'ski';
         state.slot = null;
         state.availability = [];
@@ -715,6 +830,13 @@
 
     function handleLocationChange() {
         if (!locationSelect) return;
+        
+        // Для программ запрещаем изменение локации
+        if (state.program) {
+            locationSelect.value = state.location || 'kuliga';
+            return;
+        }
+        
         const newLocation = locationSelect.value || 'kuliga';
         if (state.location !== newLocation) {
             state.location = newLocation;
@@ -736,6 +858,13 @@
     }
 
     function handleDateChange() {
+        // Для программ запрещаем изменение даты, если она уже установлена
+        if (state.program && state.date) {
+            // Восстанавливаем исходную дату
+            dateInput.value = state.date;
+            return;
+        }
+        
         state.date = dateInput.value;
         state.slot = null;
         state.availability = [];
@@ -1038,8 +1167,8 @@
                                 ? `<p><strong>Время:</strong> ${state.programTime}</p>`
                                 : (state.slot ? `<p><strong>Время:</strong> ${formatTime(state.slot.start_time)} - ${formatTime(state.slot.end_time)}</p>` : '')
                             }
-                            ${state.programTraining && state.programTraining.instructor_name
-                                ? `<p><strong>Инструктор:</strong> ${state.programTraining.instructor_name}</p>`
+                            ${state.program 
+                                ? '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
                                 : (state.slot && state.slot.instructor_name
                                     ? `<p><strong>Инструктор:</strong> ${state.slot.instructor_name}</p>`
                                     : '<p><strong>Инструктор:</strong> Будет назначен администратором</p>'
@@ -1348,8 +1477,92 @@
         // Для программ не показываем выбор слотов, а показываем информацию о тренировке
         if (state.program) {
             renderProgramInfo();
+            // Скрываем и отключаем выбор локации для программ
+            if (locationSelect) {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = 'none';
+                }
+                locationSelect.disabled = true;
+                locationSelect.removeAttribute('required');
+            }
+            
+            // Скрываем карточку инструктора для программ
+            if (instructorCard) {
+                instructorCard.hidden = true;
+                instructorCard.style.display = 'none';
+            }
+            
+            // Скрываем radio-кнопки выбора вида спорта для программ
+            sportRadios.forEach((radio) => {
+                const radioContainer = radio.closest('.kuliga-choice');
+                if (radioContainer) {
+                    radioContainer.style.display = 'none';
+                }
+            });
+            
+            // Для программ с установленной датой показываем дату в читаемом формате
+            if (dateInput && state.date) {
+                const dateField = dateInput.closest('.kuliga-field');
+                if (dateField) {
+                    // Скрываем input
+                    dateInput.style.display = 'none';
+                    dateInput.disabled = true;
+                    dateInput.removeAttribute('required');
+                    
+                    // Проверяем, не создан ли уже блок с датой
+                    let dateDisplay = dateField.querySelector('.kuliga-date-display');
+                    if (!dateDisplay) {
+                        // Создаем блок для отображения даты
+                        dateDisplay = document.createElement('div');
+                        dateDisplay.className = 'kuliga-date-display';
+                        dateDisplay.style.cssText = 'padding: 12px 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1rem; font-weight: 600; color: #1976d2;';
+                        dateInput.parentNode.insertBefore(dateDisplay, dateInput.nextSibling);
+                    }
+                    
+                    // Форматируем и отображаем дату
+                    const dateObj = new Date(state.date + 'T00:00:00');
+                    const formattedDate = dateObj.toLocaleDateString('ru-RU', {
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric',
+                        weekday: 'long'
+                    });
+                    dateDisplay.textContent = formattedDate;
+                    dateDisplay.style.display = 'block';
+                }
+            } else if (dateInput && state.program && !state.date) {
+                // Для программ без даты показываем поле ввода
+                const dateField = dateInput.closest('.kuliga-field');
+                if (dateField) {
+                    const dateDisplay = dateField.querySelector('.kuliga-date-display');
+                    if (dateDisplay) {
+                        dateDisplay.remove();
+                    }
+                    dateInput.style.display = '';
+                    dateInput.disabled = false;
+                    dateInput.setAttribute('required', 'required');
+                }
+            }
         } else {
             renderAvailability();
+            // Показываем выбор локации для обычных тренировок
+            if (locationSelect) {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = '';
+                }
+                locationSelect.disabled = false;
+                locationSelect.setAttribute('required', 'required');
+            }
+            
+            // Показываем radio-кнопки выбора вида спорта для обычных тренировок
+            sportRadios.forEach((radio) => {
+                const radioContainer = radio.closest('.kuliga-choice');
+                if (radioContainer) {
+                    radioContainer.style.display = '';
+                }
+            });
         }
         
         attachListeners();
@@ -1362,23 +1575,42 @@
     
     function renderProgramInfo() {
         // Для программ заменяем "Свободные слоты" на фиксированное время
-        if (state.program) {
+        if (state.program && timeSlotsContainer) {
             const program = state.program;
             const timeStr = state.programTime || '';
             
-            // Показываем фиксированное время вместо "Свободные слоты"
-            if (timeStr) {
-                const timeSlotLabel = timeSlotsContainer.parentElement;
-                if (timeSlotLabel) {
-                    const labelSpan = timeSlotLabel.querySelector('span');
-                    if (labelSpan) {
-                        labelSpan.textContent = 'Время тренировки *';
+            // Всегда меняем метку на "Время тренировки" для программ
+            // Ищем label, который содержит timeSlotsContainer
+            let timeSlotLabel = timeSlotsContainer.closest('label');
+            if (!timeSlotLabel) {
+                timeSlotLabel = timeSlotsContainer.parentElement;
+            }
+            
+            if (timeSlotLabel) {
+                const labelSpan = timeSlotLabel.querySelector('span');
+                if (labelSpan) {
+                    labelSpan.textContent = 'Время тренировки *';
+                } else {
+                    // Если span не найден, создаем его или изменяем textContent родителя
+                    const firstChild = timeSlotLabel.firstChild;
+                    if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+                        firstChild.textContent = 'Время тренировки *';
                     }
                 }
-                
+            }
+            
+            // Показываем фиксированное время, если оно указано
+            if (timeStr) {
                 timeSlotsContainer.innerHTML = `
                     <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1.1rem; font-weight: 600; color: #1976d2; text-align: center;">
                         ${timeStr}
+                    </div>
+                `;
+            } else {
+                // Если время не указано, показываем сообщение
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; font-size: 0.95rem; color: #856404; text-align: center;">
+                        Время тренировки будет указано администратором
                     </div>
                 `;
             }
@@ -1387,21 +1619,18 @@
             availabilityMessage.innerHTML = '';
             availabilityMessage.style.display = 'none';
             
-            // Если есть инструктор, показываем карточку инструктора с фото
-            if (state.programTraining && state.programTraining.instructor_name) {
-                instructorPhoto.src = state.programTraining.instructor_photo_url || '/images/gornosyle72_logo.webp';
-                instructorPhoto.alt = state.programTraining.instructor_name;
-                instructorName.textContent = state.programTraining.instructor_name;
-                instructorSport.textContent = sportLabels[program.sport_type] || 'Инструктор';
-                instructorDescription.textContent = state.programTraining.instructor_description || program.description || 'Описание появится позже.';
-                instructorCard.hidden = false;
-            } else {
+            // Для программ всегда скрываем карточку инструктора, чтобы администратор мог гибко назначать тренера
+            if (instructorCard) {
                 instructorCard.hidden = true;
+                instructorCard.style.display = 'none';
             }
-        } else {
+        } else if (timeSlotsContainer) {
             // Для обычных тренировок показываем "Свободные слоты"
-            const timeSlotLabel = timeSlotsContainer.parentElement;
-            if (timeSlotLabel) {
+            let timeSlotLabel = timeSlotsContainer.closest('label');
+            if (!timeSlotLabel) {
+                timeSlotLabel = timeSlotsContainer.parentElement;
+            }
+            if (timeSlotLabel && timeSlotLabel.tagName === 'LABEL') {
                 const labelSpan = timeSlotLabel.querySelector('span');
                 if (labelSpan) {
                     labelSpan.textContent = 'Свободные слоты *';
