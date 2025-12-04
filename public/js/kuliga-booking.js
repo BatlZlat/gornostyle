@@ -1784,6 +1784,39 @@
         };
         
         datePickerInstance = window.flatpickr(dateInput, fpOptions);
+        
+        // Убеждаемся, что иконка календаря видна для altInput (который создает flatpickr)
+        // Flatpickr создает altInput как соседний элемент, поэтому нужно обновить позиционирование иконки
+        setTimeout(() => {
+            if (datePickerInstance && datePickerInstance.altInput) {
+                const wrapper = dateInput.closest('.kuliga-input-wrapper');
+                const icon = wrapper ? wrapper.querySelector('.kuliga-date-icon') : null;
+                
+                if (icon) {
+                    // Проверяем, где находится altInput
+                    const altInputParent = datePickerInstance.altInput.parentNode;
+                    if (altInputParent && altInputParent !== wrapper) {
+                        // Если altInput находится в другом контейнере, делаем его родителя relative
+                        altInputParent.style.position = 'relative';
+                        // Создаем иконку для altInput, если её там нет
+                        if (!altInputParent.querySelector('.kuliga-date-icon')) {
+                            const clonedIcon = icon.cloneNode(true);
+                            clonedIcon.style.position = 'absolute';
+                            clonedIcon.style.right = '12px';
+                            clonedIcon.style.zIndex = '2';
+                            altInputParent.appendChild(clonedIcon);
+                        }
+                    } else if (altInputParent === wrapper) {
+                        // Если altInput внутри обертки, иконка уже должна быть видна
+                        // Убеждаемся, что она позиционирована правильно относительно altInput
+                        const computedStyle = window.getComputedStyle(datePickerInstance.altInput);
+                        if (computedStyle.position !== 'absolute') {
+                            icon.style.right = '12px';
+                        }
+                    }
+                }
+            }
+        }, 100);
     }
 
     (async function bootstrap() {
