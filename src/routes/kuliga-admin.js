@@ -813,8 +813,8 @@ router.post('/programs', async (req, res) => {
     }
 
     const trainingValue = parseInt(trainingDuration, 10);
-    if (![60, 90, 120].includes(trainingValue)) {
-        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 90 или 120 минут' });
+    if (![60, 75, 90, 105, 120].includes(trainingValue)) {
+        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 75, 90, 105 или 120 минут' });
     }
 
     const warmupValue = parseInt(warmupDuration, 10);
@@ -996,8 +996,8 @@ router.put('/programs/:id', async (req, res) => {
     }
 
     const trainingValue = parseInt(trainingDuration, 10);
-    if (![60, 90, 120].includes(trainingValue)) {
-        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 90 или 120 минут' });
+    if (![60, 75, 90, 105, 120].includes(trainingValue)) {
+        return res.status(400).json({ success: false, error: 'Время тренировки должно быть 60, 75, 90, 105 или 120 минут' });
     }
 
     const warmupValue = parseInt(warmupDuration, 10);

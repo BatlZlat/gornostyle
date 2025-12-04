@@ -419,6 +419,7 @@
 
 .kuliga-form-grid--compact {
     display: grid;
+    grid-template-columns: 1fr; /* Одна колонка для компактного варианта */
     gap: 12px;
 }
 
@@ -1345,6 +1346,12 @@
     gap: 16px;
 }
 
+/* Компактная сетка переопределяет обычную для одной колонки */
+.kuliga-form-grid.kuliga-form-grid--compact {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+}
+
 .kuliga-field {
     display: grid;
     gap: 8px;
@@ -1510,6 +1517,11 @@
         align-items: center;
     }
 
+    /* Для компактной сетки в десктопной версии также оставляем одну колонку */
+    .kuliga-form-grid--compact {
+        grid-template-columns: 1fr !important;
+    }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1520,6 +1532,10 @@
 }
 
 /* Обертка для поля с иконкой календаря */
+.kuliga-field--with-icon {
+    gap: 4px !important; /* Уменьшаем отступ между надписью и полем ввода */
+}
+
 .kuliga-field--with-icon .kuliga-input-wrapper {
     position: relative;
     display: flex;
