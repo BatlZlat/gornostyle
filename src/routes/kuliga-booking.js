@@ -705,7 +705,7 @@ router.get('/availability', async (req, res) => {
         }
         
         query += ' ORDER BY s.start_time ASC';
-        
+
         const { rows } = await pool.query(query, params);
 
         const available = rows
@@ -726,6 +726,50 @@ router.get('/availability', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения свободных слотов Кулиги:', error);
         return res.status(500).json({ success: false, error: 'Не удалось получить свободные слоты' });
+    }
+});
+
+// GET /api/kuliga/availability/dates - Получение дат с доступными слотами для диапазона
+router.get('/availability/dates', async (req, res) => {
+    const { from, to, sport = 'ski', duration = 60, location } = req.query || {};
+
+    if (!from || !to) {
+        return res.status(400).json({ success: false, error: 'Укажите параметры from и to (даты в формате YYYY-MM-DD)' });
+    }
+
+    const normalizedSport = sport === 'snowboard' ? 'snowboard' : 'ski';
+    const requiredDuration = Math.max(30, Math.min(180, parseInt(duration, 10) || 60));
+
+    try {
+        // Оптимизированный запрос: сразу проверяем длительность слотов
+        // Важно: при SELECT DISTINCT все выражения в ORDER BY должны быть в SELECT списке
+        let query = `SELECT DISTINCT s.date::text as date
+             FROM kuliga_schedule_slots s
+             JOIN kuliga_instructors i ON i.id = s.instructor_id
+             WHERE s.date >= $1::date 
+               AND s.date <= $2::date
+               AND s.status = 'available'
+               AND i.is_active = TRUE
+               AND (i.sport_type = $3 OR i.sport_type = 'both')
+               AND EXTRACT(EPOCH FROM (s.end_time - s.start_time)) / 60 >= $4`;
+        const params = [from, to, normalizedSport, requiredDuration];
+        
+        // Фильтр по location, если указан
+        if (location && isValidLocation(location)) {
+            params.push(location);
+            query += ` AND s.location = $${params.length}`;
+        }
+        
+        // При SELECT DISTINCT нужно использовать алиас из SELECT списка
+        query += ' ORDER BY date ASC';
+
+        const { rows } = await pool.query(query, params);
+        const availableDates = rows.map(row => row.date);
+
+        return res.json({ success: true, data: availableDates });
+    } catch (error) {
+        console.error('Ошибка получения доступных дат Кулиги:', error);
+        return res.status(500).json({ success: false, error: 'Не удалось получить доступные даты' });
     }
 });
 

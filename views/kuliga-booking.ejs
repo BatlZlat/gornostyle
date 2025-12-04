@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/css/mobile.css">
     <link rel="stylesheet" href="/css/kuliga.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body class="kuliga-body">
     <header class="kuliga-booking-header">
@@ -226,6 +227,8 @@
             botUsername: '<%= kuligaClientBotUsername || '' %>'
         };
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ru.js"></script>
     <script src="/js/location-mapper.js"></script>
     <script src="/js/kuliga-booking.js" defer></script>
     <%- include('partials/analytics'); %>

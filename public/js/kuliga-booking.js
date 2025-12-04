@@ -873,6 +873,12 @@
         state.availability = [];
         renderAvailability();
         scheduleSaveState();
+        
+        // Обновляем подсветку дат в календаре
+        if (datePickerInstance) {
+            highlightAvailableDates(datePickerInstance);
+        }
+        
         if (state.date) {
             loadAvailability();
         }
@@ -894,6 +900,12 @@
             state.availability = [];
             renderAvailability();
             scheduleSaveState();
+            
+            // Обновляем подсветку дат в календаре
+            if (datePickerInstance) {
+                highlightAvailableDates(datePickerInstance);
+            }
+            
             if (state.date) {
                 loadAvailability();
             }
@@ -911,11 +923,16 @@
         // Для программ запрещаем изменение даты, если она уже установлена
         if (state.program && state.date) {
             // Восстанавливаем исходную дату
-            dateInput.value = state.date;
+            if (datePickerInstance) {
+                datePickerInstance.setDate(state.date, false);
+            } else {
+                dateInput.value = state.date;
+            }
             return;
         }
         
-        state.date = dateInput.value;
+        const newDate = datePickerInstance ? datePickerInstance.input.value : dateInput.value;
+        state.date = newDate;
         state.slot = null;
         state.availability = [];
         renderAvailability();
@@ -1536,7 +1553,14 @@
             locationSelect.addEventListener('change', handleLocationChange);
         }
 
-        dateInput.addEventListener('change', handleDateChange);
+        // Для flatpickr обработчик устанавливается в onChange, поэтому не добавляем стандартный
+        // Но оставляем на случай, если flatpickr не инициализирован
+        // Проверяем после того, как datePickerInstance может быть создан
+        setTimeout(() => {
+            if (!datePickerInstance) {
+                dateInput.addEventListener('change', handleDateChange);
+            }
+        }, 0);
         form.addEventListener('submit', handleSubmit);
 
         // Обработчик клика на ссылку бота - создаем клиента заранее
@@ -1616,6 +1640,150 @@
         }
 
         return false;
+    }
+
+    // Инициализация flatpickr для подсветки доступных дат
+    let datePickerInstance = null;
+    
+    async function loadAvailableDatesForCalendar(from, to) {
+        if (state.program) return [];
+        
+        const params = new URLSearchParams({
+            from,
+            to,
+            sport: state.sportType || 'ski',
+            duration: String(state.selection.duration || 60),
+            location: state.location || 'kuliga',
+        });
+        
+        try {
+            const response = await fetch(`/api/kuliga/availability/dates?${params.toString()}`, {
+                headers: { Accept: 'application/json' },
+            });
+            const data = await response.json();
+            if (data.success) {
+                return data.data || [];
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки доступных дат:', error);
+        }
+        return [];
+    }
+    
+    function highlightAvailableDates(instance) {
+        if (!instance || !instance.calendarContainer || state.program) return;
+        
+        setTimeout(async () => {
+            const days = instance.calendarContainer.querySelectorAll('.flatpickr-day');
+            if (days.length === 0) return;
+            
+            // Определяем диапазон дат для текущего месяца
+            // Используем currentYear и currentMonth из flatpickr
+            const year = instance.currentYear;
+            const month = instance.currentMonth; // 0-based (0 = январь)
+            
+            // Первый день месяца
+            const firstDay = new Date(year, month, 1);
+            // Последний день месяца
+            const lastDay = new Date(year, month + 1, 0);
+            
+            const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+            const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+            
+            const availableDates = await loadAvailableDatesForCalendar(from, to);
+            const availableDatesSet = new Set(availableDates);
+            
+            days.forEach(day => {
+                if (!day.dateObj) {
+                    day.classList.remove('has-schedule');
+                    return;
+                }
+                
+                // Пропускаем дни из других месяцев (обычно серые)
+                const dayMonth = day.dateObj.getMonth();
+                if (dayMonth !== month) {
+                    day.classList.remove('has-schedule');
+                    return;
+                }
+                
+                // Проверяем, не прошла ли дата
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                if (day.dateObj < today) {
+                    day.classList.remove('has-schedule');
+                    return;
+                }
+                
+                // Форматируем дату в локальном времени, избегая toISOString() для предотвращения смещения часовых поясов
+                const d = day.dateObj;
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                
+                if (availableDatesSet.has(dateStr)) {
+                    day.classList.add('has-schedule');
+                    day.title = 'Есть доступные слоты';
+                } else {
+                    day.classList.remove('has-schedule');
+                    day.removeAttribute('title');
+                }
+            });
+        }, 100);
+    }
+    
+    function initializeDatePicker() {
+        if (state.program || !dateInput) return;
+        
+        // Проверяем, доступен ли flatpickr
+        if (typeof window.flatpickr === 'undefined') {
+            console.warn('Flatpickr не доступен, используем стандартный date input');
+            return;
+        }
+        
+        // Если уже инициализирован, уничтожаем старый экземпляр
+        if (datePickerInstance) {
+            datePickerInstance.destroy();
+            datePickerInstance = null;
+        }
+        
+        const ruLocale = window.flatpickr && window.flatpickr.l10ns && window.flatpickr.l10ns.ru 
+            ? window.flatpickr.l10ns.ru 
+            : null;
+        
+        const fpOptions = {
+            dateFormat: 'Y-m-d',
+            altInput: true,
+            altFormat: 'd.m.Y',
+            allowInput: true,
+            minDate: 'today',
+            firstDayOfWeek: 1,
+            locale: ruLocale || {
+                firstDayOfWeek: 1,
+                weekdays: {
+                    shorthand: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+                    longhand: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+                },
+                months: {
+                    shorthand: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'],
+                    longhand: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+                }
+            },
+            onChange: function(selectedDates, dateStr) {
+                if (dateStr) {
+                    state.date = dateStr;
+                    handleDateChange();
+                }
+            },
+            onMonthChange: function(selectedDates, dateStr, instance) {
+                highlightAvailableDates(instance);
+            },
+            onOpen: function(selectedDates, dateStr, instance) {
+                highlightAvailableDates(instance);
+            },
+            onReady: function(selectedDates, dateStr, instance) {
+                highlightAvailableDates(instance);
+            }
+        };
+        
+        datePickerInstance = window.flatpickr(dateInput, fpOptions);
     }
 
     (async function bootstrap() {
@@ -1715,6 +1883,16 @@
                     radioContainer.style.display = '';
                 }
             });
+            
+            // Инициализируем date picker с подсветкой дат для обычных тренировок
+            initializeDatePicker();
+            
+            // Если datePickerInstance был создан, обновляем подсветку после инициализации
+            if (datePickerInstance) {
+                setTimeout(() => {
+                    highlightAvailableDates(datePickerInstance);
+                }, 200);
+            }
         }
         
         attachListeners();
