@@ -270,7 +270,7 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
             return bot.sendMessage(chatId,
                 '📭 У вас нет расписания на ближайшие 7 дней.\n\n' +
                 'Создайте слоты в вашем личном кабинете:\n' +
-                'https://gornostyle72.ru/trainer_kuliga.html',
+                'https://gornostyle72.ru/trainer_winter.html',
                 {
                     reply_markup: {
                         keyboard: [
@@ -776,7 +776,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             return bot.sendMessage(chatId,
                 '❌ Вы не зарегистрированы как инструктор Кулиги.\n\n' +
                 'Для регистрации обратитесь к администратору или перейдите в ваш личный кабинет:\n' +
-                'https://gornostyle72.ru/trainer_kuliga.html'
+                'https://gornostyle72.ru/trainer_winter.html'
             );
         }
 

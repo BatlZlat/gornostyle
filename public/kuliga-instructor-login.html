@@ -197,7 +197,7 @@
             const token = getCookie('kuligaInstructorToken');
             if (token) {
                 // Если токен есть, перенаправляем на страницу инструктора
-                window.location.href = '/trainer_kuliga.html';
+                window.location.href = '/trainer_winter.html';
             }
         }
 
@@ -238,7 +238,7 @@
                     localStorage.setItem('kuligaInstructorData', JSON.stringify(data.instructor));
                     
                     // Перенаправляем на страницу инструктора
-                    window.location.href = '/trainer_kuliga.html';
+                    window.location.href = '/trainer_winter.html';
                 } else {
                     // Ошибка входа
                     if (data.error === 'invalid_credentials') {

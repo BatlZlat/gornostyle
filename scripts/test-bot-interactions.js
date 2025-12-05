@@ -193,7 +193,7 @@ async function testInstructorBot() {
     try {
         // Проверяем, что в кабинете инструктора отображается location
         const fs = require('fs');
-        const financesPath = './public/trainer_kuliga_finances.html';
+        const financesPath = './public/trainer_winter_finances.html';
         const financesJsPath = './public/js/trainer-kuliga-finances.js';
 
         let hasLocationInHeader = false;

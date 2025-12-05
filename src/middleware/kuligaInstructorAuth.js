@@ -65,7 +65,7 @@ const verifyKuligaInstructorToken = async (req, res, next) => {
 
 /**
  * Middleware для проверки аутентификации при доступе к HTML страницам инструкторов Кулиги
- * Используется для защиты trainer_kuliga.html
+ * Используется для защиты trainer_winter.html
  */
 const verifyKuligaInstructorAuth = async (req, res, next) => {
     // Пропускаем статические файлы и страницу входа
@@ -79,7 +79,9 @@ const verifyKuligaInstructorAuth = async (req, res, next) => {
     }
 
     // Проверяем только страницы инструкторов Кулиги
-    if (req.path.startsWith('/trainer_kuliga.html') || req.path.startsWith('/kuliga/instructor/')) {
+    if (req.path.startsWith('/trainer_winter.html') || 
+        req.path.startsWith('/trainer_winter_finances.html') || 
+        req.path.startsWith('/kuliga/instructor/')) {
         // Для HTML-страниц токен берём из cookie
         let token;
         if (req.headers.cookie) {
