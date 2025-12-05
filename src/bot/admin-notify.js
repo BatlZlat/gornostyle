@@ -2019,8 +2019,27 @@ async function notifyInstructorGroupTrainingDeleted({
             return;
         }
 
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        // Используем moment-timezone для правильного форматирования даты
+        const moment = require('moment-timezone');
+        const TIMEZONE = 'Asia/Yekaterinburg';
+        
+        // Преобразуем дату в строку YYYY-MM-DD, затем используем moment для форматирования
+        let dateStr = date;
+        if (dateStr instanceof Date) {
+            dateStr = moment.tz(dateStr, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof dateStr === 'string') {
+            // Если это уже отформатированная дата DD.MM.YYYY, парсим её обратно
+            if (dateStr.match(/^\d{2}\.\d{2}\.\d{4}$/)) {
+                const [day, month, year] = dateStr.split('.');
+                dateStr = `${year}-${month}-${day}`;
+            } else if (dateStr.includes('T')) {
+                dateStr = dateStr.split('T')[0];
+            }
+        }
+        
+        const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+        const formattedDate = dateMoment.format('DD.MM.YYYY');
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()];
         const formattedTime = formatTime(time);
         
         let message = `🗑️ *Групповая тренировка удалена*\n\n`;
@@ -2048,7 +2067,7 @@ async function notifyInstructorGroupTrainingDeleted({
         }
         
         if (instructor_earnings_per_person !== undefined) {
-            message += `💵 *Ваш заработок за человека:* ${instructor_earnings_per_person.toFixed(2)} ₽${admin_percentage > 0 ? ` (админ ${admin_percentage}%)` : ''}\n`;
+            message += `💵 *Ваш заработок за человека:* ${instructor_earnings_per_person.toFixed(2)} ₽\n`;
         }
         
         message += `🆔 *ID тренировки:* ${training_id}\n`;
@@ -2082,8 +2101,27 @@ async function notifyAdminGroupTrainingDeletedByInstructor({
     deleted_by_admin = false
 }) {
     try {
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        // Используем moment-timezone для правильного форматирования даты
+        const moment = require('moment-timezone');
+        const TIMEZONE = 'Asia/Yekaterinburg';
+        
+        // Преобразуем дату в строку YYYY-MM-DD, затем используем moment для форматирования
+        let dateStr = date;
+        if (dateStr instanceof Date) {
+            dateStr = moment.tz(dateStr, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof dateStr === 'string') {
+            // Если это уже отформатированная дата DD.MM.YYYY, парсим её обратно
+            if (dateStr.match(/^\d{2}\.\d{2}\.\d{4}$/)) {
+                const [day, month, year] = dateStr.split('.');
+                dateStr = `${year}-${month}-${day}`;
+            } else if (dateStr.includes('T')) {
+                dateStr = dateStr.split('T')[0];
+            }
+        }
+        
+        const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+        const formattedDate = dateMoment.format('DD.MM.YYYY');
+        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()];
         const formattedTime = formatTime(time);
         
         let message = deleted_by_admin 
@@ -2292,6 +2330,98 @@ async function notifyAdminProgramTrainingCancelled({
         }
     } catch (error) {
         console.error('Ошибка при отправке уведомления администратору об отмене тренировки:', error);
+    }
+}
+
+/**
+ * Уведомление администратору об удалении программы
+ */
+async function notifyAdminProgramDeleted({
+    program_name,
+    program_id,
+    sport_type,
+    location,
+    instructors_count,
+    trainings_count,
+    freed_slots
+}) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const sportTypeDisplay = sport_type === 'ski' ? 'Лыжи' : sport_type === 'snowboard' ? 'Сноуборд' : sport_type;
+
+        let message = `🗑️ *Программа удалена*\n\n`;
+        message += `📋 *Программа:* ${program_name}\n`;
+        message += `🆔 *ID программы:* ${program_id}\n`;
+        
+        if (sportTypeDisplay) {
+            message += `🎿 *Вид спорта:* ${sportTypeDisplay}\n`;
+        }
+        
+        if (location) {
+            message += `📍 *Место:* ${location}\n`;
+        }
+        
+        message += `\n👨‍🏫 *Назначено инструкторов:* ${instructors_count}\n`;
+        message += `🏃 *Удалено тренировок:* ${trainings_count}\n`;
+        message += `🔓 *Освобождено слотов:* ${freed_slots}\n`;
+        
+        message += `\n⚠️ Все тренировки программы удалены, слоты освобождены.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+        console.log(`✅ Уведомление об удалении программы отправлено администратору`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об удалении программы:', error);
+    }
+}
+
+/**
+ * Уведомление инструктору об удалении программы
+ */
+async function notifyInstructorProgramDeleted({
+    instructor_telegram_id,
+    instructor_name,
+    program_name,
+    program_id,
+    sport_type,
+    location,
+    trainings_count,
+    freed_slots
+}) {
+    try {
+        if (!instructorBot || !instructor_telegram_id) {
+            return;
+        }
+
+        const sportTypeDisplay = sport_type === 'ski' ? 'Лыжи' : sport_type === 'snowboard' ? 'Сноуборд' : sport_type;
+
+        let message = `🗑️ *Программа удалена*\n\n`;
+        message += `📋 *Программа:* ${program_name}\n`;
+        message += `🆔 *ID программы:* ${program_id}\n`;
+        
+        if (sportTypeDisplay) {
+            message += `🎿 *Вид спорта:* ${sportTypeDisplay}\n`;
+        }
+        
+        if (location) {
+            message += `📍 *Место:* ${location}\n`;
+        }
+        
+        message += `\n🏃 *Удалено ваших тренировок:* ${trainings_count}\n`;
+        message += `🔓 *Освобождено ваших слотов:* ${freed_slots}\n`;
+        
+        message += `\n⚠️ Администратор удалил программу. Все ваши тренировки из этой программы были удалены, слоты освобождены.`;
+
+        await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`✅ Уведомление об удалении программы отправлено инструктору ${instructor_name}`);
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления инструктору об удалении программы:', error);
     }
 }
 
@@ -2507,7 +2637,9 @@ module.exports = {
     notifyAdminGroupTrainingDeletedByInstructor,
     notifyInstructorSlotsCreatedByAdmin,
     notifyAdminProgramTrainingsGenerated,
-    notifyAdminProgramTrainingCancelled
+    notifyAdminProgramTrainingCancelled,
+    notifyAdminProgramDeleted,
+    notifyInstructorProgramDeleted
 };
 
 // Функция для отправки уведомления о покупке абонемента

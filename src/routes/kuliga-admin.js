@@ -1379,6 +1379,35 @@ router.delete('/programs/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Получаем информацию о программе ДО удаления (для уведомлений)
+        const programResult = await client.query(
+            `SELECT id, name, sport_type, location
+             FROM kuliga_programs
+             WHERE id = $1`,
+            [id]
+        );
+
+        if (programResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Программа не найдена' });
+        }
+
+        const program = programResult.rows[0];
+
+        // Получаем список инструкторов, назначенных на программу
+        const instructorsResult = await client.query(
+            `SELECT 
+                ki.id,
+                ki.full_name,
+                ki.telegram_id
+             FROM kuliga_program_instructors kpi
+             JOIN kuliga_instructors ki ON kpi.instructor_id = ki.id
+             WHERE kpi.program_id = $1`,
+            [id]
+        );
+
+        const instructors = instructorsResult.rows;
+
         // Получаем все тренировки, связанные с программой, для очистки слотов
         const trainingsResult = await client.query(
             `SELECT kgt.id, kgt.slot_id, kgt.instructor_id
@@ -1419,18 +1448,56 @@ router.delete('/programs/:id', async (req, res) => {
         );
 
         // Удаляем саму программу
-        const { rowCount } = await client.query(
+        await client.query(
             `DELETE FROM kuliga_programs WHERE id = $1`,
             [id]
         );
 
-        if (rowCount === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ success: false, error: 'Программа не найдена' });
-        }
-
         await client.query('COMMIT');
         console.log(`✅ Удалена программа ID=${id}, освобождено ${freedSlots} слотов, удалено ${trainings.length} тренировок`);
+
+        // Отправляем уведомления администратору и инструкторам (асинхронно)
+        setImmediate(async () => {
+            try {
+                const { notifyAdminProgramDeleted, notifyInstructorProgramDeleted } = require('../bot/admin-notify');
+                
+                // Получаем название локации
+                const locationNames = {
+                    'kuliga': 'Кулига Парк',
+                    'vorona': 'Воронинские горки'
+                };
+                const locationName = locationNames[program.location] || program.location || 'Кулига Парк';
+
+                // Уведомление администратору
+                await notifyAdminProgramDeleted({
+                    program_name: program.name,
+                    program_id: id,
+                    sport_type: program.sport_type,
+                    location: locationName,
+                    instructors_count: instructors.length,
+                    trainings_count: trainings.length,
+                    freed_slots: freedSlots
+                });
+
+                // Уведомления каждому инструктору
+                for (const instructor of instructors) {
+                    if (instructor.telegram_id) {
+                        await notifyInstructorProgramDeleted({
+                            instructor_telegram_id: instructor.telegram_id,
+                            instructor_name: instructor.full_name,
+                            program_name: program.name,
+                            program_id: id,
+                            sport_type: program.sport_type,
+                            location: locationName,
+                            trainings_count: trainings.filter(t => t.instructor_id === instructor.id).length,
+                            freed_slots: trainings.filter(t => t.instructor_id === instructor.id).length
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при отправке уведомлений об удалении программы:', error);
+            }
+        });
 
         res.json({ 
             success: true, 
@@ -2304,10 +2371,21 @@ router.delete('/training/:id', async (req, res) => {
                         }
                     }
                     
-                    // Форматируем дату и время
-                    const date = new Date(groupTraining.date);
-                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    // Форматируем дату и время с использованием moment-timezone
+                    const moment = require('moment-timezone');
+                    const TIMEZONE = 'Asia/Yekaterinburg';
+                    
+                    // Преобразуем дату в строку YYYY-MM-DD, затем используем moment для форматирования
+                    let dateStr = groupTraining.date;
+                    if (dateStr instanceof Date) {
+                        dateStr = moment.tz(dateStr, TIMEZONE).format('YYYY-MM-DD');
+                    } else if (typeof dateStr === 'string' && dateStr.includes('T')) {
+                        dateStr = dateStr.split('T')[0];
+                    }
+                    
+                    const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                    const formattedDate = dateMoment.format('DD.MM.YYYY');
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()];
                     const [hours, minutes] = String(groupTraining.start_time).split(':');
                     const formattedTime = `${hours}:${minutes}`;
                     
