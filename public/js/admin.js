@@ -3323,8 +3323,17 @@ async function viewCertificateDetail(id) {
         };
         
         // URL картинки сертификата
-        const imageUrl = cert.image_url || cert.pdf_url || '';
-        const imagePath = imageUrl ? (imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`) : '';
+        // Сначала пробуем использовать сохраненный путь из БД
+        let imageUrl = cert.image_url || cert.pdf_url;
+        
+        // Если URL нет в базе или путь пустой, формируем стандартный путь на основе номера сертификата
+        // Путь всегда будет: /generated/certificates/certificate_НОМЕР.jpg
+        if (!imageUrl || imageUrl.trim() === '') {
+            imageUrl = `/generated/certificates/certificate_${cert.certificate_number}.jpg`;
+        }
+        
+        // Убеждаемся, что путь начинается с / и нормализуем его
+        const imagePath = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
         
         // Создаем модальное окно
         const modal = document.createElement('div');
@@ -3350,12 +3359,15 @@ async function viewCertificateDetail(id) {
                                      onclick="openCertificateImageFullscreen('${imagePath}')"
                                      onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';"
                                      onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 8px 24px rgba(0,0,0,0.2)';"
-                                     onerror="this.style.display='none'; document.getElementById('certificate-image-error').style.display='block';">
+                                     onload="document.getElementById('certificate-image-success').style.display='block'; document.getElementById('certificate-image-error').style.display='none';"
+                                     onerror="console.error('Ошибка загрузки изображения:', '${imagePath}'); this.style.display='none'; document.getElementById('certificate-image-error').style.display='block'; document.getElementById('certificate-image-success').style.display='none';">
                                 <div id="certificate-image-error" style="display: none; padding: 40px; color: #666;">
                                     <p style="font-size: 18px; margin-bottom: 10px;">⚠️ Изображение сертификата не найдено</p>
-                                    <p style="font-size: 14px; color: #999;">Сертификат может быть создан, но JPG файл еще не сгенерирован</p>
+                                    <p style="font-size: 14px; color: #999; margin-bottom: 15px;">Сертификат может быть создан, но JPG файл еще не сгенерирован.</p>
+                                    <p style="font-size: 12px; color: #999; font-style: italic; margin-bottom: 10px;">Ожидаемый путь: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${imagePath}</code></p>
+                                    <p style="font-size: 13px; color: #666;">Попробуйте переслать сертификат покупателю - это запустит генерацию изображения.</p>
                                 </div>
-                                <div style="margin-top: 15px; color: #666; font-size: 14px;">
+                                <div id="certificate-image-success" style="display: none; margin-top: 15px; color: #666; font-size: 14px;">
                                     <span>👆 Нажмите на изображение для просмотра в полном размере</span>
                                 </div>
                             </div>
