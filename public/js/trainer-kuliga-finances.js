@@ -25,7 +25,7 @@ function getToken() {
 async function checkAuth() {
     const token = getToken();
     if (!token) {
-        window.location.href = '/kuliga-instructor-login.html';
+        window.location.href = '/winter-instructor-login.html';
         return null;
     }
 
@@ -50,7 +50,7 @@ async function checkAuth() {
         console.error('Ошибка проверки авторизации:', error);
         deleteCookie('kuligaInstructorToken');
         localStorage.removeItem('kuligaInstructorData');
-        window.location.href = '/kuliga-instructor-login.html';
+        window.location.href = '/winter-instructor-login.html';
         return null;
     }
 }
@@ -632,7 +632,7 @@ function loadAllData() {
 function logout() {
     deleteCookie('kuligaInstructorToken');
     localStorage.removeItem('kuligaInstructorData');
-    window.location.href = '/kuliga-instructor-login.html';
+    window.location.href = '/winter-instructor-login.html';
 }
 
 // Загрузка информации об инструкторе и обновление заголовка

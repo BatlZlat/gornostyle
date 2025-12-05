@@ -72,7 +72,7 @@ const verifyKuligaInstructorAuth = async (req, res, next) => {
     if (req.path.startsWith('/css/') || 
         req.path.startsWith('/js/') || 
         req.path.startsWith('/images/') ||
-        req.path === '/kuliga-instructor-login.html' ||
+        req.path === '/winter-instructor-login.html' ||
         req.path === '/api/kuliga/instructor/login' ||
         req.path === '/api/kuliga/instructor/verify') {
         return next();
@@ -90,7 +90,7 @@ const verifyKuligaInstructorAuth = async (req, res, next) => {
         }
         
         if (!token) {
-            return res.redirect('/kuliga-instructor-login.html');
+            return res.redirect('/winter-instructor-login.html');
         }
         
         try {
@@ -99,7 +99,7 @@ const verifyKuligaInstructorAuth = async (req, res, next) => {
             
             // Проверяем что это токен инструктора Кулиги
             if (decoded.type !== 'kuliga_instructor') {
-                return res.redirect('/kuliga-instructor-login.html');
+                return res.redirect('/winter-instructor-login.html');
             }
             
             // Проверяем что инструктор все еще активен
@@ -109,13 +109,13 @@ const verifyKuligaInstructorAuth = async (req, res, next) => {
             );
             
             if (instructorResult.rows.length === 0 || !instructorResult.rows[0].is_active) {
-                return res.redirect('/kuliga-instructor-login.html');
+                return res.redirect('/winter-instructor-login.html');
             }
             
             next();
         } catch (error) {
             console.error('Ошибка при проверке токена инструктора Кулиги:', error);
-            return res.redirect('/kuliga-instructor-login.html');
+            return res.redirect('/winter-instructor-login.html');
         }
     } else {
         next();
