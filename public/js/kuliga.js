@@ -219,6 +219,12 @@
                             const locationName = program.location && window.getLocationName 
                                 ? window.getLocationName(program.location) 
                                 : 'Место не указано';
+                            
+                            // Формируем атрибуты для кнопки "Записаться" из nextSession
+                            const bookingButtonAttrs = nextSession && nextSession.status !== 'cancelled'
+                                ? `data-program-id="${program.id}" data-program-date="${nextSession.date_iso}" data-program-time="${nextSession.time}"`
+                                : `data-program-id="${program.id}"`;
+                            
                             return `
                                 <article class="kuliga-group-card">
                                     <h3>${program.name}</h3>
@@ -238,7 +244,7 @@
                                     <button 
                                         class="kuliga-button kuliga-button--secondary kuliga-button--wide"
                                         data-program-book
-                                        data-program-id="${program.id}">
+                                        ${bookingButtonAttrs}>
                                         Записаться
                                     </button>
                                 </article>

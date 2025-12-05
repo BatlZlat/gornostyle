@@ -385,57 +385,6 @@ router.get('/api/kuliga/programs', async (req, res) => {
 
         const schedule = [];
 
-        // Создаем расписание для всех программ без проверки наличия слотов
-        // При бронировании система сама найдет подходящего инструктора с доступным слотом
-        for (const program of programs) {
-            const programSchedule = [];
-            const weekdaysArray = Array.isArray(program.weekdays) ? program.weekdays : [];
-            const weekdays = weekdaysArray.map((day) => Number(day)).filter((day) => !Number.isNaN(day));
-            const timeSlots = Array.isArray(program.time_slots) ? program.time_slots : [];
-
-            if (weekdays.length && timeSlots.length) {
-                const cursor = now.clone().startOf('day');
-                while (cursor.isSameOrBefore(end, 'day')) {
-                    const weekday = cursor.day(); // 0=Sunday
-                    if (weekdays.includes(weekday)) {
-                        timeSlots.forEach((slot) => {
-                            const [hours = '00', minutes = '00'] = slot.split(':');
-                            const startMoment = cursor.clone().hour(Number(hours)).minute(Number(minutes)).second(0);
-                            if (startMoment.isAfter(now)) {
-                                const scheduleItem = {
-                                    program_id: program.id,
-                                    program_name: program.name,
-                                    sport_type: program.sport_type,
-                                    date_iso: startMoment.format('YYYY-MM-DD'),
-                                    date_label: startMoment.format('D MMMM'),
-                                    weekday_short: startMoment.format('dd'),
-                                    weekday_full: startMoment.format('dddd'),
-                                    time: startMoment.format('HH:mm'),
-                                    available_slots: program.max_participants,
-                                    max_participants: program.max_participants,
-                                    sort_key: startMoment.valueOf(),
-                                };
-                                schedule.push(scheduleItem);
-                                const { sort_key, ...programItem } = scheduleItem;
-                                programSchedule.push(programItem);
-                            }
-                        });
-                    }
-                    cursor.add(1, 'day');
-                }
-            }
-
-            const programIndex = programs.findIndex(p => p.id === program.id);
-            if (programIndex !== -1) {
-                programs[programIndex] = {
-                    ...program,
-                    schedule: programSchedule,
-                    weekdays,
-                    time_slots: timeSlots,
-                };
-            }
-        }
-
         // Получаем реальные созданные тренировки из программ
         let createdTrainingsQuery = `SELECT 
                 kgt.id as training_id,
@@ -476,6 +425,9 @@ router.get('/api/kuliga/programs', async (req, res) => {
         // Если тренировка была удалена администратором, она не должна отображаться
         const allScheduleItems = [];
         
+        // Группируем реальные тренировки по program_id для заполнения program.schedule
+        const trainingsByProgram = {};
+        
         // Добавляем только реальные тренировки из БД (с фильтром по статусу)
         createdTrainingsResult.rows.forEach((training) => {
             // Пропускаем отмененные и удаленные тренировки
@@ -508,6 +460,12 @@ router.get('/api/kuliga/programs', async (req, res) => {
             };
             
             allScheduleItems.push(scheduleItem);
+            
+            // Группируем по program_id для заполнения program.schedule
+            if (!trainingsByProgram[training.program_id]) {
+                trainingsByProgram[training.program_id] = [];
+            }
+            trainingsByProgram[training.program_id].push(scheduleItem);
         });
         
         // Сортируем по дате и времени
@@ -515,6 +473,27 @@ router.get('/api/kuliga/programs', async (req, res) => {
             const dateCompare = a.date_iso.localeCompare(b.date_iso);
             if (dateCompare !== 0) return dateCompare;
             return a.time.localeCompare(b.time);
+        });
+        
+        // Заполняем program.schedule реальными тренировками из БД
+        // ВАЖНО: program.schedule используется для отображения "Ближайшее занятие"
+        programs.forEach((program) => {
+            const programTrainings = trainingsByProgram[program.id] || [];
+            // Сортируем тренировки программы по дате и времени
+            programTrainings.sort((a, b) => {
+                const dateCompare = a.date_iso.localeCompare(b.date_iso);
+                if (dateCompare !== 0) return dateCompare;
+                return a.time.localeCompare(b.time);
+            });
+            
+            // Сохраняем weekdays и time_slots для обратной совместимости
+            const weekdaysArray = Array.isArray(program.weekdays) ? program.weekdays : [];
+            const weekdays = weekdaysArray.map((day) => Number(day)).filter((day) => !Number.isNaN(day));
+            const timeSlots = Array.isArray(program.time_slots) ? program.time_slots : [];
+            
+            program.schedule = programTrainings;
+            program.weekdays = weekdays;
+            program.time_slots = timeSlots;
         });
 
         res.json({
