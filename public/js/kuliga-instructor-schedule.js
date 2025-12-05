@@ -1374,6 +1374,12 @@ function displaySchedule(scheduleByDate) {
                 const startTime = String(item.start_time).substring(0, 5);
                 const endTime = String(item.end_time).substring(0, 5);
                 const sportType = item.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
+                // Проверяем количество участников - более надежная проверка
+                const currentParticipants = parseInt(item.current_participants) || 0;
+                const hasParticipants = currentParticipants > 0;
+                
+                console.log(`🔍 Тренировка ${item.id}: current_participants=${item.current_participants}, parsed=${currentParticipants}, hasParticipants=${hasParticipants}`);
+                
                 html += `
                     <div class="schedule-slot booked" style="margin-bottom: 10px;">
                         <div class="slot-info">
@@ -1381,12 +1387,12 @@ function displaySchedule(scheduleByDate) {
                             <div class="slot-status">👥 Групповая тренировка</div>
                             <div style="margin-top: 5px; color: #666;">
                                 ${sportType} | Уровень: ${item.level} | 
-                                Участников: ${item.current_participants || 0}/${item.max_participants}
+                                Участников: ${currentParticipants}/${item.max_participants}
                             </div>
                         </div>
                         <div class="slot-actions">
                             <button class="btn-primary" onclick="showGroupTrainingDetails(${item.id})">Подробнее</button>
-                            ${(parseInt(item.current_participants) || 0) === 0 ? `
+                            ${!hasParticipants ? `
                                 <button class="btn-primary" onclick="editGroupTraining(${item.id})" title="Редактировать">✏️ Редактировать</button>
                                 <button class="btn-danger" onclick="deleteGroupTraining(${item.id})" title="Удалить">🗑️ Удалить</button>
                             ` : `

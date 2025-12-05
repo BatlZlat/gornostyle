@@ -190,7 +190,9 @@ router.get('/admin', async (req, res) => {
                        COUNT(*) FILTER (WHERE program_id IS NOT NULL) as with_program,
                        COUNT(*) FILTER (WHERE status = 'open') as status_open,
                        COUNT(*) FILTER (WHERE status = 'confirmed') as status_confirmed,
-                       COUNT(*) FILTER (WHERE date >= CURRENT_DATE - INTERVAL '7 days' AND date <= CURRENT_DATE + INTERVAL '60 days') as in_date_range
+                       COUNT(*) FILTER (WHERE date >= CURRENT_DATE - INTERVAL '7 days' AND date <= CURRENT_DATE + INTERVAL '60 days') as in_date_range,
+                       COUNT(*) FILTER (WHERE instructor_id IS NULL) as without_instructor,
+                       COUNT(*) FILTER (WHERE instructor_id IS NULL AND program_id IS NOT NULL) as program_without_instructor
                 FROM kuliga_group_trainings
             `);
             console.log('🔍 Отладочная информация о тренировках Кулиги:', debugCheck.rows[0]);
@@ -255,6 +257,7 @@ router.get('/admin', async (req, res) => {
                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.instructor_id, 
                          kgt.max_participants, kgt.level, kgt.price_per_person,
                          kgt.sport_type, kgt.status, ki.full_name, kgt.program_id, kp.name, kgt.location
+                ORDER BY kgt.date, kgt.start_time
             `;
             
             // Запрос для индивидуальных тренировок Кулиги
@@ -318,9 +321,11 @@ router.get('/admin', async (req, res) => {
                     program_id: t.program_id,
                     program_name: t.program_name,
                     instructor_id: t.trainer_id,
-                    instructor_name: t.trainer_name,
+                    instructor_name: t.trainer_name || 'Не назначен',
                     status: t.status
                 })));
+            } else if (debugCheck.rows[0] && parseInt(debugCheck.rows[0].program_without_instructor || 0) > 0) {
+                console.log(`⚠️ В базе есть ${debugCheck.rows[0].program_without_instructor} тренировок из программ без инструктора, но они не попали в результат запроса. Проверьте фильтры по дате и статусу.`);
             }
             
             // Объединяем все результаты

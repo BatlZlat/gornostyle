@@ -243,9 +243,27 @@ async function showInstructorSchedule(chatId, instructorId, dateFrom = null, dat
 
         // Сортируем по дате и времени
         allScheduleRows.sort((a, b) => {
-            const dateCompare = a.date.localeCompare(b.date);
+            // Преобразуем даты в строки для сравнения
+            let dateA, dateB;
+            if (a.date instanceof Date) {
+                dateA = a.date.toISOString().split('T')[0];
+            } else if (typeof a.date === 'string') {
+                dateA = a.date.split('T')[0];
+            } else {
+                dateA = String(a.date).split('T')[0];
+            }
+            
+            if (b.date instanceof Date) {
+                dateB = b.date.toISOString().split('T')[0];
+            } else if (typeof b.date === 'string') {
+                dateB = b.date.split('T')[0];
+            } else {
+                dateB = String(b.date).split('T')[0];
+            }
+            
+            const dateCompare = dateA.localeCompare(dateB);
             if (dateCompare !== 0) return dateCompare;
-            return a.start_time.localeCompare(b.start_time);
+            return String(a.start_time).localeCompare(String(b.start_time));
         });
 
         if (allScheduleRows.length === 0) {

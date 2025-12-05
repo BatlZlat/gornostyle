@@ -2070,6 +2070,9 @@ async function notifyInstructorSlotsCreatedByAdmin({
     trainings_list = [], // Массив объектов {date, start_time}
     deleted_slots = [] // НОВОЕ: Массив объектов {date, start_time, end_time, program_date, program_time}
 }) {
+    const moment = require('moment-timezone');
+    const TIMEZONE = 'Asia/Yekaterinburg';
+    
     try {
         if (!instructorBot || !instructor_telegram_id) {
             return;
@@ -2100,14 +2103,16 @@ async function notifyInstructorSlotsCreatedByAdmin({
             }
             
             for (const [dateStr, slots] of Object.entries(slotsByDate)) {
-                const date = new Date(dateStr + 'T12:00:00');
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                const formattedDate = formatDate(dateStr);
-                
+                // ВАЖНО: Используем дату программы, а не дату слота
                 for (const slot of slots) {
                     const timeStr = formatTime(slot.start_time);
                     const endTimeStr = formatTime(slot.end_time);
-                    message += `• ${formattedDate} (${dayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
+                    // Показываем дату программы, а не дату удаленного слота
+                    const programDateStr = typeof slot.program_date === 'string' ? slot.program_date.split('T')[0] : slot.program_date;
+                    const programDateMoment = moment.tz(programDateStr + 'T12:00:00', TIMEZONE);
+                    const programDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][programDateMoment.day()];
+                    const programFormattedDate = formatDate(programDateStr);
+                    message += `• ${programFormattedDate} (${programDayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
                 }
             }
         }
@@ -2117,15 +2122,36 @@ async function notifyInstructorSlotsCreatedByAdmin({
             message += `\n📅 *Расписание тренировок:*\n`;
             
             // Сортируем по дате и времени
+            const moment = require('moment-timezone');
+            const TIMEZONE = 'Asia/Yekaterinburg';
+            
             const sortedTrainings = trainings_list
-                .map(t => ({
-                    date: new Date(t.date),
-                    time: t.start_time,
-                    dateStr: typeof t.date === 'string' ? t.date.split('T')[0] : t.date
-                }))
+                .map(t => {
+                    // Преобразуем дату в строку формата YYYY-MM-DD с учетом часового пояса
+                    let dateStr;
+                    if (t.date instanceof Date) {
+                        // Используем moment с часовым поясом для корректного преобразования
+                        dateStr = moment.tz(t.date, TIMEZONE).format('YYYY-MM-DD');
+                    } else if (typeof t.date === 'string') {
+                        dateStr = t.date.split('T')[0];
+                    } else {
+                        // Если это другой тип, используем moment для преобразования
+                        dateStr = moment.tz(t.date, TIMEZONE).format('YYYY-MM-DD');
+                    }
+                    
+                    // Создаем дату в локальном часовом поясе для правильного определения дня недели
+                    const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                    
+                    return {
+                        date: dateMoment.toDate(),
+                        time: t.start_time,
+                        dateStr: dateStr,
+                        moment: dateMoment // Сохраняем moment для правильного getDay()
+                    };
+                })
                 .sort((a, b) => {
                     if (a.dateStr !== b.dateStr) {
-                        return a.dateStr.localeCompare(b.dateStr);
+                        return String(a.dateStr).localeCompare(String(b.dateStr));
                     }
                     return String(a.time).localeCompare(String(b.time));
                 });
@@ -2142,13 +2168,19 @@ async function notifyInstructorSlotsCreatedByAdmin({
             
             // Форматируем даты и времена
             for (const [dateStr, times] of Object.entries(trainingsByDate)) {
-                const date = new Date(dateStr + 'T12:00:00'); // Добавляем время для корректной работы getDay()
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                // Используем moment с часовым поясом для правильного определения дня недели
+                const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()]; // moment.day() использует 0=Sunday, 6=Saturday
                 const formattedDate = formatDate(dateStr);
                 const formattedTimes = times.map(t => formatTime(t)).join(', ');
                 
                 message += `• ${formattedDate} (${dayOfWeek}) — ${formattedTimes}\n`;
             }
+        }
+        
+        // Добавляем информацию о конфликтах, если тренировки не были созданы
+        if ((!trainings_list || trainings_list.length === 0) && trainings_created === 0) {
+            message += `\n⚠️ *Внимание:* Не все тренировки были созданы из-за конфликтов со слотами.`;
         }
         
         message += `\n💼 Администратор назначил вас на программу "${program_name}". Слоты и тренировки были автоматически добавлены в ваше расписание.`;
@@ -2172,6 +2204,9 @@ async function notifyAdminProgramTrainingsGenerated({
     deleted_slots = [], // НОВОЕ: Массив объектов {date, start_time, end_time, program_date, program_time}
     conflicts = [] // НОВОЕ: Массив объектов {date, time, conflicting_slots: [{slot_id, start_time, end_time, status}]}
 }) {
+    const moment = require('moment-timezone');
+    const TIMEZONE = 'Asia/Yekaterinburg';
+    
     try {
         let message = `✅ *Сгенерированы тренировки из программы*\n\n`;
         message += `📋 *Программа:* ${program_name}\n`;
@@ -2190,15 +2225,36 @@ async function notifyAdminProgramTrainingsGenerated({
             message += `\n📅 *Расписание тренировок:*\n`;
             
             // Сортируем по дате и времени
+            const moment = require('moment-timezone');
+            const TIMEZONE = 'Asia/Yekaterinburg';
+            
             const sortedTrainings = trainings_list
-                .map(t => ({
-                    date: new Date(t.date),
-                    time: t.start_time,
-                    dateStr: typeof t.date === 'string' ? t.date.split('T')[0] : t.date
-                }))
+                .map(t => {
+                    // Преобразуем дату в строку формата YYYY-MM-DD с учетом часового пояса
+                    let dateStr;
+                    if (t.date instanceof Date) {
+                        // Используем moment с часовым поясом для корректного преобразования
+                        dateStr = moment.tz(t.date, TIMEZONE).format('YYYY-MM-DD');
+                    } else if (typeof t.date === 'string') {
+                        dateStr = t.date.split('T')[0];
+                    } else {
+                        // Если это другой тип, используем moment для преобразования
+                        dateStr = moment.tz(t.date, TIMEZONE).format('YYYY-MM-DD');
+                    }
+                    
+                    // Создаем дату в локальном часовом поясе для правильного определения дня недели
+                    const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                    
+                    return {
+                        date: dateMoment.toDate(),
+                        time: t.start_time,
+                        dateStr: dateStr,
+                        moment: dateMoment // Сохраняем moment для правильного getDay()
+                    };
+                })
                 .sort((a, b) => {
                     if (a.dateStr !== b.dateStr) {
-                        return a.dateStr.localeCompare(b.dateStr);
+                        return String(a.dateStr).localeCompare(String(b.dateStr));
                     }
                     return String(a.time).localeCompare(String(b.time));
                 });
@@ -2215,8 +2271,9 @@ async function notifyAdminProgramTrainingsGenerated({
             
             // Форматируем даты и времена
             for (const [dateStr, times] of Object.entries(trainingsByDate)) {
-                const date = new Date(dateStr + 'T12:00:00'); // Добавляем время для корректной работы getDay()
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                // Используем moment с часовым поясом для правильного определения дня недели
+                const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()]; // moment.day() использует 0=Sunday, 6=Saturday
                 const formattedDate = formatDate(dateStr);
                 const formattedTimes = times.map(t => formatTime(t)).join(', ');
                 
@@ -2238,14 +2295,16 @@ async function notifyAdminProgramTrainingsGenerated({
             }
             
             for (const [dateStr, slots] of Object.entries(slotsByDate)) {
-                const date = new Date(dateStr + 'T12:00:00');
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
-                const formattedDate = formatDate(dateStr);
-                
+                // ВАЖНО: Используем дату программы, а не дату слота
                 for (const slot of slots) {
                     const timeStr = formatTime(slot.start_time);
                     const endTimeStr = formatTime(slot.end_time);
-                    message += `• ${formattedDate} (${dayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
+                    // Показываем дату программы, а не дату удаленного слота
+                    const programDateStr = typeof slot.program_date === 'string' ? slot.program_date.split('T')[0] : slot.program_date;
+                    const programDateMoment = moment.tz(programDateStr + 'T12:00:00', TIMEZONE);
+                    const programDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][programDateMoment.day()];
+                    const programFormattedDate = formatDate(programDateStr);
+                    message += `• ${programFormattedDate} (${programDayOfWeek}) ${timeStr}-${endTimeStr} → заменен на ${formatTime(slot.program_time)}\n`;
                 }
             }
         }
@@ -2265,8 +2324,8 @@ async function notifyAdminProgramTrainingsGenerated({
             }
             
             for (const [dateStr, conflictsList] of Object.entries(conflictsByDate)) {
-                const date = new Date(dateStr + 'T12:00:00');
-                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                const dateMoment = moment.tz(dateStr + 'T12:00:00', TIMEZONE);
+                const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][dateMoment.day()];
                 const formattedDate = formatDate(dateStr);
                 
                 for (const conflict of conflictsList) {

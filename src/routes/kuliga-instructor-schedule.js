@@ -1524,13 +1524,21 @@ router.delete('/group-trainings/:id', async (req, res) => {
             [id]
         );
 
-        // Освобождаем слот (меняем статус с blocked на available)
-        await client.query(
-            `UPDATE kuliga_schedule_slots 
-             SET status = 'available' 
-             WHERE id = $1 AND status = 'blocked'`,
-            [training.slot_id]
-        );
+        // ВАЖНО: Освобождаем слот ПОСЛЕ удаления тренировки, чтобы избежать race condition
+        // Меняем статус с 'group' или 'blocked' на 'available'
+        if (training.slot_id) {
+            const slotUpdateResult = await client.query(
+                `UPDATE kuliga_schedule_slots 
+                 SET status = 'available', updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1 AND status IN ('group', 'blocked')`,
+                [training.slot_id]
+            );
+            if (slotUpdateResult.rowCount > 0) {
+                console.log(`🔓 Освобожден слот ID=${training.slot_id} после удаления тренировки ID=${id}`);
+            } else {
+                console.log(`⚠️ Слот ID=${training.slot_id} не был освобожден (не найден или имеет другой статус)`);
+            }
+        }
 
         await client.query('COMMIT');
         
