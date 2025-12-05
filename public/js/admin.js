@@ -3202,31 +3202,386 @@ async function loadPrices() {
 // Загрузка сертификатов
 async function loadCertificates() {
     try {
-        const response = await fetch('/api/certificates');
-        const certificates = await response.json();
+        const response = await fetch('/api/certificates/admin/list?limit=50&offset=0');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка при загрузке сертификатов');
+        }
+        
+        const certificates = result.certificates || [];
         
         const certificatesList = document.querySelector('.certificates-list');
         if (certificatesList) {
-            certificatesList.innerHTML = certificates.map(cert => `
-                <div class="certificate-item">
-                    <div class="certificate-info">
-                        <h3>Сертификат #${cert.certificate_number}</h3>
-                        <p>Сумма: ${cert.amount} ₽</p>
-                        <p>Статус: ${cert.status}</p>
-                        <p>Срок действия: ${formatDate(cert.expiry_date)}</p>
+            if (certificates.length === 0) {
+                certificatesList.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">Сертификаты не найдены</p>';
+                return;
+            }
+            
+            certificatesList.innerHTML = certificates.map(cert => {
+                // Форматируем статус с эмодзи
+                const statusEmoji = {
+                    'active': '🟢',
+                    'used': '🔵',
+                    'expired': '🔴',
+                    'cancelled': '⚫'
+                }[cert.status] || '⚪';
+                
+                const statusText = {
+                    'active': 'Активен',
+                    'used': 'Использован',
+                    'expired': 'Истек',
+                    'cancelled': 'Отменен'
+                }[cert.status] || cert.status;
+                
+                // Форматируем дату
+                const expiryDate = cert.expiry_date ? new Date(cert.expiry_date).toLocaleDateString('ru-RU') : '—';
+                const purchaseDate = cert.purchase_date ? new Date(cert.purchase_date).toLocaleDateString('ru-RU') : '—';
+                
+                // Определяем класс для истекающих скоро
+                const isExpiringSoon = cert.days_until_expiry > 0 && cert.days_until_expiry <= 7 && cert.status === 'active';
+                const itemClass = isExpiringSoon ? 'certificate-item expiring-soon' : 'certificate-item';
+                
+                return `
+                    <div class="${itemClass}">
+                        <div class="certificate-info">
+                            <h3>Сертификат #${cert.certificate_number}</h3>
+                            <p><strong>Номинал:</strong> ${cert.nominal_value.toLocaleString('ru-RU')} ₽</p>
+                            <p><strong>Статус:</strong> ${statusEmoji} ${statusText}</p>
+                            <p><strong>Покупатель:</strong> ${cert.purchaser ? cert.purchaser.full_name : '—'}</p>
+                            ${cert.recipient_name ? `<p><strong>Получатель:</strong> ${cert.recipient_name}</p>` : ''}
+                            <p><strong>Дата покупки:</strong> ${purchaseDate}</p>
+                            <p><strong>Срок действия:</strong> ${expiryDate}${isExpiringSoon ? ' <span style="color: orange;">⚠️ Истекает через ' + cert.days_until_expiry + ' дн.</span>' : ''}</p>
+                            ${cert.activation_date ? `<p><strong>Активирован:</strong> ${new Date(cert.activation_date).toLocaleDateString('ru-RU')}</p>` : ''}
+                        </div>
+                        <div class="certificate-actions">
+                            <button class="btn-secondary" onclick="viewCertificateDetail(${cert.id})">Просмотр</button>
+                            ${cert.status === 'active' ? `<button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>` : ''}
+                            ${cert.status === 'active' ? `<button class="btn-secondary" onclick="extendCertificate(${cert.id})">Продлить</button>` : ''}
+                        </div>
                     </div>
-                    <div class="certificate-actions">
-                        <button class="btn-secondary" onclick="viewCertificate(${cert.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>
-                        <button class="btn-danger" onclick="deleteCertificate(${cert.id})">Удалить</button>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
     } catch (error) {
         console.error('Ошибка при загрузке сертификатов:', error);
+        const certificatesList = document.querySelector('.certificates-list');
+        if (certificatesList) {
+            certificatesList.innerHTML = `<p style="text-align: center; padding: 40px; color: #d32f2f;">Ошибка при загрузке сертификатов: ${error.message}</p>`;
+        }
         showError('Не удалось загрузить сертификаты');
     }
+}
+
+// Просмотр детальной информации о сертификате
+async function viewCertificateDetail(id) {
+    try {
+        const response = await fetch(`/api/certificates/admin/certificate/${id}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка при загрузке сертификата');
+        }
+        
+        const cert = result.certificate;
+        
+        // Форматируем статус с эмодзи
+        const statusEmoji = {
+            'active': '🟢',
+            'used': '🔵',
+            'expired': '🔴',
+            'cancelled': '⚫'
+        }[cert.status] || '⚪';
+        
+        const statusText = {
+            'active': 'Активен',
+            'used': 'Использован',
+            'expired': 'Истек',
+            'cancelled': 'Отменен'
+        }[cert.status] || cert.status;
+        
+        // Форматируем даты
+        const formatDate = (dateStr) => {
+            if (!dateStr) return '—';
+            return new Date(dateStr).toLocaleDateString('ru-RU', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        };
+        
+        // URL картинки сертификата
+        const imageUrl = cert.image_url || cert.pdf_url || '';
+        const imagePath = imageUrl ? (imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`) : '';
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'certificate-view-modal';
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center; overflow-y: auto; padding: 20px;';
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="background: white; border-radius: 12px; max-width: 1200px; width: 100%; max-height: 95vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3); position: relative;">
+                <button class="modal-close" onclick="closeCertificateModal()" style="position: absolute; top: 15px; right: 15px; background: #f44336; color: white; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; z-index: 10001;">✕</button>
+                
+                <div style="padding: 30px;">
+                    <h2 style="margin: 0 0 25px 0; color: #2c3e50;">Сертификат #${cert.certificate_number}</h2>
+                    
+                    <!-- Превью картинки сертификата -->
+                    <div style="text-align: center; margin-bottom: 30px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 30px; border-radius: 12px; border: 2px dashed #dee2e6;">
+                        ${imagePath ? `
+                            <div style="position: relative; display: inline-block; max-width: 100%;">
+                                <img src="${imagePath}" 
+                                     alt="Сертификат #${cert.certificate_number}" 
+                                     id="certificate-image"
+                                     style="max-width: 900px; width: 100%; height: auto; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease;"
+                                     onclick="openCertificateImageFullscreen('${imagePath}')"
+                                     onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';"
+                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 8px 24px rgba(0,0,0,0.2)';"
+                                     onerror="this.style.display='none'; document.getElementById('certificate-image-error').style.display='block';">
+                                <div id="certificate-image-error" style="display: none; padding: 40px; color: #666;">
+                                    <p style="font-size: 18px; margin-bottom: 10px;">⚠️ Изображение сертификата не найдено</p>
+                                    <p style="font-size: 14px; color: #999;">Сертификат может быть создан, но JPG файл еще не сгенерирован</p>
+                                </div>
+                                <div style="margin-top: 15px; color: #666; font-size: 14px;">
+                                    <span>👆 Нажмите на изображение для просмотра в полном размере</span>
+                                </div>
+                            </div>
+                        ` : `
+                            <div style="padding: 60px 40px; color: #666;">
+                                <p style="font-size: 18px; margin-bottom: 10px;">⚠️ Изображение сертификата отсутствует</p>
+                                <p style="font-size: 14px; color: #999;">JPG файл не был создан при покупке сертификата</p>
+                            </div>
+                        `}
+                    </div>
+                    
+                    <!-- Основная информация -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">📋 Основная информация</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>Номинал:</strong><br>
+                                    <span style="font-size: 20px; color: #27ae60; font-weight: bold;">${cert.nominal_value.toLocaleString('ru-RU')} ₽</span>
+                                </div>
+                                <div>
+                                    <strong>Статус:</strong><br>
+                                    ${statusEmoji} ${statusText}
+                                </div>
+                                <div>
+                                    <strong>Дизайн:</strong><br>
+                                    ${cert.design ? cert.design.name : '—'}
+                                </div>
+                                ${cert.message ? `
+                                <div>
+                                    <strong>Сообщение:</strong><br>
+                                    <em style="color: #666;">${cert.message}</em>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">📅 Даты</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>Дата покупки:</strong><br>
+                                    ${formatDate(cert.purchase_date)}
+                                </div>
+                                <div>
+                                    <strong>Срок действия:</strong><br>
+                                    ${formatDate(cert.expiry_date)}
+                                    ${cert.days_until_expiry > 0 ? `<br><small style="color: ${cert.days_until_expiry <= 7 ? '#ff9800' : '#666'};">⏰ Осталось ${cert.days_until_expiry} дн.</small>` : ''}
+                                </div>
+                                ${cert.activation_date ? `
+                                <div>
+                                    <strong>Дата активации:</strong><br>
+                                    ${formatDate(cert.activation_date)}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        ${cert.purchaser ? `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">👤 Покупатель</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>ФИО:</strong><br>
+                                    ${cert.purchaser.full_name || '—'}
+                                </div>
+                                ${cert.purchaser.phone ? `
+                                <div>
+                                    <strong>Телефон:</strong><br>
+                                    ${cert.purchaser.phone}
+                                </div>
+                                ` : ''}
+                                ${cert.purchaser.email ? `
+                                <div>
+                                    <strong>Email:</strong><br>
+                                    ${cert.purchaser.email}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        ${cert.recipient_name ? `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">🎁 Получатель</h3>
+                            <div>
+                                <strong>Имя:</strong><br>
+                                ${cert.recipient_name}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <!-- Транзакции -->
+                    ${cert.transactions && cert.transactions.length > 0 ? `
+                    <div style="margin-bottom: 30px;">
+                        <h3 style="margin: 0 0 15px 0; color: #2c3e50;">💳 История транзакций</h3>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 2px solid #dee2e6;">
+                                        <th style="padding: 10px; text-align: left;">Дата</th>
+                                        <th style="padding: 10px; text-align: left;">Описание</th>
+                                        <th style="padding: 10px; text-align: right;">Сумма</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${cert.transactions.map(trans => `
+                                        <tr style="border-bottom: 1px solid #e9ecef;">
+                                            <td style="padding: 10px;">${formatDate(trans.created_at)}</td>
+                                            <td style="padding: 10px;">${trans.description || '—'}</td>
+                                            <td style="padding: 10px; text-align: right; color: ${trans.amount < 0 ? '#e74c3c' : '#27ae60'}; font-weight: bold;">
+                                                ${trans.amount > 0 ? '+' : ''}${trans.amount.toLocaleString('ru-RU')} ₽
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Действия -->
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                        ${imagePath ? `<button class="btn-secondary" onclick="downloadCertificateImage('${imagePath}', '${cert.certificate_number}')">📥 Скачать изображение</button>` : ''}
+                        ${cert.purchaser && cert.purchaser.email ? `<button class="btn-secondary" onclick="resendCertificate(${id})">📧 Отправить повторно</button>` : ''}
+                        ${cert.status === 'active' ? `
+                            <button class="btn-secondary" onclick="editCertificate(${id})">✏️ Редактировать</button>
+                            <button class="btn-secondary" onclick="extendCertificate(${id})">⏰ Продлить срок</button>
+                        ` : ''}
+                        <button class="btn-secondary" onclick="closeCertificateModal()">Закрыть</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Закрытие по клику вне модального окна
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeCertificateModal();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при просмотре сертификата:', error);
+        alert(`Ошибка при загрузке сертификата: ${error.message}`);
+    }
+}
+
+// Закрытие модального окна просмотра
+function closeCertificateModal() {
+    const modal = document.getElementById('certificate-view-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Открытие картинки в полном размере
+function openCertificateImageFullscreen(imageUrl) {
+    const fullscreenModal = document.createElement('div');
+    fullscreenModal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 20000; align-items: center; justify-content: center;';
+    
+    fullscreenModal.innerHTML = `
+        <div style="position: relative; max-width: 95vw; max-height: 95vh;">
+            <button onclick="this.parentElement.parentElement.remove()" 
+                    style="position: absolute; top: -40px; right: 0; background: #f44336; color: white; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 20px;">✕</button>
+            <img src="${imageUrl}" 
+                 alt="Сертификат" 
+                 style="max-width: 100%; max-height: 95vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        </div>
+    `;
+    
+    document.body.appendChild(fullscreenModal);
+    
+    fullscreenModal.addEventListener('click', (e) => {
+        if (e.target === fullscreenModal) {
+            fullscreenModal.remove();
+        }
+    });
+}
+
+// Скачивание изображения сертификата
+function downloadCertificateImage(imageUrl, certificateNumber) {
+    const link = document.createElement('a');
+    link.href = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+    link.download = `certificate_${certificateNumber}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Отправка сертификата повторно
+async function resendCertificate(id) {
+    if (!confirm('Отправить сертификат покупателю повторно на email?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/certificates/admin/certificate/${id}/resend`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('Сертификат успешно отправлен повторно');
+        } else {
+            showError(result.error || 'Ошибка при отправке сертификата');
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке сертификата:', error);
+        showError('Ошибка при отправке сертификата: ' + error.message);
+    }
+}
+
+function editCertificate(id) {
+    alert('Редактирование будет реализовано в следующем этапе. ID: ' + id);
+}
+
+function extendCertificate(id) {
+    alert('Продление срока будет реализовано в следующем этапе. ID: ' + id);
 }
 
 // === ФИНАНСЫ: UI и логика ===

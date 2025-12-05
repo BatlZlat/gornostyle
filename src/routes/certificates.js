@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
 const { notifyAdminCertificatePurchase, notifyAdminCertificateActivation } = require('../bot/admin-notify');
+const { verifyToken } = require('../middleware/auth');
 const TelegramBot = require('node-telegram-bot-api');
 const certificateImageGenerator = require('../services/certificateImageGenerator');
 const EmailService = require('../services/emailService');
@@ -575,6 +576,210 @@ router.get('/designs', async (req, res) => {
     }
 });
 
+// ============ АДМИНСКИЕ МАРШРУТЫ ============
+// Все админские маршруты защищены авторизацией
+// Используем префикс /admin/ для избежания конфликтов
+
+// ADM-1. Получение списка сертификатов с фильтрами (для админа)
+router.get('/admin/list', verifyToken, async (req, res) => {
+    try {
+        const {
+            status,           // active|used|expired|cancelled
+            search,           // поиск по номеру, имени, телефону
+            start_date,       // фильтр по дате покупки (от)
+            end_date,         // фильтр по дате покупки (до)
+            min_value,        // минимальный номинал
+            max_value,        // максимальный номинал
+            design_id,        // фильтр по дизайну
+            expiring_soon,    // только истекающие в течение 7 дней (boolean)
+            sort = 'purchase_date',  // поле сортировки
+            order = 'DESC',   // порядок сортировки (ASC|DESC)
+            limit = 50,       // количество записей на странице
+            offset = 0        // смещение для пагинации
+        } = req.query;
+
+        // Построение WHERE условий
+        const conditions = [];
+        const queryParams = [];
+        let paramIndex = 1;
+
+        // Фильтр по статусу
+        if (status && ['active', 'used', 'expired', 'cancelled'].includes(status)) {
+            conditions.push(`c.status = $${paramIndex}`);
+            queryParams.push(status);
+            paramIndex++;
+        }
+
+        // Фильтр по дате покупки
+        if (start_date) {
+            conditions.push(`c.purchase_date >= $${paramIndex}::date`);
+            queryParams.push(start_date);
+            paramIndex++;
+        }
+        if (end_date) {
+            conditions.push(`c.purchase_date <= $${paramIndex}::date`);
+            queryParams.push(end_date);
+            paramIndex++;
+        }
+
+        // Фильтр по номиналу
+        if (min_value) {
+            conditions.push(`c.nominal_value >= $${paramIndex}`);
+            queryParams.push(parseFloat(min_value));
+            paramIndex++;
+        }
+        if (max_value) {
+            conditions.push(`c.nominal_value <= $${paramIndex}`);
+            queryParams.push(parseFloat(max_value));
+            paramIndex++;
+        }
+
+        // Фильтр по дизайну
+        if (design_id) {
+            conditions.push(`c.design_id = $${paramIndex}`);
+            queryParams.push(parseInt(design_id));
+            paramIndex++;
+        }
+
+        // Поиск по номеру, имени, телефону
+        if (search) {
+            const searchCondition = `(
+                c.certificate_number ILIKE $${paramIndex} OR
+                c.recipient_name ILIKE $${paramIndex} OR
+                cl.full_name ILIKE $${paramIndex} OR
+                cl.phone ILIKE $${paramIndex}
+            )`;
+            conditions.push(searchCondition);
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        // Фильтр "истекающие скоро" (в течение 7 дней)
+        if (expiring_soon === 'true' || expiring_soon === true) {
+            conditions.push(`c.status = 'active' AND c.expiry_date BETWEEN NOW() AND NOW() + INTERVAL '7 days'`);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        // Валидация параметров сортировки
+        const allowedSortFields = {
+            'purchase_date': 'c.purchase_date',
+            'expiry_date': 'c.expiry_date',
+            'nominal_value': 'c.nominal_value',
+            'activation_date': 'c.activation_date',
+            'certificate_number': 'c.certificate_number'
+        };
+        const sortField = allowedSortFields[sort] || allowedSortFields['purchase_date'];
+        const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+        // Подсчет общего количества
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM certificates c
+            LEFT JOIN clients cl ON c.purchaser_id = cl.id
+            ${whereClause}
+        `;
+        const countResult = await pool.query(countQuery, queryParams);
+        const total = parseInt(countResult.rows[0].total);
+
+        // Основной запрос для получения сертификатов
+        const certificatesQuery = `
+            SELECT 
+                c.id,
+                c.certificate_number,
+                c.recipient_name,
+                c.nominal_value,
+                c.status,
+                c.purchase_date,
+                c.expiry_date,
+                c.activation_date,
+                c.message,
+                c.pdf_url,
+                c.image_url,
+                c.created_at,
+                c.updated_at,
+                c.design_id,
+                cd.name as design_name,
+                cl.id as purchaser_id,
+                cl.full_name as purchaser_name,
+                cl.phone as purchaser_phone,
+                cl.email as purchaser_email,
+                ca.id as activated_by_id,
+                ca.full_name as activated_by_name,
+                CASE 
+                    WHEN c.expiry_date > NOW() THEN EXTRACT(DAY FROM (c.expiry_date - NOW()))
+                    ELSE 0
+                END as days_until_expiry
+            FROM certificates c
+            LEFT JOIN clients cl ON c.purchaser_id = cl.id
+            LEFT JOIN clients ca ON c.activated_by_id = ca.id
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id
+            ${whereClause}
+            ORDER BY ${sortField} ${sortOrder}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+        
+        queryParams.push(parseInt(limit));
+        queryParams.push(parseInt(offset));
+
+        const certificatesResult = await pool.query(certificatesQuery, queryParams);
+        const certificates = certificatesResult.rows.map(cert => ({
+            id: cert.id,
+            certificate_number: cert.certificate_number,
+            purchaser: cert.purchaser_id ? {
+                id: cert.purchaser_id,
+                full_name: cert.purchaser_name,
+                phone: cert.purchaser_phone,
+                email: cert.purchaser_email
+            } : null,
+            recipient_name: cert.recipient_name,
+            nominal_value: parseFloat(cert.nominal_value),
+            design: {
+                id: cert.design_id,
+                name: cert.design_name
+            },
+            status: cert.status,
+            purchase_date: cert.purchase_date.toISOString(),
+            expiry_date: cert.expiry_date.toISOString(),
+            days_until_expiry: parseInt(cert.days_until_expiry) || 0,
+            activated_by: cert.activated_by_id ? {
+                id: cert.activated_by_id,
+                full_name: cert.activated_by_name
+            } : null,
+            activation_date: cert.activation_date ? cert.activation_date.toISOString() : null,
+            message: cert.message,
+            pdf_url: cert.pdf_url,
+            image_url: cert.image_url,
+            created_at: cert.created_at.toISOString(),
+            updated_at: cert.updated_at.toISOString()
+        }));
+
+        const totalPages = Math.ceil(total / limit);
+        const currentPage = Math.floor(offset / limit) + 1;
+
+        res.json({
+            success: true,
+            certificates: certificates,
+            pagination: {
+                total: total,
+                page: currentPage,
+                limit: parseInt(limit),
+                total_pages: totalPages,
+                has_next: currentPage < totalPages,
+                has_prev: currentPage > 1
+            }
+        });
+
+    } catch (error) {
+        console.error('Ошибка при получении списка сертификатов:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
 // 4. Получение информации о сертификате
 router.get('/:number', async (req, res) => {
     try {
@@ -807,17 +1012,19 @@ router.get('/check-payment-status', async (req, res) => {
     }
 });
 
-// 6. Получение статистики сертификатов (для админа)
-router.get('/admin/statistics', async (req, res) => {
+// 6. Получение статистики сертификатов (для админа) - РАСШИРЕННАЯ ВЕРСИЯ
+router.get('/admin/statistics', verifyToken, async (req, res) => {
     try {
         const { start_date, end_date } = req.query;
 
         let whereClause = '';
         let queryParams = [];
+        let paramIndex = 1;
 
         if (start_date && end_date) {
             whereClause = 'WHERE c.purchase_date BETWEEN $1 AND $2';
             queryParams = [start_date, end_date];
+            paramIndex = 3;
         }
 
         // Основная статистика
@@ -828,6 +1035,7 @@ router.get('/admin/statistics', async (req, res) => {
                 COUNT(CASE WHEN c.status = 'active' THEN 1 END) as active_certificates,
                 COUNT(CASE WHEN c.status = 'used' THEN 1 END) as used_certificates,
                 COUNT(CASE WHEN c.status = 'expired' THEN 1 END) as expired_certificates,
+                COUNT(CASE WHEN c.status = 'cancelled' THEN 1 END) as cancelled_certificates,
                 AVG(c.nominal_value) as average_nominal,
                 CASE 
                     WHEN COUNT(*) > 0 THEN 
@@ -841,11 +1049,56 @@ router.get('/admin/statistics', async (req, res) => {
         const statsResult = await pool.query(statsQuery, queryParams);
         const stats = statsResult.rows[0];
 
+        // Истекающие скоро (в течение 7 дней)
+        const expiringSoonQuery = `
+            SELECT COUNT(*) as count
+            FROM certificates c
+            ${whereClause ? whereClause + ' AND' : 'WHERE'}
+            c.status = 'active' AND c.expiry_date BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+        `;
+        const expiringSoonResult = await pool.query(expiringSoonQuery, queryParams);
+        const expiringSoonCount = parseInt(expiringSoonResult.rows[0].count);
+
+        // Неактивированные сертификаты старше 30 дней
+        const notActivated30DaysQuery = `
+            SELECT COUNT(*) as count
+            FROM certificates c
+            ${whereClause ? whereClause + ' AND' : 'WHERE'}
+            c.status = 'active' AND c.purchase_date < NOW() - INTERVAL '30 days'
+        `;
+        const notActivated30DaysResult = await pool.query(notActivated30DaysQuery, queryParams);
+        const notActivated30DaysCount = parseInt(notActivated30DaysResult.rows[0].count);
+
+        // Среднее время до активации (в днях)
+        const avgActivationTimeQuery = `
+            SELECT 
+                AVG(EXTRACT(EPOCH FROM (c.activation_date - c.purchase_date)) / 86400) as avg_days
+            FROM certificates c
+            ${whereClause ? whereClause + ' AND' : 'WHERE'}
+            c.status = 'used' AND c.activation_date IS NOT NULL
+        `;
+        const avgActivationTimeResult = await pool.query(avgActivationTimeQuery, queryParams);
+        const averageTimeToActivationDays = parseFloat(avgActivationTimeResult.rows[0].avg_days) || 0;
+
+        // Конверсия (процент активации от всех не истекших)
+        const conversionQuery = `
+            SELECT 
+                COUNT(CASE WHEN c.status = 'used' THEN 1 END) as used_count,
+                COUNT(CASE WHEN c.status IN ('active', 'used') THEN 1 END) as active_or_used_count
+            FROM certificates c
+            ${whereClause}
+        `;
+        const conversionResult = await pool.query(conversionQuery, queryParams);
+        const conversionRate = conversionResult.rows[0].active_or_used_count > 0
+            ? parseFloat(((conversionResult.rows[0].used_count / conversionResult.rows[0].active_or_used_count) * 100).toFixed(2))
+            : 0;
+
         // Популярные номиналы
         const nominalsQuery = `
             SELECT 
                 c.nominal_value as nominal,
-                COUNT(*) as count
+                COUNT(*) as count,
+                SUM(c.nominal_value) as total_sum
             FROM certificates c
             ${whereClause}
             GROUP BY c.nominal_value
@@ -860,7 +1113,8 @@ router.get('/admin/statistics', async (req, res) => {
             SELECT 
                 cd.id as design_id,
                 cd.name as design_name,
-                COUNT(*) as count
+                COUNT(*) as count,
+                SUM(c.nominal_value) as total_sum
             FROM certificates c
             JOIN certificate_designs cd ON c.design_id = cd.id
             ${whereClause}
@@ -870,6 +1124,22 @@ router.get('/admin/statistics', async (req, res) => {
 
         const designsResult = await pool.query(designsQuery, queryParams);
 
+        // Продажи по дням (за период или за последние 30 дней)
+        const periodStart = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const periodEnd = end_date || new Date().toISOString().split('T')[0];
+        
+        const salesByDayQuery = `
+            SELECT 
+                DATE(c.purchase_date) as date,
+                COUNT(*) as count,
+                SUM(c.nominal_value) as total_value
+            FROM certificates c
+            WHERE c.purchase_date >= $1::date AND c.purchase_date <= $2::date
+            GROUP BY DATE(c.purchase_date)
+            ORDER BY date ASC
+        `;
+        const salesByDayResult = await pool.query(salesByDayQuery, [periodStart, periodEnd]);
+
         res.json({
             success: true,
             statistics: {
@@ -878,17 +1148,29 @@ router.get('/admin/statistics', async (req, res) => {
                 active_certificates: parseInt(stats.active_certificates),
                 used_certificates: parseInt(stats.used_certificates),
                 expired_certificates: parseInt(stats.expired_certificates),
+                cancelled_certificates: parseInt(stats.cancelled_certificates) || 0,
                 average_nominal: parseFloat(stats.average_nominal) || 0,
+                activation_rate: parseFloat(stats.activation_rate),
+                expiring_soon_count: expiringSoonCount,
+                not_activated_30_days_count: notActivated30DaysCount,
+                average_time_to_activation_days: parseFloat(averageTimeToActivationDays.toFixed(1)),
+                conversion_rate: conversionRate,
                 popular_nominals: nominalsResult.rows.map(row => ({
                     nominal: parseFloat(row.nominal),
-                    count: parseInt(row.count)
+                    count: parseInt(row.count),
+                    total_sum: parseFloat(row.total_sum)
                 })),
                 popular_designs: designsResult.rows.map(row => ({
                     design_id: row.design_id,
                     design_name: row.design_name,
-                    count: parseInt(row.count)
+                    count: parseInt(row.count),
+                    total_sum: parseFloat(row.total_sum)
                 })),
-                activation_rate: parseFloat(stats.activation_rate)
+                sales_by_day: salesByDayResult.rows.map(row => ({
+                    date: row.date.toISOString().split('T')[0],
+                    count: parseInt(row.count),
+                    total_value: parseFloat(row.total_value)
+                }))
             }
         });
 
@@ -899,6 +1181,1061 @@ router.get('/admin/statistics', async (req, res) => {
             error: 'Внутренняя ошибка сервера',
             code: 'INTERNAL_ERROR'
         });
+    }
+});
+
+// ADM-2. Получение детальной информации о сертификате (для админа)
+// Важно: этот маршрут должен быть после /admin/statistics, чтобы не было конфликта
+router.get('/admin/certificate/:id', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const certificateId = parseInt(id);
+
+        if (!certificateId || isNaN(certificateId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный ID сертификата',
+                code: 'INVALID_ID'
+            });
+        }
+
+        // Получаем детальную информацию о сертификате
+        const certificateQuery = `
+            SELECT 
+                c.id,
+                c.certificate_number,
+                c.recipient_name,
+                c.nominal_value,
+                c.status,
+                c.purchase_date,
+                c.expiry_date,
+                c.activation_date,
+                c.message,
+                c.pdf_url,
+                c.image_url,
+                c.created_at,
+                c.updated_at,
+                c.design_id,
+                cd.name as design_name,
+                cd.image_url as design_image_url,
+                cl.id as purchaser_id,
+                cl.full_name as purchaser_name,
+                cl.phone as purchaser_phone,
+                cl.email as purchaser_email,
+                cl.telegram_id as purchaser_telegram_id,
+                cl.telegram_username as purchaser_telegram_username,
+                ca.id as activated_by_id,
+                ca.full_name as activated_by_name,
+                ca.phone as activated_by_phone,
+                CASE 
+                    WHEN c.expiry_date > NOW() THEN EXTRACT(DAY FROM (c.expiry_date - NOW()))
+                    ELSE 0
+                END as days_until_expiry
+            FROM certificates c
+            LEFT JOIN clients cl ON c.purchaser_id = cl.id
+            LEFT JOIN clients ca ON c.activated_by_id = ca.id
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id
+            WHERE c.id = $1
+        `;
+
+        const certificateResult = await pool.query(certificateQuery, [certificateId]);
+
+        if (certificateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Сертификат не найден',
+                code: 'CERTIFICATE_NOT_FOUND'
+            });
+        }
+
+        const cert = certificateResult.rows[0];
+
+        // Получаем транзакции, связанные с сертификатом
+        const transactionsQuery = `
+            SELECT 
+                t.id,
+                t.amount,
+                t.type,
+                t.description,
+                t.created_at,
+                w.wallet_number
+            FROM transactions t
+            LEFT JOIN wallets w ON t.wallet_id = w.id
+            WHERE (
+                (t.description ILIKE '%сертификат%' AND t.description ILIKE $1)
+                OR (EXISTS (
+                    SELECT 1 FROM wallets w2 
+                    WHERE w2.client_id = $2 AND w2.id = t.wallet_id
+                ))
+            )
+            ORDER BY t.created_at DESC
+            LIMIT 10
+        `;
+
+        const transactionsResult = await pool.query(transactionsQuery, [
+            `%${cert.certificate_number}%`,
+            cert.purchaser_id
+        ]);
+
+        const transactions = transactionsResult.rows.map(trans => ({
+            id: trans.id,
+            amount: parseFloat(trans.amount),
+            type: trans.type,
+            description: trans.description,
+            wallet_number: trans.wallet_number,
+            created_at: trans.created_at.toISOString()
+        }));
+
+        const certificate = {
+            id: cert.id,
+            certificate_number: cert.certificate_number,
+            purchaser: cert.purchaser_id ? {
+                id: cert.purchaser_id,
+                full_name: cert.purchaser_name,
+                phone: cert.purchaser_phone,
+                email: cert.purchaser_email,
+                telegram_id: cert.purchaser_telegram_id,
+                telegram_username: cert.purchaser_telegram_username
+            } : null,
+            recipient_name: cert.recipient_name,
+            nominal_value: parseFloat(cert.nominal_value),
+            design: {
+                id: cert.design_id,
+                name: cert.design_name,
+                image_url: cert.design_image_url
+            },
+            status: cert.status,
+            purchase_date: cert.purchase_date.toISOString(),
+            expiry_date: cert.expiry_date.toISOString(),
+            days_until_expiry: parseInt(cert.days_until_expiry) || 0,
+            activated_by: cert.activated_by_id ? {
+                id: cert.activated_by_id,
+                full_name: cert.activated_by_name,
+                phone: cert.activated_by_phone
+            } : null,
+            activation_date: cert.activation_date ? cert.activation_date.toISOString() : null,
+            message: cert.message,
+            pdf_url: cert.pdf_url,
+            image_url: cert.image_url,
+            transactions: transactions,
+            created_at: cert.created_at.toISOString(),
+            updated_at: cert.updated_at.toISOString()
+        };
+
+        res.json({
+            success: true,
+            certificate: certificate
+        });
+
+    } catch (error) {
+        console.error('Ошибка при получении детальной информации о сертификате:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
+// ADM-3. Продление срока действия сертификата
+router.put('/admin/certificate/:id/extend', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { new_expiry_date, extend_days } = req.body;
+        const certificateId = parseInt(id);
+
+        if (!certificateId || isNaN(certificateId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный ID сертификата',
+                code: 'INVALID_ID'
+            });
+        }
+
+        if (!new_expiry_date && !extend_days) {
+            return res.status(400).json({
+                success: false,
+                error: 'Необходимо указать new_expiry_date или extend_days',
+                code: 'MISSING_PARAMETERS'
+            });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Получаем текущую информацию о сертификате
+            const certResult = await client.query(
+                'SELECT id, expiry_date, status FROM certificates WHERE id = $1',
+                [certificateId]
+            );
+
+            if (certResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    error: 'Сертификат не найден',
+                    code: 'CERTIFICATE_NOT_FOUND'
+                });
+            }
+
+            const cert = certResult.rows[0];
+            let newExpiryDate;
+
+            if (new_expiry_date) {
+                newExpiryDate = new Date(new_expiry_date);
+                if (isNaN(newExpiryDate.getTime())) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Неверный формат даты',
+                        code: 'INVALID_DATE'
+                    });
+                }
+            } else if (extend_days) {
+                const days = parseInt(extend_days);
+                if (isNaN(days) || days <= 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Количество дней должно быть положительным числом',
+                        code: 'INVALID_DAYS'
+                    });
+                }
+                newExpiryDate = new Date(cert.expiry_date);
+                newExpiryDate.setDate(newExpiryDate.getDate() + days);
+            }
+
+            // Обновляем срок действия
+            const updateQuery = `
+                UPDATE certificates 
+                SET expiry_date = $1, 
+                    status = CASE WHEN status = 'expired' THEN 'active' ELSE status END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+                RETURNING *
+            `;
+            const updateResult = await client.query(updateQuery, [newExpiryDate, certificateId]);
+
+            await client.query('COMMIT');
+
+            res.json({
+                success: true,
+                message: 'Срок действия сертификата продлен',
+                certificate: {
+                    id: updateResult.rows[0].id,
+                    certificate_number: updateResult.rows[0].certificate_number,
+                    expiry_date: updateResult.rows[0].expiry_date.toISOString(),
+                    status: updateResult.rows[0].status
+                }
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+
+    } catch (error) {
+        console.error('Ошибка при продлении срока сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
+// ADM-4. Редактирование данных сертификата
+router.put('/admin/certificate/:id/edit', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { recipient_name, message } = req.body;
+        const certificateId = parseInt(id);
+
+        if (!certificateId || isNaN(certificateId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный ID сертификата',
+                code: 'INVALID_ID'
+            });
+        }
+
+        if (!recipient_name && !message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Необходимо указать recipient_name или message для изменения',
+                code: 'MISSING_PARAMETERS'
+            });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Получаем текущую информацию о сертификате
+            const certResult = await client.query(
+                'SELECT id, certificate_number, recipient_name, message, design_id, nominal_value, expiry_date FROM certificates WHERE id = $1',
+                [certificateId]
+            );
+
+            if (certResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    error: 'Сертификат не найден',
+                    code: 'CERTIFICATE_NOT_FOUND'
+                });
+            }
+
+            const cert = certResult.rows[0];
+            const updatedRecipientName = recipient_name !== undefined ? recipient_name : cert.recipient_name;
+            const updatedMessage = message !== undefined ? message : cert.message;
+
+            // Обновляем данные
+            const updateQuery = `
+                UPDATE certificates 
+                SET recipient_name = $1,
+                    message = $2,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3
+                RETURNING *
+            `;
+            const updateResult = await client.query(updateQuery, [
+                updatedRecipientName,
+                updatedMessage,
+                certificateId
+            ]);
+
+            // Если изменились данные, перегенерируем JPG
+            const needRegenerate = recipient_name !== undefined || message !== undefined;
+            let newImageUrl = updateResult.rows[0].image_url;
+            let newPdfUrl = updateResult.rows[0].pdf_url;
+
+            if (needRegenerate) {
+                try {
+                    const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+                    const certificateData = {
+                        certificate_number: cert.certificate_number,
+                        nominal_value: parseFloat(cert.nominal_value),
+                        recipient_name: updatedRecipientName,
+                        message: updatedMessage,
+                        expiry_date: cert.expiry_date,
+                        design_id: cert.design_id
+                    };
+                    const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(
+                        cert.certificate_number,
+                        certificateData
+                    );
+                    
+                    if (jpgResult.jpg_url) {
+                        newImageUrl = jpgResult.jpg_url;
+                        newPdfUrl = jpgResult.jpg_url; // Используем JPG и для pdf_url
+                        
+                        await client.query(
+                            'UPDATE certificates SET image_url = $1, pdf_url = $2 WHERE id = $3',
+                            [newImageUrl, newPdfUrl, certificateId]
+                        );
+                    }
+                } catch (jpgError) {
+                    console.error('Ошибка при перегенерации JPG сертификата:', jpgError);
+                    // Не прерываем операцию, просто логируем ошибку
+                }
+            }
+
+            await client.query('COMMIT');
+
+            res.json({
+                success: true,
+                message: 'Данные сертификата обновлены',
+                certificate: {
+                    id: updateResult.rows[0].id,
+                    certificate_number: updateResult.rows[0].certificate_number,
+                    recipient_name: updateResult.rows[0].recipient_name,
+                    message: updateResult.rows[0].message,
+                    image_url: newImageUrl,
+                    pdf_url: newPdfUrl
+                }
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+
+    } catch (error) {
+        console.error('Ошибка при редактировании сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
+// ADM-5. Повторная отправка сертификата
+router.post('/admin/certificate/:id/resend', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const certificateId = parseInt(id);
+
+        if (!certificateId || isNaN(certificateId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный ID сертификата',
+                code: 'INVALID_ID'
+            });
+        }
+
+        // Получаем информацию о сертификате и покупателе
+        const certQuery = `
+            SELECT 
+                c.*,
+                cl.full_name as purchaser_name,
+                cl.email as purchaser_email,
+                cl.telegram_id as purchaser_telegram_id,
+                cd.name as design_name
+            FROM certificates c
+            LEFT JOIN clients cl ON c.purchaser_id = cl.id
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id
+            WHERE c.id = $1
+        `;
+        const certResult = await pool.query(certQuery, [certificateId]);
+
+        if (certResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Сертификат не найден',
+                code: 'CERTIFICATE_NOT_FOUND'
+            });
+        }
+
+        const cert = certResult.rows[0];
+
+        if (!cert.purchaser_email) {
+            return res.status(400).json({
+                success: false,
+                error: 'У покупателя не указан email',
+                code: 'NO_EMAIL'
+            });
+        }
+
+        // Отправляем email с сертификатом
+        const baseUrl = process.env.BASE_URL || 'http://localhost:8080';
+        const certificateUrl = `${baseUrl}/certificate/${cert.certificate_number}`;
+
+        const certificateData = {
+            certificateId: cert.id,
+            certificateCode: cert.certificate_number,
+            recipientName: cert.recipient_name || cert.purchaser_name,
+            amount: parseFloat(cert.nominal_value),
+            message: cert.message || null,
+            pdfUrl: cert.pdf_url,
+            imageUrl: cert.image_url,
+            expiry_date: cert.expiry_date.toISOString(),
+            certificate_url: certificateUrl
+        };
+
+        const emailResult = await emailService.sendCertificateEmail(cert.purchaser_email, certificateData);
+
+        if (!emailResult.success) {
+            return res.status(500).json({
+                success: false,
+                error: 'Не удалось отправить email',
+                details: emailResult.error,
+                code: 'EMAIL_SEND_FAILED'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Сертификат успешно отправлен повторно',
+            email: cert.purchaser_email
+        });
+
+    } catch (error) {
+        console.error('Ошибка при повторной отправке сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    }
+});
+
+// ADM-6. Ручное создание сертификата админом
+router.post('/admin/create', verifyToken, async (req, res) => {
+    console.log('🎁 [certificates/admin/create] Получен запрос на ручное создание сертификата');
+    
+    const client = await pool.connect();
+    
+    try {
+        const { 
+            purchaser_id,
+            recipient_name,
+            recipient_phone,
+            nominal_value, 
+            design_id, 
+            message,
+            expiry_date,
+            skip_payment = false,
+            reason
+        } = req.body;
+
+        // Валидация входных данных
+        if (!purchaser_id || !nominal_value || !design_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Не указаны обязательные поля: purchaser_id, nominal_value, design_id',
+                code: 'INVALID_REQUEST'
+            });
+        }
+
+        if (nominal_value < 500 || nominal_value > 50000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Номинал должен быть от 500 до 50 000 руб.',
+                code: 'INVALID_NOMINAL'
+            });
+        }
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                error: 'Необходимо указать причину создания сертификата',
+                code: 'MISSING_REASON'
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // Проверяем существование покупателя
+        const purchaserQuery = `
+            SELECT c.id, c.full_name, c.email, c.telegram_id, w.id as wallet_id, w.balance, w.wallet_number
+            FROM clients c
+            LEFT JOIN wallets w ON c.id = w.client_id
+            WHERE c.id = $1
+        `;
+        const purchaserResult = await client.query(purchaserQuery, [purchaser_id]);
+        
+        if (purchaserResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                success: false,
+                error: 'Покупатель не найден',
+                code: 'PURCHASER_NOT_FOUND'
+            });
+        }
+
+        const purchaser = purchaserResult.rows[0];
+
+        // Если не пропускаем оплату, проверяем кошелек и баланс
+        if (!skip_payment) {
+            if (!purchaser.wallet_id) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'У покупателя нет кошелька',
+                    code: 'WALLET_NOT_FOUND'
+                });
+            }
+
+            if (parseFloat(purchaser.balance) < nominal_value) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Недостаточно средств на кошельке',
+                    code: 'INSUFFICIENT_FUNDS'
+                });
+            }
+        }
+
+        // Проверяем существование дизайна
+        const designResult = await client.query(
+            'SELECT id, name FROM certificate_designs WHERE id = $1 AND is_active = true',
+            [design_id]
+        );
+        
+        if (designResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                success: false,
+                error: 'Дизайн сертификата не найден или неактивен',
+                code: 'INVALID_DESIGN'
+            });
+        }
+
+        // Генерируем уникальный номер сертификата
+        const certificateNumber = await generateUniqueCertificateNumber();
+
+        // Вычисляем дату истечения
+        const now = new Date();
+        let expiryDate;
+        if (expiry_date) {
+            expiryDate = new Date(expiry_date);
+            if (isNaN(expiryDate.getTime())) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Неверный формат даты истечения',
+                    code: 'INVALID_EXPIRY_DATE'
+                });
+            }
+        } else {
+            expiryDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // +1 год
+        }
+
+        // Генерируем JPG файл
+        let pdfUrl = null;
+        
+        try {
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+            
+            const certificateData = {
+                certificate_number: certificateNumber,
+                nominal_value: nominal_value,
+                recipient_name: recipient_name || null,
+                message: message || null,
+                expiry_date: expiryDate,
+                design_id: design_id
+            };
+            
+            const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber, certificateData);
+            pdfUrl = jpgResult.jpg_url;
+            console.log(`✅ JPG сертификат создан: ${pdfUrl}`);
+        } catch (fileError) {
+            console.error('Ошибка при генерации JPG сертификата:', fileError);
+            // Продолжаем без файла
+        }
+
+        // Создаем сертификат
+        const certificateQuery = `
+            INSERT INTO certificates (
+                certificate_number, purchaser_id, recipient_name, recipient_phone,
+                nominal_value, design_id, status, expiry_date, activation_date,
+                message, purchase_date, pdf_url, image_url, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING *
+        `;
+
+        const certificateResult = await client.query(certificateQuery, [
+            certificateNumber,
+            purchaser_id,
+            recipient_name || null,
+            recipient_phone || null,
+            nominal_value,
+            design_id,
+            'active',
+            expiryDate,
+            null, // activation_date
+            message || null,
+            now, // purchase_date
+            pdfUrl // pdf_url и image_url
+        ]);
+
+        const certificate = certificateResult.rows[0];
+
+        // Если не пропускаем оплату, списываем средства
+        if (!skip_payment && purchaser.wallet_id) {
+            await client.query(
+                'UPDATE wallets SET balance = balance - $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                [nominal_value, purchaser.wallet_id]
+            );
+
+            const transactionDescription = `Покупка сертификата №${certificateNumber} - ${purchaser.full_name} (создан админом: ${reason})`;
+            await client.query(
+                `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+                [purchaser.wallet_id, -nominal_value, 'payment', transactionDescription]
+            );
+        }
+
+        await client.query('COMMIT');
+        
+        console.log('✅ [certificates/admin/create] Сертификат успешно создан:', {
+            id: certificate.id,
+            certificate_number: certificateNumber,
+            purchaser_id: purchaser_id,
+            skip_payment: skip_payment,
+            reason: reason
+        });
+
+        // Формируем URL сертификата
+        const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${certificateNumber}`;
+
+        // Ответ клиенту
+        res.status(201).json({
+            success: true,
+            message: 'Сертификат успешно создан',
+            certificate: {
+                id: certificate.id,
+                certificate_number: certificateNumber,
+                nominal_value: parseFloat(certificate.nominal_value),
+                design_id: certificate.design_id,
+                recipient_name: certificate.recipient_name,
+                recipient_phone: certificate.recipient_phone,
+                message: certificate.message,
+                status: certificate.status,
+                expiry_date: certificate.expiry_date.toISOString(),
+                purchase_date: certificate.purchase_date.toISOString(),
+                certificate_url: certificateUrl,
+                pdf_url: certificate.pdf_url,
+                image_url: certificate.image_url,
+                skip_payment: skip_payment,
+                reason: reason
+            }
+        });
+
+        // Отправляем email с сертификатом (асинхронно)
+        if (purchaser.email) {
+            setImmediate(async () => {
+                try {
+                    console.log(`📧 Отправка email с сертификатом на: ${purchaser.email}`);
+                    
+                    const certificateData = {
+                        certificateId: certificate.id,
+                        certificateCode: certificateNumber,
+                        recipientName: recipient_name || purchaser.full_name,
+                        amount: nominal_value,
+                        message: message || null,
+                        pdfUrl: certificate.pdf_url,
+                        imageUrl: certificate.image_url,
+                        expiry_date: expiryDate.toISOString(),
+                        certificate_url: certificateUrl
+                    };
+                    
+                    const emailResult = await emailService.sendCertificateEmail(purchaser.email, certificateData);
+                    
+                    if (emailResult.success) {
+                        console.log(`✅ Email с сертификатом успешно отправлен на ${purchaser.email}`);
+                    } else {
+                        console.error(`❌ Ошибка отправки email на ${purchaser.email}:`, emailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('❌ Ошибка при отправке email с сертификатом:', emailError);
+                }
+            });
+        }
+
+        // Отправляем уведомление администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                await notifyAdminCertificatePurchase({
+                    clientName: purchaser.full_name,
+                    certificateNumber: certificateNumber,
+                    nominalValue: nominal_value,
+                    purchaseDate: now,
+                    isAdminCreated: true,
+                    reason: reason,
+                    skipPayment: skip_payment
+                });
+            } catch (notifyError) {
+                console.error('Ошибка отправки уведомления администратору:', notifyError);
+            }
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при ручном создании сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// ADM-6. Ручное создание сертификата администратором
+router.post('/admin/create', verifyToken, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        const {
+            purchaser_id,
+            recipient_name,
+            recipient_phone,
+            nominal_value,
+            design_id,
+            message,
+            expiry_date,
+            skip_payment = false,
+            reason
+        } = req.body;
+
+        // Валидация обязательных полей
+        if (!purchaser_id || !nominal_value || !design_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Не указаны обязательные поля: purchaser_id, nominal_value, design_id',
+                code: 'MISSING_REQUIRED_FIELDS'
+            });
+        }
+
+        if (nominal_value < 500 || nominal_value > 50000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Номинал должен быть от 500 до 50 000 руб.',
+                code: 'INVALID_NOMINAL'
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // Проверяем существование покупателя
+        const purchaserQuery = `
+            SELECT c.id, c.full_name, c.email, c.telegram_id, w.id as wallet_id, w.balance
+            FROM clients c
+            LEFT JOIN wallets w ON c.id = w.client_id
+            WHERE c.id = $1
+        `;
+        const purchaserResult = await client.query(purchaserQuery, [purchaser_id]);
+        
+        if (purchaserResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                success: false,
+                error: 'Покупатель не найден',
+                code: 'PURCHASER_NOT_FOUND'
+            });
+        }
+
+        const purchaser = purchaserResult.rows[0];
+
+        // Проверяем существование дизайна
+        const designResult = await client.query(
+            'SELECT id, name FROM certificate_designs WHERE id = $1 AND is_active = true',
+            [design_id]
+        );
+        
+        if (designResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                success: false,
+                error: 'Дизайн сертификата не найден или неактивен',
+                code: 'INVALID_DESIGN'
+            });
+        }
+
+        // Определяем дату истечения
+        let expiryDate;
+        if (expiry_date) {
+            expiryDate = new Date(expiry_date);
+            if (isNaN(expiryDate.getTime())) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Неверный формат даты истечения',
+                    code: 'INVALID_EXPIRY_DATE'
+                });
+            }
+        } else {
+            // По умолчанию +1 год
+            expiryDate = new Date();
+            expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        }
+
+        // Генерируем уникальный номер сертификата
+        const certificateNumber = await generateUniqueCertificateNumber();
+
+        const now = new Date();
+        let pdfUrl = null;
+        let imageUrl = null;
+
+        // Генерируем JPG сертификата
+        try {
+            const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+            
+            const certificateData = {
+                certificate_number: certificateNumber,
+                nominal_value: nominal_value,
+                recipient_name: recipient_name || purchaser.full_name,
+                message: message,
+                expiry_date: expiryDate,
+                design_id: design_id
+            };
+            
+            const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber, certificateData);
+            pdfUrl = jpgResult.jpg_url || null;
+            imageUrl = jpgResult.jpg_url || null;
+            console.log(`✅ JPG сертификат создан: ${pdfUrl}`);
+        } catch (fileError) {
+            console.error('Ошибка при генерации JPG сертификата:', fileError);
+            // Продолжаем без файлов
+        }
+
+        // Создаем сертификат
+        const certificateQuery = `
+            INSERT INTO certificates (
+                certificate_number, purchaser_id, recipient_name, recipient_phone,
+                nominal_value, design_id, status, expiry_date, activation_date,
+                message, purchase_date, pdf_url, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING *
+        `;
+
+        const certificateResult = await client.query(certificateQuery, [
+            certificateNumber,
+            purchaser_id,
+            recipient_name || null,
+            recipient_phone || null,
+            nominal_value,
+            design_id,
+            'active',
+            expiryDate,
+            null, // activation_date
+            message || null,
+            now, // purchase_date
+            pdfUrl // pdf_url
+        ]);
+
+        const certificate = certificateResult.rows[0];
+
+        // Обновляем image_url если есть
+        if (imageUrl) {
+            await client.query(
+                'UPDATE certificates SET image_url = $1 WHERE id = $2',
+                [imageUrl, certificate.id]
+            );
+        }
+
+        // Списываем средства с кошелька (если не skip_payment)
+        if (!skip_payment) {
+            if (!purchaser.wallet_id) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'У покупателя нет кошелька',
+                    code: 'WALLET_NOT_FOUND'
+                });
+            }
+
+            // Проверяем баланс
+            if (parseFloat(purchaser.balance) < nominal_value) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Недостаточно средств на кошельке',
+                    code: 'INSUFFICIENT_FUNDS'
+                });
+            }
+
+            // Списываем средства
+            await client.query(
+                'UPDATE wallets SET balance = balance - $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                [nominal_value, purchaser.wallet_id]
+            );
+
+            // Создаем запись о транзакции
+            const transactionDescription = reason 
+                ? `Покупка сертификата №${certificateNumber} (${reason}) - ${purchaser.full_name}`
+                : `Покупка сертификата №${certificateNumber} - ${purchaser.full_name}`;
+            
+            await client.query(
+                `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+                [purchaser.wallet_id, -nominal_value, 'payment', transactionDescription]
+            );
+        }
+
+        await client.query('COMMIT');
+        
+        console.log(`✅ [admin/create] Сертификат успешно создан администратором:`, {
+            id: certificate.id,
+            certificate_number: certificateNumber,
+            purchaser_id: purchaser_id,
+            skip_payment: skip_payment,
+            reason: reason || 'нет'
+        });
+
+        const certificateUrl = `${process.env.BASE_URL || 'https://gornostyle72.ru'}/certificate/${certificateNumber}`;
+
+        // Ответ
+        res.status(201).json({
+            success: true,
+            message: skip_payment 
+                ? 'Сертификат успешно создан (без списания средств)'
+                : 'Сертификат успешно создан',
+            certificate: {
+                id: certificate.id,
+                certificate_number: certificateNumber,
+                nominal_value: parseFloat(certificate.nominal_value),
+                design_id: certificate.design_id,
+                recipient_name: certificate.recipient_name,
+                recipient_phone: certificate.recipient_phone,
+                message: certificate.message,
+                status: certificate.status,
+                expiry_date: certificate.expiry_date.toISOString(),
+                purchase_date: certificate.purchase_date.toISOString(),
+                certificate_url: certificateUrl,
+                pdf_url: certificate.pdf_url,
+                image_url: certificate.image_url || certificate.pdf_url,
+                skip_payment: skip_payment
+            }
+        });
+
+        // Отправляем email с сертификатом (асинхронно)
+        if (purchaser.email) {
+            setImmediate(async () => {
+                try {
+                    console.log(`📧 Отправка email с сертификатом на: ${purchaser.email}`);
+                    
+                    const certificateData = {
+                        certificateId: certificate.id,
+                        certificateCode: certificateNumber,
+                        recipientName: recipient_name || purchaser.full_name,
+                        amount: nominal_value,
+                        message: message || null,
+                        pdfUrl: certificate.pdf_url,
+                        imageUrl: certificate.image_url || certificate.pdf_url,
+                        expiry_date: expiryDate.toISOString(),
+                        certificate_url: certificateUrl
+                    };
+                    
+                    const emailResult = await emailService.sendCertificateEmail(purchaser.email, certificateData);
+                    
+                    if (emailResult.success) {
+                        console.log(`✅ Email с сертификатом успешно отправлен на ${purchaser.email}`);
+                    } else {
+                        console.error(`❌ Ошибка отправки email на ${purchaser.email}:`, emailResult.error);
+                    }
+                } catch (emailError) {
+                    console.error('❌ Ошибка при отправке email с сертификатом:', emailError);
+                }
+            });
+        }
+
+        // Отправляем уведомление администратору (асинхронно)
+        setImmediate(async () => {
+            try {
+                await notifyAdminCertificatePurchase({
+                    clientName: purchaser.full_name,
+                    certificateNumber: certificateNumber,
+                    nominalValue: nominal_value,
+                    purchaseDate: now,
+                    adminCreated: true,
+                    skipPayment: skip_payment,
+                    reason: reason
+                });
+            } catch (notifyError) {
+                console.error('Ошибка отправки уведомления администратору:', notifyError);
+            }
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при ручном создании сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера',
+            code: 'INTERNAL_ERROR'
+        });
+    } finally {
+        client.release();
     }
 });
 
