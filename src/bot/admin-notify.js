@@ -2010,7 +2010,9 @@ async function notifyInstructorGroupTrainingDeleted({
     price_per_person,
     location,
     instructor_earnings_per_person,
-    admin_percentage
+    admin_percentage,
+    program_name,
+    deleted_by_admin = false
 }) {
     try {
         if (!instructorBot || !instructor_telegram_id) {
@@ -2024,6 +2026,10 @@ async function notifyInstructorGroupTrainingDeleted({
         let message = `🗑️ *Групповая тренировка удалена*\n\n`;
         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
         message += `⏰ *Время:* ${formattedTime}\n`;
+        
+        if (program_name) {
+            message += `📋 *Программа:* ${program_name}\n`;
+        }
         
         if (location) {
             message += `📍 *Место:* ${location}\n`;
@@ -2046,7 +2052,12 @@ async function notifyInstructorGroupTrainingDeleted({
         }
         
         message += `🆔 *ID тренировки:* ${training_id}\n`;
-        message += `\n⚠️ Вы удалили эту тренировку из своего расписания.`;
+        
+        if (deleted_by_admin) {
+            message += `\n⚠️ Администратор удалил эту тренировку из вашего расписания.`;
+        } else {
+            message += `\n⚠️ Вы удалили эту тренировку из своего расписания.`;
+        }
         
         await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
         console.log(`✅ Уведомление об удалении групповой тренировки отправлено инструктору ${instructor_name}`);
@@ -2066,17 +2077,25 @@ async function notifyAdminGroupTrainingDeletedByInstructor({
     sport_type,
     max_participants,
     price_per_person,
-    location
+    location,
+    program_name,
+    deleted_by_admin = false
 }) {
     try {
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
         const formattedDate = formatDate(date);
         const formattedTime = formatTime(time);
         
-        let message = `🗑️ *Инструктор удалил групповую тренировку*\n\n`;
+        let message = deleted_by_admin 
+            ? `🗑️ *Администратор удалил групповую тренировку*\n\n`
+            : `🗑️ *Инструктор удалил групповую тренировку*\n\n`;
         message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
         message += `⏰ *Время:* ${formattedTime}\n`;
+        
+        if (program_name) {
+            message += `📋 *Программа:* ${program_name}\n`;
+        }
         
         if (location) {
             message += `📍 *Место:* ${location}\n`;

@@ -472,22 +472,21 @@ router.get('/api/kuliga/programs', async (req, res) => {
         const createdTrainingsResult = await pool.query(createdTrainingsQuery, trainingParams);
 
         // Объединяем расписание программ с реальными тренировками
-        // Сначала добавляем все элементы расписания
-        const allScheduleItems = schedule.map(({ sort_key, ...rest }) => rest);
+        // ВАЖНО: Показываем ТОЛЬКО реальные тренировки из БД
+        // Если тренировка была удалена администратором, она не должна отображаться
+        const allScheduleItems = [];
         
-        // Добавляем реальные тренировки, заменяя или дополняя расписание
+        // Добавляем только реальные тренировки из БД (с фильтром по статусу)
         createdTrainingsResult.rows.forEach((training) => {
+            // Пропускаем отмененные и удаленные тренировки
+            if (training.status === 'cancelled') {
+                return;
+            }
+            
             const dateStr = moment(training.date).tz(TIMEZONE).format('YYYY-MM-DD');
             const timeStr = moment(training.start_time, 'HH:mm:ss').format('HH:mm');
             const dateLabel = moment(training.date).tz(TIMEZONE).format('D MMMM');
             const weekdayShort = moment(training.date).tz(TIMEZONE).format('dd');
-            
-            // Ищем существующий элемент расписания для этой программы, даты и времени
-            const existingIndex = allScheduleItems.findIndex(
-                item => item.program_id === training.program_id && 
-                        item.date_iso === dateStr && 
-                        item.time === timeStr
-            );
             
             const scheduleItem = {
                 program_id: training.program_id,
@@ -505,15 +504,10 @@ router.get('/api/kuliga/programs', async (req, res) => {
                 instructor_name: training.instructor_name,
                 training_id: training.training_id,
                 location: training.location,
+                status: training.status,
             };
             
-            if (existingIndex >= 0) {
-                // Заменяем расписание реальными данными тренировки
-                allScheduleItems[existingIndex] = scheduleItem;
-            } else {
-                // Добавляем новую тренировку
-                allScheduleItems.push(scheduleItem);
-            }
+            allScheduleItems.push(scheduleItem);
         });
         
         // Сортируем по дате и времени

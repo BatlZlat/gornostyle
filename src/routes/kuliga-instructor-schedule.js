@@ -1544,6 +1544,36 @@ router.delete('/group-trainings/:id', async (req, res) => {
             });
         }
 
+        // Получаем полную информацию о тренировке ДО удаления (для уведомлений)
+        const trainingInfoResult = await client.query(
+            `SELECT kgt.*, kss.location 
+             FROM kuliga_group_trainings kgt
+             LEFT JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
+             WHERE kgt.id = $1`,
+            [id]
+        );
+        const trainingInfo = trainingInfoResult.rows[0];
+        const location = trainingInfo?.location || 'kuliga';
+        
+        // Получаем название локации
+        const getLocationName = (loc) => {
+            const locationMap = {
+                'kuliga': 'Кулига Парк',
+                'vorona': 'Воронинские горки',
+                'natural_slope': 'Естественный склон'
+            };
+            return locationMap[loc] || loc;
+        };
+        const locationName = getLocationName(location);
+        
+        // Получаем admin_percentage для расчета заработка инструктора
+        const instructorDataResult = await client.query(
+            'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
+            [instructorId]
+        );
+        const adminPercentage = parseFloat(instructorDataResult.rows[0]?.admin_percentage || 0);
+        const instructorEarningsPerPerson = parseFloat(trainingInfo?.price_per_person || 0) * (1 - adminPercentage / 100);
+
         // Получаем все активные бронирования для этой тренировки
         const bookingsResult = await client.query(
             `SELECT kb.*, c.full_name as client_name, c.phone as client_phone, c.telegram_id
@@ -1602,37 +1632,7 @@ router.delete('/group-trainings/:id', async (req, res) => {
                     const instructor = instructorResult.rows[0];
                     const timeStr = String(training.start_time).substring(0, 5); // "HH:MM"
                     
-                    // Получаем полную информацию о тренировке для уведомлений
-                    const trainingInfoResult = await pool.query(
-                        `SELECT kgt.*, kss.location 
-                         FROM kuliga_group_trainings kgt
-                         LEFT JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
-                         WHERE kgt.id = $1`,
-                        [id]
-                    );
-                    
-                    const trainingInfo = trainingInfoResult.rows[0];
-                    const location = trainingInfo?.location || 'kuliga';
-                    
-                    // Получаем название локации
-                    const getLocationName = (loc) => {
-                        const locationMap = {
-                            'kuliga': 'Кулига Парк',
-                            'vorona': 'Воронинские горки',
-                            'natural_slope': 'Естественный склон'
-                        };
-                        return locationMap[loc] || loc;
-                    };
-                    const locationName = getLocationName(location);
-                    
-                    // Получаем admin_percentage для расчета заработка инструктора
-                    const instructorDataResult = await pool.query(
-                        'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
-                        [instructorId]
-                    );
-                    const adminPercentage = parseFloat(instructorDataResult.rows[0]?.admin_percentage || 0);
-                    const instructorEarningsPerPerson = parseFloat(trainingInfo?.price_per_person || 0) * (1 - adminPercentage / 100);
-                    
+                    // Используем сохраненную информацию о тренировке (получена ДО удаления)
                     // Уведомление инструктору
                     await notifyInstructorGroupTrainingDeleted({
                         instructor_telegram_id: instructor.telegram_id,

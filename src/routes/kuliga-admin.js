@@ -2237,7 +2237,8 @@ router.delete('/training/:id', async (req, res) => {
             // ПРИМЕЧАНИЕ: id может быть как ID групповой тренировки (kgt.id), так и ID бронирования (kb.id)
             // Сначала проверяем, является ли это ID групповой тренировки
             const groupTrainingCheck = await client.query(`
-                SELECT id, slot_id, is_private, instructor_id, date, start_time, end_time, sport_type, status
+                SELECT id, slot_id, is_private, instructor_id, date, start_time, end_time, sport_type, status,
+                       program_id, location, max_participants, price_per_person
                 FROM kuliga_group_trainings
                 WHERE id = $1
                 FOR UPDATE
@@ -2268,6 +2269,48 @@ router.delete('/training/:id', async (req, res) => {
                 
                 // Если нет активных бронирований, просто удаляем тренировку
                 if (allBookings.length === 0) {
+                    // Получаем полную информацию о тренировке ДО удаления (для уведомлений)
+                    const trainingInfoResult = await client.query(
+                        `SELECT kgt.*, kss.location as slot_location 
+                         FROM kuliga_group_trainings kgt
+                         LEFT JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
+                         WHERE kgt.id = $1`,
+                        [id]
+                    );
+                    const trainingInfo = trainingInfoResult.rows[0];
+                    const location = trainingInfo?.location || trainingInfo?.slot_location || 'kuliga';
+                    
+                    // Получаем данные инструктора и информацию о программе ДО удаления
+                    let instructorData = { telegram_id: null, full_name: null, admin_percentage: 0 };
+                    let programData = { name: null };
+                    
+                    if (groupTraining.instructor_id) {
+                        const instructorResult = await client.query(
+                            'SELECT telegram_id, full_name, admin_percentage FROM kuliga_instructors WHERE id = $1',
+                            [groupTraining.instructor_id]
+                        );
+                        if (instructorResult.rows.length > 0) {
+                            instructorData = instructorResult.rows[0];
+                        }
+                    }
+                    
+                    if (groupTraining.program_id) {
+                        const programResult = await client.query(
+                            'SELECT name FROM kuliga_programs WHERE id = $1',
+                            [groupTraining.program_id]
+                        );
+                        if (programResult.rows.length > 0) {
+                            programData = programResult.rows[0];
+                        }
+                    }
+                    
+                    // Форматируем дату и время
+                    const date = new Date(groupTraining.date);
+                    const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+                    const [hours, minutes] = String(groupTraining.start_time).split(':');
+                    const formattedTime = `${hours}:${minutes}`;
+                    
                     // Освобождаем слот (независимо от статуса, если он был заблокирован для тренировки)
                     if (groupTraining.slot_id) {
                         await client.query(
@@ -2285,6 +2328,65 @@ router.delete('/training/:id', async (req, res) => {
                     );
                     
                     await client.query('COMMIT');
+                    
+                    // Отправляем уведомления администратору и инструктору (асинхронно)
+                    setImmediate(async () => {
+                        try {
+                            const { notifyAdminGroupTrainingDeletedByInstructor, notifyInstructorGroupTrainingDeleted } = require('../bot/admin-notify');
+                            const moment = require('moment-timezone');
+                            const TIMEZONE = 'Asia/Yekaterinburg';
+                            
+                            // Получаем название локации
+                            const locationNames = {
+                                'kuliga': 'Кулига Парк',
+                                'vorona': 'Воронинские горки'
+                            };
+                            const locationName = locationNames[location] || location;
+                            
+                            // Расчет заработка инструктора
+                            const adminPercentage = parseFloat(instructorData.admin_percentage || 0);
+                            const pricePerPerson = parseFloat(trainingInfo?.price_per_person || 0);
+                            const instructorEarningsPerPerson = pricePerPerson * (1 - adminPercentage / 100);
+                            
+                            // Уведомление администратору о удалении администратором
+                            await notifyAdminGroupTrainingDeletedByInstructor({
+                                instructor_name: instructorData.full_name || 'Не указан',
+                                date: formattedDate,
+                                day_of_week: dayOfWeek,
+                                time: formattedTime,
+                                training_id: id,
+                                sport_type: trainingInfo?.sport_type || groupTraining.sport_type,
+                                max_participants: trainingInfo?.max_participants,
+                                price_per_person: pricePerPerson,
+                                location: locationName,
+                                program_name: programData?.name,
+                                deleted_by_admin: true // Указываем, что удалил администратор
+                            });
+                            
+                            // Уведомление инструктору
+                            if (instructorData.telegram_id) {
+                                await notifyInstructorGroupTrainingDeleted({
+                                    instructor_telegram_id: instructorData.telegram_id,
+                                    instructor_name: instructorData.full_name,
+                                    date: formattedDate,
+                                    day_of_week: dayOfWeek,
+                                    time: formattedTime,
+                                    training_id: id,
+                                    sport_type: trainingInfo?.sport_type || groupTraining.sport_type,
+                                    max_participants: trainingInfo?.max_participants,
+                                    price_per_person: pricePerPerson,
+                                    location: locationName,
+                                    instructor_earnings_per_person: instructorEarningsPerPerson,
+                                    admin_percentage: adminPercentage,
+                                    program_name: programData?.name,
+                                    deleted_by_admin: true // Указываем, что удалил администратор
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Ошибка при отправке уведомлений об удалении тренировки:', error);
+                        }
+                    });
+                    
                     return res.json({
                         success: true,
                         message: 'Групповая тренировка успешно удалена (не было активных бронирований)',

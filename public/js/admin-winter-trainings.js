@@ -470,7 +470,6 @@ function renderWinterTrainingRow(training) {
                     Подробнее
                 </button>
                 ${editButton}
-                ${cancelButton}
                 ${deleteButton}
             </td>
         </tr>
