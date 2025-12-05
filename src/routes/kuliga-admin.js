@@ -1855,6 +1855,217 @@ router.get('/training/:id', async (req, res) => {
 });
 
 /**
+ * PATCH /api/kuliga/admin/training/:id/cancel
+ * Отмена конкретной тренировки из программы (без удаления)
+ * Меняет статус на 'cancelled', отменяет бронирования, возвращает средства
+ */
+router.patch('/training/:id/cancel', async (req, res) => {
+    const { id } = req.params;
+    const { type, cancellation_reason } = req.body; // 'group' или 'individual'
+
+    if (!type || !['group', 'individual'].includes(type)) {
+        return res.status(400).json({ success: false, error: 'Необходимо указать type (group или individual)' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        if (type === 'group') {
+            // Отмена групповой тренировки
+            const groupTraining = await client.query(`
+                SELECT kgt.*, 
+                       kp.id as program_id, 
+                       kp.name as program_name,
+                       ki.full_name as instructor_name,
+                       ki.telegram_id as instructor_telegram_id
+                FROM kuliga_group_trainings kgt
+                LEFT JOIN kuliga_programs kp ON kgt.program_id = kp.id
+                LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                WHERE kgt.id = $1
+                FOR UPDATE OF kgt
+            `, [id]);
+
+            if (groupTraining.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ success: false, error: 'Групповая тренировка не найдена' });
+            }
+
+            const training = groupTraining.rows[0];
+
+            // Проверяем, что тренировка еще не отменена
+            if (training.status === 'cancelled') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, error: 'Тренировка уже отменена' });
+            }
+
+            // Получаем все активные бронирования
+            const bookingsResult = await client.query(`
+                SELECT 
+                    kb.*,
+                    c.full_name as client_name,
+                    c.phone as client_phone,
+                    c.telegram_id as client_telegram_id,
+                    c.id as client_id,
+                    w.id as wallet_id
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                LEFT JOIN wallets w ON c.id = w.client_id
+                WHERE kb.group_training_id = $1 
+                  AND kb.status IN ('pending', 'confirmed')
+            `, [id]);
+
+            const bookings = bookingsResult.rows;
+            let totalRefund = 0;
+            const refundsInfo = [];
+
+            // Форматируем дату и время
+            const date = new Date(training.date);
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.getDay()];
+            const formattedDate = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            const [hours, minutes] = String(training.start_time).split(':');
+            const formattedTime = `${hours}:${minutes}`;
+
+            // Отменяем все бронирования и возвращаем средства
+            for (const booking of bookings) {
+                const refundAmount = Number(booking.price_total || 0);
+                totalRefund += refundAmount;
+
+                // Обновляем статус бронирования
+                await client.query(
+                    'UPDATE kuliga_bookings SET status = $1, cancelled_at = CURRENT_TIMESTAMP WHERE id = $2',
+                    ['cancelled', booking.id]
+                );
+
+                // Возвращаем средства
+                if (refundAmount > 0 && booking.wallet_id) {
+                    await client.query(
+                        'UPDATE wallets SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP WHERE id = $2',
+                        [refundAmount, booking.wallet_id]
+                    );
+
+                    const participantsList = booking.participants_names && Array.isArray(booking.participants_names)
+                        ? booking.participants_names.join(', ')
+                        : booking.participants_names || 'Участник';
+                    const participantsCount = booking.participants_count || 1;
+
+                    await client.query(
+                        'INSERT INTO transactions (wallet_id, amount, type, description) VALUES ($1, $2, $3, $4)',
+                        [
+                            booking.wallet_id,
+                            refundAmount,
+                            'refund',
+                            `Возврат: Отмена групповой тренировки (${participantsCount} участников), Дата: ${formattedDate}, Время: ${formattedTime}`
+                        ]
+                    );
+
+                    refundsInfo.push({
+                        client_name: booking.client_name,
+                        participant_name: participantsList,
+                        participants_count: participantsCount,
+                        client_phone: booking.client_phone,
+                        client_telegram_id: booking.client_telegram_id,
+                        refund: refundAmount
+                    });
+                }
+            }
+
+            // Меняем статус тренировки на 'cancelled'
+            await client.query(
+                `UPDATE kuliga_group_trainings 
+                 SET status = 'cancelled', 
+                     cancellation_reason = $2,
+                     updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [id, cancellation_reason || 'Отменено администратором']
+            );
+
+            // НЕ освобождаем слот - он остается за тренировкой, просто тренировка отменена
+            // НЕ удаляем тренировку - она остается в БД со статусом 'cancelled'
+
+            await client.query('COMMIT');
+
+            // Отправляем уведомления (асинхронно)
+            setImmediate(async () => {
+                try {
+                    const { bot } = require('../bot/client-bot');
+                    const { notifyAdminProgramTrainingCancelled } = require('../bot/admin-notify');
+
+                    // Уведомление администратору
+                    await notifyAdminProgramTrainingCancelled({
+                        program_name: training.program_name || 'Тренировка',
+                        date: formattedDate,
+                        day_of_week: dayOfWeek,
+                        time: formattedTime,
+                        instructor_name: training.instructor_name || 'Не назначен',
+                        refunds_count: refundsInfo.length,
+                        total_refund: totalRefund
+                    });
+
+                    // Уведомление инструктору
+                    if (training.instructor_telegram_id) {
+                        const { instructorBot } = require('../bot/admin-notify');
+                        if (instructorBot) {
+                            const message = 
+                                `❌ *Отмена тренировки*\n\n` +
+                                (training.program_name ? `📋 *Программа:* ${training.program_name}\n` : '') +
+                                `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                                `⏰ *Время:* ${formattedTime}\n` +
+                                `👥 *Участников было:* ${bookings.length}\n\n` +
+                                `Тренировка отменена администратором.`;
+                            
+                            await instructorBot.sendMessage(training.instructor_telegram_id, message, { parse_mode: 'Markdown' });
+                        }
+                    }
+
+                    // Уведомления клиентам
+                    for (const refundInfo of refundsInfo) {
+                        if (refundInfo.client_telegram_id && bot) {
+                            const phoneNumber = process.env.SUPPORT_PHONE || '+7 (900) 123-45-67';
+                            const message = 
+                                `❌ *Отмена групповой тренировки*\n\n` +
+                                (training.program_name ? `📋 *Программа:* ${training.program_name}\n` : '') +
+                                `👥 *Участники (${refundInfo.participants_count}):* ${refundInfo.participant_name}\n` +
+                                `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
+                                `⏰ *Время:* ${formattedTime}\n` +
+                                `👨‍🏫 *Инструктор:* ${training.instructor_name || 'Не назначен'}\n\n` +
+                                `💰 *Возврат:* ${refundInfo.refund.toFixed(2)} руб.\n` +
+                                `Средства возвращены на ваш баланс.\n\n` +
+                                `Причину отмены уточните у администратора по тел: ${phoneNumber}`;
+                            
+                            await bot.sendMessage(refundInfo.client_telegram_id, message, { parse_mode: 'Markdown' });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка при отправке уведомлений об отмене:', error);
+                }
+            });
+
+            res.json({
+                success: true,
+                message: 'Тренировка отменена',
+                refund: totalRefund,
+                refunds_count: refundsInfo.length,
+                is_program_training: !!training.program_id
+            });
+
+        } else {
+            // Отмена индивидуальной тренировки
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Отмена индивидуальных тренировок через этот endpoint не поддерживается. Используйте DELETE /training/:id' 
+            });
+        }
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при отмене тренировки:', error);
+        res.status(500).json({ success: false, error: 'Не удалось отменить тренировку: ' + error.message });
+    } finally {
+        client.release();
+    }
+});
+
+/**
  * DELETE /api/kuliga/admin/training/:id
  * Удаление тренировки Кулиги (групповой или индивидуальной) с возвратом средств и уведомлениями
  */

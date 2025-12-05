@@ -207,9 +207,15 @@
                     programContainer.innerHTML = programs
                         .map((program) => {
                             const nextSession = (program.schedule || [])[0];
-                            const nextHint = nextSession
-                                ? `<div class="kuliga-program-next"><i class="fa-solid fa-calendar-days"></i> Ближайшее занятие: ${nextSession.date_label} (${nextSession.weekday_short}) в ${nextSession.time}</div>`
-                                : '';
+                            let nextHint = '';
+                            if (nextSession) {
+                                const phoneNumber = '${process.env.SUPPORT_PHONE || "+7 (900) 123-45-67"}';
+                                if (nextSession.status === 'cancelled') {
+                                    nextHint = `<div class="kuliga-program-next kuliga-program-cancelled"><i class="fa-solid fa-calendar-xmark"></i> Ближайшее занятие: ${nextSession.date_label} (${nextSession.weekday_short}) в ${nextSession.time} <span style="color: #e74c3c; font-weight: 600;">отменено</span>, причину уточните у администратора по тел: ${phoneNumber}</div>`;
+                                } else {
+                                    nextHint = `<div class="kuliga-program-next"><i class="fa-solid fa-calendar-days"></i> Ближайшее занятие: ${nextSession.date_label} (${nextSession.weekday_short}) в ${nextSession.time}</div>`;
+                                }
+                            }
                             const locationName = program.location && window.getLocationName 
                                 ? window.getLocationName(program.location) 
                                 : 'Место не указано';
@@ -250,7 +256,9 @@
                     scheduleContainer.innerHTML =
                         `<div class="kuliga-empty">${locationName ? `В ${locationName} в ближайшие две недели регулярных занятий нет. ` : 'В ближайшие две недели регулярных занятий нет. '}Оформите подписку на уведомления в Telegram.</div>`;
                 } else {
-                    scheduleContainer.innerHTML = schedule
+                    // Фильтруем отмененные тренировки
+                    const activeSchedule = schedule.filter((item) => item.status !== 'cancelled');
+                    scheduleContainer.innerHTML = activeSchedule
                         .map(
                             (item) => {
                                 const locationName = item.location && window.getLocationName 

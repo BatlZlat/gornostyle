@@ -2193,6 +2193,42 @@ async function notifyInstructorSlotsCreatedByAdmin({
 }
 
 /**
+ * Уведомление администратору об отмене тренировки из программы
+ */
+async function notifyAdminProgramTrainingCancelled({
+    program_name,
+    date,
+    day_of_week,
+    time,
+    instructor_name,
+    refunds_count,
+    total_refund
+}) {
+    try {
+        const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
+        if (!adminIds.length) {
+            console.error('ADMIN_TELEGRAM_ID не настроен в .env файле');
+            return;
+        }
+
+        const message = 
+            `❌ *Отменена тренировка из программы*\n\n` +
+            `📋 *Программа:* ${program_name}\n` +
+            `📅 *Дата:* ${date} (${day_of_week})\n` +
+            `⏰ *Время:* ${time}\n` +
+            `👨‍🏫 *Инструктор:* ${instructor_name}\n\n` +
+            `👥 *Отменено бронирований:* ${refunds_count}\n` +
+            `💰 *Возвращено средств:* ${total_refund.toFixed(2)} руб.`;
+
+        for (const adminId of adminIds) {
+            await bot.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке уведомления администратору об отмене тренировки:', error);
+    }
+}
+
+/**
  * Уведомление администратору о создании слотов и тренировок из программы
  */
 async function notifyAdminProgramTrainingsGenerated({
@@ -2403,7 +2439,8 @@ module.exports = {
     notifyInstructorGroupTrainingDeleted,
     notifyAdminGroupTrainingDeletedByInstructor,
     notifyInstructorSlotsCreatedByAdmin,
-    notifyAdminProgramTrainingsGenerated
+    notifyAdminProgramTrainingsGenerated,
+    notifyAdminProgramTrainingCancelled
 };
 
 // Функция для отправки уведомления о покупке абонемента

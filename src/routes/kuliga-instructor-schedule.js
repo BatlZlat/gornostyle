@@ -1385,6 +1385,22 @@ router.put('/group-trainings/:id', async (req, res) => {
     } = req.body;
 
     try {
+        // Проверяем, не является ли тренировка программной
+        const trainingCheck = await pool.query(
+            'SELECT program_id FROM kuliga_group_trainings WHERE id = $1 AND instructor_id = $2',
+            [id, instructorId]
+        );
+        
+        if (trainingCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Групповая тренировка не найдена' });
+        }
+        
+        if (trainingCheck.rows[0].program_id) {
+            return res.status(403).json({ 
+                error: 'Эта тренировка создана из регулярной программы и может быть отредактирована только администратором.' 
+            });
+        }
+        
         // Валидация
         if (!sport_type || !level || !price_per_person || !max_participants) {
             return res.status(400).json({
@@ -1500,6 +1516,15 @@ router.delete('/group-trainings/:id', async (req, res) => {
         }
 
         const training = trainingResult.rows[0];
+
+        // ВАЖНО: Запрещаем инструктору удалять тренировки из программ
+        // Тренировки из программ может удалять только администратор
+        if (training.program_id) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ 
+                error: 'Эта тренировка создана из регулярной программы и может быть удалена только администратором. Для удаления обратитесь к администратору.' 
+            });
+        }
 
         // Получаем все активные бронирования для этой тренировки
         const bookingsResult = await client.query(
@@ -1871,6 +1896,18 @@ router.post('/group-trainings/delete-bulk', async (req, res) => {
 
         // Для каждой тренировки проверяем наличие активных бронирований и удаляем
         for (const training of trainingsResult.rows) {
+            // Проверяем, не является ли тренировка программной
+            const programCheck = await client.query(
+                'SELECT program_id FROM kuliga_group_trainings WHERE id = $1',
+                [training.id]
+            );
+            
+            if (programCheck.rows[0]?.program_id) {
+                // Пропускаем программные тренировки
+                skippedWithBookings++;
+                continue;
+            }
+            
             // Проверяем наличие активных бронирований
             const bookingsCheck = await client.query(
                 `SELECT COUNT(*) as count 
