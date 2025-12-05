@@ -954,9 +954,9 @@ router.post('/group-trainings', async (req, res) => {
             try {
                 const { notifyInstructorKuligaAssignment, notifyAdminInstructorAssigned } = require('../bot/admin-notify');
                 
-                // Получаем данные инструктора
+                // Получаем данные инструктора (включая admin_percentage и location)
                 const instructorResult = await pool.query(
-                    'SELECT full_name, telegram_id FROM kuliga_instructors WHERE id = $1',
+                    'SELECT full_name, telegram_id, admin_percentage, location FROM kuliga_instructors WHERE id = $1',
                     [instructorId]
                 );
                 
@@ -967,12 +967,27 @@ router.post('/group-trainings', async (req, res) => {
                     const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][trainingDateMoment.day()];
                     const formattedTime = String(training.start_time).substring(0, 5);
                     
-                    // Получаем location из слота
+                    // Получаем location из слота (приоритет) или из инструктора
                     const locationResult = await client.query(
                         'SELECT location FROM kuliga_schedule_slots WHERE id = $1',
                         [slot_id]
                     );
-                    const location = locationResult.rows[0]?.location || 'kuliga';
+                    const location = locationResult.rows[0]?.location || instructor.location || 'kuliga';
+                    const adminPercentage = parseFloat(instructor.admin_percentage || 0);
+                    
+                    // Получаем название локации
+                    const getLocationName = (loc) => {
+                        const locationMap = {
+                            'kuliga': 'Кулига Парк',
+                            'vorona': 'Воронинские горки',
+                            'natural_slope': 'Естественный склон'
+                        };
+                        return locationMap[loc] || loc;
+                    };
+                    const locationName = getLocationName(location);
+                    
+                    // Рассчитываем заработок инструктора с учетом процента администратора
+                    const instructorEarningsPerPerson = pricePerPersonValue * (1 - adminPercentage / 100);
                     
                     // Уведомление инструктору (подтверждение создания)
                     if (instructor.telegram_id) {
@@ -981,9 +996,11 @@ router.post('/group-trainings', async (req, res) => {
                             const message = `✅ *Создана групповая тренировка*\n\n` +
                                 `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                                 `⏰ *Время:* ${formattedTime}\n` +
+                                `📍 *Место:* ${locationName}\n` +
                                 `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n` +
                                 `👥 *Макс. участников:* ${maxParticipantsValue}\n` +
-                                `💰 *Цена за человека:* ${pricePerPersonValue.toFixed(2)} ₽\n\n` +
+                                `💰 *Цена за человека:* ${pricePerPersonValue.toFixed(2)} ₽\n` +
+                                `💵 *Ваш заработок за человека:* ${instructorEarningsPerPerson.toFixed(2)} ₽${adminPercentage > 0 ? ` (админ ${adminPercentage}%)` : ''}\n\n` +
                                 `Тренировка доступна для записи клиентам!`;
                             
                             await instructorBot.sendMessage(instructor.telegram_id, message, { parse_mode: 'Markdown' });
@@ -998,6 +1015,7 @@ router.post('/group-trainings', async (req, res) => {
                             `👨‍🏫 *Инструктор:* ${instructor.full_name}\n` +
                             `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n` +
                             `⏰ *Время:* ${formattedTime}\n` +
+                            `📍 *Место:* ${locationName}\n` +
                             `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n` +
                             `👥 *Макс. участников:* ${maxParticipantsValue}\n` +
                             `💰 *Цена за человека:* ${pricePerPersonValue.toFixed(2)} ₽\n` +
@@ -1584,13 +1602,50 @@ router.delete('/group-trainings/:id', async (req, res) => {
                     const instructor = instructorResult.rows[0];
                     const timeStr = String(training.start_time).substring(0, 5); // "HH:MM"
                     
+                    // Получаем полную информацию о тренировке для уведомлений
+                    const trainingInfoResult = await pool.query(
+                        `SELECT kgt.*, kss.location 
+                         FROM kuliga_group_trainings kgt
+                         LEFT JOIN kuliga_schedule_slots kss ON kgt.slot_id = kss.id
+                         WHERE kgt.id = $1`,
+                        [id]
+                    );
+                    
+                    const trainingInfo = trainingInfoResult.rows[0];
+                    const location = trainingInfo?.location || 'kuliga';
+                    
+                    // Получаем название локации
+                    const getLocationName = (loc) => {
+                        const locationMap = {
+                            'kuliga': 'Кулига Парк',
+                            'vorona': 'Воронинские горки',
+                            'natural_slope': 'Естественный склон'
+                        };
+                        return locationMap[loc] || loc;
+                    };
+                    const locationName = getLocationName(location);
+                    
+                    // Получаем admin_percentage для расчета заработка инструктора
+                    const instructorDataResult = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
+                        [instructorId]
+                    );
+                    const adminPercentage = parseFloat(instructorDataResult.rows[0]?.admin_percentage || 0);
+                    const instructorEarningsPerPerson = parseFloat(trainingInfo?.price_per_person || 0) * (1 - adminPercentage / 100);
+                    
                     // Уведомление инструктору
                     await notifyInstructorGroupTrainingDeleted({
                         instructor_telegram_id: instructor.telegram_id,
                         instructor_name: instructor.full_name,
                         date: training.date,
                         time: timeStr,
-                        training_id: id
+                        training_id: id,
+                        sport_type: trainingInfo?.sport_type,
+                        max_participants: trainingInfo?.max_participants,
+                        price_per_person: trainingInfo?.price_per_person,
+                        location: locationName,
+                        instructor_earnings_per_person: instructorEarningsPerPerson,
+                        admin_percentage: adminPercentage
                     });
                     
                     // Уведомление администратору
@@ -1598,7 +1653,11 @@ router.delete('/group-trainings/:id', async (req, res) => {
                         instructor_name: instructor.full_name,
                         date: training.date,
                         time: timeStr,
-                        training_id: id
+                        training_id: id,
+                        sport_type: trainingInfo?.sport_type,
+                        max_participants: trainingInfo?.max_participants,
+                        price_per_person: trainingInfo?.price_per_person,
+                        location: locationName
                     });
                 }
             } catch (error) {

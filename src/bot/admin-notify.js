@@ -2004,7 +2004,13 @@ async function notifyInstructorGroupTrainingDeleted({
     instructor_name,
     date,
     time,
-    training_id
+    training_id,
+    sport_type,
+    max_participants,
+    price_per_person,
+    location,
+    instructor_earnings_per_person,
+    admin_percentage
 }) {
     try {
         if (!instructorBot || !instructor_telegram_id) {
@@ -2018,6 +2024,27 @@ async function notifyInstructorGroupTrainingDeleted({
         let message = `🗑️ *Групповая тренировка удалена*\n\n`;
         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
         message += `⏰ *Время:* ${formattedTime}\n`;
+        
+        if (location) {
+            message += `📍 *Место:* ${location}\n`;
+        }
+        
+        if (sport_type) {
+            message += `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n`;
+        }
+        
+        if (max_participants) {
+            message += `👥 *Макс. участников:* ${max_participants}\n`;
+        }
+        
+        if (price_per_person) {
+            message += `💰 *Цена за человека:* ${parseFloat(price_per_person).toFixed(2)} ₽\n`;
+        }
+        
+        if (instructor_earnings_per_person !== undefined) {
+            message += `💵 *Ваш заработок за человека:* ${instructor_earnings_per_person.toFixed(2)} ₽${admin_percentage > 0 ? ` (админ ${admin_percentage}%)` : ''}\n`;
+        }
+        
         message += `🆔 *ID тренировки:* ${training_id}\n`;
         message += `\n⚠️ Вы удалили эту тренировку из своего расписания.`;
         
@@ -2035,7 +2062,11 @@ async function notifyAdminGroupTrainingDeletedByInstructor({
     instructor_name,
     date,
     time,
-    training_id
+    training_id,
+    sport_type,
+    max_participants,
+    price_per_person,
+    location
 }) {
     try {
         const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
@@ -2046,6 +2077,23 @@ async function notifyAdminGroupTrainingDeletedByInstructor({
         message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
         message += `⏰ *Время:* ${formattedTime}\n`;
+        
+        if (location) {
+            message += `📍 *Место:* ${location}\n`;
+        }
+        
+        if (sport_type) {
+            message += `🎿 *Вид спорта:* ${sport_type === 'ski' ? 'Лыжи' : 'Сноуборд'}\n`;
+        }
+        
+        if (max_participants) {
+            message += `👥 *Макс. участников:* ${max_participants}\n`;
+        }
+        
+        if (price_per_person) {
+            message += `💰 *Цена за человека:* ${parseFloat(price_per_person).toFixed(2)} ₽\n`;
+        }
+        
         message += `🆔 *ID тренировки:* ${training_id}\n`;
         
         const adminIds = process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim());
