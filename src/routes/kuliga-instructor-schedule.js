@@ -804,7 +804,7 @@ router.delete('/slots/:id', async (req, res) => {
 router.get('/bot-info', async (req, res) => {
     try {
         // Получаем username из переменной окружения, убираем символ @ если есть, и приводим к нижнему регистру
-        let botUsername = process.env.BOT_INSTRUKTORS_KULIGA || 'kuliga_instruktor_bot';
+        let botUsername = process.env.BOT_INSTRUKTORS_KULIGA || 'gornostyle72_Instructor_bot';
         // Убираем @ если есть
         botUsername = botUsername.replace(/^@/, '').trim();
         // Приводим к нижнему регистру (username в Telegram всегда в нижнем регистре)

@@ -174,7 +174,8 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             instructorsQuery += ` AND location = $${params.length}`;
         }
         
-        instructorsQuery += ' ORDER BY full_name';
+        // Сортировка: Тебякин Данила первым, остальные по алфавиту
+        instructorsQuery += ` ORDER BY CASE WHEN full_name ILIKE 'Тебякин%' THEN 0 ELSE 1 END, full_name ASC`;
         
         const instructorsResult = await pool.query(instructorsQuery, params);
 
