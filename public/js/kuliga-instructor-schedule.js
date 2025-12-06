@@ -260,7 +260,7 @@ async function loadInstructorInfo() {
                 if (botInfoResponse.ok) {
                     const botInfo = await botInfoResponse.json();
                     // Нормализуем username: убираем @ и приводим к нижнему регистру
-                    let botUsername = botInfo.botUsername || 'kuliga_instruktor_bot';
+                    let botUsername = botInfo.botUsername || 'gornostyle72_Instructor_bot';
                     botUsername = botUsername.replace(/^@/, '').trim().toLowerCase();
                     const deepLink = `https://t.me/${botUsername}?start=instructor_${instructor.id}`;
                     const telegramBotLink = document.getElementById('telegram-bot-link');
@@ -271,7 +271,7 @@ async function loadInstructorInfo() {
             } catch (error) {
                 console.error('Ошибка при получении информации о боте:', error);
                 // Используем fallback значение
-                const deepLink = `https://t.me/kuliga_instruktor_bot?start=instructor_${instructor.id}`;
+                const deepLink = `https://t.me/gornostyle72_Instructor_bot?start=instructor_${instructor.id}`;
                 const telegramBotLink = document.getElementById('telegram-bot-link');
                 if (telegramBotLink) {
                     telegramBotLink.href = deepLink;
