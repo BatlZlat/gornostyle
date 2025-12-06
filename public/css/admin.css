@@ -238,6 +238,16 @@ body {
     padding: 1rem;
     border-radius: 4px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.certificate-item.expiring-soon {
+    border-left: 4px solid #ff9800;
+    background-color: #fff3e0;
+}
+
+.certificate-item:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .trainer-item {
@@ -1999,6 +2009,40 @@ body {
     overflow: hidden;
 }
 
+/* Стили для вкладок расписания */
+.schedule-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+    background: white;
+    padding: 0;
+}
+
+.schedule-tab {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.schedule-tab:hover {
+    color: #2196F3;
+    background: rgba(33, 150, 243, 0.05);
+}
+
+.schedule-tab.active {
+    color: #2196F3;
+    border-bottom-color: #2196F3;
+    font-weight: 600;
+}
+
 .schedule-section-title {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -2025,3 +2069,457 @@ body {
     border-bottom: 1px solid #dee2e6;
     font-size: 1rem;
 } 
+/* ========== СТИЛИ ДЛЯ АДМИН-ПАНЕЛИ КУЛИГИ ========== */
+
+.kuliga-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.kuliga-tab {
+    padding: 12px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+    transition: all 0.2s ease;
+}
+
+.kuliga-tab:hover {
+    background: rgba(52, 152, 219, 0.1);
+}
+
+.kuliga-tab.active {
+    color: var(--secondary-color);
+    border-bottom-color: var(--secondary-color);
+}
+
+.kuliga-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.kuliga-section-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.kuliga-filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Список инструкторов */
+.kuliga-instructors-list {
+    display: grid;
+    gap: 16px;
+}
+
+.kuliga-instructor-item {
+    display: flex;
+    gap: 16px;
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--border-color);
+    align-items: flex-start;
+}
+
+.kuliga-instructor-photo {
+    flex-shrink: 0;
+}
+
+.kuliga-instructor-photo img {
+    width: 80px;
+    height: 80px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #f0f0f0;
+}
+
+.kuliga-instructor-info {
+    flex: 1;
+}
+
+.kuliga-instructor-info h4 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    color: var(--primary-color);
+}
+
+.kuliga-instructor-info p {
+    margin: 4px 0;
+    font-size: 14px;
+    color: #666;
+}
+
+.kuliga-instructor-description {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e9ecef;
+    font-style: italic;
+}
+
+.kuliga-instructor-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.kuliga-programs-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.kuliga-program-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 10px 25px rgba(52, 152, 219, 0.08);
+}
+
+.kuliga-program-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.kuliga-program-header h4 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.kuliga-program-description {
+    margin: 0;
+    color: var(--text-muted);
+    min-height: 48px;
+}
+
+.kuliga-program-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.kuliga-program-meta .tag {
+    background: rgba(52, 152, 219, 0.08);
+    color: #2c3e50;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.kuliga-program-details p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-color);
+}
+
+.kuliga-program-details p + p {
+    margin-top: 4px;
+}
+
+.kuliga-program-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.kuliga-program-actions .btn-secondary,
+.kuliga-program-actions .btn-danger {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.weekdays-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 8px 12px;
+    background: rgba(236, 240, 241, 0.6);
+    border-radius: 8px;
+    border: 1px solid rgba(189, 195, 199, 0.6);
+}
+
+.weekdays-selector label {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.timeslot-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.timeslot-item:last-child {
+    margin-bottom: 0;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-secondary {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+/* Настройки */
+.kuliga-settings-form {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.kuliga-photo-preview {
+    width: 140px;
+    height: 140px;
+    border-radius: 12px;
+    background: #f2f3f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+}
+
+.kuliga-photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.kuliga-photo-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #7f8c8d;
+    font-size: 13px;
+    text-align: center;
+    padding: 12px;
+}
+
+.kuliga-photo-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.setting-item {
+    margin-bottom: 24px;
+}
+
+.setting-item label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.setting-item input {
+    width: 100%;
+    max-width: 400px;
+}
+
+.setting-item small {
+    display: block;
+    margin-top: 6px;
+    color: #666;
+    font-size: 13px;
+}
+
+/* Финансы */
+.finance-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.finance-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    text-align: center;
+}
+
+.finance-card h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #666;
+    font-weight: 500;
+}
+
+.finance-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--secondary-color);
+    margin: 0;
+}
+
+.kuliga-finance-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.kuliga-finance-table thead {
+    background: var(--primary-color);
+    color: white;
+}
+
+.kuliga-finance-table th,
+.kuliga-finance-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.kuliga-finance-table tbody tr:hover {
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.kuliga-finance-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Адаптивность для Кулиги */
+@media (max-width: 768px) {
+    .kuliga-instructor-item {
+        flex-direction: column;
+    }
+
+    .kuliga-instructor-actions {
+        flex-direction: row;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .kuliga-section-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .finance-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .kuliga-finance-table {
+        font-size: 13px;
+    }
+
+    .kuliga-finance-table th,
+    .kuliga-finance-table td {
+        padding: 8px 10px;
+    }
+}
+
+/* Стили для статусов выплат Кулиги */
+.status-pending {
+    background-color: #f39c12;
+    color: white;
+}
+
+.status-paid {
+    background-color: #27ae60;
+    color: white;
+}
+
+.status-cancelled {
+    background-color: #e74c3c;
+    color: white;
+}
+
+/* Стили для кнопок действий */
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 5px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.btn-icon:hover {
+    background-color: #f0f0f0;
+}
+
+/* Стили для карточек инструкторов */
+.instructor-earnings-card {
+    transition: box-shadow 0.2s;
+}
+
+.instructor-earnings-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Стили для таблиц */
+.data-table {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.data-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Стили для активной кнопки периода */
+.period-btn.active {
+    background-color: var(--secondary-color);
+    color: white;
+}

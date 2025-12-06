@@ -24,6 +24,7 @@ router.get('/', async (req, res) => {
                 tr.created_at,
                 tr.updated_at,
                 c.full_name as client_name,
+                c.telegram_username,
                 c.phone as client_phone,
                 ch.full_name as child_name
             FROM training_requests tr
@@ -89,6 +90,7 @@ router.get('/archive', async (req, res) => {
                 tr.created_at,
                 tr.updated_at,
                 c.full_name as client_name,
+                c.telegram_username,
                 c.phone as client_phone,
                 ch.full_name as child_name
             FROM training_requests tr
@@ -134,6 +136,7 @@ router.get('/:id', async (req, res) => {
             SELECT 
                 tr.*,
                 c.full_name as client_name,
+                c.telegram_username,
                 c.phone as client_phone,
                 ch.full_name as child_name
             FROM training_requests tr

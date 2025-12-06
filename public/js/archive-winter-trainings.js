@@ -75,16 +75,27 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const params = new URLSearchParams();
             
-            // Если не выбрана дата начала, используем дату 30 дней назад
+            // По умолчанию показываем за текущий месяц
             if (!dateFrom.value) {
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                params.append('date_from', thirtyDaysAgo.toISOString().split('T')[0]);
+                const now = new Date();
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                params.append('date_from', startOfMonth.toISOString().split('T')[0]);
+                // Устанавливаем значения в поля для отображения
+                dateFrom.valueAsDate = startOfMonth;
             } else {
                 params.append('date_from', dateFrom.value);
             }
             
-            if (dateTo.value) params.append('date_to', dateTo.value);
+            if (!dateTo.value) {
+                const now = new Date();
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                params.append('date_to', endOfMonth.toISOString().split('T')[0]);
+                // Устанавливаем значения в поля для отображения
+                dateTo.valueAsDate = endOfMonth;
+            } else {
+                params.append('date_to', dateTo.value);
+            }
+            
             if (trainerSelect.value) params.append('trainer_id', trainerSelect.value);
 
             console.log('Запрос архивных зимних тренировок с параметрами:', params.toString());
@@ -141,7 +152,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </thead>
                                 <tbody>
                                     ${grouped[date].map(training => {
-                                        const isIndividual = !training.is_group;
+                                        // Определяем тип тренировки на основе is_individual или winter_training_type
+                                        // is_individual может быть boolean или undefined
+                                        let isIndividual = false;
+                                        if (training.is_individual !== undefined) {
+                                            isIndividual = training.is_individual === true || training.is_individual === 'true';
+                                        } else if (training.winter_training_type === 'individual') {
+                                            isIndividual = true;
+                                        }
+                                        
                                         const typeLabels = {
                                             individual: 'Индивидуальное',
                                             sport_group: 'Спортивная группа',
@@ -163,16 +182,25 @@ document.addEventListener('DOMContentLoaded', function() {
                                         const currentParticipants = training.current_participants || (isIndividual ? 1 : 0);
                                         const maxParticipants = training.max_participants || (isIndividual ? 1 : 1);
                                         
+                                        // Расширенные метки статусов для всех типов тренировок
                                         const statusLabels = {
                                             scheduled: 'Запланирована',
                                             completed: 'Завершена',
-                                            cancelled: 'Отменена'
+                                            cancelled: 'Отменена',
+                                            pending: 'Ожидание',
+                                            confirmed: 'Подтверждено',
+                                            refunded: 'Возврат',
+                                            open: 'Открыта'
                                         };
                                         
                                         const statusColors = {
                                             scheduled: '#2196F3',
                                             completed: '#4CAF50',
-                                            cancelled: '#f44336'
+                                            cancelled: '#f44336',
+                                            pending: '#FF9800',
+                                            confirmed: '#4CAF50',
+                                            refunded: '#9E9E9E',
+                                            open: '#2196F3'
                                         };
                                         
                                         const status = statusLabels[training.status] || training.status || '—';
@@ -185,6 +213,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                             pricePerPerson = `${(totalPrice / maxParticipants).toFixed(2)} ₽`;
                                         }
                                         
+                                        // Для тренировок Кулиги используем специальные функции просмотра/удаления
+                                        const isKuliga = training.training_source === 'kuliga';
+                                        const viewFunction = isKuliga 
+                                            ? `viewKuligaArchiveTrainingDetails(${training.id}, '${training.kuliga_type || 'group'}')`
+                                            : `viewWinterTrainingDetails(${training.id})`;
+                                        const deleteFunction = isKuliga
+                                            ? `deleteKuligaArchiveTraining(${training.id}, '${training.kuliga_type || 'group'}')`
+                                            : `deleteArchiveWinterTraining(${training.id})`;
+                                        
                                         return `
                                             <tr class="training-row">
                                                 <td>${startTime} - ${endTime}</td>
@@ -196,10 +233,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 <td>${pricePerPerson}</td>
                                                 <td><span style="color:${statusColor};font-weight:bold;">${status}</span></td>
                                                 <td class="training-actions">
-                                                    <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
+                                                    <button class="btn-secondary" onclick="${viewFunction}">
                                                         Подробнее
                                                     </button>
-                                                    <button class="btn-danger" onclick="deleteArchiveWinterTraining(${training.id})" style="margin-left: 5px;">
+                                                    <button class="btn-danger" onclick="${deleteFunction}" style="margin-left: 5px;">
                                                         Удалить
                                                     </button>
                                                 </td>
@@ -221,6 +258,62 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }
+
+    // Функция просмотра деталей тренировки Кулиги из архива
+    window.viewKuligaArchiveTrainingDetails = async function(trainingId, kuligaType) {
+        try {
+            const token = getAuthToken();
+            const response = await authFetch(`/api/kuliga/admin/training/${trainingId}?type=${kuligaType || 'group'}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Ошибка получения данных');
+            }
+            
+            // Используем функцию из admin.js для отображения
+            if (typeof window.viewKuligaTrainingDetails === 'function') {
+                window.viewKuligaTrainingDetails(trainingId, kuligaType);
+            } else {
+                alert('Детали тренировки Кулиги загружены, но функция отображения не найдена');
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке деталей тренировки Кулиги:', error);
+            alert('Ошибка при загрузке деталей тренировки: ' + error.message);
+        }
+    };
+    
+    // Функция удаления тренировки Кулиги из архива
+    window.deleteKuligaArchiveTraining = async function(trainingId, kuligaType) {
+        if (!confirm('Вы уверены, что хотите удалить эту тренировку Кулиги? Это действие нельзя отменить.')) {
+            return;
+        }
+        
+        try {
+            const response = await authFetch(`/api/kuliga/admin/training/${trainingId}?type=${kuligaType || 'group'}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка при удалении тренировки');
+            }
+            
+            const result = await response.json();
+            if (result.success) {
+                alert(`✅ Тренировка успешно удалена${result.refund ? `\n\n💰 Возвращено средств: ${Number(result.refund).toFixed(2)} руб.` : ''}`);
+                loadArchiveTrainings();
+            } else {
+                throw new Error(result.error || 'Ошибка при удалении тренировки');
+            }
+        } catch (error) {
+            console.error('Ошибка удаления тренировки Кулиги:', error);
+            alert('❌ Ошибка при удалении тренировки: ' + error.message);
+        }
+    };
 
     // Функция просмотра деталей тренировки
     window.viewWinterTrainingDetails = async function(trainingId) {

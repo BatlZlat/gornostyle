@@ -13,6 +13,27 @@ let currentApplicationsFilter = 'all';
 let currentApplicationsDate = '';
 let currentApplicationsSearch = '';
 
+// Текущий выбранный тип расписания (по умолчанию тренажер)
+let currentScheduleType = 'simulator';
+
+// Переключение типа расписания (определяем глобально ДО загрузки DOM)
+window.switchScheduleType = function(slopeType) {
+    currentScheduleType = slopeType;
+    
+    // Обновляем активные вкладки
+    const tabs = document.querySelectorAll('.schedule-tab');
+    tabs.forEach(tab => {
+        if (tab.dataset.slopeType === slopeType) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Перезагружаем расписание для выбранного типа
+    loadSchedule();
+};
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Инициализация админской панели...');
@@ -35,12 +56,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Обработчик для верхней кнопки "Уволенные тренеры"
     const topDismissedBtn = document.getElementById('view-dismissed');
     if (topDismissedBtn) {
-        topDismissedBtn.addEventListener('click', function() {
+        topDismissedBtn.addEventListener('click', async function() {
             console.log('[top button] Кнопка "Уволенные тренеры" (верхняя) нажата');
-            fetch('/api/trainers').then(r => r.json()).then(trainers => {
-                const dismissed = trainers.filter(tr => !tr.is_active);
-                showDismissedTrainersModal(dismissed);
-            });
+            try {
+                // Загружаем оба типа уволенных тренеров
+                const [trainersResponse, kuligaResponse] = await Promise.all([
+                    fetch('/api/trainers'),
+                    fetch('/api/kuliga/admin/instructors?status=inactive', {
+                        headers: {
+                            'Authorization': `Bearer ${getCookie('adminToken')}`
+                        }
+                    })
+                ]);
+                
+                const trainers = await trainersResponse.json();
+                const kuligaResult = await kuligaResponse.json();
+                const kuligaInstructors = kuligaResult.data || kuligaResult || [];
+                
+                const dismissedTrainers = trainers.filter(tr => !tr.is_active);
+                const dismissedKuligaInstructors = kuligaInstructors.filter(inst => !inst.is_active);
+                
+                showDismissedTrainersModal(dismissedTrainers, dismissedKuligaInstructors);
+            } catch (error) {
+                console.error('Ошибка загрузки уволенных тренеров:', error);
+                showError('Не удалось загрузить список уволенных тренеров');
+            }
         });
     }
     
@@ -116,6 +156,16 @@ function initializeDatePicker() {
 
 // Инициализация обработчиков событий
 function initializeEventListeners() {
+    // Обработчики для вкладок расписания
+    const scheduleTabSimulator = document.getElementById('schedule-tab-simulator');
+    const scheduleTabNatural = document.getElementById('schedule-tab-natural');
+    if (scheduleTabSimulator) {
+        scheduleTabSimulator.addEventListener('click', () => switchScheduleType('simulator'));
+    }
+    if (scheduleTabNatural) {
+        scheduleTabNatural.addEventListener('click', () => switchScheduleType('natural_slope'));
+    }
+    
     // Обработчики для страницы тренировок
     const createTrainingBtn = document.getElementById('create-training');
     if (createTrainingBtn) {
@@ -129,6 +179,50 @@ function initializeEventListeners() {
     if (createTrainerBtn) {
         createTrainerBtn.addEventListener('click', () => {
             window.location.href = 'create-trainer.html';
+        });
+    }
+    
+    // Обработчик для кнопки создания инструктора Кулиги
+    const createKuligaInstructorBtn = document.getElementById('create-kuliga-instructor');
+    if (createKuligaInstructorBtn) {
+        createKuligaInstructorBtn.addEventListener('click', () => {
+            showCreateKuligaInstructorModal();
+        });
+    }
+    
+    // Обработчики переключения вкладок тренеров
+    // Используем делегирование событий только для страницы тренеров
+    const trainersPage = document.getElementById('trainers-page');
+    if (trainersPage) {
+        trainersPage.addEventListener('click', (e) => {
+            // Проверяем, что клик именно на вкладке, а не на дочернем элементе
+            const tab = e.target.closest('.trainer-tab');
+            if (tab) {
+                e.preventDefault();
+                e.stopPropagation();
+                const type = tab.dataset.trainerType;
+                console.log('[trainer-tab] Переключение на вкладку:', type);
+                
+                // Обновляем активную вкладку
+                const trainerTabs = document.querySelectorAll('.trainer-tab');
+                trainerTabs.forEach(t => {
+                    t.classList.remove('active');
+                    t.style.borderBottom = '3px solid transparent';
+                });
+                tab.classList.add('active');
+                tab.style.borderBottom = '3px solid #007bff';
+                
+                // Загружаем соответствующий тип тренеров
+                if (type === 'simulator') {
+                    console.log('[trainer-tab] Загрузка тренеров тренажёра...');
+                    loadTrainers();
+                } else if (type === 'kuliga') {
+                    console.log('[trainer-tab] Загрузка инструкторов Кулиги...');
+                    loadKuligaInstructorsForTrainersPage();
+                } else {
+                    console.warn('[trainer-tab] Неизвестный тип тренера:', type);
+                }
+            }
         });
     }
 
@@ -309,7 +403,7 @@ function initializeEventListeners() {
                         <div id="client-select-container" class="form-group" style="display: none;">
                             <label for="notify-client-search-input">Выберите пользователя:</label>
                             <div id="notify-client-search-wrapper" style="position: relative !important; z-index: 1000;">
-                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите имя для поиска..." autocomplete="off">
+                                <input type="text" id="notify-client-search-input" class="form-control" placeholder="Введите ФИО, телефон или номер кошелька..." autocomplete="off">
                                 <input type="hidden" id="notify-client-select" name="client_id">
                                 <div id="notify-client-search-results" class="search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; width: 100%; background: white; border: 1px solid #ccc; border-top: none; max-height: 200px; overflow-y: auto; z-index: 10001 !important; border-radius: 0 0 4px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 0; padding: 0;"></div>
                             </div>
@@ -899,11 +993,21 @@ function initializeEventListeners() {
                 return;
             }
             
+            // Фиункция для нормализации номера кошелька (убирает дефисы и пробелы)
+            const normalizeWalletNumber = (wallet) => {
+                if (!wallet) return '';
+                return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+            };
+            
+            const normalizedSearchTerm = normalizeWalletNumber(searchTerm);
+            
             // Фильтруем клиентов
             const filteredClients = allClientsForNotify.filter(client => {
                 const name = client.full_name ? client.full_name.toLowerCase() : '';
                 const phone = client.phone ? client.phone.toLowerCase() : '';
-                return name.includes(searchTerm) || phone.includes(searchTerm);
+                // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+                const wallet = normalizeWalletNumber(client.wallet_number);
+                return name.includes(searchTerm) || phone.includes(searchTerm) || (wallet && wallet.includes(normalizedSearchTerm));
             }).slice(0, 10); // Ограничиваем до 10 результатов
             
             if (filteredClients.length === 0) {
@@ -1178,7 +1282,13 @@ async function loadPageContent(page) {
             await loadSimulators();
             break;
         case 'trainers':
+            // При открытии страницы "Тренера" по умолчанию загружаем тренеров тренажёра
+            const activeTab = document.querySelector('.trainer-tab.active');
+            if (activeTab && activeTab.dataset.trainerType === 'kuliga') {
+                await loadKuligaInstructorsForTrainersPage();
+            } else {
             await loadTrainers();
+            }
             break;
         case 'clients':
             await loadClients();
@@ -1212,6 +1322,16 @@ async function loadPageContent(page) {
         case 'winter-trainings':
             if (typeof initWinterTrainingsPage === 'function') {
                 initWinterTrainingsPage();
+            }
+            break;
+        case 'analytics':
+            // Аналитика загружается автоматически при открытии вкладки
+            // Инициализация происходит в admin-analytics.js
+            // Явно вызываем загрузку данных
+            if (typeof loadAllAnalytics === 'function') {
+                setTimeout(() => {
+                    loadAllAnalytics();
+                }, 100);
             }
             break;
     }
@@ -1350,23 +1470,16 @@ function getEquipmentTypeName(equipmentType) {
 // Загрузка расписания
 async function loadSchedule() {
     try {
-        // Загружаем данные для тренажера и естественного склона параллельно
-        const [simulatorResponse, naturalSlopeResponse] = await Promise.all([
-            fetch('/api/schedule/admin?slope_type=simulator'),
-            fetch('/api/schedule/admin?slope_type=natural_slope')
-        ]);
+        // Загружаем данные только для выбранного типа расписания
+        const response = await fetch(`/api/schedule/admin?slope_type=${currentScheduleType}`);
 
-        if (!simulatorResponse.ok || !naturalSlopeResponse.ok) {
-            throw new Error(`HTTP error! status: ${simulatorResponse.status} / ${naturalSlopeResponse.status}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const [simulatorData, naturalSlopeData] = await Promise.all([
-            simulatorResponse.json(),
-            naturalSlopeResponse.json()
-        ]);
+        const data = await response.json();
         
-        console.log('Полученные данные тренажера:', simulatorData);
-        console.log('Полученные данные естественного склона:', naturalSlopeData);
+        console.log(`Полученные данные для ${currentScheduleType}:`, data);
 
         const scheduleList = document.querySelector('.schedule-list');
         if (!scheduleList) {
@@ -1374,19 +1487,13 @@ async function loadSchedule() {
             return;
         }
 
-        // Формируем HTML для обеих секций
-        let html = '';
-
-        // Секция тренажера
-        html += '<div class="schedule-section">';
-        html += '<h3 class="schedule-section-title">🏔️ Горнолыжный тренажер</h3>';
-        html += await renderScheduleSection(simulatorData, 'simulator');
-        html += '</div>';
-
-        // Секция естественного склона
-        html += '<div class="schedule-section">';
-        html += '<h3 class="schedule-section-title">🎿 Естественный склон</h3>';
-        html += await renderScheduleSection(naturalSlopeData, 'natural_slope');
+        // Формируем HTML для выбранной секции
+        let html = '<div class="schedule-section">';
+        const title = currentScheduleType === 'simulator' 
+            ? '🏔️ Горнолыжный тренажер' 
+            : '🎿 Естественный склон';
+        html += `<h3 class="schedule-section-title">${title}</h3>`;
+        html += await renderScheduleSection(data, currentScheduleType);
         html += '</div>';
 
         scheduleList.innerHTML = html;
@@ -1462,7 +1569,11 @@ async function renderScheduleSection(data, slopeType) {
                                     <td>${formatNaturalSlopePricePerPerson(training)} ₽</td>`
                                 }
                                 <td class="training-actions">
-                                    ${slopeType === 'natural_slope' ? 
+                                    ${training.training_source === 'kuliga' ? 
+                                        `<button class="btn-secondary" onclick="viewKuligaTrainingDetails(${training.id}, '${training.kuliga_type}')">
+                                            Подробнее
+                                        </button>` :
+                                        slopeType === 'natural_slope' ? 
                                         `<button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
                                             Подробнее
                                         </button>` :
@@ -1491,6 +1602,182 @@ function getParticipantName(training) {
         return training.group_name || '-';
     }
 }
+
+// Просмотр деталей тренировки Кулиги
+window.viewKuligaTrainingDetails = async function(id, type) {
+    try {
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        const response = await fetch(`/api/kuliga/admin/training/${id}?type=${type}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка получения данных');
+        }
+        
+        const training = result.data;
+        
+        // Форматирование даты
+        function formatDate(dateString) {
+            if (!dateString) return '—';
+            const date = new Date(dateString);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '—';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '—';
+        const modalTitle = type === 'group' 
+            ? 'Детали групповой тренировки Кулига Парк' 
+            : 'Детали индивидуальной тренировки Кулига Парк';
+        
+        let modalContent = `
+            <div class="modal-content" style="max-width: 600px;">
+                <span class="close" onclick="this.closest('.modal').remove()" style="float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+                <h3>${modalTitle}</h3>
+                <div class="training-details">
+                    <div class="detail-group">
+                        <h4>Основная информация</h4>
+                        <p><strong>Дата:</strong> ${formatDate(training.date)}</p>
+                        <p><strong>Время:</strong> ${startTime} - ${endTime}</p>
+                        <p><strong>Тип тренировки:</strong> ${type === 'group' ? 'Групповая' : 'Индивидуальная'}</p>
+                        <p><strong>Инструктор:</strong> ${training.instructor_name || 'Не указан'}</p>
+        `;
+        
+        if (type === 'group') {
+            const sportTypeName = training.sport_type === 'ski' ? 'Горные лыжи' : training.sport_type === 'snowboard' ? 'Сноуборд' : training.sport_type;
+            const levelName = training.level === 'beginner' ? 'Начальный' : training.level === 'intermediate' ? 'Средний' : training.level === 'advanced' ? 'Продвинутый' : training.level;
+            
+            modalContent += `
+                        <p><strong>Вид спорта:</strong> ${sportTypeName}</p>
+                        <p><strong>Уровень подготовки:</strong> ${levelName || '—'}</p>
+                        <p><strong>Участников:</strong> ${training.current_participants || 0} / ${training.max_participants || 0}</p>
+                        <p><strong>Минимум участников:</strong> ${training.min_participants || 0}</p>
+                        <p><strong>Цена за человека:</strong> ${training.price_per_person ? parseFloat(training.price_per_person).toFixed(2) + ' ₽' : '—'}</p>
+                        <p><strong>Общая стоимость:</strong> ${training.price_per_person && training.max_participants ? (parseFloat(training.price_per_person) * training.max_participants).toFixed(2) + ' ₽' : '—'}</p>
+            `;
+            
+            if (training.description) {
+                modalContent += `<p><strong>Описание:</strong> ${training.description}</p>`;
+            }
+            
+            modalContent += `
+                    </div>
+                    <div class="detail-group">
+                        <h4>Участники и бронирования (${training.bookings_count || 0})</h4>
+            `;
+            
+            if (training.bookings && training.bookings.length > 0) {
+                // Показываем таблицу с участниками по каждому бронированию
+                modalContent += `
+                    <table class="participants-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                        <thead>
+                            <tr style="background: #f0f0f0;">
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Клиент</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Участники</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Кол-во</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Сумма</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Статус</th>
+                                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                training.bookings.forEach((booking, index) => {
+                    const statusColor = booking.status === 'confirmed' ? 'green' : booking.status === 'pending' ? 'orange' : 'gray';
+                    const statusText = booking.status === 'confirmed' ? 'Подтверждено' : booking.status === 'pending' ? 'Ожидание' : booking.status;
+                    
+                    modalContent += `
+                        <tr style="border-bottom: 1px solid #eee;">
+                            <td style="padding: 8px;">
+                                <strong>${booking.client_name || 'Клиент'}</strong><br>
+                                <small style="color: #666;">${booking.client_phone || '—'}</small>
+                            </td>
+                            <td style="padding: 8px;">${booking.participants_names_str || '—'}</td>
+                            <td style="padding: 8px;">${booking.participants_count || 1}</td>
+                            <td style="padding: 8px;">${booking.price_total ? parseFloat(booking.price_total).toFixed(2) + ' ₽' : '—'}</td>
+                            <td style="padding: 8px;">
+                                <span style="color: ${statusColor}; font-weight: 500;">${statusText}</span>
+                            </td>
+                            <td style="padding: 8px;">
+                                ${booking.status !== 'cancelled' ? `
+                                    <button 
+                                        class="btn-primary btn-small" 
+                                        onclick="moveKuligaBookingToAnotherTraining(${training.id}, ${booking.id}, '${(booking.client_name || '').replace(/'/g, "\\'")}', '${training.sport_type}', '${training.level}')"
+                                        title="Переместить на другую тренировку"
+                                        style="font-size: 12px; padding: 4px 8px; margin-right: 5px;">
+                                        🔄 Переместить
+                                    </button>
+                                    <button 
+                                        class="btn-danger btn-small" 
+                                        onclick="removeKuligaBooking(${training.id}, ${booking.id}, '${(booking.client_name || '').replace(/'/g, "\\'")}', 'group')"
+                                        title="Удалить бронирование с возвратом средств"
+                                        style="font-size: 12px; padding: 4px 8px;">
+                                        ❌ Удалить
+                                    </button>
+                                ` : '—'}
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                modalContent += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                modalContent += '<p>Нет бронирований</p>';
+            }
+        } else {
+            modalContent += `
+                        <p><strong>Участники:</strong> ${training.participants_names_str || '—'}</p>
+                        <p><strong>Количество участников:</strong> ${training.participants_count || 1}</p>
+                        <p><strong>Вид спорта:</strong> ${training.sport_type === 'ski' ? 'Горные лыжи' : training.sport_type === 'snowboard' ? 'Сноуборд' : training.sport_type}</p>
+                        <p><strong>Цена:</strong> ${training.price_total ? parseFloat(training.price_total).toFixed(2) + ' ₽' : '—'}</p>
+                        <p><strong>Статус:</strong> <span style="color: ${training.status === 'confirmed' ? 'green' : training.status === 'pending' ? 'orange' : 'gray'};">${training.status === 'confirmed' ? 'Подтверждено' : training.status === 'pending' ? 'Ожидание' : training.status === 'cancelled' ? 'Отменено' : training.status || '—'}</span></p>
+                    </div>
+                    <div class="detail-group">
+                        <h4>Информация о клиенте</h4>
+                        <p><strong>Имя:</strong> ${training.client_name || '—'}</p>
+                        <p><strong>Телефон:</strong> ${training.client_phone || '—'}</p>
+            `;
+        }
+        
+        modalContent += `
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        modal.innerHTML = modalContent;
+        document.body.appendChild(modal);
+        
+        // Закрытие по клику вне модального окна
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке деталей тренировки:', error);
+        alert('Ошибка при загрузке деталей тренировки: ' + error.message);
+    }
+};
 
 // Форматирование цены для естественного склона: показываем цену за человека
 function formatNaturalSlopePricePerPerson(training) {
@@ -1582,7 +1869,7 @@ async function loadSimulators() {
     }
 }
 
-// Загрузка тренеров
+// Загрузка тренеров тренажёра
 async function loadTrainers() {
     try {
         const response = await fetch('/api/trainers');
@@ -1599,28 +1886,40 @@ async function loadTrainers() {
         const dismissedTrainers = trainers.filter(trainer => !trainer.is_active);
         
         const trainersList = document.querySelector('.trainers-list');
-        if (trainersList) {
+        if (!trainersList) {
+            console.error('[loadTrainers] Элемент .trainers-list не найден');
+            return;
+        }
+        
+        console.log('[loadTrainers] Найдено тренеров:', activeTrainers.length, 'активных,', dismissedTrainers.length, 'уволенных');
+        
+        // Очищаем список
+        trainersList.innerHTML = '';
+        
             // Добавляем кнопку для просмотра уволенных тренеров
+        if (dismissedTrainers.length > 0) {
             const dismissedButton = document.createElement('button');
             dismissedButton.className = 'btn-secondary';
             dismissedButton.style.marginBottom = '20px';
             dismissedButton.innerHTML = `Уволенные тренеры (${dismissedTrainers.length})`;
-            console.log('[loadTrainers] Кнопка "Уволенные тренеры" создана, dismissedTrainers:', dismissedTrainers);
             dismissedButton.onclick = () => {
                 console.log('[loadTrainers] Кнопка "Уволенные тренеры" нажата');
                 showDismissedTrainersModal(dismissedTrainers);
             };
-            
-            // Очищаем список и добавляем кнопку
-            trainersList.innerHTML = '';
             trainersList.appendChild(dismissedButton);
+        }
             
             // Отображаем только активных тренеров
             if (activeTrainers.length === 0) {
-                trainersList.innerHTML += '<div class="alert alert-info">Нет активных тренеров</div>';
+            const noTrainersMsg = document.createElement('div');
+            noTrainersMsg.className = 'alert alert-info';
+            noTrainersMsg.textContent = 'Нет активных тренеров';
+            trainersList.appendChild(noTrainersMsg);
             } else {
-                trainersList.innerHTML += activeTrainers.map(trainer => `
-                    <div class="trainer-item">
+            activeTrainers.forEach(trainer => {
+                const trainerCard = document.createElement('div');
+                trainerCard.className = 'trainer-item';
+                trainerCard.innerHTML = `
                         <div class="trainer-photo">
                             ${trainer.photo_url ? 
                                 `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
@@ -1638,66 +1937,771 @@ async function loadTrainers() {
                             <button class="btn-secondary" onclick="editTrainer(${trainer.id})">Редактировать</button>
                             <button class="btn-danger" onclick="dismissTrainer(${trainer.id})">Уволить</button>
                         </div>
-                    </div>
-                `).join('');
-            }
+                `;
+                trainersList.appendChild(trainerCard);
+            });
         }
+        
+        // В loadTrainers сохраняем dismissedTrainers глобально для диагностики
+        window.lastDismissedTrainers = dismissedTrainers;
+        console.log('[loadTrainers] Загрузка завершена успешно');
     } catch (error) {
-        console.error('Ошибка при загрузке тренеров:', error);
-        showError('Не удалось загрузить тренеров');
+        console.error('[loadTrainers] Ошибка при загрузке тренеров:', error);
+        showError('Не удалось загрузить тренеров: ' + error.message);
     }
-
-    // В loadTrainers сохраняем dismissedTrainers глобально для диагностики
-    window.lastDismissedTrainers = dismissedTrainers;
 }
 
-// Функция для отображения модального окна с уволенными тренерами
-function showDismissedTrainersModal(dismissedTrainers) {
-    console.log('[showDismissedTrainersModal] вызвана, dismissedTrainers:', dismissedTrainers);
-    // Маппинг значений для вида спорта
-    const sportTypeMapping = {
-        'ski': 'Горные лыжи',
-        'snowboard': 'Сноуборд'
-    };
+// Загрузка инструкторов Кулиги для страницы "Тренера"
+async function loadKuligaInstructorsForTrainersPage() {
+    console.log('==========================================');
+    console.log('[loadKuligaInstructorsForTrainersPage] ✅ ФУНКЦИЯ ВЫЗВАНА!');
+    console.log('==========================================');
+    console.log('[loadKuligaInstructorsForTrainersPage] Начало загрузки инструкторов Кулиги...');
+    
+    const trainersList = document.querySelector('.trainers-list');
+    console.log('[loadKuligaInstructorsForTrainersPage] trainersList элемент:', trainersList ? 'найден' : 'НЕ НАЙДЕН');
+    
     try {
+        const token = getCookie('adminToken');
+        console.log('[loadKuligaInstructorsForTrainersPage] Токен:', token ? 'есть' : 'НЕТ');
+        if (!token) {
+            console.error('[loadKuligaInstructorsForTrainersPage] Токен не найден в cookie');
+            showError('Необходима авторизация');
+            return;
+        }
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Отправка запроса на /api/kuliga/admin/instructors?status=active');
+        const response = await fetch('/api/kuliga/admin/instructors?status=active', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Получен ответ:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[loadKuligaInstructorsForTrainersPage] Ошибка ответа:', response.status, errorText);
+            throw new Error(`Ошибка загрузки инструкторов: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('[loadKuligaInstructorsForTrainersPage] Получены данные из API (raw):', result);
+        console.log('[loadKuligaInstructorsForTrainersPage] Тип данных:', typeof result, 'isArray:', Array.isArray(result));
+        
+        // Проверяем формат ответа - API возвращает { success: true, data: [...] }
+        let instructors = [];
+        if (result && result.success && Array.isArray(result.data)) {
+            instructors = result.data;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные извлечены из result.data');
+        } else if (Array.isArray(result)) {
+            instructors = result;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные - массив напрямую');
+        } else if (result && Array.isArray(result.data)) {
+            instructors = result.data;
+            console.log('[loadKuligaInstructorsForTrainersPage] Данные извлечены из result.data (без success)');
+        } else {
+            console.warn('[loadKuligaInstructorsForTrainersPage] Неожиданный формат ответа:', result);
+        }
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Извлечено инструкторов:', instructors.length);
+        
+        // Маппинг значений для вида спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Лыжи и сноуборд'
+        };
+        
+        // Разделяем на активных и уволенных
+        const activeInstructors = instructors.filter(instructor => instructor.is_active);
+        const dismissedInstructors = instructors.filter(instructor => !instructor.is_active);
+        
+        const trainersList = document.querySelector('.trainers-list');
+        if (!trainersList) {
+            console.error('[loadKuligaInstructorsForTrainersPage] Элемент .trainers-list не найден');
+            return;
+        }
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Найдено инструкторов:', activeInstructors.length, 'активных,', dismissedInstructors.length, 'уволенных');
+        
+        // Очищаем список
+        trainersList.innerHTML = '';
+        
+        // Добавляем кнопку для просмотра уволенных
+        if (dismissedInstructors.length > 0) {
+            const dismissedButton = document.createElement('button');
+            dismissedButton.className = 'btn-secondary';
+            dismissedButton.style.marginBottom = '20px';
+            dismissedButton.innerHTML = `Уволенные инструкторы (${dismissedInstructors.length})`;
+            dismissedButton.onclick = async () => {
+                // Загружаем уволенных тренеров тренажёра для полного списка
+                try {
+                    const trainersResponse = await fetch('/api/trainers');
+                    const trainers = await trainersResponse.json();
+                    const dismissedTrainers = trainers.filter(tr => !tr.is_active);
+                    showDismissedTrainersModal(dismissedTrainers, dismissedInstructors);
+                } catch (error) {
+                    // Если не удалось загрузить, показываем только инструкторов Кулиги
+                    showDismissedTrainersModal([], dismissedInstructors);
+                }
+            };
+            trainersList.appendChild(dismissedButton);
+        }
+            
+        // Отображаем активных инструкторов
+        if (activeInstructors.length === 0) {
+            const noInstructorsMsg = document.createElement('div');
+            noInstructorsMsg.className = 'alert alert-info';
+            noInstructorsMsg.textContent = 'Нет активных инструкторов Кулиги';
+            trainersList.appendChild(noInstructorsMsg);
+        } else {
+            activeInstructors.forEach(instructor => {
+                console.log(`[loadKuligaInstructorsForTrainersPage] Инструктор ${instructor.full_name}: plain_password=`, instructor.plain_password, 'username=', instructor.username);
+                
+                const instructorCard = document.createElement('div');
+                instructorCard.className = 'trainer-item';
+                instructorCard.innerHTML = `
+                    <div class="trainer-photo">
+                        ${instructor.photo_url ? 
+                            `<img src="${instructor.photo_url}" alt="${instructor.full_name}" style="width: 100px; height: 150px; object-fit: cover; border-radius: 8px;">` :
+                            `<div class="no-photo" style="width: 100px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                        }
+                    </div>
+                    <div class="trainer-info">
+                        <h3>${instructor.full_name}</h3>
+                        <p>Вид спорта: ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                        <p><strong>Место работы:</strong> ${instructor.location === 'vorona' ? 'Воронинские горки' : (instructor.location === 'kuliga' || !instructor.location) ? 'База отдыха «Кулига-Клуб»' : instructor.location}</p>
+                        <p>Телефон: ${instructor.phone}</p>
+                        ${instructor.email ? `<p>Email: ${instructor.email}</p>` : ''}
+                        ${instructor.username ? `<p>Логин: ${instructor.username}</p>` : '<p style="color: #999;">Логин не задан</p>'}
+                        ${instructor.plain_password ? `<p><strong>Пароль:</strong> ${instructor.plain_password}</p>` : instructor.username ? '<p style="color: #999;">Пароль не сохранен</p>' : ''}
+                        <p>Статус: ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
+                    </div>
+                    <div class="trainer-actions">
+                        <button class="btn-secondary" onclick="editKuligaInstructorForTrainersPage(${instructor.id})">Редактировать</button>
+                        <button class="btn-secondary" onclick="viewKuligaInstructorSchedule(${instructor.id})">Расписание</button>
+                        <button class="btn-danger" onclick="dismissKuligaInstructor(${instructor.id})">Уволить</button>
+                    </div>
+                `;
+                trainersList.appendChild(instructorCard);
+            });
+        }
+        
+        console.log('[loadKuligaInstructorsForTrainersPage] Загрузка завершена успешно');
+    } catch (error) {
+        console.error('[loadKuligaInstructorsForTrainersPage] Ошибка при загрузке инструкторов Кулиги:', error);
+        showError('Не удалось загрузить инструкторов Кулиги: ' + error.message);
+    }
+}
+
+// Показать модальное окно создания инструктора Кулиги
+function showCreateKuligaInstructorModal() {
+    // TODO: Создать модальное окно аналогично create-trainer.html
+    // Пока используем существующий модал из admin-kuliga.js или создаём новый
+    alert('Функция создания инструктора Кулиги будет реализована');
+}
+
+// Редактировать инструктора Кулиги (для страницы "Тренера")
+async function editKuligaInstructorForTrainersPage(id) {
+    try {
+        const token = getCookie('adminToken');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const instructor = await response.json();
+        
+        // Маппинг значений для вида спорта
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Лыжи и сноуборд'
+        };
+        
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 800px;">
-                <h3>Уволенные тренеры</h3>
-                <div class="dismissed-trainers-list">
-                    ${dismissedTrainers.length === 0 ? 
-                        '<div class="alert alert-info">Нет уволенных тренеров</div>' :
-                        dismissedTrainers.map(trainer => `
-                            <div class="trainer-item">
-                                <div class="trainer-info">
-                                    <h3>${trainer.full_name}</h3>
-                                    <p>Вид спорта: ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
-                                    <p>Телефон: ${trainer.phone}</p>
-                                    <p>Дата увольнения: ${formatDate(trainer.dismissed_at)}</p>
+            <div class="modal-content" style="max-width: 600px;">
+                <h3>Редактирование инструктора Кулиги</h3>
+                <form id="editKuligaInstructorForm">
+                    <input type="hidden" name="hire_date" value="${instructor.hire_date}">
+                    <input type="hidden" name="is_active" value="${instructor.is_active}">
+                    <input type="hidden" name="dismissal_date" value="${instructor.dismissal_date || ''}">
+                    <div class="instructor-current-info" style="margin-bottom: 20px; padding: 10px; background-color: #f5f5f5; border-radius: 4px;">
+                        <p><strong>Текущая информация:</strong></p>
+                        <p>Дата приема: ${new Date(instructor.hire_date).toLocaleDateString('ru-RU')}</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_full_name">ФИО:</label>
+                        <input type="text" id="kuliga_full_name" name="full_name" value="${instructor.full_name}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_sport_type">Вид спорта:</label>
+                        <select id="kuliga_sport_type" name="sport_type" required>
+                            ${Object.entries(sportTypeMapping).map(([value, label]) => 
+                                `<option value="${value}" ${instructor.sport_type === value ? 'selected' : ''}>${label}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_location">Место работы:</label>
+                        <select id="kuliga_location" name="location" required>
+                            <option value="kuliga" ${(instructor.location || 'kuliga') === 'kuliga' ? 'selected' : ''}>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona" ${instructor.location === 'vorona' ? 'selected' : ''}>Воронинские горки</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">Место проведения тренировок инструктора</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_phone">Телефон:</label>
+                        <input type="tel" id="kuliga_phone" name="phone" value="${instructor.phone}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_email">Email:</label>
+                        <input type="email" id="kuliga_email" name="email" value="${instructor.email || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_admin_percentage">Процент администратора (%):</label>
+                        <input type="number" id="kuliga_admin_percentage" name="admin_percentage" value="${instructor.admin_percentage || 20}" min="0" max="100" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_instructor_photo">Фото инструктора:</label>
+                        <div class="current-photo" style="margin-bottom: 10px;">
+                            ${instructor.photo_url ? 
+                                `<img id="current-kuliga-instructor-photo" src="${instructor.photo_url}" alt="${instructor.full_name}" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">` :
+                                `<div class="no-photo" style="width: 150px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin-bottom: 10px;">Нет фото</div>`
+                            }
+                        </div>
+                        <input type="file" id="kuliga_instructor_photo" name="photo" accept="image/*" onchange="previewKuligaInstructorPhoto(this)">
+                        <small style="color: #666; display: block; margin-top: 5px;">Фото будет автоматически сжато до высоты 200px и конвертировано в WebP формат</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_description">Описание:</label>
+                        <textarea id="kuliga_description" name="description" rows="4">${instructor.description || ''}</textarea>
+                    </div>
+                    <div class="form-group" style="border-top: 2px solid #e0e0e0; padding-top: 15px; margin-top: 15px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea;">🔐 Доступ к личному кабинету</h4>
+                        <label for="kuliga_username">Логин (для входа в личный кабинет):</label>
+                        <input type="text" id="kuliga_username" name="username" value="${instructor.username || ''}" placeholder="Введите логин">
+                        <small style="color: #666; display: block; margin-top: 5px;">Если не указан, инструктор не сможет входить в личный кабинет</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="kuliga_password">Пароль (для входа в личный кабинет):</label>
+                        <input type="text" id="kuliga_password" name="password" value="${instructor.plain_password || ''}" placeholder="Оставьте пустым, чтобы не менять">
+                        <small style="color: #666; display: block; margin-top: 5px;">Пароль будет захеширован для безопасности, но также будет сохранен в открытом виде для отображения. Оставьте пустым, чтобы не менять текущий пароль.</small>
+                        ${instructor.plain_password ? `<small style="color: #27ae60; display: block; margin-top: 5px;">Текущий пароль: <strong>${instructor.plain_password}</strong></small>` : ''}
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                        <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'flex';
+        
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+        
+        // Обработка сохранения
+        document.getElementById('editKuligaInstructorForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const token = getCookie('adminToken');
+            
+            try {
+                // Если есть новое фото, сначала загружаем его
+                const photoFile = form.querySelector('#kuliga_instructor_photo').files[0];
+                let photoUrl = instructor.photo_url;
+                
+                if (photoFile) {
+                    const photoFormData = new FormData();
+                    photoFormData.append('photo', photoFile);
+                    
+                    const photoResponse = await fetch(`/api/kuliga/admin/instructors/${id}/upload-photo`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: photoFormData
+                    });
+                    
+                    if (!photoResponse.ok) {
+                        const photoError = await photoResponse.json();
+                        throw new Error(photoError.error || 'Ошибка при загрузке фото');
+                    }
+                    
+                    const photoResult = await photoResponse.json();
+                    photoUrl = photoResult.data?.photo_url || photoResult.photo_url;
+                }
+                
+                // Обновляем остальные данные инструктора
+                const adminPercentageValue = formData.get('admin_percentage');
+                const parsedPercentage = adminPercentageValue !== null && adminPercentageValue !== '' 
+                    ? parseFloat(adminPercentageValue) 
+                    : 20;
+                const adminPercentage = isNaN(parsedPercentage) ? 20 : parsedPercentage;
+                
+                const updateData = {
+                    fullName: formData.get('full_name'),
+                    phone: formData.get('phone'),
+                    email: formData.get('email') || null,
+                    photoUrl: photoUrl || null,
+                    description: formData.get('description') || null,
+                    sportType: formData.get('sport_type'),
+                    location: formData.get('location') || 'kuliga',
+                    adminPercentage: adminPercentage,
+                    hireDate: formData.get('hire_date'),
+                    isActive: formData.get('is_active') === 'true'
+                };
+                
+                // Если указан новый пароль, добавляем его (на бэкенде он будет захеширован)
+                const password = formData.get('password');
+                if (password && password.trim()) {
+                    updateData.password = password.trim();
+                }
+                
+                // Если указан username, добавляем его
+                const username = formData.get('username');
+                if (username && username.trim()) {
+                    updateData.username = username.trim();
+                } else if (username === '') {
+                    updateData.username = null;
+                }
+                
+                const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Ошибка при обновлении инструктора');
+                }
+                
+                modal.remove();
+                await loadKuligaInstructorsForTrainersPage();
+                showSuccess('Данные инструктора успешно обновлены');
+    } catch (error) {
+                console.error('Ошибка при обновлении инструктора:', error);
+                showError(error.message || 'Не удалось обновить данные инструктора');
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке данных инструктора:', error);
+        showError('Не удалось загрузить данные инструктора');
+    }
+}
+
+// Просмотреть расписание инструктора
+async function viewKuligaInstructorSchedule(id) {
+    try {
+        const token = getCookie('adminToken');
+        
+        // Получаем данные инструктора
+        const instructorResponse = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!instructorResponse.ok) {
+            throw new Error('Не удалось загрузить данные инструктора');
+        }
+        
+        const instructorData = await instructorResponse.json();
+        const instructor = instructorData.data || instructorData;
+        
+        // Получаем расписание на ближайшие 14 дней
+        const today = new Date();
+        const endDate = new Date(today);
+        endDate.setDate(today.getDate() + 14);
+        
+        const startDateStr = today.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
+        const scheduleResponse = await fetch(`/api/kuliga/admin/schedule?instructor_id=${id}&start_date=${startDateStr}&end_date=${endDateStr}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        let slots = [];
+        if (scheduleResponse.ok) {
+            const scheduleData = await scheduleResponse.json();
+            slots = scheduleData.data || scheduleData || [];
+        }
+        
+        // Группируем слоты по датам
+        const slotsByDate = {};
+        slots.forEach(slot => {
+            const date = slot.date;
+            if (!slotsByDate[date]) {
+                slotsByDate[date] = [];
+            }
+            slotsByDate[date].push(slot);
+        });
+        
+        // Сортируем даты
+        const sortedDates = Object.keys(slotsByDate).sort();
+        
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Лыжи и сноуборд'
+        };
+        
+        const statusMapping = {
+            'available': 'Свободен',
+            'booked': 'Занят',
+            'group': 'Группа',
+            'blocked': 'Заблокирован'
+        };
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <h3>Расписание инструктора: ${instructor.full_name}</h3>
+                <div style="margin-bottom: 15px; padding: 10px; background: #f0f7ff; border-radius: 8px;">
+                    <p><strong>Вид спорта:</strong> ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                    <p><strong>Телефон:</strong> ${instructor.phone}</p>
+                </div>
+                <div class="instructor-schedule">
+                    ${sortedDates.length === 0 ? 
+                        '<p style="text-align: center; color: #666; padding: 20px;">Расписание на ближайшие 14 дней отсутствует</p>' :
+                        sortedDates.map(date => {
+                            const dateSlots = slotsByDate[date];
+                            const dateObj = new Date(date);
+                            const weekday = dateObj.toLocaleDateString('ru-RU', { weekday: 'short' });
+                            const dateStr = dateObj.toLocaleDateString('ru-RU');
+                            
+                            return `
+                                <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                                    <h4 style="margin: 0 0 10px 0; color: #333;">${dateStr} (${weekday})</h4>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;">
+                                        ${dateSlots.map(slot => {
+                                            const startTime = slot.start_time.substring(0, 5);
+                                            const endTime = slot.end_time.substring(0, 5);
+                                            const statusColor = {
+                                                'available': '#27ae60',
+                                                'booked': '#e74c3c',
+                                                'group': '#f39c12',
+                                                'blocked': '#95a5a6'
+                                            }[slot.status] || '#95a5a6';
+                                            
+                                            return `
+                                                <div style="padding: 8px; background: ${statusColor}20; border: 1px solid ${statusColor}; border-radius: 6px; text-align: center;">
+                                                    <div style="font-weight: 600; color: #333;">${startTime}-${endTime}</div>
+                                                    <div style="font-size: 0.85rem; color: ${statusColor}; margin-top: 4px;">${statusMapping[slot.status] || slot.status}</div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
                                 </div>
-                                <div class="trainer-actions">
+                            `;
+                        }).join('')
+                    }
+                </div>
+                <div style="margin-top: 20px; text-align: center;">
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'flex';
+        
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке расписания инструктора:', error);
+        showError('Не удалось загрузить расписание инструктора');
+    }
+}
+
+// Вспомогательная функция для превью фото инструктора Кулиги
+function previewKuligaInstructorPhoto(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const currentPhoto = document.getElementById('current-kuliga-instructor-photo');
+            if (currentPhoto) {
+                currentPhoto.src = e.target.result;
+            } else {
+                const photoContainer = input.parentElement.querySelector('.current-photo');
+                if (photoContainer) {
+                    photoContainer.innerHTML = `<img id="current-kuliga-instructor-photo" src="${e.target.result}" alt="Превью" style="max-width: 150px; height: auto; max-height: 200px; border-radius: 8px; margin-bottom: 10px;">`;
+                }
+            }
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+// Уволить инструктора Кулиги
+async function dismissKuligaInstructor(id) {
+    if (!confirm('Вы уверены, что хотите уволить этого инструктора?')) return;
+    
+    try {
+        const token = getCookie('adminToken');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ isActive: false })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка увольнения инструктора');
+        
+        showSuccess('Инструктор уволен');
+        loadKuligaInstructorsForTrainersPage();
+    } catch (error) {
+        console.error('Ошибка увольнения инструктора:', error);
+        showError('Не удалось уволить инструктора');
+    }
+}
+
+// Просмотреть информацию об инструкторе Кулиги (для страницы "Тренера")
+async function viewKuligaInstructorForTrainersPage(id) {
+    try {
+        const token = getCookie('adminToken');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки данных инструктора');
+        
+        const instructor = await response.json();
+        const sportTypeMapping = {
+            'ski': 'Горные лыжи',
+            'snowboard': 'Сноуборд',
+            'both': 'Лыжи и сноуборд'
+        };
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Информация об инструкторе Кулиги</h3>
+                <div class="trainer-photo-view" style="text-align: center; margin-bottom: 20px;">
+                    ${instructor.photo_url ? 
+                        `<img src="${instructor.photo_url}" alt="${instructor.full_name}" style="max-width: 200px; height: auto; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">` :
+                        `<div class="no-photo" style="width: 200px; height: 150px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; margin: 0 auto;">Нет фото</div>`
+                    }
+                </div>
+                <div class="trainer-details">
+                    <p><strong>ФИО:</strong> ${instructor.full_name}</p>
+                    <p><strong>Вид спорта:</strong> ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                    <p><strong>Телефон:</strong> ${instructor.phone}</p>
+                    <p><strong>Email:</strong> ${instructor.email || '-'}</p>
+                    <p><strong>Описание:</strong> ${instructor.description || '-'}</p>
+                    <p><strong>Процент администратора:</strong> ${instructor.admin_percentage || 20}%</p>
+                    <p><strong>Дата приема:</strong> ${instructor.hire_date ? new Date(instructor.hire_date).toLocaleDateString('ru-RU') : '-'}</p>
+                    <p><strong>Статус:</strong> ${instructor.is_active ? 'Работает' : 'Уволен'}</p>
+                    ${instructor.dismissal_date ? `<p><strong>Дата увольнения:</strong> ${new Date(instructor.dismissal_date).toLocaleDateString('ru-RU')}</p>` : ''}
+                    ${instructor.username ? `<p><strong>Логин:</strong> ${instructor.username}</p>` : '<p><strong>Логин:</strong> Не задан</p>'}
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'flex';
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    } catch (error) {
+        console.error('Ошибка при загрузке данных инструктора:', error);
+        showError('Не удалось загрузить данные инструктора');
+    }
+}
+
+// Восстановить инструктора Кулиги
+async function restoreKuligaInstructor(id) {
+    try {
+        const token = getCookie('adminToken');
+        const response = await fetch(`/api/kuliga/admin/instructors/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ isActive: true })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка восстановления инструктора');
+        
+        showSuccess('Инструктор восстановлен');
+        closeModal('dismissed-kuliga-instructors-modal');
+        loadKuligaInstructorsForTrainersPage();
+    } catch (error) {
+        console.error('Ошибка восстановления инструктора:', error);
+        showError('Не удалось восстановить инструктора');
+    }
+}
+
+// Функция для отображения модального окна с уволенными тренерами (оба типа)
+function showDismissedTrainersModal(dismissedTrainers = [], dismissedKuligaInstructors = []) {
+    console.log('[showDismissedTrainersModal] вызвана');
+    console.log('  - Тренеры тренажёра:', dismissedTrainers.length);
+    console.log('  - Инструкторы Кулиги:', dismissedKuligaInstructors.length);
+    
+    // Маппинг значений для вида спорта
+    const sportTypeMapping = {
+        'ski': 'Горные лыжи',
+        'snowboard': 'Сноуборд',
+        'both': 'Лыжи и сноуборд'
+    };
+    
+    const totalDismissed = dismissedTrainers.length + dismissedKuligaInstructors.length;
+    
+    try {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'dismissed-trainers-modal';
+        
+        // Определяем активную вкладку по умолчанию
+        let activeTab = 'simulator';
+        if (dismissedTrainers.length === 0 && dismissedKuligaInstructors.length > 0) {
+            activeTab = 'kuliga';
+        }
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                <h3>Уволенные тренеры (${totalDismissed})</h3>
+                
+                <!-- Вкладки для разделения типов -->
+                <div class="dismissed-tabs" style="margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; display: flex; gap: 10px;">
+                    <button class="dismissed-tab ${activeTab === 'simulator' ? 'active' : ''}" 
+                            data-tab="simulator" 
+                            style="padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 16px; font-weight: 500; border-bottom: 3px solid ${activeTab === 'simulator' ? '#007bff' : 'transparent'};">
+                        Тренеры тренажёра (${dismissedTrainers.length})
+                    </button>
+                    <button class="dismissed-tab ${activeTab === 'kuliga' ? 'active' : ''}" 
+                            data-tab="kuliga"
+                            style="padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 16px; font-weight: 500; border-bottom: 3px solid ${activeTab === 'kuliga' ? '#007bff' : 'transparent'};">
+                        Инструкторы Кулиги (${dismissedKuligaInstructors.length})
+                    </button>
+                </div>
+                
+                <!-- Контент для тренеров тренажёра -->
+                <div class="dismissed-content" data-content="simulator" style="display: ${activeTab === 'simulator' ? 'block' : 'none'};">
+                    ${dismissedTrainers.length === 0 ? 
+                        '<div class="alert alert-info">Нет уволенных тренеров тренажёра</div>' :
+                        dismissedTrainers.map(trainer => `
+                            <div class="trainer-item" style="display: flex; gap: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 15px;">
+                                <div class="trainer-photo" style="flex-shrink: 0;">
+                                    ${trainer.photo_url ? 
+                                        `<img src="${trainer.photo_url}" alt="${trainer.full_name}" style="width: 80px; height: 100px; object-fit: cover; border-radius: 8px;">` :
+                                        `<div class="no-photo" style="width: 80px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                                    }
+                                </div>
+                                <div class="trainer-info" style="flex-grow: 1;">
+                                    <h3 style="margin: 0 0 10px 0;">${trainer.full_name}</h3>
+                                    <p style="margin: 5px 0;"><strong>Вид спорта:</strong> ${sportTypeMapping[trainer.sport_type] || trainer.sport_type}</p>
+                                    <p style="margin: 5px 0;"><strong>Телефон:</strong> ${trainer.phone}</p>
+                                    ${trainer.email ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${trainer.email}</p>` : ''}
+                                    <p style="margin: 5px 0; color: #999;"><strong>Дата увольнения:</strong> ${trainer.dismissal_date ? new Date(trainer.dismissal_date).toLocaleDateString('ru-RU') : 'Не указана'}</p>
+                                </div>
+                                <div class="trainer-actions" style="display: flex; flex-direction: column; gap: 10px; justify-content: center;">
                                     <button class="btn-secondary" onclick="viewTrainer(${trainer.id})">Просмотр</button>
-                                    <button class="btn-primary" onclick="rehireTrainer(${trainer.id})">Восстановить</button>
+                                    <button class="btn-primary" onclick="rehireTrainer(${trainer.id}); this.closest('#dismissed-trainers-modal').remove();">Восстановить</button>
                                 </div>
                             </div>
                         `).join('')
                     }
                 </div>
-                <div class="modal-actions">
-                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Закрыть</button>
+                
+                <!-- Контент для инструкторов Кулиги -->
+                <div class="dismissed-content" data-content="kuliga" style="display: ${activeTab === 'kuliga' ? 'block' : 'none'};">
+                    ${dismissedKuligaInstructors.length === 0 ? 
+                        '<div class="alert alert-info">Нет уволенных инструкторов Кулиги</div>' :
+                        dismissedKuligaInstructors.map(instructor => `
+                            <div class="trainer-item" style="display: flex; gap: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 15px;">
+                                <div class="trainer-photo" style="flex-shrink: 0;">
+                                    ${instructor.photo_url ? 
+                                        `<img src="${instructor.photo_url}" alt="${instructor.full_name}" style="width: 80px; height: 100px; object-fit: cover; border-radius: 8px;">` :
+                                        `<div class="no-photo" style="width: 80px; height: 100px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; text-align: center;">Нет фото</div>`
+                                    }
+                                </div>
+                                <div class="trainer-info" style="flex-grow: 1;">
+                                    <h3 style="margin: 0 0 10px 0;">${instructor.full_name}</h3>
+                                    <p style="margin: 5px 0;"><strong>Вид спорта:</strong> ${sportTypeMapping[instructor.sport_type] || instructor.sport_type}</p>
+                                    <p style="margin: 5px 0;"><strong>Телефон:</strong> ${instructor.phone}</p>
+                                    ${instructor.email ? `<p style="margin: 5px 0;"><strong>Email:</strong> ${instructor.email}</p>` : ''}
+                                    <p style="margin: 5px 0; color: #999;"><strong>Дата увольнения:</strong> ${instructor.dismissal_date ? new Date(instructor.dismissal_date).toLocaleDateString('ru-RU') : 'Не указана'}</p>
+                                </div>
+                                <div class="trainer-actions" style="display: flex; flex-direction: column; gap: 10px; justify-content: center;">
+                                    <button class="btn-secondary" onclick="viewKuligaInstructorForTrainersPage(${instructor.id})">Просмотр</button>
+                                    <button class="btn-primary" onclick="restoreKuligaInstructor(${instructor.id}); this.closest('#dismissed-trainers-modal').remove();">Восстановить</button>
+                                </div>
+                            </div>
+                        `).join('')
+                    }
+                </div>
+                
+                <div class="modal-actions" style="margin-top: 20px; text-align: center;">
+                    <button class="btn-secondary" onclick="document.getElementById('dismissed-trainers-modal').remove()">Закрыть</button>
                 </div>
             </div>
         `;
+        
         document.body.appendChild(modal);
-        modal.style.display = 'block';
+        modal.style.display = 'flex';
+        
         // Закрытие по клику вне окна
         modal.onclick = (e) => {
             if (e.target === modal) modal.remove();
         };
+        
+        // Обработчики переключения вкладок
+        const tabs = modal.querySelectorAll('.dismissed-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabType = tab.dataset.tab;
+                
+                // Обновляем активную вкладку
+                tabs.forEach(t => {
+                    t.classList.remove('active');
+                    t.style.borderBottom = '3px solid transparent';
+                });
+                tab.classList.add('active');
+                tab.style.borderBottom = '3px solid #007bff';
+                
+                // Показываем соответствующий контент
+                const contents = modal.querySelectorAll('.dismissed-content');
+                contents.forEach(content => {
+                    content.style.display = content.dataset.content === tabType ? 'block' : 'none';
+                });
+            });
+        });
+        
         console.log('[showDismissedTrainersModal] Модальное окно создано и показано');
     } catch (err) {
         console.error('[showDismissedTrainersModal] Ошибка:', err);
+        showError('Не удалось отобразить список уволенных тренеров');
     }
 }
 
@@ -2006,11 +3010,22 @@ function displayClients() {
     const sortValue = sortSelect.value;
 
     // Фильтруем клиентов
+    // Функция для нормализации номера кошелька (убирает дефисы и пробелы)
+    const normalizeWalletNumber = (wallet) => {
+        if (!wallet) return '';
+        return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+    };
+    
+    const normalizedSearchTerm = normalizeWalletNumber(searchTerm);
+    
     let filteredClients = allClients.filter(client => {
-        const fullNameMatch = client.full_name.toLowerCase().includes(searchTerm);
-        const phoneMatch = client.phone.toLowerCase().includes(searchTerm);
+        const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(searchTerm) : false;
+        const phoneMatch = client.phone ? client.phone.toLowerCase().includes(searchTerm) : false;
         const childNameMatch = client.child_name ? client.child_name.toLowerCase().includes(searchTerm) : false;
-        return fullNameMatch || phoneMatch || childNameMatch;
+        // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+        const walletNumber = normalizeWalletNumber(client.wallet_number);
+        const walletMatch = walletNumber && walletNumber.includes(normalizedSearchTerm);
+        return fullNameMatch || phoneMatch || childNameMatch || walletMatch;
     });
 
     // Сортируем клиентов
@@ -2095,7 +3110,8 @@ function displayClients() {
                     // Форматируем счетчики тренировок для клиента
                     const clientIndividualCount = client.client_individual_count || 0;
                     const clientGroupCount = client.client_group_count || 0;
-                    const clientTrainingCount = `${client.full_name} (${clientIndividualCount} и./${clientGroupCount} г.)`;
+                    const usernameDisplay = client.telegram_username ? ` <strong>${client.telegram_username}</strong>` : '';
+                    const clientTrainingCount = `${client.full_name}${usernameDisplay} (${clientIndividualCount} и./${clientGroupCount} г.)`;
                     
                     // Форматируем счетчики тренировок для ребенка
                     const childIndividualCount = client.child_individual_count || 0;
@@ -2186,31 +3202,398 @@ async function loadPrices() {
 // Загрузка сертификатов
 async function loadCertificates() {
     try {
-        const response = await fetch('/api/certificates');
-        const certificates = await response.json();
+        const response = await fetch('/api/certificates/admin/list?limit=50&offset=0');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка при загрузке сертификатов');
+        }
+        
+        const certificates = result.certificates || [];
         
         const certificatesList = document.querySelector('.certificates-list');
         if (certificatesList) {
-            certificatesList.innerHTML = certificates.map(cert => `
-                <div class="certificate-item">
-                    <div class="certificate-info">
-                        <h3>Сертификат #${cert.certificate_number}</h3>
-                        <p>Сумма: ${cert.amount} ₽</p>
-                        <p>Статус: ${cert.status}</p>
-                        <p>Срок действия: ${formatDate(cert.expiry_date)}</p>
+            if (certificates.length === 0) {
+                certificatesList.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">Сертификаты не найдены</p>';
+                return;
+            }
+            
+            certificatesList.innerHTML = certificates.map(cert => {
+                // Форматируем статус с эмодзи
+                const statusEmoji = {
+                    'active': '🟢',
+                    'used': '🔵',
+                    'expired': '🔴',
+                    'cancelled': '⚫'
+                }[cert.status] || '⚪';
+                
+                const statusText = {
+                    'active': 'Активен',
+                    'used': 'Использован',
+                    'expired': 'Истек',
+                    'cancelled': 'Отменен'
+                }[cert.status] || cert.status;
+                
+                // Форматируем дату
+                const expiryDate = cert.expiry_date ? new Date(cert.expiry_date).toLocaleDateString('ru-RU') : '—';
+                const purchaseDate = cert.purchase_date ? new Date(cert.purchase_date).toLocaleDateString('ru-RU') : '—';
+                
+                // Определяем класс для истекающих скоро
+                const isExpiringSoon = cert.days_until_expiry > 0 && cert.days_until_expiry <= 7 && cert.status === 'active';
+                const itemClass = isExpiringSoon ? 'certificate-item expiring-soon' : 'certificate-item';
+                
+                return `
+                    <div class="${itemClass}">
+                        <div class="certificate-info">
+                            <h3>Сертификат #${cert.certificate_number}</h3>
+                            <p><strong>Номинал:</strong> ${cert.nominal_value.toLocaleString('ru-RU')} ₽</p>
+                            <p><strong>Статус:</strong> ${statusEmoji} ${statusText}</p>
+                            <p><strong>Покупатель:</strong> ${cert.purchaser ? cert.purchaser.full_name : '—'}</p>
+                            ${cert.recipient_name ? `<p><strong>Получатель:</strong> ${cert.recipient_name}</p>` : ''}
+                            <p><strong>Дата покупки:</strong> ${purchaseDate}</p>
+                            <p><strong>Срок действия:</strong> ${expiryDate}${isExpiringSoon ? ' <span style="color: orange;">⚠️ Истекает через ' + cert.days_until_expiry + ' дн.</span>' : ''}</p>
+                            ${cert.activation_date ? `<p><strong>Активирован:</strong> ${new Date(cert.activation_date).toLocaleDateString('ru-RU')}</p>` : ''}
+                        </div>
+                        <div class="certificate-actions">
+                            <button class="btn-secondary" onclick="viewCertificateDetail(${cert.id})">Просмотр</button>
+                            ${cert.status === 'active' ? `<button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>` : ''}
+                            ${cert.status === 'active' ? `<button class="btn-secondary" onclick="extendCertificate(${cert.id})">Продлить</button>` : ''}
+                        </div>
                     </div>
-                    <div class="certificate-actions">
-                        <button class="btn-secondary" onclick="viewCertificate(${cert.id})">Просмотр</button>
-                        <button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>
-                        <button class="btn-danger" onclick="deleteCertificate(${cert.id})">Удалить</button>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
     } catch (error) {
         console.error('Ошибка при загрузке сертификатов:', error);
+        const certificatesList = document.querySelector('.certificates-list');
+        if (certificatesList) {
+            certificatesList.innerHTML = `<p style="text-align: center; padding: 40px; color: #d32f2f;">Ошибка при загрузке сертификатов: ${error.message}</p>`;
+        }
         showError('Не удалось загрузить сертификаты');
     }
+}
+
+// Просмотр детальной информации о сертификате
+async function viewCertificateDetail(id) {
+    try {
+        const response = await fetch(`/api/certificates/admin/certificate/${id}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Ошибка при загрузке сертификата');
+        }
+        
+        const cert = result.certificate;
+        
+        // Форматируем статус с эмодзи
+        const statusEmoji = {
+            'active': '🟢',
+            'used': '🔵',
+            'expired': '🔴',
+            'cancelled': '⚫'
+        }[cert.status] || '⚪';
+        
+        const statusText = {
+            'active': 'Активен',
+            'used': 'Использован',
+            'expired': 'Истек',
+            'cancelled': 'Отменен'
+        }[cert.status] || cert.status;
+        
+        // Форматируем даты
+        const formatDate = (dateStr) => {
+            if (!dateStr) return '—';
+            return new Date(dateStr).toLocaleDateString('ru-RU', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        };
+        
+        // URL картинки сертификата
+        // Сначала пробуем использовать сохраненный путь из БД
+        let imageUrl = cert.image_url || cert.pdf_url;
+        
+        // Если URL нет в базе или путь пустой, формируем стандартный путь на основе номера сертификата
+        // Путь всегда будет: /generated/certificates/certificate_НОМЕР.jpg
+        if (!imageUrl || imageUrl.trim() === '') {
+            imageUrl = `/generated/certificates/certificate_${cert.certificate_number}.jpg`;
+        }
+        
+        // Убеждаемся, что путь начинается с / и нормализуем его
+        const imagePath = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'certificate-view-modal';
+        modal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center; overflow-y: auto; padding: 20px;';
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="background: white; border-radius: 12px; max-width: 1200px; width: 100%; max-height: 95vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3); position: relative;">
+                <button class="modal-close" onclick="closeCertificateModal()" style="position: absolute; top: 15px; right: 15px; background: #f44336; color: white; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; z-index: 10001;">✕</button>
+                
+                <div style="padding: 30px;">
+                    <h2 style="margin: 0 0 25px 0; color: #2c3e50;">Сертификат #${cert.certificate_number}</h2>
+                    
+                    <!-- Превью картинки сертификата -->
+                    <div style="text-align: center; margin-bottom: 30px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 30px; border-radius: 12px; border: 2px dashed #dee2e6;">
+                        ${imagePath ? `
+                            <div style="position: relative; display: inline-block; max-width: 100%;">
+                                <img src="${imagePath}" 
+                                     alt="Сертификат #${cert.certificate_number}" 
+                                     id="certificate-image"
+                                     style="max-width: 900px; width: 100%; height: auto; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease;"
+                                     onclick="openCertificateImageFullscreen('${imagePath}')"
+                                     onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';"
+                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 8px 24px rgba(0,0,0,0.2)';"
+                                     onload="document.getElementById('certificate-image-success').style.display='block'; document.getElementById('certificate-image-error').style.display='none';"
+                                     onerror="console.error('Ошибка загрузки изображения:', '${imagePath}'); this.style.display='none'; document.getElementById('certificate-image-error').style.display='block'; document.getElementById('certificate-image-success').style.display='none';">
+                                <div id="certificate-image-error" style="display: none; padding: 40px; color: #666;">
+                                    <p style="font-size: 18px; margin-bottom: 10px;">⚠️ Изображение сертификата не найдено</p>
+                                    <p style="font-size: 14px; color: #999; margin-bottom: 15px;">Сертификат может быть создан, но JPG файл еще не сгенерирован.</p>
+                                    <p style="font-size: 12px; color: #999; font-style: italic; margin-bottom: 10px;">Ожидаемый путь: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${imagePath}</code></p>
+                                    <p style="font-size: 13px; color: #666;">Попробуйте переслать сертификат покупателю - это запустит генерацию изображения.</p>
+                                </div>
+                                <div id="certificate-image-success" style="display: none; margin-top: 15px; color: #666; font-size: 14px;">
+                                    <span>👆 Нажмите на изображение для просмотра в полном размере</span>
+                                </div>
+                            </div>
+                        ` : `
+                            <div style="padding: 60px 40px; color: #666;">
+                                <p style="font-size: 18px; margin-bottom: 10px;">⚠️ Изображение сертификата отсутствует</p>
+                                <p style="font-size: 14px; color: #999;">JPG файл не был создан при покупке сертификата</p>
+                            </div>
+                        `}
+                    </div>
+                    
+                    <!-- Основная информация -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">📋 Основная информация</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>Номинал:</strong><br>
+                                    <span style="font-size: 20px; color: #27ae60; font-weight: bold;">${cert.nominal_value.toLocaleString('ru-RU')} ₽</span>
+                                </div>
+                                <div>
+                                    <strong>Статус:</strong><br>
+                                    ${statusEmoji} ${statusText}
+                                </div>
+                                <div>
+                                    <strong>Дизайн:</strong><br>
+                                    ${cert.design ? cert.design.name : '—'}
+                                </div>
+                                ${cert.message ? `
+                                <div>
+                                    <strong>Сообщение:</strong><br>
+                                    <em style="color: #666;">${cert.message}</em>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">📅 Даты</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>Дата покупки:</strong><br>
+                                    ${formatDate(cert.purchase_date)}
+                                </div>
+                                <div>
+                                    <strong>Срок действия:</strong><br>
+                                    ${formatDate(cert.expiry_date)}
+                                    ${cert.days_until_expiry > 0 ? `<br><small style="color: ${cert.days_until_expiry <= 7 ? '#ff9800' : '#666'};">⏰ Осталось ${cert.days_until_expiry} дн.</small>` : ''}
+                                </div>
+                                ${cert.activation_date ? `
+                                <div>
+                                    <strong>Дата активации:</strong><br>
+                                    ${formatDate(cert.activation_date)}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        ${cert.purchaser ? `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">👤 Покупатель</h3>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <strong>ФИО:</strong><br>
+                                    ${cert.purchaser.full_name || '—'}
+                                </div>
+                                ${cert.purchaser.phone ? `
+                                <div>
+                                    <strong>Телефон:</strong><br>
+                                    ${cert.purchaser.phone}
+                                </div>
+                                ` : ''}
+                                ${cert.purchaser.email ? `
+                                <div>
+                                    <strong>Email:</strong><br>
+                                    ${cert.purchaser.email}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        ${cert.recipient_name ? `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px;">🎁 Получатель</h3>
+                            <div>
+                                <strong>Имя:</strong><br>
+                                ${cert.recipient_name}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <!-- Транзакции -->
+                    ${cert.transactions && cert.transactions.length > 0 ? `
+                    <div style="margin-bottom: 30px;">
+                        <h3 style="margin: 0 0 15px 0; color: #2c3e50;">💳 История транзакций</h3>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 2px solid #dee2e6;">
+                                        <th style="padding: 10px; text-align: left;">Дата</th>
+                                        <th style="padding: 10px; text-align: left;">Описание</th>
+                                        <th style="padding: 10px; text-align: right;">Сумма</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${cert.transactions.map(trans => `
+                                        <tr style="border-bottom: 1px solid #e9ecef;">
+                                            <td style="padding: 10px;">${formatDate(trans.created_at)}</td>
+                                            <td style="padding: 10px;">${trans.description || '—'}</td>
+                                            <td style="padding: 10px; text-align: right; color: ${trans.amount < 0 ? '#e74c3c' : '#27ae60'}; font-weight: bold;">
+                                                ${trans.amount > 0 ? '+' : ''}${trans.amount.toLocaleString('ru-RU')} ₽
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Действия -->
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                        ${imagePath ? `<button class="btn-secondary" onclick="downloadCertificateImage('${imagePath}', '${cert.certificate_number}')">📥 Скачать изображение</button>` : ''}
+                        ${cert.purchaser && cert.purchaser.email ? `<button class="btn-secondary" onclick="resendCertificate(${id})">📧 Отправить повторно</button>` : ''}
+                        ${cert.status === 'active' ? `
+                            <button class="btn-secondary" onclick="editCertificate(${id})">✏️ Редактировать</button>
+                            <button class="btn-secondary" onclick="extendCertificate(${id})">⏰ Продлить срок</button>
+                        ` : ''}
+                        <button class="btn-secondary" onclick="closeCertificateModal()">Закрыть</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Закрытие по клику вне модального окна
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeCertificateModal();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при просмотре сертификата:', error);
+        alert(`Ошибка при загрузке сертификата: ${error.message}`);
+    }
+}
+
+// Закрытие модального окна просмотра
+function closeCertificateModal() {
+    const modal = document.getElementById('certificate-view-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Открытие картинки в полном размере
+function openCertificateImageFullscreen(imageUrl) {
+    const fullscreenModal = document.createElement('div');
+    fullscreenModal.style.cssText = 'display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 20000; align-items: center; justify-content: center;';
+    
+    fullscreenModal.innerHTML = `
+        <div style="position: relative; max-width: 95vw; max-height: 95vh;">
+            <button onclick="this.parentElement.parentElement.remove()" 
+                    style="position: absolute; top: -40px; right: 0; background: #f44336; color: white; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 20px;">✕</button>
+            <img src="${imageUrl}" 
+                 alt="Сертификат" 
+                 style="max-width: 100%; max-height: 95vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        </div>
+    `;
+    
+    document.body.appendChild(fullscreenModal);
+    
+    fullscreenModal.addEventListener('click', (e) => {
+        if (e.target === fullscreenModal) {
+            fullscreenModal.remove();
+        }
+    });
+}
+
+// Скачивание изображения сертификата
+function downloadCertificateImage(imageUrl, certificateNumber) {
+    const link = document.createElement('a');
+    link.href = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+    link.download = `certificate_${certificateNumber}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Отправка сертификата повторно
+async function resendCertificate(id) {
+    if (!confirm('Отправить сертификат покупателю повторно на email?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/certificates/admin/certificate/${id}/resend`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('Сертификат успешно отправлен повторно');
+        } else {
+            showError(result.error || 'Ошибка при отправке сертификата');
+        }
+    } catch (error) {
+        console.error('Ошибка при отправке сертификата:', error);
+        showError('Ошибка при отправке сертификата: ' + error.message);
+    }
+}
+
+function editCertificate(id) {
+    alert('Редактирование будет реализовано в следующем этапе. ID: ' + id);
+}
+
+function extendCertificate(id) {
+    alert('Продление срока будет реализовано в следующем этапе. ID: ' + id);
 }
 
 // === ФИНАНСЫ: UI и логика ===
@@ -2916,6 +4299,13 @@ async function viewScheduleDetails(trainingId, isIndividual, slopeType) {
                                                 <td>${participant.skill_level || '-'}</td>
                                                 <td>${participant.phone || '-'}</td>
                                                 <td>
+                                                    <button 
+                                                        class="btn-primary btn-small" 
+                                                        onclick="moveParticipantToAnotherTraining(${training.id}, ${participant.id}, '${(participant.full_name || '').replace(/'/g, "\\'")}', ${participant.skill_level ? `'${participant.skill_level}'` : 'null'}, ${age}, '${participant.birth_date}', '${training.slope_type || (training.simulator_id ? 'simulator' : 'natural_slope')}')"
+                                                        title="Переместить участника на другую тренировку"
+                                                        style="margin-right: 5px;">
+                                                        🔄 Переместить
+                                                    </button>
                                                     <button 
                                                         class="btn-danger btn-small" 
                                                         onclick="removeParticipantFromTraining(${training.id}, ${participant.id}, '${participant.full_name}')"
@@ -3879,7 +5269,20 @@ async function rehireTrainer(trainerId) {
         }
 
         showSuccess('Тренер успешно восстановлен');
-        await loadTrainers(); // Перезагружаем список тренеров
+        
+        // Закрываем модальное окно уволенных, если открыто
+        const dismissedModal = document.getElementById('dismissed-trainers-modal');
+        if (dismissedModal) {
+            dismissedModal.remove();
+        }
+        
+        // Перезагружаем текущую вкладку
+        const activeTab = document.querySelector('.trainer-tab.active');
+        if (activeTab && activeTab.dataset.trainerType === 'kuliga') {
+            loadKuligaInstructorsForTrainersPage();
+        } else {
+            await loadTrainers();
+        }
     } catch (error) {
         console.error('Ошибка при восстановлении тренера:', error);
         showError(error.message || 'Не удалось восстановить тренера');
@@ -3938,25 +5341,6 @@ setTimeout(() => {
     console.log('[diagnostic] Кнопка "Уволенные тренеры" найдена:', !!dismissedBtn, dismissedBtn);
 }, 1000);
 
-// Глобальный обработчик для всех кнопок "Уволенные тренеры"
-document.addEventListener('click', function(e) {
-    if (e.target.tagName === 'BUTTON' && e.target.textContent.includes('Уволенные тренеры')) {
-        console.log('[global handler] Кнопка "Уволенные тренеры" нажата через глобальный обработчик');
-        // Попробуем найти dismissedTrainers в глобальной области (или пересобрать)
-        if (window.lastDismissedTrainers) {
-            showDismissedTrainersModal(window.lastDismissedTrainers);
-        } else {
-            // Попробуем получить через API
-            fetch('/api/trainers').then(r => r.json()).then(trainers => {
-                const dismissed = trainers.filter(tr => !tr.is_active);
-                window.lastDismissedTrainers = dismissed;
-                showDismissedTrainersModal(dismissed);
-            });
-        }
-    }
-});
-
-// Обработчик для верхней кнопки "Уволенные тренеры" (перенесен в основной обработчик)
 
 function formatDateWithWeekday(dateString) {
     const date = new Date(dateString);
@@ -4091,6 +5475,85 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
         return;
     }
 
+    // Проверка: если отправляем всем пользователям, запрашиваем подтверждение
+    if (recipientType === 'all') {
+        // Создаем модальное окно подтверждения с HTML-форматированием
+        const confirmed = await new Promise((resolve) => {
+            const confirmModal = document.createElement('div');
+            confirmModal.className = 'modal';
+            confirmModal.style.display = 'flex';
+            confirmModal.style.zIndex = '10002';
+            confirmModal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <h3 style="margin-top: 0;">Подтверждение отправки</h3>
+                    <p style="font-size: 16px; line-height: 1.6;">
+                        Вы уверены, что хотите отправить это сообщение <strong style="font-weight: bold; font-size: 18px;">ВСЕМ ПОЛЬЗОВАТЕЛЯМ</strong>?
+                    </p>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button class="btn-secondary" id="confirm-cancel-btn" style="padding: 10px 20px;">Отмена</button>
+                        <button class="btn-primary" id="confirm-send-btn" style="padding: 10px 20px;">Да, отправить</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(confirmModal);
+
+            const cleanup = () => {
+                confirmModal.remove();
+            };
+
+            const cancelBtn = confirmModal.querySelector('#confirm-cancel-btn');
+            const sendBtn = confirmModal.querySelector('#confirm-send-btn');
+
+            cancelBtn.addEventListener('click', () => {
+                cleanup();
+                resolve(false);
+            });
+
+            sendBtn.addEventListener('click', () => {
+                cleanup();
+                resolve(true);
+            });
+
+            // Закрытие по клику вне модального окна
+            confirmModal.addEventListener('click', (e) => {
+                if (e.target === confirmModal) {
+                    cleanup();
+                    resolve(false);
+                }
+            });
+        });
+
+        if (!confirmed) {
+            return; // Пользователь отменил отправку
+        }
+    }
+
+    // Проверяем, что медиафайл все еще доступен после подтверждения
+    // Если файл недоступен, пытаемся получить его из input элемента
+    let finalMediaFile = mediaFile;
+    let finalMediaType = mediaType;
+    
+    if (!finalMediaFile) {
+        // Пытаемся получить файл из input элемента
+        const mediaUploadInput = form.querySelector('#media-upload');
+        if (mediaUploadInput && mediaUploadInput.files && mediaUploadInput.files.length > 0) {
+            finalMediaFile = mediaUploadInput.files[0];
+            finalMediaType = finalMediaFile.type.startsWith('image/') ? 'photo' : 'video';
+            console.log('[handleNotifyFormSubmitWithMedia] Медиафайл восстановлен из input:', {
+                name: finalMediaFile.name,
+                type: finalMediaFile.type,
+                size: finalMediaFile.size
+            });
+        }
+    } else {
+        console.log('[handleNotifyFormSubmitWithMedia] Медиафайл после подтверждения:', {
+            name: finalMediaFile.name,
+            type: finalMediaFile.type,
+            size: finalMediaFile.size,
+            mediaType: finalMediaType
+        });
+    }
+
     // Конвертируем Markdown в HTML перед отправкой
     const message = markdownToHtml(rawMessage);
 
@@ -4135,9 +5598,9 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
             const scheduledDateTime = new Date(scheduleDatetime.value);
             formData.append('scheduled_at', scheduledDateTime.toISOString());
             
-            if (mediaFile) {
-                formData.append('media', mediaFile);
-                formData.append('media_type', mediaType);
+            if (finalMediaFile) {
+                formData.append('media', finalMediaFile);
+                formData.append('media_type', finalMediaType);
             }
             
             const response = await fetch('/api/trainings/scheduled-messages', {
@@ -4240,11 +5703,20 @@ async function handleNotifyFormSubmitWithMedia(event, mediaFile, mediaType) {
         showLoading('Отправка сообщения...');
 
         // Если есть медиа, используем FormData
-        if (mediaFile) {
+        if (finalMediaFile) {
+            console.log('[handleNotifyFormSubmitWithMedia] Отправка с медиафайлом:', {
+                endpoint: endpoint,
+                fileName: finalMediaFile.name,
+                fileType: finalMediaFile.type,
+                fileSize: finalMediaFile.size,
+                mediaType: finalMediaType,
+                messageLength: message.length
+            });
+            
             const formData = new FormData();
             formData.append('message', message);
-            formData.append('media', mediaFile);
-            formData.append('mediaType', mediaType);
+            formData.append('media', finalMediaFile);
+            formData.append('mediaType', finalMediaType);
             formData.append('parse_mode', 'HTML'); // Используем HTML для поддержки <u>
 
             const response = await fetch(endpoint, {
@@ -4487,6 +5959,7 @@ function displayApplications() {
                     <th>№</th>
                     <th>Дата</th>
                     <th>Клиент</th>
+                    <th>Телефон</th>
                     <th>Тип заявки</th>
                     <th>Оборудование</th>
                     <th>Статус</th>
@@ -4494,11 +5967,16 @@ function displayApplications() {
                 </tr>
             </thead>
             <tbody>
-                ${filteredApplications.map((application, index) => `
+                ${filteredApplications.map((application, index) => {
+                    const clientName = application.client_name || application.child_name || 'Не указан';
+                    const usernameDisplay = application.telegram_username ? ` <strong>${application.telegram_username}</strong>` : '';
+                    const clientDisplay = clientName !== 'Не указан' ? `${clientName}${usernameDisplay}` : clientName;
+                    return `
                     <tr class="application-row application-status-${application.group_status}">
                         <td>${index + 1}</td>
                         <td>${formatDate(application.preferred_date)} ${application.preferred_time}</td>
-                        <td>${application.client_name || application.child_name || 'Не указан'}</td>
+                        <td>${clientDisplay}</td>
+                        <td>${application.client_phone || '-'}</td>
                         <td>${application.has_group ? 'Групповая' : 'Индивидуальная'}</td>
                         <td>${application.equipment_type === 'ski' ? 'Лыжи' : 'Сноуборд'}</td>
                         <td>
@@ -4517,7 +5995,8 @@ function displayApplications() {
                             </button>
                         </td>
                     </tr>
-                `).join('')}
+                    `;
+                }).join('')}
             </tbody>
         </table>
     `;
@@ -4919,10 +6398,21 @@ function initializeWalletRefill() {
     function searchClients(query) {
         const queryLower = query.toLowerCase();
         
+        // Функция для нормализации номера кошелька (убирает дефисы и пробелы)
+        const normalizeWalletNumber = (wallet) => {
+            if (!wallet) return '';
+            return String(wallet).replace(/[-\s]/g, '').toLowerCase();
+        };
+        
+        const normalizedQuery = normalizeWalletNumber(queryLower);
+        
         const filteredClients = allClients.filter(client => {
-            const fullNameMatch = client.full_name.toLowerCase().includes(queryLower);
-            const phoneMatch = client.phone.toLowerCase().includes(queryLower);
-            return fullNameMatch || phoneMatch;
+            const fullNameMatch = client.full_name ? client.full_name.toLowerCase().includes(queryLower) : false;
+            const phoneMatch = client.phone ? client.phone.toLowerCase().includes(queryLower) : false;
+            // Нормализуем номер кошелька (убираем дефисы) и ищем по нормализованному запросу
+            const walletNumber = normalizeWalletNumber(client.wallet_number);
+            const walletMatch = walletNumber && walletNumber.includes(normalizedQuery);
+            return fullNameMatch || phoneMatch || walletMatch;
         });
 
         displaySearchResults(filteredClients);
@@ -5233,7 +6723,7 @@ async function sendClientNotification() {
     }
 }
 
-// Функция для удаления участника из тренировки
+// Функция для удаления участника из тренировки (тренажер)
 async function removeParticipantFromTraining(trainingId, participantId, participantName) {
     // Подтверждение удаления
     if (!confirm(`Вы уверены, что хотите удалить участника "${participantName}" из тренировки?\n\nДействия:\n✅ Статус участника будет изменен на "отменено"\n💰 Средства будут возвращены на счет клиента\n📨 Клиент получит уведомление об удалении\n📱 Администратор получит уведомление`)) {
@@ -5268,11 +6758,266 @@ async function removeParticipantFromTraining(trainingId, participantId, particip
         if (typeof loadTrainings === 'function') {
             loadTrainings();
         }
+        
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        }
     } catch (error) {
         console.error('Ошибка при удалении участника:', error);
         showError(error.message);
     } finally {
         hideLoading();
+    }
+}
+
+// Функция для удаления бронирования Kuliga (естественный склон)
+async function removeKuligaBooking(groupTrainingId, bookingId, clientName, type) {
+    // Подтверждение удаления
+    if (!confirm(`Вы уверены, что хотите удалить бронирование клиента "${clientName}"?\n\nДействия:\n✅ Бронирование будет отменено\n💰 Средства будут возвращены на счет клиента\n📨 Клиент и тренер получат уведомления`)) {
+        return;
+    }
+
+    try {
+        showLoading('Удаление бронирования...');
+
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        const response = await fetch(`/api/kuliga/admin/booking/${bookingId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при удалении бронирования');
+        }
+
+        showSuccess(`Бронирование клиента "${clientName}" успешно удалено\nВозврат: ${result.refund_amount ? result.refund_amount.toFixed(2) : '0.00'} руб.`);
+        
+        // Закрываем модальное окно
+        const modal = document.querySelector('.modal');
+        if (modal) {
+            modal.remove();
+        }
+
+        // Обновляем расписание
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        }
+    } catch (error) {
+        console.error('Ошибка при удалении бронирования Kuliga:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// === ПЕРЕМЕЩЕНИЕ УЧАСТНИКА НА ДРУГУЮ ТРЕНИРОВКУ ===
+
+// Функция для перемещения участника на другую тренировку
+async function moveParticipantToAnotherTraining(trainingId, participantId, participantName, participantLevel, participantAge, participantBirthDate, slopeType) {
+    try {
+        showLoading('Загрузка доступных тренировок...');
+
+        // Получаем список доступных тренировок на 2 недели
+        const response = await fetch(
+            `/api/trainings/available-for-transfer?slope_type=${encodeURIComponent(slopeType)}&exclude_training_id=${trainingId}`
+        );
+
+        if (!response.ok) {
+            throw new Error('Не удалось загрузить список тренировок');
+        }
+
+        const data = await response.json();
+        hideLoading();
+
+        if (!data.success || !data.trainings || data.trainings.length === 0) {
+            showError('Нет доступных тренировок для переноса на ближайшие 2 недели');
+            return;
+        }
+
+        // Создаем модальное окно с выбором тренировки
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.zIndex = '10001';
+        
+        const trainingsList = data.trainings.map(training => {
+            const trainingDate = new Date(training.session_date);
+            const formattedDate = trainingDate.toLocaleDateString('ru-RU', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+            });
+            const startTime = training.start_time ? training.start_time.slice(0, 5) : '';
+            const endTime = training.end_time ? training.end_time.slice(0, 5) : '';
+            
+            // Проверка соответствия по уровню и возрасту
+            const participantLevelStr = participantLevel && participantLevel !== 'null' ? String(participantLevel) : null;
+            const trainingLevelStr = training.skill_level ? String(training.skill_level) : null;
+            
+            const levelMatch = !participantLevelStr || !trainingLevelStr || 
+                              participantLevelStr === trainingLevelStr || 
+                              parseInt(participantLevelStr) === parseInt(trainingLevelStr);
+            
+            const ageMatch = (!training.min_age || participantAge >= training.min_age) && 
+                            (!training.max_age || participantAge <= training.max_age);
+            
+            const hasWarning = !levelMatch || !ageMatch;
+            const warningMessages = [];
+            
+            if (!levelMatch && participantLevelStr && trainingLevelStr) {
+                warningMessages.push(`Уровень участника (${participantLevelStr}) не совпадает с уровнем группы (${trainingLevelStr})`);
+            }
+            
+            if (!ageMatch) {
+                if (training.min_age && participantAge < training.min_age) {
+                    warningMessages.push(`Возраст участника (${participantAge} лет) меньше минимального для группы (${training.min_age} лет)`);
+                }
+                if (training.max_age && participantAge > training.max_age) {
+                    warningMessages.push(`Возраст участника (${participantAge} лет) больше максимального для группы (${training.max_age} лет)`);
+                }
+            }
+
+            // Экранируем сообщения предупреждений для безопасной передачи в onclick
+            const warningMessagesStr = warningMessages.map(msg => msg.replace(/'/g, "\\'")).join('|');
+
+            return `
+                <div class="training-option" data-training-id="${training.id}" style="
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                    ${hasWarning ? 'border-color: #ff9800; background-color: #fff3cd;' : ''}
+                " onmouseover="this.style.backgroundColor='${hasWarning ? '#ffe69c' : '#f0f0f0'}'" 
+                   onmouseout="this.style.backgroundColor='${hasWarning ? '#fff3cd' : 'transparent'}'"
+                   onclick="selectTrainingForTransfer(${training.id}, ${trainingId}, ${participantId}, '${participantName.replace(/'/g, "\\'")}', ${hasWarning ? 'true' : 'false'}, '${warningMessagesStr}')">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <strong>${formattedDate} ${startTime} - ${endTime}</strong>
+                            <div style="margin-top: 5px; color: #666;">
+                                <div>${training.group_name || 'Группа не указана'}</div>
+                                <div>Тренер: ${training.trainer_name}</div>
+                                ${training.simulator_name ? `<div>Тренажер: ${training.simulator_name}</div>` : ''}
+                                <div>Уровень: ${training.skill_level || '-'}</div>
+                                <div>Участники: ${training.current_participants}/${training.max_participants}</div>
+                            </div>
+                            ${hasWarning ? `
+                                <div style="margin-top: 10px; padding: 10px; background-color: #fff; border-left: 3px solid #ff9800; border-radius: 4px;">
+                                    <strong style="color: #ff9800;">⚠️ Предупреждение:</strong>
+                                    <ul style="margin: 5px 0 0 0; padding-left: 20px;">
+                                        ${warningMessages.map(msg => `<li style="color: #856404;">${msg}</li>`).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <button class="btn-primary" style="margin-left: 15px; white-space: nowrap;" onclick="event.stopPropagation(); selectTrainingForTransfer(${training.id}, ${trainingId}, ${participantId}, '${participantName.replace(/'/g, "\\'")}', ${hasWarning ? 'true' : 'false'}, '${warningMessagesStr}')">
+                            Выбрать
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <h3>Переместить участника "${participantName}"</h3>
+                <p style="margin-bottom: 15px; color: #666;">
+                    Выберите тренировку из списка доступных на ближайшие 2 недели (только ${slopeType === 'simulator' ? 'тренажер' : 'естественный склон'}):
+                </p>
+                <div id="trainings-list" style="max-height: 60vh; overflow-y: auto;">
+                    ${trainingsList}
+                </div>
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+
+        // Закрытие по клику вне окна
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+    } catch (error) {
+        console.error('Ошибка при загрузке доступных тренировок:', error);
+        hideLoading();
+        showError('Не удалось загрузить список тренировок: ' + error.message);
+    }
+}
+
+// Функция для выбора тренировки и подтверждения переноса
+async function selectTrainingForTransfer(targetTrainingId, sourceTrainingId, participantId, participantName, hasWarning, warningMessages) {
+    // Если есть предупреждение, показываем подтверждение
+    if (hasWarning && warningMessages) {
+        // warningMessages передается как строка, разделенная символом |
+        const messages = typeof warningMessages === 'string' && warningMessages 
+            ? warningMessages.split('|').filter(msg => msg.trim()) 
+            : (Array.isArray(warningMessages) ? warningMessages : []);
+        
+        if (messages.length > 0) {
+            const confirmMessage = `⚠️ Внимание! Участник "${participantName}" не соответствует требованиям выбранной тренировки:\n\n` +
+                messages.map(msg => `• ${msg}`).join('\n') +
+                `\n\nВы всё равно хотите переместить участника на эту тренировку?`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+        }
+    } else {
+        // Обычное подтверждение
+        if (!confirm(`Вы уверены, что хотите переместить участника "${participantName}" на выбранную тренировку?`)) {
+            return;
+        }
+    }
+
+    try {
+        showLoading('Перемещение участника...');
+
+        const response = await fetch(
+            `/api/trainings/${sourceTrainingId}/participants/${participantId}/transfer`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    target_training_id: targetTrainingId
+                })
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Ошибка при перемещении участника');
+        }
+
+        hideLoading();
+        showSuccess(`Участник "${participantName}" успешно перемещен на новую тренировку`);
+        
+        // Закрываем все модальные окна
+        document.querySelectorAll('.modal').forEach(modal => modal.remove());
+
+        // Обновляем список тренировок
+        if (typeof loadSchedule === 'function') {
+            await loadSchedule();
+        } else if (typeof loadTrainings === 'function') {
+            loadTrainings();
+        }
+    } catch (error) {
+        console.error('Ошибка при перемещении участника:', error);
+        hideLoading();
+        showError(error.message);
     }
 }
 

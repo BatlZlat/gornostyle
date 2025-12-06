@@ -13,10 +13,11 @@
     <link rel="stylesheet" href="/css/mobile.css">
     <link rel="stylesheet" href="/css/kuliga.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body class="kuliga-body">
     <header class="kuliga-booking-header">
-        <a class="kuliga-booking-header__back" href="/instruktora-kuliga">
+        <a class="kuliga-booking-header__back" href="/instruktor-po-gornym-lyzham-snoubordy-tyumen">
             <i class="fa-solid fa-arrow-left"></i>
             Вернуться на страницу Кулиги
         </a>
@@ -27,74 +28,157 @@
     <main class="kuliga-booking-main">
         <form id="kuligaBookingForm" class="kuliga-booking-form" novalidate>
             <section class="kuliga-booking-section">
-                <h2>Данные клиента</h2>
+                <h2>1. Параметры тренировки</h2>
+                <div class="kuliga-form-grid">
+                    <label class="kuliga-field kuliga-field--full">
+                        <span>Место проведения тренировки *</span>
+                        <select id="kuligaLocation" class="kuliga-select" required>
+                            <option value="kuliga" selected>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona">Воронинские горки</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">Выберите место, где будет проходить тренировка</small>
+                    </label>
+                </div>
+                <div id="kuligaSelectionSummary" class="kuliga-selection-card">
+                    <div class="kuliga-selection-card__title" data-selection-title>Загрузка параметров...</div>
+                    <ul class="kuliga-selection-card__details" data-selection-details></ul>
+                    <p class="kuliga-selection-card__note">
+                        Чтобы изменить параметры тренировки, вернитесь к прайсу и выберите другую карточку.
+                    </p>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>2. Вид спорта</h2>
+                <div class="kuliga-choice kuliga-choice--inline">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="ski" checked>
+                        <span>Горные лыжи</span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaSportType" value="snowboard">
+                        <span>Сноуборд</span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>3. Данные заказчика</h2>
                 <div class="kuliga-form-grid">
                     <label class="kuliga-field">
-                        <span>ФИО основного участника *</span>
-                        <input type="text" name="fullName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
+                        <span>ФИО заказчика *</span>
+                        <input type="text" id="kuligaClientName" required maxlength="100" placeholder="Иванов Иван Иванович" autocomplete="name">
+                    </label>
+                    <label class="kuliga-field">
+                        <span>Дата рождения заказчика *</span>
+                        <input type="date" id="kuligaClientBirthDate" required autocomplete="bday">
                     </label>
                     <label class="kuliga-field">
                         <span>Телефон для связи *</span>
-                        <input type="tel" name="phone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
+                        <input type="tel" id="kuligaClientPhone" required maxlength="20" placeholder="+7 (999) 123-45-67" autocomplete="tel">
                     </label>
                     <label class="kuliga-field">
-                        <span>Email (для чеков и уведомлений)</span>
-                        <input type="email" name="email" maxlength="255" placeholder="name@example.com" autocomplete="email">
+                        <span>Email (для чеков и уведомлений) *</span>
+                        <input type="email" id="kuligaClientEmail" required maxlength="255" placeholder="name@example.com" autocomplete="email">
                     </label>
+                </div>
+                <div class="kuliga-choice kuliga-choice--inline">
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaPayerParticipation" value="self" checked>
+                        <span>Я буду кататься</span>
+                    </label>
+                    <label class="kuliga-radio">
+                        <input type="radio" name="kuligaPayerParticipation" value="other">
+                        <span>Кататься будет другой человек</span>
+                    </label>
+                </div>
+                <p class="kuliga-section-hint" id="kuligaParticipantsHint"></p>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>4. Дата и время</h2>
+                <div class="kuliga-form-grid kuliga-form-grid--compact">
+                    <label class="kuliga-field kuliga-field--with-icon">
+                        <span>Дата тренировки *</span>
+                        <div class="kuliga-input-wrapper">
+                            <input type="date" id="kuligaDate" required>
+                            <i class="fa-solid fa-calendar-alt kuliga-date-icon"></i>
+                        </div>
+                    </label>
+                    <label class="kuliga-field kuliga-field--full">
+                        <span>Свободные слоты *</span>
+                        <div id="kuligaTimeSlots" class="kuliga-timeslots" role="radiogroup" aria-live="polite"></div>
+                    </label>
+                </div>
+                <div id="kuligaAvailabilityMessage" class="kuliga-inline-message" aria-live="polite"></div>
+                <div id="kuligaInstructorCard" class="kuliga-instructor-preview" hidden>
+                    <div class="kuliga-instructor-preview__photo">
+                        <img id="kuligaInstructorPhoto" src="" alt="">
+                    </div>
+                    <div class="kuliga-instructor-preview__info">
+                        <h3 id="kuligaInstructorName"></h3>
+                        <p id="kuligaInstructorSport"></p>
+                        <p id="kuligaInstructorDescription"></p>
+                    </div>
                 </div>
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>Тип тренировки</h2>
-                <div class="kuliga-booking-type">
-                    <label class="kuliga-radio">
-                        <input type="radio" name="bookingType" value="individual" disabled>
-                        <span>
-                            <strong>Индивидуальная</strong>
-                            <small>Скоро появится. Напишите администратору для индивидуальной записи.</small>
-                        </span>
-                    </label>
-                    <label class="kuliga-radio">
-                        <input type="radio" name="bookingType" value="group" checked>
-                        <span>
-                            <strong>Групповая</strong>
-                            <small>Мини-группы до 4 человек. Выберите удобную дату и время.</small>
-                        </span>
-                    </label>
-                </div>
-
-                <div class="kuliga-field">
-                    <span>Выберите групповое занятие *</span>
-                    <select name="groupTrainingId" id="kuligaGroupSelect" required>
-                        <option value="" disabled selected>Загрузка доступных занятий...</option>
-                    </select>
-                </div>
-
-                <div class="kuliga-field">
-                    <span>Количество участников *</span>
-                    <input type="number" name="participantsCount" id="kuligaParticipantsCount" min="1" max="4" value="1" required>
-                </div>
-
-                <div id="kuligaParticipantsList" class="kuliga-participants-list"></div>
+                <h2>5. Участники тренировки</h2>
+                <div id="kuligaParticipantsContainer" class="kuliga-participants-grid"></div>
+                <button type="button" id="kuligaAddParticipantBtn" class="kuliga-button kuliga-button--secondary" style="margin-top: 16px; display: none;">
+                    <i class="fa-solid fa-plus"></i> Добавить участника
+                </button>
             </section>
 
             <section class="kuliga-booking-section">
-                <h2>Дополнительно</h2>
+                <h2>6. Уведомления</h2>
+                <p class="kuliga-section-hint">Выберите, как получать подтверждение, изменения расписания и чек.</p>
                 <label class="kuliga-checkbox">
-                    <input type="checkbox" name="consentConfirmed" required>
+                    <input type="checkbox" id="kuligaNotifyEmail" checked>
+                    <span>Отправлять уведомления и чек на email</span>
+                </label>
+                <label class="kuliga-checkbox">
+                    <input type="checkbox" id="kuligaNotifyTelegram" checked>
+                    <span>Для полного управления записью в личном кабинете, а также напоминаний о тренировке, рекомендуем запустить нашего Телеграм бота</span>
+                </label>
+                <div id="kuligaTelegramHint" class="kuliga-notify-hint">
+                    <i class="fa-brands fa-telegram"></i>
+                    <p>
+                        Для получения уведомлений запустите бота <a id="kuligaTelegramLink" href="#" target="_blank" rel="noopener"></a> и нажмите «Старт».
+                        Вы можете сделать это до или после оплаты.
+                    </p>
+                </div>
+            </section>
+
+            <section class="kuliga-booking-section">
+                <h2>7. Согласие</h2>
+                <label class="kuliga-checkbox">
+                    <input type="checkbox" id="kuligaConsent" required>
                     <span>
-                        Я подтверждаю согласие на обработку персональных данных (ФИО, телефон, email) и разрешаю использование фото и видео с тренировки в социальных сетях и мессенджерах Горностайл72. <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
+                        Я подтверждаю согласие на обработку персональных данных (ФИО, телефон, email) и разрешаю использование фото и видео с тренировки в социальных сетях и мессенджерах Горностайл72.
                     </span>
                 </label>
+                <div class="kuliga-booking-documents">
+                    <p style="margin: 12px 0 8px; font-size: 0.9rem; color: var(--kuliga-gray-500);">
+                        Ознакомьтесь с документами:
+                    </p>
+                    <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px;">
+                        <li><a href="/privacy-policy" target="_blank" rel="noopener" style="color: var(--kuliga-primary); text-decoration: none;">Политика конфиденциальности</a></li>
+                        <li><a href="/user-agreement" target="_blank" rel="noopener" style="color: var(--kuliga-primary); text-decoration: none;">Пользовательское соглашение</a></li>
+                        <li><a href="/payment-terms" target="_blank" rel="noopener" style="color: var(--kuliga-primary); text-decoration: none;">Условия оплаты</a></li>
+                        <li><a href="/return-policy" target="_blank" rel="noopener" style="color: var(--kuliga-primary); text-decoration: none;">Политика возврата</a></li>
+                    </ul>
+                </div>
                 <div class="kuliga-hint">
                     <i class="fa-solid fa-circle-info"></i>
-                    Если группа не наберёт минимальное количество участников до 22:00 накануне, тренировка будет автоматически отменена, а предоплата возвращена на ваш счёт в течение 1-3 рабочих дней.
+                    Если тренировка не набирает минимальное количество участников до 22:00 накануне, мы автоматически отменим её и вернём предоплату на ваш счёт в течение 1-3 рабочих дней.
                 </div>
             </section>
 
             <div class="kuliga-booking-summary">
                 <div>
-                    <span class="kuliga-summary__label">Предоплата</span>
+                    <span class="kuliga-summary__label">К оплате</span>
                     <strong id="kuligaTotalPrice">—</strong>
                 </div>
                 <button type="submit" class="kuliga-button kuliga-button--primary">Перейти к оплате</button>
@@ -106,14 +190,35 @@
     <footer class="kuliga-footer">
         <div class="kuliga-footer__content">
             <div class="kuliga-footer__brand">
-                <img src="/images/logo.png" alt="Логотип Горностайл72" loading="lazy">
+                <img src="/images/gornosyle72_logo.webp" alt="Логотип Горностайл72" loading="lazy">
                 <p>Горностайл72 — обучение горным лыжам и сноуборду круглый год. На Кулиге обучают инструкторы нашей школы.</p>
             </div>
             <div class="kuliga-footer__links">
-                <a href="tel:+79123924956"><i class="fa-solid fa-phone"></i> +7 912 392-49-56</a>
-                <a href="mailto:batl-zlat@yandex.ru"><i class="fa-solid fa-envelope"></i> batl-zlat@yandex.ru</a>
-                <a href="https://t.me/<%= adminTelegramUsername %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
+                <a href="tel:<%= adminPhone %>"><i class="fa-solid fa-phone"></i> <%= adminPhone %></a>
+                <a href="mailto:<%= contactEmail %>"><i class="fa-solid fa-envelope"></i> <%= contactEmail %></a>
+                <a href="https://t.me/<%= adminTelegramUsername ? adminTelegramUsername.replace(/^@/, '') : '' %>" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Telegram администратора</a>
                 <a href="https://t.me/<%= botUsername %>" target="_blank" rel="noopener"><i class="fa-solid fa-robot"></i> Telegram-бот Горностайл72</a>
+            </div>
+            <div class="kuliga-footer__documents">
+                <h4>Документы</h4>
+                <a href="/privacy-policy" target="_blank" rel="noopener">Политика конфиденциальности</a>
+                <a href="/user-agreement" target="_blank" rel="noopener">Пользовательское соглашение</a>
+                <a href="/payment-terms" target="_blank" rel="noopener">Условия оплаты и доставки</a>
+                <a href="/return-policy" target="_blank" rel="noopener">Политика возврата</a>
+            </div>
+            <div class="kuliga-footer__requisites">
+                <h4>Реквизиты</h4>
+                <p><strong>ИП Тебякин Данила Юрьевич</strong></p>
+                <p>ИНН: <%= inn || '740416017714' %></p>
+                <% if (ogrnip) { %>
+                <p>ОГРНИП: <%= ogrnip %></p>
+                <% } %>
+                <p>Юридический адрес: 625537, Тюменская обл., Тюменский р-н, д. Якуши, ул. Гоголя, 15</p>
+                <p>Места оказания услуг: База отдыха «Кулига-Клуб», Воронинские горки</p>
+            </div>
+            <div class="kuliga-footer__meta">
+                <span>© <%= new Date().getFullYear() %> Горностайл72</span>
+                <span>База отдыха «Кулига-Клуб», Воронинские горки</span>
             </div>
         </div>
     </footer>
@@ -124,6 +229,14 @@
             googleAnalyticsId: '<%= googleAnalyticsId || '' %>'
         };
     </script>
+    <script>
+        window.KULIGA_BOOKING_CONFIG = {
+            botUsername: '<%= kuligaClientBotUsername || '' %>'
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ru.js"></script>
+    <script src="/js/location-mapper.js"></script>
     <script src="/js/kuliga-booking.js" defer></script>
     <%- include('partials/analytics'); %>
 </body>

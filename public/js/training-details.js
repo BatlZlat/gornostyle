@@ -20,7 +20,16 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadTrainingDetails() {
         try {
             const token = getCookie('adminToken');
-            const response = await fetch(`/api/trainings/${trainingId}`, {
+            
+            // Определяем правильный endpoint в зависимости от типа тренировки
+            let endpoint;
+            if (trainingType === 'individual') {
+                endpoint = `/api/individual-trainings/${trainingId}`;
+            } else {
+                endpoint = `/api/trainings/${trainingId}`;
+            }
+            
+            const response = await fetch(endpoint, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -33,20 +42,68 @@ document.addEventListener('DOMContentLoaded', function() {
             const training = await response.json();
             console.log('Загруженные данные тренировки:', training);
             
+            // Для индивидуальных тренировок преобразуем структуру данных
+            if (trainingType === 'individual') {
+                training.is_individual = true;
+                // Преобразуем формат для совместимости с displayTrainingDetails
+                if (training.preferred_date) {
+                    training.session_date = training.preferred_date;
+                }
+                if (training.preferred_time) {
+                    training.start_time = training.preferred_time;
+                    // Для индивидуальных тренировок end_time рассчитываем из duration
+                    if (training.duration) {
+                        const startTime = new Date(`2000-01-01T${training.preferred_time}`);
+                        const endTime = new Date(startTime.getTime() + training.duration * 60000);
+                        training.end_time = endTime.toTimeString().slice(0, 8);
+                    }
+                }
+                // Для индивидуальных тренировок участник может быть клиентом или ребенком
+                if (training.client_id || training.child_id) {
+                    training.participants = [{
+                        id: training.client_id || training.child_id,
+                        full_name: training.client_name || training.child_name,
+                        birth_date: training.client_birth_date || training.child_birth_date,
+                        skill_level: training.client_skill_level || training.child_skill_level,
+                        phone: training.client_phone || training.parent_phone,
+                        is_child: !!training.child_id
+                    }];
+                }
+            }
+            
             displayTrainingDetails(training);
         } catch (error) {
             console.error('Ошибка при загрузке деталей тренировки:', error);
-            showError('Не удалось загрузить детали тренировки');
+            showError('Не удалось загрузить детали тренировки: ' + error.message);
         }
     }
 
     // Отображение деталей тренировки
     function displayTrainingDetails(training) {
         // Основная информация
-        document.getElementById('training-date').textContent = formatDate(training.session_date);
-        document.getElementById('training-time').textContent = `${formatTime(training.start_time)} - ${formatTime(training.end_time)}`;
-        document.getElementById('training-simulator').textContent = `Тренажер ${training.simulator_id}`;
-        document.getElementById('training-group').textContent = training.group_name || 'Не указана';
+        document.getElementById('training-date').textContent = formatDate(training.session_date || training.preferred_date);
+        document.getElementById('training-time').textContent = `${formatTime(training.start_time || training.preferred_time)} - ${formatTime(training.end_time)}`;
+        
+        // Для индивидуальных тренировок тренажер может быть не указан
+        const simulatorElement = document.getElementById('training-simulator');
+        if (simulatorElement) {
+            if (training.simulator_id) {
+                simulatorElement.textContent = `Тренажер ${training.simulator_id}`;
+            } else if (training.simulator_name) {
+                simulatorElement.textContent = training.simulator_name;
+            } else {
+                simulatorElement.textContent = 'Не указан';
+            }
+        }
+        
+        const groupElement = document.getElementById('training-group');
+        if (groupElement) {
+            if (training.is_individual) {
+                groupElement.textContent = 'Индивидуальная тренировка';
+            } else {
+                groupElement.textContent = training.group_name || 'Не указана';
+            }
+        }
         
         // Добавляем информацию о тренере
         addTrainerInfo(training);

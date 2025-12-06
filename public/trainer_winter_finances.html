@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Финансы - Личный кабинет инструктора</title>
+    <link rel="stylesheet" href="css/admin.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .finances-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-card.primary {
+            border-left: 4px solid #27ae60;
+        }
+
+        .stat-card.warning {
+            border-left: 4px solid #f39c12;
+        }
+
+        .stat-card.danger {
+            border-left: 4px solid #e74c3c;
+        }
+
+        .stat-card.info {
+            border-left: 4px solid #3498db;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .stat-subvalue {
+            font-size: 14px;
+            color: #999;
+        }
+
+        .period-selector {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 30px;
+        }
+
+        .period-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .period-btn {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .period-btn:hover {
+            background: #f8f9fa;
+        }
+
+        .period-btn.active {
+            background: #27ae60;
+            color: white;
+            border-color: #27ae60;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 30px;
+        }
+
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .table-container {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+
+        .table-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-paid {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-cancelled {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .period-buttons {
+                flex-direction: column;
+            }
+            
+            .period-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1 id="page-header">💰 Финансы - Личный кабинет инструктора</h1>
+            <div style="display: flex; gap: 10px;">
+                <a href="trainer_winter.html" class="btn-secondary" style="text-decoration: none; padding: 10px 20px; border-radius: 6px; background: #6c757d; color: white; font-weight: 600;">
+                    📅 Расписание
+                </a>
+                <button class="btn-secondary" id="logout-btn">Выход</button>
+            </div>
+        </header>
+
+        <main class="admin-main" style="padding:20px;">
+            <!-- Селектор периода -->
+            <div class="period-selector">
+                <h3>Период</h3>
+                <div class="period-buttons">
+                    <button class="period-btn active" data-period="current_month">Текущий месяц</button>
+                    <button class="period-btn" data-period="last_month">Прошлый месяц</button>
+                    <button class="period-btn" data-period="all_time">За все время</button>
+                    <button class="period-btn" data-period="custom">Выбрать период</button>
+                </div>
+                <div id="custom-period" style="display: none; margin-top: 15px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <div class="form-group">
+                            <label>С даты</label>
+                            <input type="date" id="period-from" class="form-control" />
+                        </div>
+                        <div class="form-group">
+                            <label>По дату</label>
+                            <input type="date" id="period-to" class="form-control" />
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn-primary" id="apply-period-btn">Применить</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Статистика -->
+            <div id="stats-container" class="loading">Загрузка статистики...</div>
+
+            <!-- График динамики заработка -->
+            <div class="chart-container">
+                <div class="chart-title">Динамика заработка по месяцам</div>
+                <canvas id="earnings-chart"></canvas>
+            </div>
+
+            <!-- История выплат -->
+            <div class="table-container">
+                <div class="table-title">История выплат</div>
+                <div id="payouts-container" class="loading">Загрузка истории выплат...</div>
+            </div>
+
+            <!-- Детализация тренировок -->
+            <div class="table-container">
+                <div class="table-title">Детализация тренировок</div>
+                <div id="trainings-container" class="loading">Загрузка детализации...</div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/trainer-kuliga-finances.js"></script>
+</body>
+</html>
+

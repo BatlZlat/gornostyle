@@ -7,15 +7,16 @@
  * 3. Обновляет записи в базе данных
  */
 
+require('dotenv').config();
 const { Pool } = require('pg');
 
 // Подключение к БД
 const pool = new Pool({
-    host: '90.156.210.24',
-    port: 5432,
-    database: 'skisimulator',
-    user: 'batl-zlat',
-    password: 'Nemezida2324%)',
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
     ssl: false
 });
 

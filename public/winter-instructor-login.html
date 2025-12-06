@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход для инструкторов - Горностайл72</title>
+    <link rel="stylesheet" href="/css/admin.css">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+            padding: 20px;
+        }
+
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #2ecc71;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .login-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
+        }
+
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .back-link a {
+            color: #2ecc71;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+
+        .instructor-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 480px) {
+            .login-box {
+                padding: 30px 20px;
+            }
+
+            .login-header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <div class="instructor-icon">🏔️</div>
+                <h1>Инструктор Горностайл72</h1>
+                <p>Вход в личный кабинет</p>
+            </div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Логин</label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username"
+                        autocomplete="username"
+                        required
+                        autofocus
+                    >
+                    <div class="error-message" id="usernameError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Пароль</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password"
+                        autocomplete="current-password"
+                        required
+                    >
+                    <div class="error-message" id="passwordError"></div>
+                </div>
+
+                <button type="submit" class="login-button" id="loginButton">
+                    Войти
+                </button>
+            </form>
+
+            <div class="back-link">
+                <a href="/">← На главную</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Функция для работы с cookies
+        function setCookie(name, value, days) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+            document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+
+        // Проверка наличия токена при загрузке страницы
+        function checkToken() {
+            const token = getCookie('kuligaInstructorToken');
+            if (token) {
+                // Если токен есть, перенаправляем на страницу инструктора
+                window.location.href = '/trainer_winter.html';
+            }
+        }
+
+        // Проверяем токен только один раз при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            checkToken();
+        });
+
+        // Обработчик формы входа
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const usernameError = document.getElementById('usernameError');
+            const passwordError = document.getElementById('passwordError');
+            const loginButton = document.getElementById('loginButton');
+
+            // Сброс ошибок
+            usernameError.classList.remove('show');
+            passwordError.classList.remove('show');
+            loginButton.disabled = true;
+            loginButton.textContent = 'Вход...';
+
+            try {
+                const response = await fetch('/api/kuliga/instructor/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Успешный вход
+                    setCookie('kuligaInstructorToken', data.token, 1); // 1 день
+                    localStorage.setItem('kuligaInstructorData', JSON.stringify(data.instructor));
+                    
+                    // Перенаправляем на страницу инструктора
+                    window.location.href = '/trainer_winter.html';
+                } else {
+                    // Ошибка входа
+                    if (data.error === 'invalid_credentials') {
+                        usernameError.textContent = 'Неверный логин или пароль';
+                        usernameError.classList.add('show');
+                    } else {
+                        usernameError.textContent = data.message || 'Ошибка при входе';
+                        usernameError.classList.add('show');
+                    }
+                    loginButton.disabled = false;
+                    loginButton.textContent = 'Войти';
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                usernameError.textContent = 'Ошибка соединения с сервером';
+                usernameError.classList.add('show');
+                loginButton.disabled = false;
+                loginButton.textContent = 'Войти';
+            }
+        });
+    </script>
+</body>
+</html>
+

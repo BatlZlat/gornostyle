@@ -1,11 +1,41 @@
 /**
  * Управление ценами для зимнего направления (естественный склон)
+ * Версия: 2.0
+ * Дата обновления: 2025-11-24
  */
+
+console.log('✅ [WINTER PRICES] admin-winter-prices.js загружен (версия 2.0)');
+
+// Получить cookie по имени
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+}
 
 // Открыть модальное окно управления ценами
 function openWinterPricesModal() {
-    document.getElementById('winter-prices-modal').style.display = 'flex';
-    loadWinterPrices();
+    const modal = document.getElementById('winter-prices-modal');
+    const container = document.getElementById('winter-prices-list');
+    
+    if (!modal) {
+        console.error('❌ Модальное окно winter-prices-modal не найдено');
+        return;
+    }
+    
+    if (!container) {
+        console.error('❌ Контейнер winter-prices-list не найден');
+        return;
+    }
+    
+    console.log('✅ Открываем модальное окно с ценами');
+    modal.style.display = 'flex';
+    
+    // Показываем индикатор загрузки
+    container.innerHTML = '<p style="text-align:center;color:#666;">Загрузка цен...</p>';
+    
+    loadWinterPricesForModal();
 }
 
 // Закрыть модальное окно управления ценами
@@ -13,32 +43,83 @@ function closeWinterPricesModal() {
     document.getElementById('winter-prices-modal').style.display = 'none';
 }
 
-// Загрузить список зимних цен
-async function loadWinterPrices() {
+// Загрузить список зимних цен (для модального окна управления ценами)
+async function loadWinterPricesForModal() {
+    console.log('🔵 [WINTER PRICES] Функция loadWinterPrices вызвана');
+    
     try {
+        // Получаем токен из cookie (для админа)
+        const token = getCookie('adminToken') || localStorage.getItem('token');
+        console.log('🔵 [WINTER PRICES] Токен получен:', token ? 'ДА' : 'НЕТ');
+        
+        console.log('🔵 [WINTER PRICES] Отправка запроса на /api/winter-prices');
         const response = await fetch('/api/winter-prices', {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
 
+        console.log('🔵 [WINTER PRICES] Ответ получен, статус:', response.status);
+        
         if (!response.ok) {
-            throw new Error('Ошибка загрузки цен');
+            const errorText = await response.text();
+            console.error('🔴 [WINTER PRICES] Ошибка ответа:', response.status, errorText);
+            throw new Error('Ошибка загрузки цен: ' + response.status);
         }
 
-        const prices = await response.json();
+        const data = await response.json();
+        console.log('🔵 [WINTER PRICES] Данные получены, тип:', typeof data, 'isArray:', Array.isArray(data));
+        console.log('🔵 [WINTER PRICES] Содержимое данных:', data);
+        
+        // API возвращает массив напрямую (result.rows)
+        let prices = [];
+        if (Array.isArray(data)) {
+            prices = data;
+            console.log('✅ [WINTER PRICES] Данные - массив, записей:', prices.length);
+        } else if (data && data.data && Array.isArray(data.data)) {
+            prices = data.data;
+            console.log('✅ [WINTER PRICES] Данные в data.data, записей:', prices.length);
+        } else if (data && data.rows && Array.isArray(data.rows)) {
+            prices = data.rows;
+            console.log('✅ [WINTER PRICES] Данные в data.rows, записей:', prices.length);
+        } else {
+            console.error('❌ [WINTER PRICES] Неожиданный формат данных:', data);
+            prices = [];
+        }
+        
+        console.log('✅ [WINTER PRICES] Цены обработаны, всего:', prices.length, 'записей');
+        if (prices.length > 0) {
+            console.log('✅ [WINTER PRICES] Первая цена:', JSON.stringify(prices[0]));
+        }
+        
+        console.log('🔵 [WINTER PRICES] Вызов displayWinterPrices с', prices.length, 'ценами');
         displayWinterPrices(prices);
+        console.log('🔵 [WINTER PRICES] displayWinterPrices вызвана');
     } catch (error) {
-        console.error('Ошибка:', error);
-        alert('Не удалось загрузить цены');
+        console.error('🔴 [WINTER PRICES] Ошибка в loadWinterPrices:', error);
+        alert('Не удалось загрузить цены: ' + error.message);
     }
 }
 
 // Отобразить список зимних цен
 function displayWinterPrices(prices) {
-    const container = document.getElementById('winter-prices-list');
+    console.log('🟢 [DISPLAY] Функция displayWinterPrices вызвана');
+    console.log('🟢 [DISPLAY] Параметр prices:', prices);
     
-    if (prices.length === 0) {
+    const container = document.getElementById('winter-prices-list');
+    console.log('🟢 [DISPLAY] Контейнер найден:', container ? 'ДА' : 'НЕТ');
+    
+    if (!container) {
+        console.error('❌ [DISPLAY] Контейнер winter-prices-list не найден!');
+        alert('Ошибка: контейнер для отображения цен не найден');
+        return;
+    }
+    
+    console.log('🟢 [DISPLAY] Количество цен:', prices ? prices.length : 'undefined');
+    console.log('🟢 [DISPLAY] Тип prices:', typeof prices, 'isArray:', Array.isArray(prices));
+    
+    if (!prices || !Array.isArray(prices) || prices.length === 0) {
+        console.warn('⚠️ [DISPLAY] Цены не найдены или пусты');
         container.innerHTML = '<p style="text-align:center;color:#666;">Цены не найдены</p>';
         return;
     }
@@ -49,6 +130,19 @@ function displayWinterPrices(prices) {
         sport_group: prices.filter(p => p.type === 'sport_group'),
         group: prices.filter(p => p.type === 'group')
     };
+    
+    console.log('Группировка цен:', {
+        individual: grouped.individual.length,
+        sport_group: grouped.sport_group.length,
+        group: grouped.group.length,
+        total: prices.length
+    });
+    
+    // Проверяем, есть ли цены с неизвестными типами
+    const unknownTypes = prices.filter(p => !['individual', 'sport_group', 'group'].includes(p.type));
+    if (unknownTypes.length > 0) {
+        console.warn('⚠️ Найдены цены с неизвестными типами:', unknownTypes.map(p => ({ id: p.id, type: p.type })));
+    }
 
     let html = '';
 
@@ -70,16 +164,54 @@ function displayWinterPrices(prices) {
         html += '</div>';
     }
 
-    // Обычная группа
+    // Групповая тренировка
     if (grouped.group.length > 0) {
-        html += '<div class="price-group" style="margin-bottom:30px;"><h4>Обычная группа</h4>';
+        html += '<div class="price-group" style="margin-bottom:30px;"><h4>Групповая тренировка</h4>';
         grouped.group.sort((a, b) => a.participants - b.participants).forEach(price => {
             html += renderWinterPriceItem(price);
         });
         html += '</div>';
     }
 
+    if (html.length === 0) {
+        // Если HTML пустой, но цены есть - показываем их все без группировки
+        console.warn('⚠️ HTML пустой, но цены есть. Показываем все цены без группировки');
+        html = '<div class="price-group" style="margin-bottom:30px;"><h4>Все цены</h4>';
+        prices.forEach(price => {
+            html += renderWinterPriceItem(price);
+        });
+        html += '</div>';
+    }
+    
+    console.log('🟢 [DISPLAY] HTML сгенерирован, длина:', html.length);
+    console.log('🟢 [DISPLAY] Первые 200 символов HTML:', html.substring(0, 200));
+    
+    if (html.length === 0) {
+        // Если HTML пустой, но цены есть - показываем их все без группировки
+        console.warn('⚠️ [DISPLAY] HTML пустой, но цены есть. Показываем все цены без группировки');
+        html = '<div class="price-group" style="margin-bottom:30px;"><h4>Все цены</h4>';
+        prices.forEach((price, index) => {
+            console.log(`🟢 [DISPLAY] Добавляем цену ${index + 1}:`, price);
+            html += renderWinterPriceItem(price);
+        });
+        html += '</div>';
+    }
+    
+    console.log('🟢 [DISPLAY] Устанавливаем HTML в контейнер, длина:', html.length);
     container.innerHTML = html;
+    console.log('✅ [DISPLAY] HTML установлен в контейнер');
+    
+    // Дополнительная проверка после установки
+    setTimeout(() => {
+        const checkContainer = document.getElementById('winter-prices-list');
+        if (!checkContainer) {
+            console.error('❌ [DISPLAY] Контейнер не найден после установки HTML!');
+        } else if (checkContainer.innerHTML.length === 0) {
+            console.error('❌ [DISPLAY] Контейнер все еще пуст после установки HTML!');
+        } else {
+            console.log('✅ [DISPLAY] Контейнер заполнен успешно, длина содержимого:', checkContainer.innerHTML.length);
+        }
+    }, 100);
 }
 
 // Отрисовать элемент цены
@@ -87,7 +219,7 @@ function renderWinterPriceItem(price) {
     const typeLabels = {
         individual: 'Индивидуальное',
         sport_group: 'Спортивная группа',
-        group: 'Обычная группа'
+        group: 'Групповая тренировка'
     };
 
     const participantsText = price.participants ? `(${price.participants} чел)` : '';
@@ -137,9 +269,10 @@ function openCreateWinterPriceModal() {
 // Открыть модальное окно редактирования цены
 async function editWinterPrice(id) {
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}`, {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
 
@@ -230,6 +363,7 @@ async function saveWinterPrice(event) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const url = id ? `/api/winter-prices/${id}` : '/api/winter-prices';
         const method = id ? 'PUT' : 'POST';
         
@@ -237,7 +371,7 @@ async function saveWinterPrice(event) {
             method,
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(data)
         });
@@ -249,7 +383,7 @@ async function saveWinterPrice(event) {
         
         alert(id ? 'Цена успешно обновлена' : 'Цена успешно создана');
         closeWinterPriceEditModal();
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert(error.message);
@@ -263,10 +397,11 @@ async function toggleWinterPriceStatus(id) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}/toggle`, {
             method: 'PUT',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -274,7 +409,7 @@ async function toggleWinterPriceStatus(id) {
             throw new Error('Ошибка изменения статуса');
         }
         
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert('Не удалось изменить статус');
@@ -288,10 +423,11 @@ async function deleteWinterPrice(id) {
     }
     
     try {
+        const token = getCookie('adminToken') || localStorage.getItem('token');
         const response = await fetch(`/api/winter-prices/${id}`, {
             method: 'DELETE',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -301,12 +437,12 @@ async function deleteWinterPrice(id) {
         }
         
         alert('Цена успешно удалена');
-        loadWinterPrices();
+        loadWinterPricesForModal();
     } catch (error) {
         console.error('Ошибка:', error);
         alert(error.message);
     }
 }
 
-console.log('✅ admin-winter-prices.js загружен');
+console.log('✅ [WINTER PRICES] admin-winter-prices.js полностью загружен (версия 2.0)');
 

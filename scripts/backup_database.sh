@@ -3,7 +3,7 @@
 # Конфигурация
 DB_NAME="skisimulator"
 DB_USER="batl-zlat"
-DB_HOST="90.156.210.24"
+DB_HOST="127.0.0.1"
 DB_PORT="5432"
 DB_PASSWORD="Nemezida2324%)"
 BACKUP_DIR="/root/gornostyle-backups"

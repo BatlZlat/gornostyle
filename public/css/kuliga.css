@@ -18,16 +18,23 @@
     background: var(--kuliga-gray-100);
     color: var(--kuliga-gray-700);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow-x: hidden;
 }
 
 .kuliga-main {
     display: flex;
     flex-direction: column;
     gap: 48px;
+    overflow-x: hidden;
+    width: 100%;
 }
 
 .kuliga-section {
     padding: 48px 16px;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .kuliga-section--light {
@@ -78,7 +85,7 @@
 .kuliga-hero__bg {
     position: absolute;
     inset: 0;
-    background-image: url('/images/photo_trenagor.webp');
+    background-image: url('/images/kuliga/kuliga-hero-bg.webp');
     background-size: cover;
     background-position: center;
     opacity: 0.15;
@@ -104,6 +111,14 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     margin-bottom: 20px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.kuliga-hero__badge:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
 }
 
 .kuliga-hero h1 {
@@ -201,6 +216,13 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    transition: all 0.3s ease;
+}
+
+.kuliga-price-card--highlight {
+    background: linear-gradient(135deg, rgba(39, 174, 96, 0.08) 0%, rgba(39, 174, 96, 0.15) 100%);
+    border: 2px solid var(--kuliga-green);
+    box-shadow: 0 16px 45px rgba(39, 174, 96, 0.15);
 }
 
 .kuliga-price-card__type {
@@ -218,6 +240,25 @@
     font-size: 1.6rem;
     font-weight: 700;
     color: var(--kuliga-navy);
+}
+
+.kuliga-price-card__value small {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--kuliga-gray-500);
+    margin-top: 4px;
+}
+
+.kuliga-price-card__participants {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-price-card__total {
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-500);
 }
 
 .kuliga-price-card__meta {
@@ -268,6 +309,221 @@
     color: var(--kuliga-primary);
     margin-right: 8px;
 }
+
+.kuliga-program-options {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-program-options li i {
+    color: var(--kuliga-primary);
+    margin-right: 8px;
+}
+
+.kuliga-program-next {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--kuliga-primary-dark);
+    padding: 10px 14px;
+    background: rgba(30, 144, 255, 0.08);
+    border-radius: 12px;
+}
+
+.kuliga-program-next i {
+    color: var(--kuliga-primary-dark);
+}
+
+.kuliga-group-item__actions {
+    margin-top: 16px;
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.kuliga-group-item__actions .kuliga-button {
+    width: 100%;
+    justify-content: center;
+}
+
+.kuliga-selection-card {
+    background: var(--kuliga-white);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.kuliga-selection-card__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-selection-card__details {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-selection-card__details span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kuliga-selection-card__details i {
+    color: var(--kuliga-primary);
+}
+
+.kuliga-selection-card__note {
+    font-size: 0.88rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-choice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.kuliga-choice--inline {
+    align-items: center;
+}
+
+.kuliga-radio span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kuliga-section-hint {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-form-grid--compact {
+    display: grid;
+    grid-template-columns: 1fr; /* Одна колонка для компактного варианта */
+    gap: 12px;
+}
+
+.kuliga-participants-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.kuliga-participant-card {
+    background: var(--kuliga-white);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+}
+
+.kuliga-participant-card__header {
+    font-weight: 700;
+    color: var(--kuliga-navy);
+    margin-bottom: 12px;
+}
+
+.kuliga-timeslots {
+    display: grid;
+    gap: 10px;
+}
+
+.kuliga-timeslot-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    background: rgba(241, 245, 249, 0.6);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.kuliga-timeslot-option:hover {
+    border-color: var(--kuliga-primary);
+    background: rgba(30, 144, 255, 0.08);
+}
+
+.kuliga-timeslot-option strong {
+    color: var(--kuliga-navy);
+    font-size: 1.05rem;
+}
+
+.kuliga-timeslot-option em {
+    font-style: normal;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-inline-message {
+    margin-top: 8px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-instructor-preview {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    background: rgba(241, 245, 249, 0.5);
+}
+
+.kuliga-instructor-preview__photo img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+.kuliga-instructor-preview__info h3 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-instructor-preview__info p {
+    margin: 0 0 6px;
+    font-size: 0.92rem;
+    color: var(--kuliga-gray-500);
+}
+
+.kuliga-notify-hint {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(30, 144, 255, 0.08);
+    color: var(--kuliga-navy);
+    display: flex;
+    gap: 10px;
+    font-size: 0.9rem;
+}
+
+.kuliga-notify-hint i {
+    color: var(--kuliga-primary);
+    font-size: 1.2rem;
+}
+
 
 .kuliga-groups__hint {
     max-width: 960px;
@@ -324,40 +580,77 @@
 }
 
 .kuliga-instructors {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
-    max-width: 1160px;
+    max-width: 1200px;
     margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 16px;
+    align-items: center;
 }
 
 .kuliga-instructor-card {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 20px;
     padding: 24px;
     background: var(--kuliga-white);
     border-radius: 20px;
     border: 1px solid rgba(148, 163, 184, 0.18);
     box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+    width: 100%;
+    max-width: 1000px;
+    box-sizing: border-box;
 }
 
 .kuliga-instructor__header {
     display: flex;
-    gap: 16px;
+    flex-direction: column;
     align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+@media (min-width: 768px) {
+    .kuliga-instructor__header {
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        width: 100%;
+    }
 }
 
 .kuliga-instructor__photo {
-    width: 80px;
-    height: 80px;
-    border-radius: 18px;
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
     background: var(--kuliga-gray-200);
     object-fit: cover;
     flex-shrink: 0;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 auto;
+    display: block;
+    align-self: center;
+}
+
+.kuliga-instructor__info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
 }
 
 .kuliga-instructor__info h3 {
-    margin: 0 0 6px;
+    margin: 0;
     color: var(--kuliga-navy);
+    font-size: 1.3rem;
 }
 
 .kuliga-instructor__sport {
@@ -372,59 +665,245 @@
 
 .kuliga-instructor__description {
     margin: 0;
-    font-size: 0.97rem;
+    font-size: 0.95rem;
     color: var(--kuliga-gray-500);
-    line-height: 1.58;
+    line-height: 1.5;
+    max-width: 600px;
 }
 
 .kuliga-schedule {
     border-top: 1px solid rgba(148, 163, 184, 0.2);
     padding-top: 18px;
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.kuliga-schedule__nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    width: 100%;
+    gap: 16px;
+}
+
+.kuliga-schedule__week-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    justify-content: center;
+}
+
+.kuliga-schedule__week-range {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--kuliga-navy);
+}
+
+.kuliga-schedule__week-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(30, 144, 255, 0.15);
+    color: var(--kuliga-primary);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.kuliga-schedule__nav--desktop {
+    display: flex;
+}
+
+.kuliga-schedule__nav-btn {
+    background: var(--kuliga-white);
+    border: 2px solid var(--kuliga-primary);
+    border-radius: 10px;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--kuliga-primary);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    font-size: 1rem;
+}
+
+.kuliga-schedule__nav-btn:hover:not(:disabled) {
+    background: var(--kuliga-primary);
+    color: var(--kuliga-white);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(30, 144, 255, 0.3);
+}
+
+.kuliga-schedule__nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.kuliga-schedule__wrapper {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+/* Мобильные кнопки скрыты по умолчанию */
+.kuliga-schedule__nav-btn--mobile {
+    display: none;
 }
 
 .kuliga-schedule__days {
-    display: flex;
-    overflow-x: auto;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
     padding-bottom: 4px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .kuliga-schedule__day {
-    flex: 0 0 110px;
     padding: 12px 10px;
     border-radius: 12px;
     background: var(--kuliga-gray-100);
     text-align: center;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
 }
 
-.kuliga-schedule__day-active {
-    background: rgba(30, 144, 255, 0.12);
-    border: 1px solid rgba(30, 144, 255, 0.4);
+.kuliga-schedule__day--today {
+    background: rgba(30, 144, 255, 0.15);
+    border: 2px solid var(--kuliga-primary);
+    box-shadow: 0 4px 12px rgba(30, 144, 255, 0.2);
+}
+
+.kuliga-schedule__day--has-slots {
+    border: 2px solid rgba(30, 144, 255, 0.3);
+    background: rgba(30, 144, 255, 0.05);
+}
+
+.kuliga-schedule__day--empty {
+    opacity: 0.7;
+    padding: 8px 10px;
+}
+
+.kuliga-schedule__day-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.kuliga-schedule__date {
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-600);
+    font-weight: 500;
+}
+
+.kuliga-schedule__day--today .kuliga-schedule__date {
+    color: var(--kuliga-primary);
+    font-weight: 600;
+}
+
+.kuliga-schedule__day-counter {
+    font-size: 0.7rem;
+    color: var(--kuliga-primary);
+    font-weight: 600;
+    margin-top: 2px;
+    padding: 2px 6px;
+    background: rgba(30, 144, 255, 0.1);
+    border-radius: 8px;
+    display: inline-block;
 }
 
 .kuliga-schedule__weekday {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--kuliga-primary);
     font-weight: 600;
+    margin-bottom: 3px;
+    line-height: 1.2;
+}
+
+.kuliga-schedule__day > div:nth-child(2) {
+    font-size: 0.85rem;
+    color: var(--kuliga-gray-600);
     margin-bottom: 6px;
+    line-height: 1.2;
 }
 
 .kuliga-slot-list {
-    margin-top: 10px;
+    margin-top: auto;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    min-height: 60px;
+    gap: 5px;
+    min-height: auto;
+    flex-grow: 0;
+    justify-content: flex-start;
+}
+
+.kuliga-schedule__day--empty .kuliga-slot-list {
+    margin-top: 4px;
+    min-height: auto;
+}
+
+.kuliga-slot--empty {
+    opacity: 0.5;
+    font-size: 0.8rem;
+}
+
+/* Дни без слотов - минимальная высота */
+.kuliga-schedule__day:has(.kuliga-slot:only-child) .kuliga-slot-list {
+    min-height: auto;
+    margin-top: 4px;
+}
+
+.kuliga-schedule__day:has(.kuliga-slot:only-child) {
+    padding-bottom: 8px;
 }
 
 .kuliga-slot {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.88rem;
-    padding: 8px 12px;
-    border-radius: 10px;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    padding: 6px 8px;
+    border-radius: 8px;
     font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Скрываем текст статуса на всех экранах (он и так виден по цвету фона) */
+.kuliga-slot__status {
+    display: none;
+}
+
+/* Уменьшаем шрифт для десктоп версии, чтобы время полностью помещалось */
+@media (min-width: 768px) {
+    .kuliga-slot {
+        font-size: 0.72rem;
+        padding: 5px 6px;
+        gap: 4px;
+    }
 }
 
 .kuliga-slot--available {
@@ -445,6 +924,116 @@
 .kuliga-slot--blocked {
     background: rgba(148, 163, 184, 0.2);
     color: var(--kuliga-gray-500);
+}
+
+/* Кликабельные слоты */
+.kuliga-slot--clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.kuliga-slot--clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0.9;
+}
+
+.kuliga-slot--clickable:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Мобильная версия расписания */
+@media (max-width: 767px) {
+    .kuliga-schedule__nav--desktop {
+        display: none;
+    }
+
+    .kuliga-schedule__nav-btn--mobile {
+        display: flex !important;
+        visibility: visible !important;
+        position: absolute !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 100 !important;
+        background: var(--kuliga-white) !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25) !important;
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50% !important;
+        border: 2px solid var(--kuliga-primary) !important;
+        color: var(--kuliga-primary) !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        opacity: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .kuliga-schedule__nav-btn--mobile:active {
+        transform: translateY(-50%) scale(0.95);
+        opacity: 1;
+    }
+
+    .kuliga-schedule__nav-btn--mobile:hover {
+        background: var(--kuliga-primary);
+        color: var(--kuliga-white);
+        box-shadow: 0 6px 16px rgba(30, 144, 255, 0.35);
+    }
+
+    .kuliga-schedule__nav-btn--prev-mobile {
+        left: 4px !important;
+    }
+
+    .kuliga-schedule__nav-btn--next-mobile {
+        right: 4px !important;
+    }
+
+    .kuliga-schedule__nav-btn--mobile i {
+        font-size: 1rem;
+    }
+
+    .kuliga-schedule__wrapper {
+        position: relative;
+        padding: 0 50px;
+        display: flex;
+        align-items: center;
+        gap: 0;
+        overflow: hidden;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .kuliga-schedule__days {
+        display: flex;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scroll-padding-left: 0;
+        scroll-padding-right: 0;
+        scroll-behavior: smooth;
+        touch-action: pan-y;
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        padding-left: 0;
+        padding-right: 0;
+        margin: 0;
+    }
+
+    .kuliga-schedule__days::-webkit-scrollbar {
+        display: none;
+    }
+
+    .kuliga-schedule__day {
+        scroll-snap-align: center;
+        flex: 0 0 140px;
+        min-width: 140px;
+        max-width: 140px;
+    }
 }
 
 .kuliga-booking {
@@ -498,17 +1087,81 @@
     max-width: 1140px;
     margin: 0 auto;
     display: grid;
-    gap: 24px;
+    gap: 32px;
+}
+
+@media (min-width: 768px) {
+    .kuliga-footer__content {
+        grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+        gap: 40px;
+        align-items: start;
+    }
+    
+    .kuliga-footer__meta {
+        grid-column: 1 / -1;
+        margin-top: 16px;
+        padding-top: 24px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        flex-direction: row;
+        justify-content: space-between;
+    }
 }
 
 .kuliga-footer__brand {
     display: grid;
     gap: 12px;
+    justify-items: center;
+    text-align: center;
 }
 
-.kuliga-footer__brand img {
-    width: 160px;
+@media (max-width: 767px) {
+    .kuliga-footer__brand {
+        width: 100%;
+    }
+    
+    .kuliga-footer__brand a {
+        margin: 0 auto;
+    }
+}
+
+.kuliga-footer__brand img,
+.kuliga-footer__brand .header-logo {
+    width: auto;
     height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+}
+
+.kuliga-footer__brand a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    background: var(--kuliga-white);
+    padding: 20px;
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.kuliga-footer__brand a:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.kuliga-footer__brand a img,
+.kuliga-footer__brand a .header-logo {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    margin: 0;
+    transform: translateY(-4px);
 }
 
 .kuliga-footer__links {
@@ -524,11 +1177,50 @@
     gap: 10px;
 }
 
+.kuliga-footer__documents,
+.kuliga-footer__requisites {
+    display: grid;
+    gap: 10px;
+}
+
+.kuliga-footer__documents h4,
+.kuliga-footer__requisites h4 {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--kuliga-white);
+}
+
+.kuliga-footer__documents a {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    display: inline-block;
+    transition: color 0.2s ease;
+}
+
+.kuliga-footer__documents a:hover {
+    color: var(--kuliga-white);
+    text-decoration: underline;
+}
+
+.kuliga-footer__requisites p {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.kuliga-footer__requisites p strong {
+    color: var(--kuliga-white);
+    font-weight: 600;
+}
+
 .kuliga-footer__meta {
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-size: 0.9rem;
+    grid-column: 1 / -1;
 }
 
 .kuliga-empty {
@@ -537,6 +1229,59 @@
     border-radius: 12px;
     text-align: center;
     color: var(--kuliga-gray-500);
+}
+
+.kuliga-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.kuliga-gallery__item {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    aspect-ratio: 4 / 3;
+    background: var(--kuliga-gray-200);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.kuliga-gallery__item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.15);
+}
+
+.kuliga-gallery__item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+@media (max-width: 767px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .kuliga-gallery__item {
+        border-radius: 12px;
+    }
+}
+
+@media (min-width: 768px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .kuliga-gallery {
+        grid-template-columns: repeat(4, 1fr);
+    }
 }
 
 .kuliga-booking-header {
@@ -599,6 +1344,12 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
+}
+
+/* Компактная сетка переопределяет обычную для одной колонки */
+.kuliga-form-grid.kuliga-form-grid--compact {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
 }
 
 .kuliga-field {
@@ -766,10 +1517,11 @@
         align-items: center;
     }
 
-    .kuliga-footer__content {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        align-items: start;
+    /* Для компактной сетки в десктопной версии также оставляем одну колонку */
+    .kuliga-form-grid--compact {
+        grid-template-columns: 1fr !important;
     }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -777,4 +1529,110 @@
         transition: none !important;
         animation-duration: 0.01ms !important;
     }
+}
+
+/* Обертка для поля с иконкой календаря */
+.kuliga-field--with-icon {
+    gap: 4px !important; /* Уменьшаем отступ между надписью и полем ввода */
+}
+
+.kuliga-field--with-icon .kuliga-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.kuliga-field--with-icon input {
+    padding-right: 45px;
+}
+
+/* Стили для altInput, который создает flatpickr */
+.kuliga-field--with-icon .flatpickr-input {
+    padding-right: 45px !important;
+}
+
+.kuliga-date-icon {
+    position: absolute;
+    right: 12px;
+    color: var(--kuliga-gray-500);
+    font-size: 1.1rem;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Уменьшаем размер календаря flatpickr в десктопной версии */
+@media (min-width: 768px) {
+    /* Увеличиваем контейнер календаря, чтобы все дни недели поместились */
+    .flatpickr-calendar {
+        width: 320px !important;
+        min-width: 320px !important;
+    }
+    
+    /* Уменьшаем размеры самого календаря, но оставляем достаточно места для дней недели */
+    .flatpickr-calendar .flatpickr-innerContainer {
+        padding: 6px !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-month {
+        height: 38px !important;
+        line-height: 38px !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-weekday {
+        height: 28px !important;
+        line-height: 28px !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        width: calc(100% / 7) !important;
+        padding: 0 2px !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-day {
+        height: 32px !important;
+        line-height: 32px !important;
+        font-size: 12px !important;
+        margin: 2px !important;
+        width: calc((100% - 14px) / 7) !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-prev-month,
+    .flatpickr-calendar .flatpickr-next-month {
+        height: 28px !important;
+        width: 28px !important;
+        line-height: 28px !important;
+        padding: 0 !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-current-month {
+        font-size: 14px !important;
+        padding: 5px 0 !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-weekdays {
+        margin-bottom: 4px !important;
+        padding: 0 6px !important;
+    }
+    
+    .flatpickr-calendar .flatpickr-days {
+        padding: 4px !important;
+    }
+}
+
+/* Подсветка доступных дат в календаре flatpickr */
+.flatpickr-day.has-schedule {
+    background: rgba(46, 204, 113, 0.15) !important;
+    box-shadow: inset 0 0 0 2px #2ecc71 !important;
+    position: relative;
+}
+
+.flatpickr-day.has-schedule:hover {
+    background: rgba(46, 204, 113, 0.25) !important;
+}
+
+.flatpickr-day.has-schedule.selected,
+.flatpickr-day.has-schedule.startRange,
+.flatpickr-day.has-schedule.endRange {
+    background: #2ecc71 !important;
+    border-color: #2ecc71 !important;
+    color: white !important;
 }

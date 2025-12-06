@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Личный кабинет инструктора</title>
+    <link rel="stylesheet" href="css/admin.css" />
+    <script src="js/location-mapper.js"></script>
+    <style>
+        .schedule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .instructor-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .instructor-info h3 {
+            margin: 0 0 10px 0;
+            color: #27ae60;
+        }
+
+        .schedule-grid {
+            display: grid;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .schedule-slot {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+        }
+
+        .schedule-slot.available {
+            border-left: 4px solid #27ae60;
+        }
+
+        .schedule-slot.booked {
+            border-left: 4px solid #e74c3c;
+            background: #fee;
+        }
+
+        .schedule-slot.blocked {
+            border-left: 4px solid #95a5a6;
+            background: #ecf0f1;
+        }
+
+        .slot-info {
+            flex-grow: 1;
+        }
+
+        .slot-time {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .slot-status {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .slot-actions button {
+            margin-left: 5px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #27ae60;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Стили для уведомлений (showError/showSuccess) */
+        @media (max-width: 768px) {
+            .alert {
+                right: 10px !important;
+                left: 10px !important;
+                max-width: calc(100vw - 20px) !important;
+                min-width: auto !important;
+                font-size: 14px;
+                padding: 0.875rem 1.25rem !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1 id="page-title">🏔️ Личный кабинет инструктора</h1>
+            <div style="display: flex; gap: 10px;">
+                <a href="trainer_winter_finances.html" class="btn-primary" style="text-decoration: none; padding: 10px 20px; border-radius: 6px; background: #27ae60; color: white; font-weight: 600;">
+                    💰 Финансы
+                </a>
+                <button class="btn-secondary" id="logout-btn">Выход</button>
+            </div>
+        </header>
+
+        <main class="admin-main" style="padding:20px;">
+            <!-- Информация об инструкторе -->
+            <div class="instructor-info">
+                <h3 id="instructor-name">Загрузка...</h3>
+                <p id="instructor-details"></p>
+                <div style="margin-top: 15px;">
+                    <a id="telegram-bot-link" href="#" target="_blank" class="btn-primary" style="display: inline-block; text-decoration: none; padding: 10px 20px; border-radius: 6px; background: #0088cc; color: white; font-weight: 600;">
+                        📱 Перейти в Telegram-бот
+                    </a>
+                </div>
+            </div>
+
+            <!-- Статистика -->
+            <div class="stats-grid" id="stats-container">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-slots">0</div>
+                    <div class="stat-label">Всего слотов</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-available-slots">0</div>
+                    <div class="stat-label">Свободных слотов</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-booked-slots">0</div>
+                    <div class="stat-label">Забронированных</div>
+                </div>
+            </div>
+
+            <!-- Создание расписания на дату -->
+            <section style="margin-bottom:30px;">
+                <div class="schedule-header">
+                    <h2>Управление расписанием</h2>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" id="day-date" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Временные слоты (HH:MM, через запятую)</label>
+                    <input type="text" id="day-times" class="form-control" placeholder="10:15, 11:45, 13:30, 15:00" />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        • Каждый слот длится 1 час<br/>
+                        • Первая тренировка начинается не раньше 10:15<br/>
+                        • Минимальный интервал между слотами - 1.5 часа (например: 10:15 и 11:45, или 10:15 и 12:00)
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-slots-btn">Создать слоты</button>
+                    <button class="btn-secondary" id="load-slots-btn">Показать слоты</button>
+                </div>
+                <div id="day-result" style="margin-top:10px;"></div>
+            </section>
+
+            <!-- Отображение слотов на выбранную дату -->
+            <section id="slots-section" style="display: none;">
+                <h3>Слоты на <span id="selected-date"></span></h3>
+                <div id="day-slots" class="schedule-grid"></div>
+            </section>
+
+            <!-- Модальное окно для создания групповой тренировки -->
+            <div id="group-training-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+                <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                    <h2 style="margin-top: 0;">Создать групповую тренировку</h2>
+                    <form id="group-training-form">
+                        <input type="hidden" id="gt-slot-id" />
+                        <div class="form-group">
+                            <label>Вид спорта *</label>
+                            <select id="gt-sport-type" class="form-control" required>
+                                <option value="">Выберите вид спорта</option>
+                                <!-- Опции загружаются динамически в зависимости от возможностей инструктора -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Уровень (1-10) *</label>
+                            <select id="gt-level" class="form-control" required>
+                                <option value="">Выберите уровень</option>
+                                <!-- Опции от 1 до 10 -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Описание</label>
+                            <textarea id="gt-description" class="form-control" rows="3" placeholder="Описание тренировки (необязательно)"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Минимум участников *</label>
+                            <input type="number" id="gt-min-participants" class="form-control" min="1" value="2" required />
+                        </div>
+                        <div class="form-group">
+                            <label>Максимум участников *</label>
+                            <input type="number" id="gt-max-participants" class="form-control" min="2" value="6" required />
+                        </div>
+                        <div class="form-group" id="price-calculation" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 15px;">
+                            <strong>Расчет стоимости:</strong>
+                            <div id="price-info" style="margin-top: 10px; color: #666;">
+                                Выберите максимум участников для расчета
+                            </div>
+                        </div>
+                        <div class="form-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn-primary">Создать</button>
+                            <button type="button" class="btn-secondary" onclick="closeGroupTrainingModal()">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Мое расписание -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>Мое расписание</h2>
+                <div id="schedule-list" style="margin-top: 20px;">
+                    <!-- Расписание загружается динамически -->
+                </div>
+            </section>
+
+            <!-- Массовое создание слотов -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>Массовое создание слотов</h2>
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="bulk-from" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="bulk-to" class="form-control" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Дни недели</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="weekday" value="0" /> Вс</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Временные слоты (HH:MM, через запятую)</label>
+                    <input type="text" id="bulk-times" class="form-control" placeholder="10:15, 11:45, 13:30, 15:00" />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        • Каждый слот длится 1 час<br/>
+                        • Первая тренировка начинается не раньше 10:15<br/>
+                        • Минимальный интервал между слотами - 1.5 часа (например: 10:15 и 11:45, или 10:15 и 12:00)
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-bulk-btn">Создать массово</button>
+                </div>
+                <div id="bulk-result" style="margin-top:10px;"></div>
+            </section>
+
+            <!-- Массовое удаление слотов -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>Массовое удаление слотов</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    ⚠️ Можно удалить только свободные или заблокированные слоты. Слоты с бронированиями или групповыми тренировками не будут удалены.
+                </p>
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты</label>
+                        <input type="date" id="delete-from" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату</label>
+                        <input type="date" id="delete-to" class="form-control" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Дни недели (необязательно)</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="delete-weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="delete-weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="delete-weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="delete-weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="delete-weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="delete-weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="delete-weekday" value="0" /> Вс</label>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Если не выбрано ни одного дня, будут удалены слоты на все дни в указанном диапазоне.
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-danger" id="delete-bulk-btn" style="background: #e74c3c;">Удалить слоты</button>
+                </div>
+                <div id="delete-bulk-result" style="margin-top:10px;"></div>
+            </section>
+
+            <!-- Регулярные групповые тренировки -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>📅 Регулярные групповые тренировки</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Создайте регулярные групповые тренировки на выбранные дни недели. Слоты и тренировки будут созданы автоматически.
+                </p>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты *</label>
+                        <input type="date" id="regular-from" class="form-control" required />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату *</label>
+                        <input type="date" id="regular-to" class="form-control" required />
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дни недели *</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="regular-weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="regular-weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="regular-weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="regular-weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="regular-weekday" value="0" /> Вс</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Время начала тренировки (HH:MM) *</label>
+                    <input type="time" id="regular-time" class="form-control" required />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Первая тренировка начинается не раньше 10:15
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Вид спорта *</label>
+                    <select id="regular-sport-type" class="form-control" required>
+                        <option value="">Выберите вид спорта</option>
+                        <!-- Опции заполнятся автоматически в зависимости от возможностей инструктора -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Уровень (1-10) *</label>
+                    <select id="regular-level" class="form-control" required>
+                        <option value="">Выберите уровень</option>
+                        <!-- Опции от 1 до 10 -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea id="regular-description" class="form-control" rows="3" placeholder="Описание тренировки (необязательно)"></textarea>
+                </div>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>Минимум участников *</label>
+                        <input type="number" id="regular-min-participants" class="form-control" min="1" value="2" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Максимум участников *</label>
+                        <input type="number" id="regular-max-participants" class="form-control" min="2" value="4" required />
+                    </div>
+                </div>
+                
+                <div class="form-group" id="regular-price-calculation" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 15px;">
+                    <strong>Расчет стоимости:</strong>
+                    <div id="regular-price-info" style="margin-top: 10px; color: #666;">
+                        Выберите максимум участников для расчета
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn-primary" id="create-regular-training-btn">Создать регулярные тренировки</button>
+                </div>
+                <div id="regular-result" style="margin-top:10px;"></div>
+            </section>
+
+            <!-- Массовое удаление групповых тренировок -->
+            <section style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                <h2>🗑️ Массовое удаление групповых тренировок</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Удалите групповые тренировки в указанном диапазоне дат. Можно удалить только тренировки без активных бронирований.
+                </p>
+                
+                <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group">
+                        <label>С даты *</label>
+                        <input type="date" id="delete-trainings-from" class="form-control" required />
+                    </div>
+                    <div class="form-group">
+                        <label>По дату *</label>
+                        <input type="date" id="delete-trainings-to" class="form-control" required />
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Дни недели (необязательно)</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="1" /> Пн</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="2" /> Вт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="3" /> Ср</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="4" /> Чт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="5" /> Пт</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="6" /> Сб</label>
+                        <label><input type="checkbox" class="delete-trainings-weekday" value="0" /> Вс</label>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Если не выбрано ни одного дня, будут удалены тренировки на все дни в указанном диапазоне.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Время начала тренировки (необязательно)</label>
+                    <input type="time" id="delete-trainings-time" class="form-control" />
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Если указано, будут удалены только тренировки, начинающиеся в это время.
+                    </small>
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn-danger" id="delete-trainings-btn" style="background: #e74c3c;">Удалить групповые тренировки</button>
+                </div>
+                <div id="delete-trainings-result" style="margin-top:10px;"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/kuliga-instructor-schedule.js"></script>
+</body>
+</html>
+

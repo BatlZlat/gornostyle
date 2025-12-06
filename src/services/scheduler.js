@@ -7,10 +7,20 @@ const cron = require('node-cron');
 const notificationService = require('./notification-service');
 const reviewNotificationService = require('./review-notification-service');
 const scheduledMessagesService = require('./scheduled-messages-service');
+const programTrainingsGenerator = require('./program-trainings-generator');
+const { pool } = require('../db');
 
 class Scheduler {
     constructor() {
         this.tasks = [];
+        this.isRunning = {
+            trainingReminders: false,
+            reviewRequests: false,
+            statusUpdates: false,
+            scheduledMessages: false,
+            programTrainingsGeneration: false,
+            certificateExpiration: false
+        };
     }
 
     /**
@@ -31,6 +41,12 @@ class Scheduler {
         // Запускаем задачу отправки отложенных сообщений
         this.scheduleScheduledMessages();
         
+        // Запускаем задачу генерации тренировок из программ
+        this.scheduleProgramTrainingsGeneration();
+        
+        // Запускаем задачу автоматического сгорания сертификатов
+        this.scheduleCertificateExpiration();
+        
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
 
@@ -42,6 +58,13 @@ class Scheduler {
         // Время в UTC для 21:00 Екатеринбурга: 21:00 - 5:00 = 16:00 UTC
         // Но для надежности используем timezone в cron
         const task = cron.schedule('0 21 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.trainingReminders) {
+                console.log(`[${new Date().toISOString()}] Задача отправки напоминаний уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.trainingReminders = true;
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
             
@@ -60,6 +83,8 @@ class Scheduler {
                 
                 // Уведомляем администратора об ошибке
                 await this.notifyAdminError(error);
+            } finally {
+                this.isRunning.trainingReminders = false;
             }
         }, {
             scheduled: true,
@@ -83,6 +108,13 @@ class Scheduler {
     scheduleReviewRequests() {
         // Запускаем в 21:00 - сразу после завершения тренировок
         const task = cron.schedule('0 21 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.reviewRequests) {
+                console.log(`[${new Date().toISOString()}] Задача отправки запросов на отзывы уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.reviewRequests = true;
             const today = new Date();
             
             try {
@@ -100,6 +132,8 @@ class Scheduler {
                 
                 // Уведомляем администратора об ошибке
                 await this.notifyAdminErrorReviews(error);
+            } finally {
+                this.isRunning.reviewRequests = false;
             }
         }, {
             scheduled: true,
@@ -190,6 +224,188 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Отправка отложенных сообщений" настроена на каждые 5 минут');
+    }
+
+    /**
+     * Настраивает задачу автоматической генерации тренировок из программ
+     * Запускается каждый день в 02:00 по времени Екатеринбурга
+     * Проверяет все активные программы и создает недостающие тренировки на 14 дней вперед
+     */
+    scheduleProgramTrainingsGeneration() {
+        // Запускаем в 02:00 ночи - в это время мало нагрузки на систему
+        const task = cron.schedule('0 2 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.programTrainingsGeneration) {
+                console.log(`[${new Date().toISOString()}] Задача генерации тренировок из программ уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.programTrainingsGeneration = true;
+            
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: генерация тренировок из программ`);
+                
+                const stats = await programTrainingsGenerator.generateTrainingsForAllPrograms();
+                
+                console.log(`[${new Date().toISOString()}] Задача завершена. Программ обработано: ${stats.programsProcessed}, создано тренировок: ${stats.totalCreated}, пропущено: ${stats.totalSkipped}, ошибок: ${stats.errors.length}`);
+                
+                // Отправляем отчет администратору, если были созданы тренировки или ошибки
+                if (stats.totalCreated > 0 || stats.errors.length > 0) {
+                    await this.notifyAdminProgramGeneration(stats);
+                }
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при выполнении задачи генерации тренировок из программ:`, error);
+                
+                // Уведомляем администратора об ошибке
+                await this.notifyAdminErrorProgramGeneration(error);
+            } finally {
+                this.isRunning.programTrainingsGeneration = false;
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'program_trainings_generation',
+            description: 'Автоматическая генерация тренировок из программ (14 дней вперед)',
+            schedule: '0 2 * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Генерация тренировок из программ" настроена на 02:00 (Екатеринбург)');
+    }
+
+    /**
+     * Настраивает задачу автоматического сгорания просроченных сертификатов
+     * Запускается каждый день в 00:00 по времени Екатеринбурга
+     * Помечает сертификаты со статусом 'active', у которых expiry_date < NOW(), как 'expired'
+     */
+    scheduleCertificateExpiration() {
+        // Запускаем в 00:00 - начало нового дня
+        const task = cron.schedule('0 0 * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.certificateExpiration) {
+                console.log(`[${new Date().toISOString()}] Задача пометки просроченных сертификатов уже выполняется, пропускаем`);
+                return;
+            }
+            
+            this.isRunning.certificateExpiration = true;
+            
+            try {
+                console.log(`[${new Date().toISOString()}] Запуск задачи: автоматическое сгорание просроченных сертификатов`);
+                
+                // Помечаем просроченные сертификаты
+                const result = await pool.query(`
+                    UPDATE certificates 
+                    SET status = 'expired', updated_at = CURRENT_TIMESTAMP 
+                    WHERE status = 'active' AND expiry_date < NOW()
+                    RETURNING id, certificate_number, purchaser_id, recipient_name, nominal_value
+                `);
+                
+                const expiredCertificates = result.rows;
+                const count = expiredCertificates.length;
+                
+                if (count > 0) {
+                    const totalValue = expiredCertificates.reduce((sum, cert) => sum + parseFloat(cert.nominal_value), 0);
+                    
+                    console.log(`[${new Date().toISOString()}] Задача завершена. Истекло сертификатов: ${count}, общая сумма: ${totalValue}₽`);
+                    
+                    // Отправляем отчет администратору
+                    await this.notifyAdminCertificateExpiration({
+                        count: count,
+                        total_value: totalValue,
+                        certificates: expiredCertificates
+                    });
+                } else {
+                    console.log(`[${new Date().toISOString()}] Задача завершена. Просроченных сертификатов не найдено`);
+                }
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при выполнении задачи пометки просроченных сертификатов:`, error);
+                
+                // Уведомляем администратора об ошибке
+                await this.notifyAdminErrorCertificateExpiration(error);
+            } finally {
+                this.isRunning.certificateExpiration = false;
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'certificate_expiration',
+            description: 'Автоматическое сгорание просроченных сертификатов',
+            schedule: '0 0 * * * (Екатеринбург)',
+            task: task
+        });
+
+        console.log('✓ Задача "Автоматическое сгорание сертификатов" настроена на 00:00 (Екатеринбург)');
+    }
+
+    /**
+     * Отправляет администратору отчет о генерации тренировок из программ
+     * @param {Object} stats - Статистика генерации
+     */
+    async notifyAdminProgramGeneration(stats) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `📋 <b>Отчет о генерации тренировок из программ</b>\n\n`;
+            message += `📊 Программ обработано: ${stats.programsProcessed}\n`;
+            message += `✅ Создано тренировок: ${stats.totalCreated}\n`;
+            message += `⏭️ Пропущено (уже существуют): ${stats.totalSkipped}\n`;
+            message += `❌ Ошибок: ${stats.errors.length}\n\n`;
+            
+            if (stats.errors && stats.errors.length > 0) {
+                message += `<b>Ошибки:</b>\n`;
+                stats.errors.slice(0, 5).forEach((error, index) => {
+                    message += `${index + 1}. Программа "${error.program_name}" (ID: ${error.program_id}): ${error.error}\n`;
+                });
+                if (stats.errors.length > 5) {
+                    message += `... и еще ${stats.errors.length - 5}\n`;
+                }
+            }
+            
+            message += `\n⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Отчет о генерации тренировок отправлен администратору');
+        } catch (error) {
+            console.error('Ошибка при отправке отчета о генерации тренировок администратору:', error.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору уведомление об ошибке при генерации тренировок из программ
+     * @param {Error} error - Объект ошибки
+     */
+    async notifyAdminErrorProgramGeneration(error) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `⚠️ <b>Ошибка при генерации тренировок из программ</b>\n\n`;
+            message += `<code>${error.message}</code>\n\n`;
+            message += `⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Уведомление об ошибке генерации тренировок отправлено администратору');
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления об ошибке генерации тренировок администратору:', notifyError.message);
+        }
     }
 
     /**
@@ -357,6 +573,68 @@ class Scheduler {
             console.log('✓ Уведомление об ошибке отправки отзывов отправлено администратору');
         } catch (notifyError) {
             console.error('Ошибка при отправке уведомления об ошибке отзывов администратору:', notifyError.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору отчет об истекших сертификатах
+     * @param {Object} stats - Статистика истекших сертификатов
+     */
+    async notifyAdminCertificateExpiration(stats) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            console.log('ADMIN_TELEGRAM_ID или ADMIN_BOT_TOKEN не указаны в .env - пропускаем уведомление администратора');
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `🎟️ <b>Отчет об истекших сертификатах</b>\n\n`;
+            message += `📊 Истекло сертификатов: ${stats.count}\n`;
+            message += `💰 Общая сумма: ${stats.total_value.toLocaleString('ru-RU')} ₽\n\n`;
+            
+            if (stats.certificates && stats.certificates.length > 0) {
+                message += `<b>Детали:</b>\n`;
+                stats.certificates.slice(0, 10).forEach((cert, index) => {
+                    const recipientInfo = cert.recipient_name ? ` → ${cert.recipient_name}` : '';
+                    message += `${index + 1}. #${cert.certificate_number}${recipientInfo} - ${parseFloat(cert.nominal_value).toLocaleString('ru-RU')} ₽\n`;
+                });
+                if (stats.certificates.length > 10) {
+                    message += `... и еще ${stats.certificates.length - 10}\n`;
+                }
+            }
+            
+            message += `\n⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Отчет об истекших сертификатах отправлен администратору');
+        } catch (error) {
+            console.error('Ошибка при отправке отчета об истекших сертификатах администратору:', error.message);
+        }
+    }
+
+    /**
+     * Отправляет администратору уведомление об ошибке при пометке просроченных сертификатов
+     * @param {Error} error - Объект ошибки
+     */
+    async notifyAdminErrorCertificateExpiration(error) {
+        if (!process.env.ADMIN_TELEGRAM_ID || !process.env.ADMIN_BOT_TOKEN) {
+            return;
+        }
+
+        try {
+            const TelegramBot = require('node-telegram-bot-api');
+            const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN);
+            
+            let message = `⚠️ <b>Ошибка при пометке просроченных сертификатов</b>\n\n`;
+            message += `<code>${error.message}</code>\n\n`;
+            message += `⏰ ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })}`;
+
+            await bot.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, { parse_mode: 'HTML' });
+            console.log('✓ Уведомление об ошибке пометки сертификатов отправлено администратору');
+        } catch (notifyError) {
+            console.error('Ошибка при отправке уведомления об ошибке пометки сертификатов администратору:', notifyError.message);
         }
     }
 }

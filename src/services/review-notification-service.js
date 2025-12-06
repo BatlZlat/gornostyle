@@ -78,6 +78,42 @@ class ReviewNotificationService {
                 LEFT JOIN children ch ON its.child_id = ch.id
                 WHERE its.preferred_date = $1
                     AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Индивидуальные тренировки Кулиги (kuliga_bookings)
+                SELECT 
+                    kb.client_id,
+                    NULL as child_id,
+                    FALSE as is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    NULL as child_name,
+                    'individual' as training_type
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                WHERE kb.date = $1
+                    AND kb.booking_type = 'individual'
+                    AND kb.status IN ('pending', 'confirmed', 'completed')
+                    AND c.telegram_id IS NOT NULL
+
+                UNION ALL
+
+                -- Групповые тренировки Кулиги (kuliga_bookings)
+                SELECT 
+                    kb.client_id,
+                    NULL as child_id,
+                    FALSE as is_child,
+                    c.telegram_id,
+                    c.full_name as client_name,
+                    NULL as child_name,
+                    'group' as training_type
+                FROM kuliga_bookings kb
+                JOIN clients c ON kb.client_id = c.id
+                WHERE kb.date = $1
+                    AND kb.booking_type = 'group'
+                    AND kb.status IN ('pending', 'confirmed', 'completed')
+                    AND c.telegram_id IS NOT NULL
             )
             SELECT * FROM todays_trainings
             ORDER BY client_id, child_id
@@ -140,6 +176,24 @@ class ReviewNotificationService {
                         AND sp.is_child = false
                         AND sp.status = 'confirmed'
                         AND ts.session_date <= CURRENT_DATE
+                    
+                    UNION ALL
+                    
+                    -- Индивидуальные тренировки Кулиги (kuliga_bookings)
+                    SELECT kb.id
+                    FROM kuliga_bookings kb
+                    WHERE kb.client_id = $1
+                        AND kb.booking_type = 'individual'
+                        AND kb.date <= CURRENT_DATE
+                    
+                    UNION ALL
+                    
+                    -- Групповые тренировки Кулиги (kuliga_bookings)
+                    SELECT kb.id
+                    FROM kuliga_bookings kb
+                    WHERE kb.client_id = $1
+                        AND kb.booking_type = 'group'
+                        AND kb.date <= CURRENT_DATE
                 ) t
             `;
             params = [clientId];

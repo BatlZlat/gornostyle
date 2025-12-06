@@ -51,7 +51,7 @@
 3. **Нажмите "Подключить интернет-эквайринг":**
    - Заполните заявку:
      - Название бизнеса: **Горностайл72 - Служба инструкторов Кулиги**
-     - Сайт: **https://gornostyle.ru/instruktora-kuliga**
+     - Сайт: **https://gornostyle.ru/instruktor-po-gornym-lyzham-snoubordy-tyumen**
      - Описание: **Услуги инструкторов по горным лыжам и сноуборду**
      - Предполагаемый оборот: **до 500 000 ₽/месяц** (укажите реальную оценку)
 
@@ -93,8 +93,8 @@
 3. **Создайте новый терминал:**
    - Нажмите "Добавить терминал"
    - Название: **Горностайл72 Кулига - Сайт**
-   - URL успешной оплаты: `https://gornostyle.ru/instruktora-kuliga/payment/success`
-   - URL неуспешной оплаты: `https://gornostyle.ru/instruktora-kuliga/payment/fail`
+   - URL успешной оплаты: `https://gornostyle.ru/instruktor-po-gornym-lyzham-snoubordy-tyumen/payment/success`
+   - URL неуспешной оплаты: `https://gornostyle.ru/instruktor-po-gornym-lyzham-snoubordy-tyumen/payment/fail`
 
 4. **Получите Terminal Key (TerminalKey):**
    - После создания терминала вам выдадут `TerminalKey` (например: `1234567890DEMO`)
@@ -145,8 +145,8 @@ TINKOFF_API_URL=https://securepay.tinkoff.ru/v2
 # TINKOFF_PASSWORD=TinkoffBankTest
 
 # URL для уведомлений
-KULIGA_PAYMENT_SUCCESS_URL=https://gornostyle.ru/instruktora-kuliga/payment/success
-KULIGA_PAYMENT_FAIL_URL=https://gornostyle.ru/instruktora-kuliga/payment/fail
+KULIGA_PAYMENT_SUCCESS_URL=https://gornostyle.ru/instruktor-po-gornym-lyzham-snoubordy-tyumen/payment/success
+KULIGA_PAYMENT_FAIL_URL=https://gornostyle.ru/instruktor-po-gornym-lyzham-snoubordy-tyumen/payment/fail
 KULIGA_PAYMENT_CALLBACK_URL=https://gornostyle.ru/api/kuliga/payment/callback
 ```
 

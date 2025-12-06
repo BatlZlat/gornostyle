@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Администратор Ski-instruktor</title>
     <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .flatpickr-day.has-schedule {
+            background: rgba(46, 204, 113, 0.15);
+            box-shadow: inset 0 0 0 2px #2ecc71;
+        }
+        .flatpickr-day.has-schedule.free-none {
+            background: rgba(241, 196, 15, 0.15);
+            box-shadow: inset 0 0 0 2px #f1c40f;
+        }
+    </style>
 </head>
 <body>
     <div class="admin-container">
@@ -14,6 +26,7 @@
         
         <div class="admin-content">
             <nav class="admin-menu">
+                <button class="menu-item" data-page="kuliga-admin">🏔️ СЛУЖБА ИНСТРУКТОРОВ ГОРНОСТАЙЛ72</button>
                 <button class="menu-item active" data-page="schedule">Расписание</button>
                 <button class="menu-item" data-page="training">🎿 Тренировки ТРЕНАЖЕР</button>
                 <button class="menu-item" data-page="winter-trainings">🏔️ Тренировки ЗИМА</button>
@@ -24,6 +37,7 @@
                 <button class="menu-item" data-page="prices">Прайс</button>
                 <button class="menu-item" data-page="certificates">Сертификаты</button>
                 <button class="menu-item" data-page="finances">Финансы</button>
+                <button class="menu-item" data-page="analytics">📊 Аналитика</button>
                 <button class="menu-item" data-page="promotions">🎁 Акции</button>
                 <button class="menu-item" data-page="subscriptions">🎫 Абонементы</button>
                 <button class="menu-item" data-page="scheduled-messages">⏰ Отложенные сообщения</button>
@@ -32,6 +46,97 @@
             </nav>
 
             <main class="admin-main">
+                <!-- Страница администратора Кулиги -->
+                <div class="page-content" id="kuliga-admin-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>Служба инструкторов Горностайл72</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="kuliga-add-instructor">Добавить инструктора</button>
+                            <a href="/instruktor-po-gornym-lyzham-snoubordy-tyumen" class="btn-secondary" target="_blank">Открыть лендинг</a>
+                        </div>
+                    </div>
+
+                    <!-- Вкладки управления -->
+                    <div class="kuliga-tabs">
+                        <button class="kuliga-tab active" data-tab="instructors">Инструкторы</button>
+                        <button class="kuliga-tab" data-tab="programs">Программы</button>
+                        <button class="kuliga-tab" data-tab="settings">Настройки</button>
+                        <button class="kuliga-tab" data-tab="finances">Финансы</button>
+                    </div>
+
+                    <!-- Секция: Инструкторы -->
+                    <div class="kuliga-tab-content" id="kuliga-tab-instructors">
+                        <div class="kuliga-section-header">
+                            <h3>Управление инструкторами</h3>
+                            <div class="kuliga-filters">
+                                <select id="kuliga-filter-status" class="filter-select">
+                                    <option value="all">Все</option>
+                                    <option value="active" selected>Активные</option>
+                                    <option value="inactive">Неактивные</option>
+                                </select>
+                                <select id="kuliga-filter-sport" class="filter-select">
+                                    <option value="all">Все виды спорта</option>
+                                    <option value="ski">Лыжи</option>
+                                    <option value="snowboard">Сноуборд</option>
+                                    <option value="both">Лыжи и сноуборд</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="kuliga-instructors-list" class="kuliga-instructors-list">
+                            <!-- Список инструкторов будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- Секция: Программы -->
+                    <div class="kuliga-tab-content" id="kuliga-tab-programs" style="display: none;">
+                        <div class="kuliga-section-header">
+                            <h3>Регулярные групповые программы</h3>
+                            <button class="btn-primary" id="kuliga-add-program">Создать программу</button>
+                        </div>
+                        <div id="kuliga-programs-list" class="kuliga-programs-list">
+                            <!-- Список программ будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- Секция: Настройки -->
+                    <div class="kuliga-tab-content" id="kuliga-tab-settings" style="display: none;">
+                        <div class="kuliga-section-header">
+                            <h3>Системные настройки</h3>
+                        </div>
+                        <div class="kuliga-settings-form">
+                            <div class="setting-item">
+                                <label for="kuliga-default-percentage">Процент администратора по умолчанию (%)</label>
+                                <input type="number" id="kuliga-default-percentage" min="0" max="100" step="0.01" value="20.00">
+                                <small>Этот процент будет применяться ко всем новым инструкторам</small>
+                            </div>
+                            <div class="setting-item">
+                                <label for="kuliga-check-time">Время проверки групп (формат HH:MM)</label>
+                                <input type="time" id="kuliga-check-time" value="22:00">
+                                <small>В это время проверяется минимальное количество участников для групповых тренировок</small>
+                            </div>
+                            <button class="btn-primary" id="kuliga-save-settings">Сохранить настройки</button>
+                        </div>
+                    </div>
+
+                    <!-- Секция: Финансы -->
+                    <div class="kuliga-tab-content" id="kuliga-tab-finances" style="display: none;">
+                        <div class="kuliga-section-header">
+                            <h3>Финансовая отчётность</h3>
+                            <div class="kuliga-filters">
+                                <input type="date" id="kuliga-finance-from" class="date-filter">
+                                <input type="date" id="kuliga-finance-to" class="date-filter">
+                                <button class="btn-secondary" id="kuliga-finance-refresh">Обновить</button>
+                            </div>
+                        </div>
+                        <div class="kuliga-finance-summary">
+                            <!-- Сводка будет загружена динамически -->
+                        </div>
+                        <div id="kuliga-finance-details" class="kuliga-finance-details">
+                            <!-- Детальная отчётность будет загружена динамически -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Страница тренировок -->
                 <div class="page-content" id="training-page" style="display: none;">
                     <div class="page-header">
@@ -80,6 +185,15 @@
                             <button class="btn-success" onclick="openScheduleBlocks()">🔒 Управление блокировками слотов</button>
                         </div>
                     </div>
+                    <!-- Вкладки переключения между типами расписания -->
+                    <div class="schedule-tabs">
+                        <button class="schedule-tab active" data-slope-type="simulator" id="schedule-tab-simulator">
+                            🏔️ Горнолыжный тренажер
+                        </button>
+                        <button class="schedule-tab" data-slope-type="natural_slope" id="schedule-tab-natural">
+                            🎿 Естественный склон
+                        </button>
+                    </div>
                     <div class="schedule-controls">
                         <div class="date-navigation">
                             <button class="btn-icon" id="prev-date">←</button>
@@ -110,10 +224,22 @@
                     <div class="page-header">
                         <h2>Тренера</h2>
                         <div class="page-actions">
-                            <button class="btn-primary" id="create-trainer">Создать тренера</button>
+                            <button class="btn-primary" id="create-trainer">Создать тренера тренажёра</button>
+                            <button class="btn-primary" id="create-kuliga-instructor">Создать инструктора Горностайл72</button>
                             <button class="btn-secondary" id="view-dismissed">Уволенные тренера</button>
                         </div>
                     </div>
+                    
+                    <!-- Вкладки для разделения -->
+                    <div class="trainer-tabs" style="margin-bottom: 20px; border-bottom: 2px solid #e0e0e0;">
+                        <button class="trainer-tab active" data-trainer-type="simulator" style="padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 16px; font-weight: 500; border-bottom: 3px solid #007bff;">
+                            Тренеры тренажёра
+                        </button>
+                        <button class="trainer-tab" data-trainer-type="kuliga" style="padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 16px; font-weight: 500; border-bottom: 3px solid transparent;">
+                            Инструкторы Горностайл72
+                        </button>
+                    </div>
+                    
                     <div class="trainers-list">
                         <!-- Список тренеров будет загружен динамически -->
                     </div>
@@ -124,7 +250,7 @@
                     <h2>Клиенты</h2>
                     <div class="controls">
                         <div class="search-controls">
-                            <input type="text" id="clientSearch" placeholder="Поиск по ФИО или телефону" class="search-input">
+                            <input type="text" id="clientSearch" placeholder="Поиск по ФИО, телефону или номеру кошелька" class="search-input">
                         </div>
                         <div class="filter-controls">
                             <select id="clientAthleteFilter" class="filter-select">
@@ -249,6 +375,7 @@
                         <div class="page-actions">
                             <a href="#" class="btn-primary" id="create-payment-link">Ссылка для оплаты</a>
                             <button class="btn-secondary" id="trainer-salary-btn">💰 ЗП Инструктора</button>
+                            <button class="btn-primary" id="kuliga-finances-btn">🏔️ Финансы Кулига</button>
                         </div>
                     </div>
                     
@@ -259,7 +386,7 @@
                             <div class="form-group" style="min-width: 250px;">
                                 <label for="client-search">Клиент:</label>
                                 <div class="client-search-container" style="position: relative;">
-                                    <input type="text" id="client-search" placeholder="Введите ФИО клиента..." 
+                                    <input type="text" id="client-search" placeholder="Введите ФИО, телефон или номер кошелька..." 
                                            class="form-control" autocomplete="off" required>
                                     <div id="client-search-results" class="search-results" style="display: none;"></div>
                                     <input type="hidden" id="selected-client-id" required>
@@ -283,6 +410,127 @@
                     
                     <div class="finances-list">
                         <!-- Список платежей будет загружен динамически -->
+                    </div>
+                </div>
+
+                <!-- Страница Аналитика -->
+                <div class="page-content" id="analytics-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>📊 Аналитика</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary" id="refresh-analytics-btn">🔄 Обновить</button>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры периода -->
+                    <div class="filter-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <label style="font-weight: 600;">Период:</label>
+                        <button class="btn-secondary analytics-period-btn active" data-period="current_month">Текущий месяц</button>
+                        <button class="btn-secondary analytics-period-btn" data-period="last_month">Прошлый месяц</button>
+                        <button class="btn-secondary analytics-period-btn" data-period="last_3_months">3 месяца</button>
+                        <button class="btn-secondary analytics-period-btn" data-period="last_6_months">6 месяцев</button>
+                        <button class="btn-secondary analytics-period-btn" data-period="year">Год</button>
+                        <button class="btn-secondary analytics-period-btn" data-period="all_time">Все время</button>
+                        <input type="date" id="analytics-period-from" class="form-control" style="width: auto;">
+                        <span>—</span>
+                        <input type="date" id="analytics-period-to" class="form-control" style="width: auto;">
+                        <button class="btn-primary" id="apply-analytics-period-btn">Применить</button>
+                    </div>
+
+                    <!-- Вкладки аналитики -->
+                    <div class="analytics-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0;">
+                        <button class="analytics-tab-btn active" data-tab="attendance">📈 Посещаемость</button>
+                        <button class="analytics-tab-btn" data-tab="trainers">👨‍🏫 Тренеры</button>
+                        <button class="analytics-tab-btn" data-tab="training-types">🎿 Типы тренировок</button>
+                        <button class="analytics-tab-btn" data-tab="referrals">🎁 Реферальная программа</button>
+                    </div>
+
+                    <!-- Вкладка: Посещаемость -->
+                    <div class="analytics-tab-content active" id="analytics-tab-attendance">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                            <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего тренировок</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="attendance-total-trainings">0</p>
+                            </div>
+                            <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Уникальных клиентов</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="attendance-unique-clients">0</p>
+                            </div>
+                            <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Детей</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="attendance-children">0</p>
+                            </div>
+                        </div>
+                        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <h3 style="margin-top: 0;">График посещаемости по дням</h3>
+                            <canvas id="attendance-chart" style="max-height: 400px;"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка: Тренеры -->
+                    <div class="analytics-tab-content" id="analytics-tab-trainers" style="display: none;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 style="margin-top: 0;">Тренеры тренажера</h3>
+                                <div id="trainers-simulator-list" style="max-height: 500px; overflow-y: auto;">
+                                    <!-- Список будет загружен динамически -->
+                                </div>
+                            </div>
+                            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 style="margin-top: 0;">Инструкторы Кулиги</h3>
+                                <div id="trainers-kuliga-list" style="max-height: 500px; overflow-y: auto;">
+                                    <!-- Список будет загружен динамически -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка: Типы тренировок -->
+                    <div class="analytics-tab-content" id="analytics-tab-training-types" style="display: none;">
+                        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                            <h3 style="margin-top: 0;">Распределение по типам тренировок</h3>
+                            <canvas id="training-types-chart" style="max-height: 400px;"></canvas>
+                        </div>
+                        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <h3 style="margin-top: 0;">Детальная статистика</h3>
+                            <div id="training-types-details">
+                                <!-- Детали будут загружены динамически -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка: Реферальная программа -->
+                    <div class="analytics-tab-content" id="analytics-tab-referrals" style="display: none;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                            <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего рефереров</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="referrals-total-referrers">0</p>
+                            </div>
+                            <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего приглашено</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="referrals-total-referred">0</p>
+                            </div>
+                            <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Завершено</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="referrals-completed">0</p>
+                            </div>
+                            <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 10px;">
+                                <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Выплачено бонусов</h3>
+                                <p style="margin: 0; font-size: 32px; font-weight: bold;" id="referrals-total-bonuses">0 ₽</p>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 style="margin-top: 0;">Конверсия по этапам</h3>
+                                <canvas id="referrals-conversion-chart" style="max-height: 300px;"></canvas>
+                            </div>
+                            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 style="margin-top: 0;">ТОП рефереров</h3>
+                                <div id="referrals-top-referrers" style="max-height: 300px; overflow-y: auto;">
+                                    <!-- Список будет загружен динамически -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -438,6 +686,82 @@
                     </div>
                 </div>
 
+                <!-- Страница Финансы Кулиги -->
+                <div class="page-content" id="kuliga-finances-page" style="display: none;">
+                    <div class="page-header">
+                        <h2>🏔️ Финансы Кулиги</h2>
+                        <div class="page-actions">
+                            <button class="btn-secondary" id="back-to-finances-btn">🔙 Назад к финансам</button>
+                            <button class="btn-primary" id="export-finances-btn">📊 Экспорт</button>
+                        </div>
+                    </div>
+
+                    <!-- Статистика -->
+                    <div class="kuliga-finances-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Общая выручка</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-revenue-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Комиссия администратора</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="admin-commission-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">К выплате инструкторам</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-earnings-stat">0 ₽</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Инструкторов с долгами</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="instructors-with-debt-stat">0</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 16px; opacity: 0.9;">Всего инструкторов</h3>
+                            <p style="margin: 0; font-size: 32px; font-weight: bold;" id="total-instructors-stat">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры периода -->
+                    <div class="filter-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <label style="font-weight: 600;">Период:</label>
+                        <button class="btn-secondary period-btn" data-period="current_month">Текущий месяц</button>
+                        <button class="btn-secondary period-btn" data-period="last_month">Прошлый месяц</button>
+                        <button class="btn-secondary period-btn" data-period="all_time">Все время</button>
+                        <input type="date" id="period-from" class="form-control" style="width: auto;">
+                        <span>—</span>
+                        <input type="date" id="period-to" class="form-control" style="width: auto;">
+                        <button class="btn-primary" id="apply-period-btn">Применить</button>
+                    </div>
+
+                    <!-- Список инструкторов с неоплаченным заработком -->
+                    <div class="kuliga-instructors-earnings" style="margin-bottom: 40px;">
+                        <h3 style="margin-bottom: 20px;">Инструкторы с неоплаченным заработком</h3>
+                        <div id="instructors-earnings-list" class="instructors-earnings-list">
+                            <!-- Список будет загружен динамически -->
+                        </div>
+                    </div>
+
+                    <!-- История выплат -->
+                    <div class="kuliga-payouts-history">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 style="margin: 0;">История выплат</h3>
+                            <div class="filter-section" style="display: flex; gap: 10px;">
+                                <select id="payout-instructor-filter" class="form-control" style="width: auto;">
+                                    <option value="">Все инструкторы</option>
+                                </select>
+                                <select id="payout-status-filter" class="form-control" style="width: auto;">
+                                    <option value="">Все статусы</option>
+                                    <option value="pending">В ожидании</option>
+                                    <option value="paid">Выплачено</option>
+                                    <option value="cancelled">Отменено</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="payouts-history-list" class="payouts-history-list">
+                            <!-- Таблица выплат будет загружена динамически -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Страница зимних тренировок -->
                 <div class="page-content" id="winter-trainings-page" style="display: none;">
                     <div class="page-header">
@@ -461,13 +785,22 @@
                                 <option value="">Все типы</option>
                                 <option value="individual">Индивидуальное</option>
                                 <option value="sport_group">Спортивная группа (до 4)</option>
-                                <option value="group">Обычная группа</option>
+                                <option value="group">Групповая тренировка</option>
                             </select>
                             <select id="winter-status-filter" class="filter-select">
                                 <option value="">Все статусы</option>
                                 <option value="scheduled">Запланирована</option>
+                                <option value="open">Открыта (для записи)</option>
+                                <option value="confirmed">Подтверждена</option>
+                                <option value="pending">Ожидание</option>
                                 <option value="completed">Завершена</option>
                                 <option value="cancelled">Отменена</option>
+                                <option value="refunded">Возврат</option>
+                            </select>
+                            <select id="winter-location-filter" class="filter-select">
+                                <option value="">Все места</option>
+                                <option value="kuliga">Кулига</option>
+                                <option value="vorona">Воронинские горки</option>
                             </select>
                         </div>
                     </div>
@@ -812,7 +1145,7 @@
                         <option value="">Выберите тип</option>
                         <option value="individual">Индивидуальное</option>
                         <option value="sport_group">Спортивная группа (до 4 чел)</option>
-                        <option value="group">Обычная группа</option>
+                        <option value="group">Групповая тренировка</option>
                     </select>
                 </div>
 
@@ -830,7 +1163,7 @@
                 <div class="form-group">
                     <label for="winter-price-price">Цена (₽) *</label>
                     <input type="number" id="winter-price-price" class="form-control" required min="0" step="0.01">
-                    <small style="color:#666;" id="price-hint">Для индивидуальных и спортивных групп - цена за человека. Для обычных групп - общая цена.</small>
+                    <small style="color:#666;" id="price-hint">Для индивидуальных и спортивных групп - цена за человека. Для групповых тренировок - общая цена.</small>
                 </div>
 
                 <div class="form-group">
@@ -853,12 +1186,353 @@
         </div>
     </div>
 
+    <!-- Модальное окно для создания/редактирования инструктора Кулиги -->
+    <div id="kuliga-instructor-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:700px;">
+            <div class="modal-header">
+                <h3 id="kuliga-instructor-modal-title">Добавить инструктора</h3>
+                <button class="close-btn" onclick="closeKuligaInstructorModal()">×</button>
+            </div>
+            <form id="kuliga-instructor-form">
+                <input type="hidden" id="kuliga-instructor-id">
+                
+                <div class="form-group">
+                    <label for="kuliga-instructor-name">ФИО инструктора *</label>
+                    <input type="text" id="kuliga-instructor-name" class="form-control" required maxlength="100" placeholder="Иванов Иван Иванович">
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-phone">Телефон *</label>
+                    <input type="tel" id="kuliga-instructor-phone" class="form-control" required maxlength="20" placeholder="+7 (999) 123-45-67">
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-email">Email</label>
+                    <input type="email" id="kuliga-instructor-email" class="form-control" maxlength="255" placeholder="instructor@example.com">
+                </div>
+
+                <div class="form-group">
+                    <label>Фото инструктора</label>
+                    <div class="kuliga-photo-preview">
+                        <img id="kuliga-instructor-photo-preview" alt="Фото инструктора" style="display:none;">
+                        <div class="kuliga-photo-placeholder" id="kuliga-instructor-photo-placeholder">
+                            <span>Фото не загружено</span>
+                        </div>
+                    </div>
+                    <div class="kuliga-photo-actions">
+                        <button type="button" class="btn-secondary" id="kuliga-instructor-upload-btn">📷 Загрузить фото</button>
+                        <button type="button" class="btn-secondary" id="kuliga-instructor-remove-photo">Удалить</button>
+                        <input type="file" id="kuliga-instructor-photo-file" accept="image/*" style="display:none;">
+                    </div>
+                    <input type="hidden" id="kuliga-instructor-photo-url">
+                    <small style="color:#666;">Фото будет автоматически сжато до высоты 400px и сохранено в формате WebP</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-description">Описание (био)</label>
+                    <textarea id="kuliga-instructor-description" class="form-control" rows="3" placeholder="Опыт работы, достижения, специализация..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-sport">Вид спорта *</label>
+                    <select id="kuliga-instructor-sport" class="form-control" required>
+                        <option value="">Выберите вид спорта</option>
+                        <option value="ski">Горные лыжи</option>
+                        <option value="snowboard">Сноуборд</option>
+                        <option value="both">Лыжи и сноуборд</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-location">Место работы *</label>
+                    <select id="kuliga-instructor-location" class="form-control" required>
+                        <option value="kuliga" selected>База отдыха «Кулига-Клуб»</option>
+                        <option value="vorona">Воронинские горки</option>
+                    </select>
+                    <small style="color:#666;">Место проведения тренировок инструктора</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-percentage">Процент администратора (%)</label>
+                    <input type="number" id="kuliga-instructor-percentage" class="form-control" min="0" max="100" step="0.01" value="20.00">
+                    <small style="color:#666;">Процент от заработка инструктора, который идёт в пользу администратора</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-instructor-hire-date">Дата найма</label>
+                    <input type="date" id="kuliga-instructor-hire-date" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="kuliga-instructor-active" checked>
+                        Инструктор активен
+                    </label>
+                    <small style="color:#666;display:block;margin-top:5px;">Неактивные инструкторы не отображаются на лендинге и не могут принимать бронирования</small>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeKuligaInstructorModal()">Отмена</button>
+                    <button type="submit" class="btn-primary" id="kuliga-instructor-submit">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно программы -->
+    <div id="kuliga-program-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:800px;">
+            <div class="modal-header">
+                <h3 id="kuliga-program-modal-title">Создать программу</h3>
+                <button class="close-btn" onclick="closeKuligaProgramModal()">×</button>
+            </div>
+            <form id="kuliga-program-form">
+                <input type="hidden" id="kuliga-program-id">
+                
+                <div class="form-group">
+                    <label for="kuliga-program-name">Название программы *</label>
+                    <input type="text" id="kuliga-program-name" class="form-control" required maxlength="200" placeholder="Лыжники новички 14+">
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-program-description">Краткое описание программы *</label>
+                    <textarea id="kuliga-program-description" class="form-control" rows="3" required placeholder="Знакомство с снаряжением, получение базовых навыков, торможение, повороты..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="kuliga-program-sport">Вид спорта *</label>
+                        <select id="kuliga-program-sport" class="form-control" required>
+                            <option value="">Выберите вид спорта</option>
+                            <option value="ski">Горные лыжи</option>
+                            <option value="snowboard">Сноуборд</option>
+                            <option value="both">Лыжи и сноуборд</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="kuliga-program-location">Место проведения *</label>
+                        <select id="kuliga-program-location" class="form-control" required>
+                            <option value="kuliga" selected>База отдыха «Кулига-Клуб»</option>
+                            <option value="vorona">Воронинские горки</option>
+                        </select>
+                        <small style="color:#666;display:block;margin-top:5px;">Выберите место, где будет проходить программа</small>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="kuliga-program-max-participants">Максимальное количество человек *</label>
+                        <select id="kuliga-program-max-participants" class="form-control" required>
+                            <option value="2">2 человека</option>
+                            <option value="3">3 человека</option>
+                            <option value="4" selected>4 человека</option>
+                            <option value="5">5 человек</option>
+                            <option value="6">6 человек</option>
+                            <option value="7">7 человек</option>
+                            <option value="8">8 человек</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="kuliga-program-training-duration">Время тренировки *</label>
+                        <select id="kuliga-program-training-duration" class="form-control" required>
+                            <option value="60">60 мин</option>
+                            <option value="75">75 мин</option>
+                            <option value="90" selected>90 мин</option>
+                            <option value="105">105 мин</option>
+                            <option value="120">120 мин</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="kuliga-program-warmup-duration">Разминка и переодевание *</label>
+                        <select id="kuliga-program-warmup-duration" class="form-control" required>
+                            <option value="15">15 мин</option>
+                            <option value="20">20 мин</option>
+                            <option value="30" selected>30 мин</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Время практики: <strong id="kuliga-program-practice-duration">60 мин</strong></label>
+                    <small style="color:#666;">Вычисляется автоматически: Время тренировки - Разминка и переодевание</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Дни недели *</label>
+                    <div class="weekdays-selector">
+                        <label><input type="checkbox" name="weekday" value="1"> Понедельник</label>
+                        <label><input type="checkbox" name="weekday" value="2"> Вторник</label>
+                        <label><input type="checkbox" name="weekday" value="3"> Среда</label>
+                        <label><input type="checkbox" name="weekday" value="4"> Четверг</label>
+                        <label><input type="checkbox" name="weekday" value="5"> Пятница</label>
+                        <label><input type="checkbox" name="weekday" value="6" checked> Суббота</label>
+                        <label><input type="checkbox" name="weekday" value="0" checked> Воскресенье</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Временные слоты *</label>
+                    <div id="kuliga-program-timeslots">
+                        <div class="timeslot-item">
+                            <input type="time" class="form-control timeslot-input" value="10:00" required>
+                            <button type="button" class="btn-danger btn-sm remove-timeslot">×</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-secondary btn-sm" id="kuliga-add-timeslot">+ Добавить слот</button>
+                    <small style="color:#666;display:block;margin-top:5px;">Укажите время начала тренировок (например: 10:00, 14:00)</small>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="kuliga-program-equipment">
+                            Снаряжение предоставляем
+                        </label>
+                        <small style="color:#666;display:block;">По умолчанию: берете в прокат самостоятельно</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="kuliga-program-skipass">
+                            Скипас на подъемник предоставляем
+                        </label>
+                        <small style="color:#666;display:block;">По умолчанию: берете самостоятельно</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-program-price">Цена (₽) *</label>
+                    <input type="number" id="kuliga-program-price" class="form-control" required min="100" step="50" value="1700" placeholder="1700">
+                </div>
+
+                <div class="form-group">
+                    <label for="kuliga-program-instructors">Инструкторы *</label>
+                    <select id="kuliga-program-instructors" class="form-control" multiple required style="min-height: 100px;">
+                        <option value="">Загрузка инструкторов...</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">Выберите инструкторов, которые могут проводить эту программу. Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. В дальнейшем инструктора можно переназначить точечно на странице "Тренировки зима". Тренировки будут создаваться только если у назначенного инструктора есть свободный слот на время программы.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="kuliga-program-active" checked>
+                        Программа активна
+                    </label>
+                    <small style="color:#666;display:block;">Неактивные программы не отображаются на лендинге</small>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeKuligaProgramModal()">Отмена</button>
+                    <button type="submit" class="btn-primary" id="kuliga-program-submit">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно для создания групповой тренировки Кулиги -->
+    <div id="kuliga-group-training-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3>Создать групповую тренировку Кулига Парк</h3>
+                <button class="close-btn" onclick="closeKuligaGroupTrainingModal()">×</button>
+            </div>
+            <form id="kuliga-group-training-form">
+                <div class="form-group">
+                    <label for="kgt-sport-type">Вид спорта *</label>
+                    <select id="kgt-sport-type" class="form-control" required>
+                        <option value="">Выберите вид спорта</option>
+                        <option value="ski">⛷️ Горные лыжи</option>
+                        <option value="snowboard">🏂 Сноуборд</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-date">Дата *</label>
+                    <input type="date" id="kgt-date" class="form-control" required />
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Выберите дату (подсвечены только даты с расписанием)
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-instructor">Инструктор (по умолчанию - все с расписанием)</label>
+                    <select id="kgt-instructor" class="form-control">
+                        <option value="">Все инструкторы с расписанием</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-slot">Время *</label>
+                    <select id="kgt-slot" class="form-control" required>
+                        <option value="">Выберите время</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Все свободные слоты на выбранную дату
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-level">Уровень подготовки *</label>
+                    <select id="kgt-level" class="form-control" required>
+                        <option value="beginner">1 уровень (Начальный)</option>
+                    </select>
+                    <small style="color:#666;display:block;margin-top:5px;">
+                        Для групповых тренировок через админ-панель всегда 1 уровень
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-description">Описание (необязательно)</label>
+                    <textarea id="kgt-description" class="form-control" rows="3" placeholder="Описание тренировки"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-max-participants">Максимальное количество участников *</label>
+                    <select id="kgt-max-participants" class="form-control" required>
+                        <option value="">Выберите количество</option>
+                        <option value="2">2 человека</option>
+                        <option value="3">3 человека</option>
+                        <option value="4">4 человека</option>
+                        <option value="5">5 человек</option>
+                        <option value="6">6 человек</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="kgt-min-participants">Минимальное количество участников *</label>
+                    <input type="number" id="kgt-min-participants" class="form-control" min="1" value="2" required />
+                </div>
+
+                <div class="form-group">
+                    <div id="kgt-price-info" style="margin-top:10px;padding:10px;background:#f5f5f5;border-radius:4px;">
+                        <strong>💰 Стоимость:</strong> <span id="kgt-price-display">—</span>
+                    </div>
+                </div>
+
+                <div class="form-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+                    <button type="button" class="btn-secondary" onclick="closeKuligaGroupTrainingModal()">Отмена</button>
+                    <button type="submit" class="btn-primary" id="kgt-submit-btn">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ru.js"></script>
     <script src="js/admin.js?v=20250930"></script>
+    <script src="js/admin-kuliga.js?v=1"></script>
     <script src="js/admin-promotions.js?v=1"></script>
     <script src="js/admin-trainer-salary.js?v=1"></script>
-    <script src="js/admin-winter-prices.js?v=1"></script>
+    <script src="js/admin-winter-prices.js?v=20251124002"></script>
     <script src="js/admin-winter-trainings.js?v=1"></script>
+    <script src="js/admin-kuliga-group-training.js?v=1"></script>
+    <script src="js/admin-kuliga-move-booking.js?v=1"></script>
     <script src="js/admin-scheduled-messages.js?v=1"></script>
+    <script src="js/admin-kuliga-finances.js"></script>
+    <script src="js/admin-analytics.js?v=2"></script>
 </body>
 </html> 

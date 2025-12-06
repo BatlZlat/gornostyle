@@ -9,6 +9,7 @@ function initWinterTrainingsPage() {
     const nextBtn = document.getElementById('winter-next-date');
     const typeFilter = document.getElementById('winter-type-filter');
     const statusFilter = document.getElementById('winter-status-filter');
+    const locationFilter = document.getElementById('winter-location-filter');
     
     // Установить текущую дату
     if (dateInput && !dateInput.value) {
@@ -44,6 +45,79 @@ function initWinterTrainingsPage() {
     
     if (statusFilter) {
         statusFilter.addEventListener('change', loadWinterTrainings);
+    }
+    
+    if (locationFilter) {
+        locationFilter.addEventListener('change', loadWinterTrainings);
+    }
+    
+    // Делегирование событий для кнопок (устанавливается один раз при инициализации)
+    // Используем делегирование на уровне документа, чтобы оно работало всегда
+    if (!window.winterTrainingsEventsAttached) {
+        console.log('🔧 Устанавливаем обработчики событий для зимних тренировок...');
+        document.addEventListener('click', function(e) {
+            console.log('🔍 Обработчик клика сработал:', {
+                target: e.target,
+                targetClass: e.target.className,
+                targetTag: e.target.tagName,
+                closestEdit: e.target.closest('.edit-winter-btn'),
+                closestDelete: e.target.closest('.delete-winter-btn')
+            });
+            
+            // Обработка кнопки "Редактировать"
+            const editBtn = e.target.closest('.edit-winter-btn');
+            if (editBtn) {
+                console.log('✅ Кнопка "Редактировать" найдена:', {
+                    element: editBtn,
+                    dataset: editBtn.dataset,
+                    className: editBtn.className
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                const trainingId = parseInt(editBtn.dataset.trainingId);
+                const trainingSource = editBtn.dataset.trainingSource || '';
+                const kuligaType = editBtn.dataset.kuligaType || '';
+                console.log('🚀 Вызываем editWinterTraining:', { trainingId, trainingSource, kuligaType });
+                
+                if (typeof editWinterTraining === 'function') {
+                    editWinterTraining(trainingId, trainingSource, kuligaType);
+                } else {
+                    console.error('❌ editWinterTraining не является функцией:', typeof editWinterTraining);
+                    alert('Ошибка: функция editWinterTraining не найдена');
+                }
+                return;
+            }
+            
+            // Обработка кнопки "Удалить"
+            const deleteBtn = e.target.closest('.delete-winter-btn');
+            if (deleteBtn) {
+                console.log('✅ Кнопка "Удалить" найдена:', {
+                    element: deleteBtn,
+                    dataset: deleteBtn.dataset,
+                    className: deleteBtn.className
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                const trainingId = parseInt(deleteBtn.dataset.trainingId);
+                const trainingSource = deleteBtn.dataset.trainingSource || '';
+                const kuligaType = deleteBtn.dataset.kuligaType || '';
+                console.log('🚀 Вызываем deleteWinterTraining:', { trainingId, trainingSource, kuligaType });
+                
+                if (typeof deleteWinterTraining === 'function') {
+                    deleteWinterTraining(trainingId, trainingSource, kuligaType);
+                } else {
+                    console.error('❌ deleteWinterTraining не является функцией:', typeof deleteWinterTraining);
+                    alert('Ошибка: функция deleteWinterTraining не найдена');
+                }
+                return;
+            }
+            
+            console.log('ℹ️ Клик не на кнопках редактирования/удаления');
+        }, true); // Используем capture phase для более раннего перехвата
+        window.winterTrainingsEventsAttached = true;
+        console.log('✅ Обработчики событий для зимних тренировок установлены');
+    } else {
+        console.log('⚠️ Обработчики событий для зимних тренировок уже установлены');
     }
     
     loadWinterTrainings();
@@ -86,9 +160,23 @@ async function loadWinterTrainings() {
             throw new Error('Получены некорректные данные от сервера');
         }
         
-        // Фильтруем по типу и статусу, если указаны
+        // Логирование для отладки
+        console.log('📊 Загружено тренировок:', trainings.length);
+        const programTrainings = trainings.filter(t => t.program_id);
+        if (programTrainings.length > 0) {
+            console.log('📋 Найдено тренировок из программ:', programTrainings.length, programTrainings.map(t => ({
+                id: t.id,
+                date: t.date,
+                time: t.start_time,
+                program_name: t.program_name,
+                status: t.status
+            })));
+        }
+        
+        // Фильтруем по типу, статусу и месту проведения, если указаны
         const typeFilter = document.getElementById('winter-type-filter');
         const statusFilter = document.getElementById('winter-status-filter');
+        const locationFilter = document.getElementById('winter-location-filter');
         
         let filteredTrainings = trainings;
         
@@ -97,7 +185,18 @@ async function loadWinterTrainings() {
         }
         
         if (statusFilter && statusFilter.value) {
-            filteredTrainings = filteredTrainings.filter(t => t.status === statusFilter.value);
+            filteredTrainings = filteredTrainings.filter(t => {
+                // Для тренировок Кулиги статус может быть 'open', 'confirmed', 'pending', 'refunded'
+                // Для обычных тренировок: 'scheduled', 'completed', 'cancelled'
+                return t.status === statusFilter.value;
+            });
+        }
+        
+        if (locationFilter && locationFilter.value) {
+            filteredTrainings = filteredTrainings.filter(t => {
+                const trainingLocation = t.location || (t.training_source === 'kuliga' ? 'kuliga' : null);
+                return trainingLocation === locationFilter.value;
+            });
         }
         
         displayWinterTrainings(filteredTrainings);
@@ -169,6 +268,7 @@ function displayWinterTrainings(trainings) {
                             <th>Тип</th>
                             <th>Название</th>
                             <th>Тренер</th>
+                            <th>Место проведения</th>
                             <th>Участников</th>
                             <th>Уровень</th>
                             <th>Цена (за чел.)</th>
@@ -185,6 +285,34 @@ function displayWinterTrainings(trainings) {
     });
     
     container.innerHTML = html;
+    
+    // Логируем количество созданных кнопок после рендеринга
+    setTimeout(() => {
+        const editButtons = container.querySelectorAll('.edit-winter-btn');
+        const deleteButtons = container.querySelectorAll('.delete-winter-btn');
+        console.log('📊 Рендеринг завершен:', {
+            editButtons: editButtons.length,
+            deleteButtons: deleteButtons.length,
+            totalRows: trainings.length,
+            containerExists: !!container
+        });
+        
+        // Проверяем, что кнопки имеют правильные data-атрибуты
+        if (editButtons.length > 0) {
+            console.log('🔍 Первая кнопка "Редактировать":', {
+                element: editButtons[0],
+                dataset: editButtons[0].dataset,
+                className: editButtons[0].className
+            });
+        }
+        if (deleteButtons.length > 0) {
+            console.log('🔍 Первая кнопка "Удалить":', {
+                element: deleteButtons[0],
+                dataset: deleteButtons[0].dataset,
+                className: deleteButtons[0].className
+            });
+        }
+    }, 100);
 }
 
 // Отрисовать строку тренировки
@@ -217,6 +345,8 @@ function renderWinterTrainingRow(training) {
     
     // Название: для индивидуальных - участники, для групповых - название группы
     let name = '—';
+    const isProgramTraining = training.program_id && training.program_name;
+    
     if (isIndividual) {
         // Для индивидуальных тренировок название - это имя участника
         // Если есть participant_names в данных, используем его
@@ -229,14 +359,26 @@ function renderWinterTrainingRow(training) {
         }
     } else {
         name = training.group_name || 'Групповая тренировка';
+        
+        // Если это тренировка из программы, добавляем метку
+        if (isProgramTraining) {
+            name = `📋 ${training.program_name}`;
+        }
     }
     
     // Участники
     const currentParticipants = training.current_participants || (isIndividual ? 1 : 0);
     const maxParticipants = training.max_participants || (isIndividual ? 1 : 1);
     
-    // Тренер
-    const trainer = training.trainer_name || 'Не назначен';
+    // Тренер: для программных тренировок показываем статус назначения
+    let trainer = training.trainer_name || 'Не назначен';
+    if (isProgramTraining && !training.trainer_name) {
+        trainer = '<span style="color: #e74c3c; font-weight: bold;">⚠️ Не назначен</span>';
+    }
+    
+    // Место проведения
+    const location = training.location || (training.training_source === 'kuliga' ? 'kuliga' : null);
+    const locationDisplay = location === 'vorona' ? 'Воронинские горки' : (location === 'kuliga' ? 'Кулига' : '—');
     
     // Цена за человека
     let price = '—';
@@ -248,12 +390,69 @@ function renderWinterTrainingRow(training) {
         price = `${pricePerPerson.toFixed(2)} ₽`;
     }
     
-    // Статус
-    const status = statusLabels[training.status] || training.status || '—';
-    const statusColor = statusColors[training.status] || '#666';
+    // Статус - используем правильные метки на русском
+    // Расширенные метки статусов для всех типов тренировок
+    const allStatusLabels = {
+        // Обычные тренировки
+        scheduled: 'Запланирована',
+        completed: 'Завершена',
+        cancelled: 'Отменена',
+        // Тренировки Кулиги (бронирования)
+        pending: 'Ожидание',      // Бронирование создано, но платеж не подтвержден
+        confirmed: 'Подтверждено', // Платеж подтвержден
+        refunded: 'Возврат',      // Средства возвращены
+        // Тренировки Кулиги (групповые тренировки)
+        open: 'Открыта',          // Групповая тренировка открыта для записи
+        confirmed: 'Подтверждена' // Групповая тренировка подтверждена
+    };
+    
+    const allStatusColors = {
+        // Обычные тренировки
+        scheduled: '#2196F3',
+        completed: '#4CAF50',
+        cancelled: '#f44336',
+        // Тренировки Кулиги (бронирования)
+        pending: '#FF9800',       // Оранжевый - ожидание оплаты
+        confirmed: '#4CAF50',     // Зеленый - подтверждено
+        refunded: '#9E9E9E',      // Серый - возврат
+        // Тренировки Кулиги (групповые тренировки)
+        open: '#2196F3',          // Синий - открыта для записи
+        confirmed: '#4CAF50'      // Зеленый - подтверждена
+    };
+    
+    // Определяем статус с учетом всех возможных значений
+    const trainingStatus = training.status || '—';
+    let status = allStatusLabels[trainingStatus] || trainingStatus || '—';
+    let statusColor = allStatusColors[trainingStatus] || '#666';
     
     // Уровень подготовки
     const skillLevel = training.skill_level || '—';
+    
+    // Логируем информацию о тренировке для отладки
+    const isKuliga = training.training_source === 'kuliga';
+    console.log('🎨 Рендерим строку тренировки:', {
+        id: training.id,
+        training_source: training.training_source,
+        isKuliga: isKuliga,
+        type: training.winter_training_type || training.is_individual ? 'individual' : 'group'
+    });
+    
+    // На странице "Тренировки на естественном склоне (ЗИМА)" 
+    // разрешаем редактирование и удаление для ВСЕХ тренировок
+    // В функциях editWinterTraining и deleteWinterTraining будем определять тип и использовать правильный API
+    const editButton = `<button class="btn-secondary edit-winter-btn" 
+                 data-training-id="${training.id}" 
+                 data-training-source="${training.training_source || ''}"
+                 data-kuliga-type="${training.kuliga_type || ''}">
+            Редактировать
+        </button>`;
+    
+    const deleteButton = `<button class="btn-danger delete-winter-btn" 
+                 data-training-id="${training.id}" 
+                 data-training-source="${training.training_source || ''}"
+                 data-kuliga-type="${training.kuliga_type || ''}">
+            Удалить
+        </button>`;
     
     return `
         <tr class="training-row">
@@ -261,20 +460,17 @@ function renderWinterTrainingRow(training) {
             <td>${type}</td>
             <td>${name}</td>
             <td>${trainer}</td>
+            <td>${locationDisplay}</td>
             <td>${currentParticipants}/${maxParticipants}</td>
             <td>${skillLevel}</td>
             <td>${price}</td>
             <td><span style="color:${statusColor};font-weight:bold;">${status}</span></td>
             <td class="training-actions">
-                <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id})">
+                <button class="btn-secondary" onclick="viewWinterTrainingDetails(${training.id}, '${training.training_source || ''}', '${training.kuliga_type || ''}')">
                     Подробнее
                 </button>
-                <button class="btn-secondary" onclick="editWinterTraining(${training.id})">
-                    Редактировать
-                </button>
-                <button class="btn-danger" onclick="deleteWinterTraining(${training.id})">
-                    Удалить
-                </button>
+                ${editButton}
+                ${deleteButton}
             </td>
         </tr>
     `;
@@ -282,13 +478,55 @@ function renderWinterTrainingRow(training) {
 
 // Открыть модальное окно создания зимней тренировки
 function openCreateWinterTraining() {
-    window.location.href = 'winter-training.html';
+    // Открываем модальное окно создания групповой тренировки Кулиги
+    if (typeof openKuligaGroupTrainingModal === 'function') {
+        openKuligaGroupTrainingModal();
+    } else {
+        // Если функция еще не загружена, переходим на старую страницу
+        window.location.href = 'winter-training.html';
+    }
 }
 
 // Просмотр деталей зимней тренировки
-async function viewWinterTrainingDetails(id) {
+async function viewWinterTrainingDetails(id, trainingSource, kuligaType) {
     try {
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        // Если это тренировка Кулиги, используем другой API
+        if (trainingSource === 'kuliga') {
+            if (typeof viewKuligaTrainingDetails === 'function') {
+                viewKuligaTrainingDetails(id, kuligaType || 'group');
+                return;
+            } else {
+                // Fallback: используем API Кулиги напрямую
+                const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'group'}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || 'Ошибка получения данных');
+                }
+                
+                // Используем функцию из admin.js для отображения
+                if (typeof window.viewKuligaTrainingDetails === 'function') {
+                    window.viewKuligaTrainingDetails(id, kuligaType || 'group');
+                    return;
+                }
+                
+                // Если функция не найдена, показываем базовую информацию
+                alert('Детали тренировки Кулиги загружены, но функция отображения не найдена');
+                return;
+            }
+        }
+        
+        // Для обычных тренировок используем стандартный API
         const response = await fetch(`/api/winter-trainings/${id}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -427,11 +665,39 @@ async function viewWinterTrainingDetails(id) {
 }
 
 // Редактирование зимней тренировки
-async function editWinterTraining(id) {
+async function editWinterTraining(id, trainingSource, kuligaType) {
+    console.log('📝 editWinterTraining вызвана:', { id, trainingSource, kuligaType, typeofId: typeof id });
     try {
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
         
-        // Загружаем данные тренировки
+        // Для тренировок Кулиги используем API Кулиги
+        if (trainingSource === 'kuliga') {
+            console.log('🔍 Тренировка Кулиги, используем API Кулиги');
+            const kuligaResponse = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'individual'}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!kuligaResponse.ok) {
+                throw new Error('Не удалось загрузить данные тренировки Кулиги');
+            }
+            
+            const kuligaResult = await kuligaResponse.json();
+            if (!kuligaResult.success) {
+                throw new Error(kuligaResult.error || 'Ошибка получения данных');
+            }
+            
+            const training = kuligaResult.data;
+            console.log('📊 Данные тренировки Кулиги загружены:', training);
+            
+            // Показываем модальное окно редактирования для тренировок Кулиги
+            showKuligaTrainingEditModal(training, kuligaType || 'individual', id);
+            return;
+        }
+        
+        // Для обычных тренировок используем стандартный API
+        console.log('🔍 Обычная тренировка, используем API winter-trainings');
         const trainingResponse = await fetch(`/api/winter-trainings/${id}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -687,8 +953,448 @@ async function editWinterTraining(id) {
     }
 }
 
+// Показ модального окна редактирования тренировки Кулиги
+function showKuligaTrainingEditModal(training, type, id) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    
+    let modalContent = `
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+            <h2>Редактирование тренировки Кулиги</h2>
+            <form id="kuliga-edit-form">
+    `;
+    
+    if (type === 'individual') {
+        // Форма для индивидуальной тренировки
+        // Исправляем предзаполнение даты (учитываем часовой пояс)
+        let date = '';
+        if (training.date) {
+            // Если дата в формате строки, преобразуем в локальную дату
+            const dateObj = new Date(training.date);
+            // Используем локальное время для форматирования
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            date = `${year}-${month}-${day}`;
+        }
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
+        const participantsNames = training.participants_names && Array.isArray(training.participants_names) 
+            ? training.participants_names.join(', ') 
+            : training.participants_names || '';
+        const currentSportType = training.sport_type || 'ski';
+        
+        modalContent += `
+            <div class="form-group">
+                <label>Дата:</label>
+                <input type="date" name="date" value="${date}" required>
+            </div>
+            <div class="form-group">
+                <label>Время начала:</label>
+                <input type="time" name="start_time" value="${startTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Время окончания:</label>
+                <input type="time" name="end_time" value="${endTime}" required>
+            </div>
+            <div class="form-group">
+                <label>Вид спорта:</label>
+                <select name="sport_type" id="sport-type-select" required>
+                    <option value="ski" ${currentSportType === 'ski' ? 'selected' : ''}>Горные лыжи</option>
+                    <option value="snowboard" ${currentSportType === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Инструктор:</label>
+                <select name="instructor_id" id="instructor-select" required>
+                    <option value="">Загрузка...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Участники (через запятую):</label>
+                <input type="text" name="participants_names" value="${participantsNames}" placeholder="Иван 10, Мария 8">
+            </div>
+        `;
+    } else {
+        // Форма для групповой тренировки
+        // Исправляем предзаполнение даты (учитываем часовой пояс)
+        let date = '';
+        if (training.date) {
+            // Если дата в формате строки, преобразуем в локальную дату
+            const dateObj = new Date(training.date);
+            // Используем локальное время для форматирования
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            date = `${year}-${month}-${day}`;
+        }
+        const startTime = training.start_time ? String(training.start_time).substring(0, 5) : '';
+        const endTime = training.end_time ? String(training.end_time).substring(0, 5) : '';
+        
+        // Проверяем, является ли это тренировкой из программы
+        const isProgramTraining = training.program_id && training.program_name;
+        const currentInstructorId = training.instructor_id || '';
+        
+        modalContent += `
+            ${isProgramTraining ? `
+            <div class="form-group" style="background: #e8f5e9; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                <strong>📋 Программа:</strong> ${training.program_name}<br>
+                <small style="color: #666;">Эта тренировка создана из программы. Инструктор будет назначен администратором.</small>
+            </div>
+            ` : ''}
+            <div class="form-group">
+                <label>Дата:</label>
+                <input type="date" name="date" value="${date}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Дата задана программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Время начала:</label>
+                <input type="time" name="start_time" value="${startTime}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Время задано программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Время окончания:</label>
+                <input type="time" name="end_time" value="${endTime}" ${isProgramTraining ? 'readonly' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Время задано программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Вид спорта:</label>
+                <select name="sport_type" ${isProgramTraining ? 'disabled' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                    <option value="ski" ${training.sport_type === 'ski' ? 'selected' : ''}>Горные лыжи</option>
+                    <option value="snowboard" ${training.sport_type === 'snowboard' ? 'selected' : ''}>Сноуборд</option>
+                </select>
+                ${isProgramTraining ? '<small style="color: #666;">Вид спорта задан программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Инструктор: ${isProgramTraining ? '<span style="color: #e74c3c;">*</span>' : ''}</label>
+                <select name="instructor_id" id="instructor-select-group" ${isProgramTraining ? 'required' : ''}>
+                    <option value="">Загрузка...</option>
+                </select>
+                ${isProgramTraining ? '<small style="color: #666;">Необходимо назначить инструктора для программы</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Уровень (1-10):</label>
+                <select name="level" ${isProgramTraining ? 'disabled' : 'required'} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                    ${Array.from({ length: 10 }, (_, i) => {
+                        const levelNum = i + 1;
+                        // Преобразуем старое значение уровня (beginner/intermediate/advanced) в число
+                        let currentLevel = training.level;
+                        if (currentLevel === 'beginner') currentLevel = '1';
+                        else if (currentLevel === 'intermediate') currentLevel = '2';
+                        else if (currentLevel === 'advanced') currentLevel = '3';
+                        
+                        const isSelected = currentLevel == levelNum || (!training.level && levelNum === 1);
+                        return `<option value="${levelNum}" ${isSelected ? 'selected' : ''}>${levelNum} уровень</option>`;
+                    }).join('')}
+                </select>
+                ${isProgramTraining ? '<small style="color: #666;">Уровень задан программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Описание:</label>
+                <textarea name="description" rows="3" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">${training.description || ''}</textarea>
+                ${isProgramTraining ? '<small style="color: #666;">Описание задано программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Цена за человека:</label>
+                <input type="number" name="price_per_person" value="${training.price_per_person || ''}" step="0.01" min="0" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Цена задана программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Минимум участников:</label>
+                <input type="number" name="min_participants" value="${training.min_participants || ''}" min="1" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Минимум задан программой</small>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Максимум участников:</label>
+                <input type="number" name="max_participants" value="${training.max_participants || ''}" min="1" ${isProgramTraining ? 'readonly' : ''} style="${isProgramTraining ? 'background: #f5f5f5;' : ''}">
+                ${isProgramTraining ? '<small style="color: #666;">Максимум задан программой</small>' : ''}
+            </div>
+        `;
+    }
+    
+    modalContent += `
+                <div class="modal-actions">
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    modal.innerHTML = modalContent;
+    document.body.appendChild(modal);
+    
+    // Загрузка инструкторов для групповой тренировки (если это тренировка из программы)
+    if (type === 'group' && training.program_id) {
+        const instructorSelect = modal.querySelector('#instructor-select-group');
+        const currentInstructorId = training.instructor_id || '';
+        const currentSportType = training.sport_type || 'ski';
+        const trainingLocation = training.location || 'kuliga';
+        
+        // Функция загрузки инструкторов для программы
+        const loadInstructorsForProgram = async (sportType, location, selectedInstructorId = null) => {
+            instructorSelect.innerHTML = '<option value="">Загрузка...</option>';
+            try {
+                const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+                
+                // Загружаем всех активных инструкторов в нужном месте и с нужным видом спорта
+                const response = await fetch(`/api/kuliga/admin/instructors?location=${location}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    if (result.success && result.data && result.data.length > 0) {
+                        // Фильтруем по виду спорта
+                        const filteredInstructors = result.data.filter(instructor => 
+                            (instructor.sport_type === sportType || instructor.sport_type === 'both') &&
+                            instructor.is_active === true &&
+                            instructor.location === location
+                        );
+                        
+                        instructorSelect.innerHTML = '<option value="">Выберите инструктора</option>';
+                        filteredInstructors.forEach(instructor => {
+                            const selected = instructor.id == selectedInstructorId ? 'selected' : '';
+                            const sportLabel = instructor.sport_type === 'ski' ? 'Лыжи' : instructor.sport_type === 'snowboard' ? 'Сноуборд' : 'Оба';
+                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name} (${sportLabel})</option>`;
+                        });
+                    } else {
+                        instructorSelect.innerHTML = '<option value="">Нет доступных инструкторов</option>';
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('❌ Ошибка загрузки инструкторов:', errorData);
+                    instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                }
+            } catch (error) {
+                console.error('❌ Ошибка загрузки инструкторов:', error);
+                instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        };
+        
+        // Загружаем инструкторов при открытии модального окна
+        loadInstructorsForProgram(currentSportType, trainingLocation, currentInstructorId);
+    }
+    
+    // Загрузка инструкторов для индивидуальной тренировки
+    if (type === 'individual') {
+        const sportTypeSelect = modal.querySelector('#sport-type-select');
+        const instructorSelect = modal.querySelector('#instructor-select');
+        const currentInstructorId = training.instructor_id || '';
+        let currentSportType = training.sport_type || 'ski';
+        
+        // Функция загрузки инструкторов
+        const loadInstructors = async (sportType, selectedInstructorId = null) => {
+            instructorSelect.innerHTML = '<option value="">Загрузка...</option>';
+            try {
+                const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+                // Получаем дату из input поля или используем текущую дату тренировки
+                const dateInput = modal.querySelector('input[name="date"]');
+                const trainingDate = dateInput ? dateInput.value : (training.date ? new Date(training.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+                
+                console.log('🔍 Загрузка инструкторов:', { date: trainingDate, sport_type: sportType });
+                
+                const response = await fetch(`/api/kuliga/admin/instructors?date=${trainingDate}&sport_type=${sportType}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('📊 Результат загрузки инструкторов:', result);
+                    
+                    if (result.success && result.data && result.data.length > 0) {
+                        // Дополнительная клиентская фильтрация на всякий случай
+                        const filteredInstructors = result.data.filter(instructor => 
+                            instructor.sport_type === sportType || instructor.sport_type === 'both'
+                        );
+                        
+                        console.log('✅ Отфильтрованные инструкторы:', filteredInstructors);
+                        
+                        instructorSelect.innerHTML = '<option value="">Выберите инструктора</option>';
+                        filteredInstructors.forEach(instructor => {
+                            const selected = instructor.id == selectedInstructorId ? 'selected' : '';
+                            instructorSelect.innerHTML += `<option value="${instructor.id}" ${selected}>${instructor.full_name} (${instructor.sport_type === 'ski' ? 'Лыжи' : instructor.sport_type === 'snowboard' ? 'Сноуборд' : 'Оба'})</option>`;
+                        });
+                    } else {
+                        instructorSelect.innerHTML = '<option value="">Нет доступных инструкторов</option>';
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('❌ Ошибка загрузки инструкторов:', errorData);
+                    instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                }
+            } catch (error) {
+                console.error('❌ Ошибка загрузки инструкторов:', error);
+                instructorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        };
+        
+        // Загружаем инструкторов при открытии модального окна
+        loadInstructors(currentSportType, currentInstructorId);
+        
+        // Обновляем список инструкторов при изменении вида спорта
+        if (sportTypeSelect) {
+            sportTypeSelect.addEventListener('change', (e) => {
+                currentSportType = e.target.value;
+                // Сбрасываем выбранного инструктора при смене вида спорта
+                loadInstructors(currentSportType, null);
+            });
+        }
+        
+        // Обновляем список инструкторов при изменении даты (на случай, если у инструктора нет слотов на новую дату)
+        const dateInput = modal.querySelector('input[name="date"]');
+        if (dateInput) {
+            dateInput.addEventListener('change', () => {
+                // Перезагружаем список инструкторов для новой даты
+                loadInstructors(currentSportType, instructorSelect.value || null);
+            });
+        }
+    }
+    
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+    
+    // Обработка отправки формы
+    const form = modal.querySelector('#kuliga-edit-form');
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+        const data = {};
+        
+        // Для тренировок из программ: передаем только instructor_id, остальные поля readonly
+        const isProgramTraining = type === 'group' && training.program_id;
+        
+        for (const [key, value] of formData.entries()) {
+            // Для программных тренировок пропускаем readonly поля
+            if (isProgramTraining && ['date', 'start_time', 'end_time', 'sport_type', 'level', 'description', 'price_per_person', 'min_participants', 'max_participants'].includes(key)) {
+                continue;
+            }
+            
+            if (value) {
+                if (key === 'participants_names') {
+                    // Преобразуем строку участников в массив
+                    data[key] = value.split(',').map(s => s.trim()).filter(s => s);
+                } else if (['min_participants', 'max_participants', 'price_per_person', 'instructor_id'].includes(key)) {
+                    // Преобразуем в число
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue)) {
+                        data[key] = numValue;
+                    } else if (key === 'instructor_id' && (type === 'individual' || isProgramTraining)) {
+                        // Для индивидуальных тренировок и программных тренировок инструктор обязателен
+                        alert('Пожалуйста, выберите инструктора');
+                        return;
+                    }
+                } else if (key === 'level') {
+                    // Уровень храним как строку (от 1 до 10)
+                    data[key] = String(value);
+                } else {
+                    data[key] = value;
+                }
+            }
+        }
+        
+        // Для индивидуальных тренировок и программных тренировок проверяем наличие инструктора
+        if ((type === 'individual' || isProgramTraining) && !data.instructor_id) {
+            alert('Пожалуйста, выберите инструктора');
+            return;
+        }
+        
+        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        try {
+            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${type}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при обновлении тренировки');
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('✅ Тренировка успешно обновлена!');
+                modal.remove();
+                loadWinterTrainings(); // Перезагружаем список
+            } else {
+                throw new Error(result.error || 'Ошибка при обновлении тренировки');
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении тренировки Кулиги:', error);
+            alert('❌ Ошибка: ' + error.message);
+        }
+    });
+}
+
 // Удаление зимней тренировки
-async function deleteWinterTraining(id) {
+async function deleteWinterTraining(id, trainingSource, kuligaType) {
+    console.log('🗑️ deleteWinterTraining вызвана:', { id, trainingSource, kuligaType, typeofId: typeof id });
+    
+    // Для тренировок Кулиги
+    if (trainingSource === 'kuliga') {
+        if (!confirm('Вы уверены, что хотите удалить эту тренировку Кулиги?\n\nВнимание: это действие нельзя отменить!')) {
+            return;
+        }
+        
+        console.log('🔍 Удаление тренировки Кулиги через API Кулиги');
+        // Получаем токен из cookie (для админа)
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        };
+        const token = getCookie('adminToken') || localStorage.getItem('token') || localStorage.getItem('authToken');
+        
+        console.log('🔑 Токен для удаления:', token ? 'есть' : 'НЕТ');
+        
+        try {
+            const response = await fetch(`/api/kuliga/admin/training/${id}?type=${kuligaType || 'group'}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при удалении тренировки');
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert(`✅ Тренировка успешно отменена!\n\n💰 Возвращено средств: ${Number(result.refund || 0).toFixed(2)} руб.`);
+                loadWinterTrainings(); // Перезагружаем список
+            } else {
+                throw new Error(result.error || 'Ошибка при удалении тренировки');
+            }
+        } catch (error) {
+            console.error('Ошибка при удалении тренировки Кулиги:', error);
+            alert('❌ Ошибка: ' + error.message);
+        }
+        return;
+    }
+    
     if (!confirm('Вы уверены, что хотите удалить эту тренировку?')) {
         return;
     }

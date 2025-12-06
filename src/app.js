@@ -35,15 +35,35 @@ const winterScheduleRouter = require('./routes/winter-schedule');
 const kuligaPublicRouter = require('./routes/kuliga-public');
 const kuligaBookingRouter = require('./routes/kuliga-booking');
 const kuligaPaymentRouter = require('./routes/kuliga-payment');
+const kuligaAdminRouter = require('./routes/kuliga-admin');
+const kuligaInstructorAuthRouter = require('./routes/kuliga-instructor-auth');
+const kuligaInstructorScheduleRouter = require('./routes/kuliga-instructor-schedule');
+const kuligaInstructorFinancesRouter = require('./routes/kuliga-instructor-finances');
+const kuligaAdminFinancesRouter = require('./routes/kuliga-admin-finances');
+const analyticsRouter = require('./routes/analytics');
 const { verifyToken, verifyAuth } = require('./middleware/auth');
 const { verifyTrainerAuth } = require('./middleware/trainerAuth');
+const { verifyKuligaInstructorAuth } = require('./middleware/kuligaInstructorAuth');
 const cron = require('node-cron');
 const fs = require('fs');
 const EmailQueueProcessor = require('./services/emailQueueProcessor');
 const scheduler = require('./services/scheduler');
 
-// Импортируем бота
-require('./bot/client-bot');
+// Импортируем бота клиентов
+try {
+    require('./bot/client-bot');
+    console.log('✅ Клиентский бот запущен');
+} catch (error) {
+    console.error('❌ Ошибка при запуске клиентского бота:', error.message);
+}
+
+// Импортируем бота инструкторов Кулиги (если токен настроен)
+if (process.env.KULIGA_INSTRUKTOR_BOT) {
+    require('./bot/kuliga-instructor-bot');
+    console.log('✅ Бот инструкторов Кулиги запущен');
+} else {
+    console.log('⚠️ Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+}
 
 // Запускаем обработчик очереди email
 const emailQueueProcessor = new EmailQueueProcessor();
@@ -77,9 +97,10 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Middleware для проверки аутентификации админов и тренеров
+// Middleware для проверки аутентификации админов, тренеров и инструкторов Кулиги
 app.use(verifyAuth);
 app.use(verifyTrainerAuth);
+app.use(verifyKuligaInstructorAuth);
 
 // Главная страница с EJS (только для корня)
 app.get('/', (req, res) => {
@@ -167,6 +188,8 @@ app.get('/privacy-policy', (req, res) => {
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
         googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
         pageTitle: 'Согласие на обработку персональных данных - Горностайл72'
     });
 });
@@ -412,6 +435,12 @@ app.use('/api/winter-trainings', verifyToken, winterTrainingsRouter);
 app.use('/api/winter-schedule', verifyToken, winterScheduleRouter);
 app.use('/api/kuliga', kuligaBookingRouter);
 app.use('/api/kuliga/payment', kuligaPaymentRouter);
+app.use('/api/kuliga/admin', kuligaAdminFinancesRouter);
+app.use('/api/kuliga/admin', kuligaAdminRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorAuthRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorScheduleRouter);
+app.use('/api/kuliga/instructor', kuligaInstructorFinancesRouter);
+app.use('/api/analytics', verifyToken, analyticsRouter);
 app.use(kuligaPublicRouter);
 
 // Публичный API для получения активных тренеров (для главной страницы)
