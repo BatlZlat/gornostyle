@@ -177,7 +177,7 @@
                         <% if (ogrnip) { %>
                         <li>ОГРНИП: <%= ogrnip %></li>
                         <% } %>
-                        <li>Юридический адрес: Тюменская обл., Тюменский р-он, д. Якуши, ул. Гоголя, 15</li>
+                        <li>Юридический адрес: 625537, Тюменская обл., Тюменский р-н, д. Якуши, ул. Гоголя, 15</li>
                         <li>Место оказания услуг: База отдыха «Кулига-Клуб», Воронинские горки</li>
                         <li>Телефон: <%= adminPhone %></li>
                         <li>Email: <%= contactEmail %></li>
@@ -275,6 +275,10 @@
                     <h3>Контактная информация</h3>
                     <p><strong>ИП Тебякин Данила Юрьевич</strong></p>
                     <ul>
+                        <li><strong>ИНН:</strong> <%= inn || '740416017714' %></li>
+                        <% if (ogrnip) { %>
+                        <li><strong>ОГРНИП:</strong> <%= ogrnip %></li>
+                        <% } %>
                         <li><strong>Телефон:</strong> <%= adminPhone %></li>
                         <li><strong>Email:</strong> <%= contactEmail %></li>
                         <li><strong>Telegram:</strong> <%= adminTelegramUsername ? (adminTelegramUsername.startsWith('@') ? adminTelegramUsername : '@' + adminTelegramUsername) : 'Уточняйте по телефону' %></li>

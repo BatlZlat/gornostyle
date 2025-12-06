@@ -89,6 +89,8 @@ router.get('/payment-terms', (req, res) => {
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
         googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
     });
 });
 
@@ -102,6 +104,8 @@ router.get('/return-policy', (req, res) => {
         vkGroup: process.env.VK_GROUP,
         yandexMetrikaId: process.env.YANDEX_METRIKA_ID,
         googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID,
+        inn: process.env.INN,
+        ogrnip: process.env.OGRNIP,
     });
 });
 
