@@ -274,7 +274,7 @@
         const startTimeParam = params.get('startTime') || params.get('time'); // Поддерживаем оба варианта
         const locationParam = params.get('location');
         const bookingTypeParam = params.get('bookingType'); // individual или group
-        const priceTypeParam = params.get('priceType'); // individual или group
+        const priceTypeParam = params.get('priceType') || params.get('type'); // individual или group (поддерживаем оба параметра для совместимости)
 
         // Если перешли по клику на слот - предзаполняем данные
         if (slotIdParam && dateParam) {
