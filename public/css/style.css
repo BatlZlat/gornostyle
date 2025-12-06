@@ -1096,6 +1096,38 @@ body {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.1); }
 }
+
+/* Стили для кнопки "Обучение на Воронинских горках и в Кулиге" */
+.hero-split__btn-natural {
+    font-size: 1.1rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #1e90ff, #003d82);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 1.1rem 2.5rem;
+    box-shadow: 0 4px 16px rgba(30, 144, 255, 0.3);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-split__btn-natural:hover {
+    background: linear-gradient(135deg, #003d82, #002a5c);
+    box-shadow: 0 8px 24px rgba(30, 144, 255, 0.4);
+    transform: translateY(-2px);
+}
+
+.hero-split__btn-natural:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 16px rgba(30, 144, 255, 0.3);
+}
 .hero-split__right {
     background: #fff;
     position: relative;
@@ -1145,6 +1177,7 @@ body {
     .hero-split__title { font-size: 1.5rem; }
     .hero-split__desc { font-size: 1rem; }
     .hero-split__btn { font-size: 1rem; padding: 0.8rem 1.2rem; }
+    .hero-split__btn-natural { font-size: 1rem; padding: 0.8rem 1.2rem; }
     .hero-split__btn-gift { font-size: 1rem; padding: 0.8rem 1.2rem; }
     .hero-split__photo-placeholder { font-size: 1rem; }
 }

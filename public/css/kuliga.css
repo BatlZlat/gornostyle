@@ -1102,8 +1102,9 @@
         margin-top: 16px;
         padding-top: 24px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
-        flex-direction: row;
-        justify-content: space-between;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
     }
 }
 
@@ -1513,8 +1514,22 @@
     }
 
     .kuliga-booking {
-        grid-template-columns: 1.1fr 0.9fr;
-        align-items: center;
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+    }
+    
+    .kuliga-booking__content {
+        max-width: 720px;
+        margin: 0 auto;
+    }
+    
+    .kuliga-booking__list {
+        justify-items: center;
+    }
+    
+    .kuliga-booking__list li {
+        justify-content: center;
     }
 
     /* Для компактной сетки в десктопной версии также оставляем одну колонку */
