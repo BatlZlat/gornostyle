@@ -507,7 +507,7 @@
                                                             <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
                                                         </span>
                                                     `;
-                                                }).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет слотов</span>'}
+                                                }).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет расписания</span>'}
                                             </div>
                                         </div>
                                     `;
@@ -533,7 +533,9 @@
             initSlotClicks();
             
             // На мобильной версии прокручиваем к первому дню с расписанием
-            if (window.innerWidth <= 767) {
+            // НО только если в URL есть якорь (например, #instructors), иначе прокрутка не нужна
+            // Важно: используем только горизонтальную прокрутку контейнера, без прокрутки всей страницы
+            if (window.innerWidth <= 767 && window.location.hash && window.location.hash !== '#') {
                 setTimeout(() => {
                     document.querySelectorAll('.kuliga-schedule').forEach((scheduleEl) => {
                         const daysContainer = scheduleEl.querySelector('.kuliga-schedule__days');
@@ -544,28 +546,21 @@
                         if (days[startIndex]) {
                             const targetDay = days[startIndex];
                             
-                            // Используем scrollIntoView с правильными параметрами
-                            targetDay.scrollIntoView({
-                                behavior: 'auto',
-                                block: 'nearest',
-                                inline: 'start'
-                            });
-                            
-                            // Дополнительная корректировка через requestAnimationFrame
+                            // Только горизонтальная прокрутка контейнера, БЕЗ прокрутки всей страницы
                             requestAnimationFrame(() => {
-                                // Проверяем, полностью ли виден день
-                                const containerRect = daysContainer.getBoundingClientRect();
-                                const dayRect = targetDay.getBoundingClientRect();
-                                
-                                // Если день обрезан слева, корректируем
-                                if (dayRect.left < containerRect.left) {
-                                    const scrollLeft = targetDay.offsetLeft;
-                                    daysContainer.scrollLeft = scrollLeft;
-                                }
+                                const scrollLeft = targetDay.offsetLeft;
+                                daysContainer.scrollLeft = scrollLeft;
                             });
                         }
                     });
                 }, 300);
+            } else if (window.innerWidth <= 767) {
+                // Если нет якоря, гарантируем, что страница открыта в начале
+                setTimeout(() => {
+                    if (!window.location.hash || window.location.hash === '#') {
+                        window.scrollTo(0, 0);
+                    }
+                }, 350);
             }
         } catch (error) {
             console.error('Не удалось загрузить инструкторов:', error);

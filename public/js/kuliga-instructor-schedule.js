@@ -521,7 +521,7 @@ async function loadSlotsForDay() {
         slotsSection.style.display = 'block';
 
         if (slots.length === 0) {
-            slotsContainer.innerHTML = '<div class="alert alert-info">Нет слотов на эту дату</div>';
+            slotsContainer.innerHTML = '<div class="alert alert-info">Нет расписания на эту дату</div>';
             return;
         }
 
