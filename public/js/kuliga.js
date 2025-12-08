@@ -87,6 +87,25 @@
         return `${firstFormatted} – ${lastFormatted} ${year}`;
     };
 
+    // Функция для правильного склонения слова "участник"
+    const getParticipantsLabel = (count) => {
+        if (count === 1) {
+            return '1 участник';
+        }
+        // Для чисел, оканчивающихся на 11, 12, 13, 14 используем "участников"
+        const lastDigit = count % 10;
+        const lastTwoDigits = count % 100;
+        if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+            return `${count} участников`;
+        }
+        // Для чисел, оканчивающихся на 2, 3, 4 используем "участника"
+        if (lastDigit >= 2 && lastDigit <= 4) {
+            return `${count} участника`;
+        }
+        // Для остальных (5, 6, 7, 8, 9, 0) используем "участников"
+        return `${count} участников`;
+    };
+
     const renderPriceList = async () => {
         const container = document.getElementById('kuligaPriceList');
         if (!container) return;
@@ -132,7 +151,7 @@
                 }
 
                 const description = sanitizeDescription(price.description || '');
-                const participantsLabel = participants === 1 ? '1 участник' : `${participants} участников`;
+                const participantsLabel = getParticipantsLabel(participants);
 
                 card.innerHTML = `
                     <div class="kuliga-price-card__type">

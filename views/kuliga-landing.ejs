@@ -177,6 +177,14 @@
             googleAnalyticsId: '<%= googleAnalyticsId || '' %>'
         };
     </script>
+    <script>
+        // Прокручиваем страницу в начало при загрузке, если в URL нет якоря
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!window.location.hash || window.location.hash === '#') {
+                window.scrollTo(0, 0);
+            }
+        });
+    </script>
     <script src="/js/location-mapper.js"></script>
     <script src="/js/kuliga.js" defer></script>
     <%- include('partials/analytics'); %>
