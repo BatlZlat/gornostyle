@@ -179,10 +179,24 @@
     </script>
     <script>
         // Прокручиваем страницу в начало при загрузке, если в URL нет якоря
-        document.addEventListener('DOMContentLoaded', function() {
+        // Используем несколько попыток, чтобы перекрыть возможные другие скрипты прокрутки
+        function scrollToTop() {
             if (!window.location.hash || window.location.hash === '#') {
                 window.scrollTo(0, 0);
             }
+        }
+        
+        // Выполняем сразу при загрузке
+        document.addEventListener('DOMContentLoaded', scrollToTop);
+        
+        // Повторяем после небольшой задержки (на случай, если другие скрипты прокручивают позже)
+        setTimeout(scrollToTop, 100);
+        setTimeout(scrollToTop, 500);
+        setTimeout(scrollToTop, 1000);
+        
+        // Также при полной загрузке страницы
+        window.addEventListener('load', function() {
+            setTimeout(scrollToTop, 100);
         });
     </script>
     <script src="/js/location-mapper.js"></script>
