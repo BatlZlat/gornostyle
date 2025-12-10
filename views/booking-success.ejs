@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оплата успешно завершена | Горностайл72</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f5f7fb;
+      color: #1f2d3d;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      max-width: 540px;
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(31,45,61,0.12);
+      padding: 28px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      line-height: 1.3;
+      color: #1f2d3d;
+    }
+    p {
+      margin: 0 0 16px;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #4a5568;
+    }
+    .actions {
+      margin: 20px auto 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      max-width: 320px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+    }
+    .bot-btn {
+      margin: 12px auto 16px;
+      max-width: 320px;
+      width: 100%;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(37, 99, 235, 0.2);
+    }
+    .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #1f2d3d;
+    }
+    .btn-secondary:hover { background: #cbd5e1; transform: translateY(-1px); }
+    .info-box {
+      margin: 12px auto 0;
+      padding: 12px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      color: #334155;
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 480px;
+    }
+    @media (max-width: 520px) {
+      body { padding: 16px; }
+      .card { padding: 22px; }
+      h1 { font-size: 21px; }
+      p { font-size: 15px; }
+      .actions { flex-direction: column; max-width: 100%; }
+      .btn { width: 100%; }
+      .bot-btn { width: 100%; font-size: 14px; padding: 10px 12px; max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <% if (typeof botUsername === 'string' && botUsername.trim().length > 0) { 
+      const cleanBot = botUsername.replace(/^@/, '');
+    %>
+      <p><strong>Настоятельно рекомендуем подключить Telegram-бота</strong><br>
+        чтобы оперативно получать напоминания и любые изменения по тренировке
+        (включая отмены из-за погоды или отключения электричества).
+      </p>
+      <a class="btn btn-primary bot-btn" href="https://t.me/<%= cleanBot %>" target="_blank" rel="noopener noreferrer">
+        Подключить бота в Telegram
+      </a>
+    <% } else { %>
+      <p><strong>Подключите Telegram-бота</strong> для оперативных уведомлений (переносы, отмены, напоминания).</p>
+    <% } %>
+    <h1 style="margin-top:20px;">Оплата прошла успешно 🎉</h1>
+    <p>Бронирование подтверждено.</p>
+    <p>
+      Если бот не подключен, следите за обновлениями на почте.
+      Если письмо не пришло — проверьте папку «Спам» или свяжитесь с нами.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking">Вернуться к бронированию</a>
+      <a class="btn btn-secondary" href="/instruktor-po-gornym-lyzham-snoubordy-tyumen">На главную</a>
+    </div>
+  </div>
+</body>
+</html>
+

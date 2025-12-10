@@ -70,7 +70,8 @@ class NotificationService {
                         WHEN sp.is_child = true THEN ch.full_name
                         ELSE c.full_name
                     END as display_name,
-                    'simulator' as slope_type
+                    'simulator' as slope_type,
+                    NULL as location
                 FROM training_sessions ts
                 JOIN session_participants sp ON ts.id = sp.session_id
                 JOIN clients c ON sp.client_id = c.id
@@ -120,7 +121,8 @@ class NotificationService {
                         WHEN its.child_id IS NOT NULL THEN ch.full_name
                         ELSE c.full_name
                     END as display_name,
-                    'simulator' as slope_type
+                    'simulator' as slope_type,
+                    NULL as location
                 FROM individual_training_sessions its
                 JOIN clients c ON its.client_id = c.id
                 LEFT JOIN children ch ON its.child_id = ch.id
@@ -166,7 +168,8 @@ class NotificationService {
                         WHEN sp.is_child = true THEN ch.full_name
                         ELSE c.full_name
                     END as display_name,
-                    'natural_slope' as slope_type
+                    'natural_slope' as slope_type,
+                    NULL as location
                 FROM training_sessions ts
                 JOIN session_participants sp ON ts.id = sp.session_id
                 JOIN clients c ON sp.client_id = c.id
@@ -217,7 +220,8 @@ class NotificationService {
                         WHEN sp.is_child = true THEN ch.full_name
                         ELSE c.full_name
                     END as display_name,
-                    'natural_slope' as slope_type
+                    'natural_slope' as slope_type,
+                    NULL as location
                 FROM training_sessions ts
                 JOIN session_participants sp ON ts.id = sp.session_id
                 JOIN clients c ON sp.client_id = c.id
@@ -238,7 +242,7 @@ class NotificationService {
                 SELECT 
                     kb.id as training_id,
                     'individual' as training_type,
-                    kb.date,
+                    kb.date::date as date,
                     kb.start_time,
                     kb.end_time,
                     EXTRACT(EPOCH FROM (kb.end_time - kb.start_time)) / 60 as duration,
@@ -288,7 +292,7 @@ class NotificationService {
                 SELECT 
                     kb.id as training_id,
                     'group' as training_type,
-                    kb.date,
+                    kb.date::date as date,
                     kb.start_time,
                     kb.end_time,
                     EXTRACT(EPOCH FROM (kb.end_time - kb.start_time)) / 60 as duration,
@@ -477,7 +481,10 @@ class NotificationService {
         });
 
         message += '━━━━━━━━━━━━━━━━━━━━\n\n';
-        message += 'Ждем вас! Приезжайте на тренировку за 10-15 минут до начала. ';
+        message += 'Ждем вас! Приезжайте на тренировку за 10-15 минут до начала.\n\n';
+        message += '💧 <b>Важно:</b> На склон подается вода для лучшего скольжения. ';
+        message += 'При падениях есть вероятность немного намочить одежду. ';
+        message += '<b>Настоятельно рекомендуем переодеваться</b> после тренировки.\n\n';
         message += 'Не забудьте взять с собой воду и одежду, желательно закрывающую колени и локти 😊';
 
         return message;

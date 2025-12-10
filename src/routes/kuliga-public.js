@@ -64,6 +64,20 @@ router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', (req, res) =
     });
 });
 
+// Страницы после оплаты
+router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/success', (req, res) => {
+    res.render('booking-success', {
+        botUsername: process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || ''
+    });
+});
+
+router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/fail', (req, res) => {
+    res.render('booking-fail', {
+        adminPhone: process.env.ADMIN_PHONE || '',
+        contactEmail: process.env.CONTACT_EMAIL || ''
+    });
+});
+
 router.get('/user-agreement', (req, res) => {
     res.render('user-agreement', {
         pageTitle: 'Пользовательское соглашение - Горностайл72',
