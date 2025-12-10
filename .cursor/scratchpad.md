@@ -1197,10 +1197,29 @@ _Будут добавляться по мере реализации_
 - [ ] Задача D: Тесты вебхуков (валид/невалид)
 
 ## Current Status / Progress Tracking (Executor)
-- TODO: заполнит исполнитель.
+- **Режим:** ⚙️ **EXECUTOR** - Исправление ошибок UNION в напоминаниях о тренировках ✅ **ЗАВЕРШЕНО**
+- **Проблема 1:** Ошибка "each UNION query must have the same number of columns"
+  - **Причина:** В запросах для тренировок Кулиги отсутствовала колонка `participant_birth_date`
+  - **Решение:** Добавлена колонка `NULL as participant_birth_date` в оба запроса Кулиги
+- **Проблема 2:** Ошибка "UNION types integer and character varying cannot be matched"
+  - **Причина:** Несовместимые типы данных в колонках `duration` и `skill_level`
+  - **Решение:** 
+    - `duration` в Кулиге приведен к INTEGER: `(EXTRACT(...) / 60)::INTEGER`
+    - `skill_level` везде приведен к TEXT: `ts.skill_level::TEXT` и `kgt.level::TEXT`
+    - `group_name` в групповых Кулиги приведен к TEXT: `kgt.level::TEXT`
+- **Файл:** `src/services/notification-service.js`
+- **Скрипт для ручного запуска:** `node src/scripts/send-training-reminders.js [дата]`
 
 ## Executor's Feedback or Assistance Requests
-- TODO: заполнит исполнитель.
+- ✅ **Исправлена ошибка UNION в напоминаниях (10.12.2025):**
+  - Добавлена недостающая колонка `participant_birth_date` в запросы Кулиги
+  - Файл: `src/services/notification-service.js`
+  - Скрипт для ручного запуска: `node src/scripts/send-training-reminders.js [дата]`
+  - Для тестирования: `node src/scripts/send-training-reminders.js 2025-12-11`
+- ✅ **Ранее решено (10.12.2025):**
+  - Удален неотслеживаемый файл `scripts/register-tochka-webhook.js`
+  - Выполнено переключение на тег v3.0.0 (commit df41827)
+  - Сервер перезапущен через PM2
 
 ## Lessons
 - TODO: фиксировать нюансы (JWT, статусы и т.п.).
