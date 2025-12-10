@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оплата не прошла | Горностайл72</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #fef2f2;
+      color: #1f2d3d;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      max-width: 520px;
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(185, 28, 28, 0.12);
+      padding: 28px;
+      box-sizing: border-box;
+      border: 1px solid #fecaca;
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      line-height: 1.3;
+      color: #b91c1c;
+    }
+    p {
+      margin: 0 0 16px;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #4a5568;
+    }
+    .info-box {
+      text-align: left;
+    }
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(37, 99, 235, 0.2);
+    }
+    .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+    .btn-secondary {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .btn-secondary:hover { background: #fecaca; transform: translateY(-1px); }
+    .info-box {
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      color: #9f1239;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    @media (max-width: 520px) {
+      .card { padding: 22px; text-align: left; }
+      h1 { font-size: 21px; }
+      p { font-size: 15px; }
+      .actions { justify-content: stretch; }
+      .actions .btn { flex: 1; min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Оплата не прошла</h1>
+    <p>
+      Возможно, на карте не хватает нужной суммы или ошибка в реквизитах. 
+      Попробуйте заплатить другой картой. Если не получится — свяжитесь с администратором 
+      <% if (typeof adminPhone !== 'undefined' && adminPhone) { %>
+        <a href="tel:<%= adminPhone.replace(/\s/g, '') %>" style="color:#2563eb;text-decoration:none;font-weight:600;"><%= adminPhone %></a>
+      <% } else { %>
+        по указанным контактам
+      <% } %>.
+    </p>
+    <% if ((typeof adminPhone !== 'undefined' && adminPhone) || (typeof contactEmail !== 'undefined' && contactEmail)) { %>
+    <div class="info-box">
+      Контакты для связи:<br>
+      <% if (typeof adminPhone !== 'undefined' && adminPhone) { %>
+        Тел.: <a href="tel:<%= adminPhone.replace(/\s/g, '') %>" style="color:#2563eb;text-decoration:none;"><%= adminPhone %></a><br>
+      <% } %>
+      <% if (typeof contactEmail !== 'undefined' && contactEmail) { %>
+        Email: <a href="mailto:<%= contactEmail %>" style="color:#2563eb;text-decoration:none;"><%= contactEmail %></a>
+      <% } %>
+    </div>
+    <% } %>
+    <div class="actions">
+      <a class="btn btn-primary" href="/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking">Попробовать оплатить снова</a>
+      <a class="btn btn-secondary" href="/instruktor-po-gornym-lyzham-snoubordy-tyumen">Вернуться на главную</a>
+    </div>
+  </div>
+</body>
+</html>
+

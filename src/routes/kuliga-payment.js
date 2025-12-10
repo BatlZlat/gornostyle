@@ -1,30 +1,34 @@
 const express = require('express');
 const { pool } = require('../db');
-const { generateToken } = require('../services/kuligaPaymentService');
+const PaymentProviderFactory = require('../services/payment/paymentProvider');
 
 const router = express.Router();
 
 router.post('/callback', express.json(), async (req, res) => {
     const payload = req.body || {};
+    const headers = req.headers || {};
 
     try {
-        const token = payload.Token;
-        const expectedToken = generateToken({ ...payload });
+        // Определяем провайдера по структуре payload
+        const providerName = PaymentProviderFactory.detectProviderFromWebhook(payload);
+        const provider = PaymentProviderFactory.create(providerName);
 
-        if (!token || token !== expectedToken) {
-            console.error('❌ Некорректная подпись Tinkoff webhook');
-            return res.status(400).send('Invalid token');
+        // Проверяем подпись webhook
+        if (!provider.verifyWebhookSignature(payload, headers)) {
+            console.error(`❌ Некорректная подпись ${providerName} webhook`);
+            return res.status(400).send('Invalid signature');
         }
 
-        const orderId = payload.OrderId;
+        // Парсим данные webhook
+        const webhookData = provider.parseWebhookData(payload);
+        const { orderId, paymentId, status, amount, paymentMethod } = webhookData;
+
         if (!orderId || !orderId.startsWith('kuliga-')) {
-            console.warn('⚠️ Получен callback Tinkoff с неподдерживаемым OrderId:', orderId);
+            console.warn(`⚠️ Получен callback ${providerName} с неподдерживаемым OrderId:`, orderId);
             return res.status(200).send('OK');
         }
 
         const bookingId = Number(orderId.replace('kuliga-', ''));
-        const paymentId = payload.PaymentId;
-        const status = payload.Status;
 
         const client = await pool.connect();
         try {
@@ -46,68 +50,73 @@ router.post('/callback', express.json(), async (req, res) => {
 
             const booking = bookingResult.rows[0];
 
-            if (status === 'CONFIRMED') {
-                await client.query(
-                    `UPDATE kuliga_transactions
-                     SET status = 'completed', tinkoff_status = $1, tinkoff_payment_id = $2
-                     WHERE booking_id = $3`,
-                    [status, paymentId, bookingId]
-                );
+            // Определяем статус бронирования на основе статуса платежа
+            // Точка Банк использует: SUCCESS, FAILED, PENDING, REFUNDED
+            // Тинькофф использует: CONFIRMED, REJECTED, CANCELED, REFUNDED
+            const isSuccess = status === 'SUCCESS' || status === 'CONFIRMED';
+            const isFailed = status === 'FAILED' || status === 'REJECTED' || status === 'CANCELED';
+            const isRefunded = status === 'REFUNDED';
 
+            // Обновляем транзакцию с новыми полями
+            await client.query(
+                `UPDATE kuliga_transactions
+                 SET provider_status = $1,
+                     provider_payment_id = $2,
+                     provider_order_id = $3,
+                     payment_method = COALESCE($4, payment_method),
+                     provider_raw_data = $5,
+                     status = CASE
+                         WHEN $1 IN ('SUCCESS', 'CONFIRMED') THEN 'completed'
+                         WHEN $1 IN ('FAILED', 'REJECTED', 'CANCELED') THEN 'failed'
+                         WHEN $1 = 'REFUNDED' THEN 'cancelled'
+                         ELSE status
+                     END
+                 WHERE booking_id = $6`,
+                [
+                    status,
+                    paymentId,
+                    orderId,
+                    paymentMethod || 'card',
+                    JSON.stringify(payload),
+                    bookingId
+                ]
+            );
+
+            // Обновляем статус бронирования
+            if (isSuccess) {
                 await client.query(
                     `UPDATE kuliga_bookings
                      SET status = 'confirmed'
                      WHERE id = $1`,
                     [bookingId]
                 );
-            } else if (status === 'REJECTED' || status === 'CANCELED') {
-                await client.query(
-                    `UPDATE kuliga_transactions
-                     SET status = 'failed', tinkoff_status = $1, tinkoff_payment_id = $2
-                     WHERE booking_id = $3`,
-                    [status, paymentId, bookingId]
-                );
-
+            } else if (isFailed) {
                 await client.query(
                     `UPDATE kuliga_bookings
-                     SET status = 'cancelled', cancellation_reason = $1, cancelled_at = CURRENT_TIMESTAMP
-                     WHERE id = $2`,
-                    ['Отменено платежной системой', bookingId]
+                     SET status = 'cancelled', cancellation_reason = 'Отменено платежной системой', cancelled_at = CURRENT_TIMESTAMP
+                     WHERE id = $1`,
+                    [bookingId]
                 );
-            } else if (status === 'REFUNDED') {
-                await client.query(
-                    `UPDATE kuliga_transactions
-                     SET status = 'cancelled', tinkoff_status = $1, tinkoff_payment_id = $2
-                     WHERE booking_id = $3`,
-                    [status, paymentId, bookingId]
-                );
-
+            } else if (isRefunded) {
                 await client.query(
                     `UPDATE kuliga_bookings
                      SET status = 'refunded', cancellation_reason = 'Возврат платежа', cancelled_at = CURRENT_TIMESTAMP
                      WHERE id = $1`,
                     [bookingId]
                 );
-            } else {
-                await client.query(
-                    `UPDATE kuliga_transactions
-                     SET tinkoff_status = $1, tinkoff_payment_id = $2
-                     WHERE booking_id = $3`,
-                    [status, paymentId, bookingId]
-                );
             }
 
             await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK');
-            console.error('Ошибка обработки callback Tinkoff:', error);
+            console.error(`Ошибка обработки callback ${providerName}:`, error);
         } finally {
             client.release();
         }
 
         res.status(200).send('OK');
     } catch (error) {
-        console.error('Ошибка Tinkoff webhook:', error);
+        console.error('Ошибка обработки webhook:', error);
         res.status(500).send('ERROR');
     }
 });

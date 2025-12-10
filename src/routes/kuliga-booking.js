@@ -1,7 +1,7 @@
 const express = require('express');
 const moment = require('moment-timezone');
 const { pool } = require('../db');
-const { initPayment } = require('../services/kuligaPaymentService');
+const PaymentProviderFactory = require('../services/payment/paymentProvider');
 const { normalizePhone } = require('../utils/phone-normalizer');
 const { isValidLocation } = require('../utils/location-mapper');
 const { 
@@ -239,8 +239,10 @@ const createGroupBooking = async (req, res) => {
         await client.query('COMMIT');
 
         let payment;
+        const paymentMethod = req.body.paymentMethod || 'card';
         try {
-            payment = await initPayment({
+            const provider = PaymentProviderFactory.create();
+            payment = await provider.initPayment({
                 orderId: `kuliga-${bookingId}`,
                 amount: totalPrice,
                 description,
@@ -257,11 +259,12 @@ const createGroupBooking = async (req, res) => {
                         PaymentObject: 'service',
                     },
                 ],
+                paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
             await pool.query(
-                `UPDATE kulига_transactions
-                 SET status = 'failed', tinkoff_status = $1
+                `UPDATE kuliga_transactions
+                 SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
@@ -274,16 +277,34 @@ const createGroupBooking = async (req, res) => {
             throw paymentError;
         }
 
+        const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         await pool.query(
             `UPDATE kuliga_transactions
-             SET tinkoff_payment_id = $1,
-                 tinkoff_order_id = $2,
-                 tinkoff_status = $3
-             WHERE id = $4`,
-            [payment.paymentId, `kuliga-${bookingId}`, payment.status, transactionId]
+             SET payment_provider = $1,
+                 provider_payment_id = $2,
+                 provider_order_id = $3,
+                 provider_status = $4,
+                 payment_method = $5,
+                 provider_raw_data = $6
+             WHERE id = $7`,
+            [
+                providerName,
+                payment.paymentId,
+                `kuliga-${bookingId}`,
+                payment.status,
+                paymentMethod,
+                JSON.stringify(payment.rawData || payment),
+                transactionId
+            ]
         );
 
-        return res.json({ success: true, bookingId, paymentUrl: payment.paymentURL });
+        return res.json({ 
+            success: true, 
+            bookingId, 
+            paymentUrl: payment.paymentURL,
+            paymentMethod: paymentMethod,
+            qrCodeUrl: payment.qrCodeUrl || null
+        });
     } catch (error) {
         console.error('Ошибка бронирования Кулиги (группа):', error);
         try {
@@ -313,6 +334,7 @@ const createIndividualBooking = async (req, res) => {
         notification = {},
         payerParticipation = 'self',
         consentConfirmed,
+        paymentMethod = 'card', // 'card' | 'sbp'
     } = req.body || {};
 
     if (!consentConfirmed) {
@@ -556,7 +578,8 @@ const createIndividualBooking = async (req, res) => {
 
         let payment;
         try {
-            payment = await initPayment({
+            const provider = PaymentProviderFactory.create();
+            payment = await provider.initPayment({
                 orderId: `kuliga-${bookingId}`,
                 amount: totalPrice,
                 description,
@@ -573,11 +596,12 @@ const createIndividualBooking = async (req, res) => {
                         PaymentObject: 'service',
                     },
                 ],
+                paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
             await pool.query(
                 `UPDATE kuliga_transactions
-                 SET status = 'failed', tinkoff_status = $1
+                 SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
@@ -596,13 +620,25 @@ const createIndividualBooking = async (req, res) => {
             throw paymentError;
         }
 
+        const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         await pool.query(
             `UPDATE kuliga_transactions
-             SET tinkoff_payment_id = $1,
-                 tinkoff_order_id = $2,
-                 tinkoff_status = $3
-             WHERE id = $4`,
-            [payment.paymentId, `kuliga-${bookingId}`, payment.status, transactionId]
+             SET payment_provider = $1,
+                 provider_payment_id = $2,
+                 provider_order_id = $3,
+                 provider_status = $4,
+                 payment_method = $5,
+                 provider_raw_data = $6
+             WHERE id = $7`,
+            [
+                providerName,
+                payment.paymentId,
+                `kuliga-${bookingId}`,
+                payment.status,
+                paymentMethod,
+                JSON.stringify(payment.rawData || payment),
+                transactionId
+            ]
         );
 
         // Отправляем уведомления (асинхронно, не блокируем ответ)
@@ -649,7 +685,13 @@ const createIndividualBooking = async (req, res) => {
             }
         });
 
-        return res.json({ success: true, bookingId, paymentUrl: payment.paymentURL });
+        return res.json({ 
+            success: true, 
+            bookingId, 
+            paymentUrl: payment.paymentURL,
+            paymentMethod: paymentMethod,
+            qrCodeUrl: payment.qrCodeUrl || null
+        });
     } catch (error) {
         console.error('Ошибка бронирования Кулиги (индивидуальная):', error);
         try {
@@ -1007,8 +1049,10 @@ const createProgramBooking = async (req, res) => {
         await client.query('COMMIT');
 
         let payment;
+        const paymentMethod = req.body.paymentMethod || 'card';
         try {
-            payment = await initPayment({
+            const provider = PaymentProviderFactory.create();
+            payment = await provider.initPayment({
                 orderId: `kuliga-${bookingId}`,
                 amount: totalPrice,
                 description,
@@ -1025,11 +1069,12 @@ const createProgramBooking = async (req, res) => {
                         PaymentObject: 'service',
                     },
                 ],
+                paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
             await pool.query(
                 `UPDATE kuliga_transactions
-                 SET status = 'failed', tinkoff_status = $1
+                 SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
@@ -1042,16 +1087,34 @@ const createProgramBooking = async (req, res) => {
             throw paymentError;
         }
 
+        const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         await pool.query(
             `UPDATE kuliga_transactions
-             SET tinkoff_payment_id = $1,
-                 tinkoff_order_id = $2,
-                 tinkoff_status = $3
-             WHERE id = $4`,
-            [payment.paymentId, `kuliga-${bookingId}`, payment.status, transactionId]
+             SET payment_provider = $1,
+                 provider_payment_id = $2,
+                 provider_order_id = $3,
+                 provider_status = $4,
+                 payment_method = $5,
+                 provider_raw_data = $6
+             WHERE id = $7`,
+            [
+                providerName,
+                payment.paymentId,
+                `kuliga-${bookingId}`,
+                payment.status,
+                paymentMethod,
+                JSON.stringify(payment.rawData || payment),
+                transactionId
+            ]
         );
 
-        return res.json({ success: true, bookingId, paymentUrl: payment.paymentURL });
+        return res.json({ 
+            success: true, 
+            bookingId, 
+            paymentUrl: payment.paymentURL,
+            paymentMethod: paymentMethod,
+            qrCodeUrl: payment.qrCodeUrl || null
+        });
     } catch (error) {
         console.error('Ошибка бронирования программы Кулиги:', error);
         try {
