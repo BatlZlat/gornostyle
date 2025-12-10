@@ -17,7 +17,7 @@ class TochkaProvider {
         this.customerCode = process.env.TOCHKA_CUSTOMER_CODE;
         this.apiUrl = process.env.TOCHKA_API_URL || 'https://api.tochka.com/v1';
         this.enableSBP = process.env.TOCHKA_ENABLE_SBP === 'true';
-        this.publicKey = process.env.TOCHKA_PUBLIC_KEY; // Для проверки JWT подписи webhook
+        this.publicKey = process.env.TOCHKA_PUBLIC_KEY || process.env.TOCHKA_PUBLIC_JWK; // Поддерживаем PEM или JWK
         
         // URL для редиректов и webhook
         this.successUrl = process.env.PAYMENT_SUCCESS_URL;
@@ -205,10 +205,8 @@ class TochkaProvider {
         }
 
         try {
-            // Публичный ключ должен быть в формате PEM
-            const publicKeyPem = this.publicKey.startsWith('-----BEGIN') 
-                ? this.publicKey 
-                : `-----BEGIN PUBLIC KEY-----\n${this.publicKey}\n-----END PUBLIC KEY-----`;
+            // Поддерживаем ключ в PEM или JWK (как присылает банк)
+            const publicKeyPem = this.normalizePublicKey(this.publicKey);
 
             jwt.verify(token, publicKeyPem, {
                 algorithms: ['RS256']
@@ -222,20 +220,69 @@ class TochkaProvider {
     }
 
     /**
-     * Парсинг данных webhook
-     * @param {object} payload - Данные webhook
-     * @returns {object} Распарсенные данные {orderId, paymentId, status, amount, paymentMethod}
+     * Нормализация публичного ключа: принимает PEM строку или JWK (JSON) и возвращает PEM
+     * @param {string} keyString
+     * @returns {string} PEM
+     */
+    normalizePublicKey(keyString) {
+        // Если уже PEM
+        if (keyString.trim().startsWith('-----BEGIN PUBLIC KEY-----')) {
+            return keyString.trim();
+        }
+
+        // Если это JWK в JSON
+        try {
+            const maybeJson = JSON.parse(keyString);
+            if (maybeJson && maybeJson.kty === 'RSA' && maybeJson.n && maybeJson.e) {
+                const publicKeyObj = crypto.createPublicKey({ key: maybeJson, format: 'jwk' });
+                return publicKeyObj.export({ type: 'spki', format: 'pem' }).toString();
+            }
+        } catch (_err) {
+            // Не JSON — пойдём дальше
+        }
+
+        // Если это “сырой” base64 без заголовков — оборачиваем в PEM
+        return `-----BEGIN PUBLIC KEY-----\n${keyString}\n-----END PUBLIC KEY-----`;
+    }
+
+    /**
+     * Парсинг данных webhook acquiringInternetPayment
+     * @param {object} payload - Данные webhook (декодированный JWT)
+     * @returns {object} Распарсенные данные {orderId, paymentId, status, amount, paymentMethod, webhookType}
      */
     parseWebhookData(payload) {
-        // Точка Банк может отправлять данные в разных форматах
-        // Адаптируем под реальный формат после получения первого webhook
+        // Формат acquiringInternetPayment от Точка Банка
+        // Вебхук приходит как JWT, payload уже декодирован
+        
+        const webhookType = payload.webhookType || payload.webhook_type;
+        
+        // Для acquiringInternetPayment структура:
+        // { webhookType, paymentId, orderId, status, amount, currency, paymentMethod, customerCode, ... }
+        
+        // Маппинг статусов Точка Банка
+        const statusMap = {
+            'SUCCESS': 'SUCCESS',
+            'CONFIRMED': 'SUCCESS',
+            'FAILED': 'FAILED',
+            'REJECTED': 'FAILED',
+            'CANCELED': 'FAILED',
+            'CANCELLED': 'FAILED',
+            'PENDING': 'PENDING',
+            'REFUNDED': 'REFUNDED'
+        };
+        
+        const rawStatus = payload.status || payload.Status;
+        const normalizedStatus = statusMap[rawStatus] || rawStatus;
         
         return {
+            webhookType: webhookType,
             orderId: payload.orderId || payload.order_id || payload.OrderId,
-            paymentId: payload.paymentId || payload.payment_id || payload.PaymentId,
-            status: payload.status || payload.Status,
+            paymentId: payload.paymentId || payload.payment_id || payload.PaymentId || payload.operationId,
+            status: normalizedStatus,
             amount: payload.amount ? payload.amount / 100 : payload.Amount ? payload.Amount / 100 : null,
+            currency: payload.currency || payload.Currency || 'RUB',
             paymentMethod: payload.paymentMethod || payload.payment_method || payload.PaymentMethod || 'card',
+            customerCode: payload.customerCode || payload.customer_code,
             rawData: payload
         };
     }
