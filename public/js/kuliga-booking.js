@@ -495,6 +495,11 @@
             // Получаем название вида спорта
             const sportName = sportLabels[state.program.sport_type] || 'Инструктор';
             
+            // Получаем информацию о текущем количестве записанных участников
+            const maxParticipants = state.program.max_participants || 4;
+            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+            const availableSlots = maxParticipants - currentBooked;
+            
             const details = [
                 `<p style="margin: 0;"><strong>Программа:</strong> ${state.program.name || 'Групповая тренировка'}</p>`,
                 `<p style="margin: 0;"><strong>Вид спорта:</strong> ${sportName}</p>`,
@@ -503,6 +508,7 @@
                 state.programTime ? `<p style="margin: 0;"><strong>Время:</strong> ${state.programTime}</p>` : '<p style="margin: 0;"><strong>Время:</strong></p>',
                 `<p style="margin: 0;"><strong>Длительность тренировки:</strong> ${duration} мин.</p>`,
                 `<p style="margin: 0;"><strong>Инструктор:</strong> ${instructorName}</p>`,
+                `<p style="margin: 0;"><strong>Участники:</strong> ${currentBooked}/${maxParticipants} мест (свободно ${availableSlots})</p>`,
                 `<p style="margin: 0;"><strong>Цена за человека:</strong> ${formatCurrency(pricePerPerson)}</p>`,
             ];
             
@@ -552,10 +558,13 @@
         if (state.program) {
             const participantCount = Math.max(1, state.participants.length || 1);
             const maxParticipants = state.program.max_participants || 4;
+            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+            const availableSlots = maxParticipants - currentBooked;
+            
             if (state.payerParticipation === 'self') {
-                participantsHint.textContent = `Заполните данные участников. Вы можете добавить до ${maxParticipants} человек.`;
+                participantsHint.textContent = `Заполните данные участников. Доступно мест: ${availableSlots} из ${maxParticipants} (уже записано: ${currentBooked}).`;
             } else {
-                participantsHint.textContent = `Заполните данные участников. Вы можете добавить до ${maxParticipants} человек. Заказчик в тренировке не участвует.`;
+                participantsHint.textContent = `Заполните данные участников. Доступно мест: ${availableSlots} из ${maxParticipants} (уже записано: ${currentBooked}). Заказчик в тренировке не участвует.`;
             }
             return;
         }
@@ -635,7 +644,13 @@
         // Показываем/скрываем кнопку "Добавить участника" для программ
         if (state.program && addParticipantBtn) {
             const maxParticipants = state.program.max_participants || 4;
-            if (state.participants.length < maxParticipants) {
+            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+            const availableSlots = maxParticipants - currentBooked;
+            // Можно добавить участников только если есть свободные места
+            // Учитываем что мы уже добавляем участников в этой форме
+            const canAddMore = state.participants.length < availableSlots;
+            
+            if (canAddMore && state.participants.length < maxParticipants) {
                 addParticipantBtn.style.display = 'block';
             } else {
                 addParticipantBtn.style.display = 'none';
@@ -662,6 +677,15 @@
         if (!state.program) return;
         
         const maxParticipants = state.program.max_participants || 4;
+        const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+        const availableSlots = maxParticipants - currentBooked;
+        
+        // Проверяем доступное количество мест с учетом уже записанных участников
+        if (state.participants.length >= availableSlots) {
+            setMessage(`Недостаточно мест. Доступно: ${availableSlots} мест (уже записано: ${currentBooked} из ${maxParticipants}).`, 'info');
+            return;
+        }
+        
         if (state.participants.length >= maxParticipants) {
             setMessage(`Максимальное количество участников: ${maxParticipants}`, 'info');
             return;

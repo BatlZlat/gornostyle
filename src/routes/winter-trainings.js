@@ -722,7 +722,7 @@ router.delete('/:id', async (req, res) => {
         const tsResult = await client.query(
             `SELECT id, session_date, start_time, end_time, duration, 
                     training_type, winter_training_type, price, max_participants, 
-                    trainer_id, skill_level, group_id
+                    trainer_id, skill_level, group_id, location
              FROM training_sessions
              WHERE id = $1 AND slope_type = 'natural_slope'
              FOR UPDATE`,
@@ -945,7 +945,8 @@ router.delete('/:id', async (req, res) => {
                         used_subscription: usedSubscription,
                         subscription_name: usedSubscription ? subscriptionInfo.subscription_name : null,
                         subscription_remaining_sessions: usedSubscription ? (subscriptionInfo.remaining_sessions + 1) : null,
-                        subscription_total_sessions: usedSubscription ? subscriptionInfo.total_sessions : null
+                        subscription_total_sessions: usedSubscription ? subscriptionInfo.total_sessions : null,
+                        location: training.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                     });
                 } catch (e) { 
                     console.error('Ошибка при отправке уведомления администратору:', e);
@@ -1006,7 +1007,8 @@ router.delete('/:id', async (req, res) => {
                     date: training.session_date,
                     time: String(training.start_time).substring(0,5),
                     trainer_name: null,
-                    refund: 0
+                    refund: 0,
+                    location: training.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                 });
             } catch (e) { /* ignore */ }
         }

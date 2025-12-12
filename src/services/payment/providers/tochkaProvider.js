@@ -15,7 +15,8 @@ class TochkaProvider {
         this.clientId = process.env.TOCHKA_CLIENT_ID;
         this.merchantId = process.env.TOCHKA_MERCHANT_ID;
         this.customerCode = process.env.TOCHKA_CUSTOMER_CODE;
-        this.apiUrl = process.env.TOCHKA_API_URL || 'https://api.tochka.com/v1';
+        // Согласно документации Точка Банка, правильный базовый URL: https://enter.tochka.com/uapi
+        this.apiUrl = process.env.TOCHKA_API_URL || 'https://enter.tochka.com/uapi/v1.0';
         this.enableSBP = process.env.TOCHKA_ENABLE_SBP === 'true';
         this.publicKey = process.env.TOCHKA_PUBLIC_KEY || process.env.TOCHKA_PUBLIC_JWK; // Поддерживаем PEM или JWK
         
