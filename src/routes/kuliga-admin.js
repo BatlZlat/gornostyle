@@ -1098,7 +1098,7 @@ router.put('/programs/:id', async (req, res) => {
             for (const removedInstructorId of removedInstructorIds) {
                 // Находим все групповые тренировки из этой программы с этим инструктором
                 const trainingsToCancel = await client.query(
-                    `SELECT id, slot_id, date, start_time, end_time, instructor_id, sport_type
+                    `SELECT id, slot_id, date, start_time, end_time, instructor_id, sport_type, location
                      FROM kuliga_group_trainings
                      WHERE program_id = $1 
                        AND instructor_id = $2
@@ -1192,7 +1192,8 @@ router.put('/programs/:id', async (req, res) => {
                                         instructor_name: instructorData.full_name || 'Не указан',
                                         booking_type: 'group',
                                         refund: refundAmount,
-                                        sport_type: training.sport_type || 'ski'
+                                        sport_type: training.sport_type || 'ski',
+                                        location: training.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                                     });
                                     
                                     // Уведомление инструктору
@@ -1205,7 +1206,8 @@ router.put('/programs/:id', async (req, res) => {
                                             time: formattedTime,
                                             instructor_name: instructorData.full_name,
                                             instructor_telegram_id: instructorData.telegram_id,
-                                            cancelled_by: 'admin' // Отменено администратором (изменение программы)
+                                            cancelled_by: 'admin', // Отменено администратором (изменение программы)
+                                            location: training.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                                         });
                                     }
                                     
@@ -2257,7 +2259,8 @@ router.delete('/training/:id', async (req, res) => {
                         trainer_name: booking.instructor_name || 'Не указан',
                         booking_type: 'individual',
                         refund: refundAmount,
-                        sport_type: booking.sport_type
+                        sport_type: booking.sport_type,
+                        location: booking.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                     });
 
                     // Уведомление инструктору
@@ -2270,7 +2273,8 @@ router.delete('/training/:id', async (req, res) => {
                             time: formattedTime,
                             instructor_name: booking.instructor_name,
                             instructor_telegram_id: booking.instructor_telegram_id,
-                            cancelled_by: 'admin' // Отменено администратором
+                            cancelled_by: 'admin', // Отменено администратором
+                            location: booking.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                         });
                     }
                     
@@ -2576,7 +2580,8 @@ router.delete('/training/:id', async (req, res) => {
                                 instructor_name: instructorData.full_name || 'Не указан',
                                 booking_type: 'group',
                                 refund: refundInfo.refund,
-                                sport_type: groupTraining.sport_type
+                                sport_type: groupTraining.sport_type,
+                                location: groupTraining.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                             });
 
                             // Уведомление инструктору
@@ -2589,7 +2594,8 @@ router.delete('/training/:id', async (req, res) => {
                                     time: formattedTime,
                                     instructor_name: instructorData.full_name,
                                     instructor_telegram_id: instructorData.telegram_id,
-                                    cancelled_by: 'admin' // Отменено администратором
+                                    cancelled_by: 'admin', // Отменено администратором
+                                    location: groupTraining.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                                 });
                             }
                             
@@ -2771,7 +2777,8 @@ router.delete('/training/:id', async (req, res) => {
                             instructor_name: booking.instructor_name || 'Не указан',
                             booking_type: 'group',
                             refund: refundAmount,
-                            sport_type: booking.sport_type
+                            sport_type: booking.sport_type,
+                            location: booking.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                         });
 
                         // Уведомление инструктору
@@ -2784,7 +2791,8 @@ router.delete('/training/:id', async (req, res) => {
                                 time: formattedTime,
                                 instructor_name: booking.instructor_name,
                                 instructor_telegram_id: booking.instructor_telegram_id,
-                                cancelled_by: 'admin' // Отменено администратором
+                                cancelled_by: 'admin', // Отменено администратором
+                                location: booking.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                             });
                         }
                     } catch (error) {

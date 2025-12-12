@@ -7017,7 +7017,8 @@ async function handleTextMessage(msg) {
                                 date: selectedSession.date,
                                 time: selectedSession.start_time,
                                 instructor_name: booking.instructor_name,
-                                instructor_telegram_id: booking.instructor_telegram_id
+                                instructor_telegram_id: booking.instructor_telegram_id,
+                                location: booking.location || selectedSession.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                             });
                         } catch (error) {
                             console.error('Ошибка при уведомлении инструктора об отмене:', error);
@@ -7142,7 +7143,8 @@ async function handleTextMessage(msg) {
                                 date: selectedSession.date,
                                 time: selectedSession.start_time,
                                 instructor_name: groupTraining.instructor_name,
-                                instructor_telegram_id: groupTraining.instructor_telegram_id
+                                instructor_telegram_id: groupTraining.instructor_telegram_id,
+                                location: groupTraining.location || selectedSession.location || 'kuliga' // МИГРАЦИЯ 038: Передаем location
                             });
                         } catch (error) {
                             console.error('Ошибка при уведомлении инструктора об отмене:', error);
@@ -7241,6 +7243,7 @@ async function handleTextMessage(msg) {
                     }
 
                     // Уведомляем администратора об отмене
+                    const location = selectedSession.location || groupInfo?.location || 'kuliga';
                     setImmediate(async () => {
                         try {
                             const { notifyAdminNaturalSlopeTrainingCancellation } = require('./admin-notify');
@@ -7254,7 +7257,8 @@ async function handleTextMessage(msg) {
                                 instructor_name: groupTraining.instructor_name || 'Не указан',
                                 booking_type: 'group',
                                 refund: refundAmount,
-                                sport_type: selectedSession.sport_type === 'ski' ? 'лыжи' : 'сноуборд'
+                                sport_type: selectedSession.sport_type === 'ski' ? 'лыжи' : 'сноуборд',
+                                location: location // МИГРАЦИЯ 038: Передаем location для корректного отображения места
                             });
                         } catch (error) {
                             console.error('Ошибка при уведомлении администратора об отмене:', error);
@@ -7262,7 +7266,6 @@ async function handleTextMessage(msg) {
                     });
 
                     // Сообщение для клиента
-                    const location = selectedSession.location || groupInfo?.location || 'kuliga';
                     const locationName = getLocationDisplayName(location);
                     const clientMessage = 
                         `✅ *Групповая тренировка в ${locationName} успешно отменена!*\n\n` +
@@ -10612,14 +10615,23 @@ async function showMyBookings(chatId) {
                 kb.price_total,
                 kb.price_per_person,
                 kb.status,
+                COALESCE(kb.location, kgt.location, 'kuliga') as location,
                 ki.full_name as instructor_name,
                 kc.phone as client_phone,
-                kgt.level as group_name,
+                -- Для программ используем название программы, иначе уровень группы
+                CASE 
+                    WHEN kgt.program_id IS NOT NULL AND kp.name IS NOT NULL THEN kp.name
+                    ELSE kgt.level
+                END as group_name,
+                kgt.level,
+                kgt.program_id,
+                kp.name as program_name,
                 kgt.description as group_description
             FROM kuliga_bookings kb
             JOIN clients kc ON kb.client_id = kc.id
             LEFT JOIN kuliga_instructors ki ON kb.instructor_id = ki.id
             LEFT JOIN kuliga_group_trainings kgt ON kb.group_training_id = kgt.id
+            LEFT JOIN kuliga_programs kp ON kgt.program_id = kp.id
             WHERE kc.telegram_id = $1
               AND kb.status IN ('pending', 'confirmed')
               AND (kb.date::timestamp + kb.end_time::interval) > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')
@@ -10847,20 +10859,27 @@ async function showMyBookings(chatId) {
                         
                         const sportType = booking.sport_type === 'ski' ? 'Горные лыжи 🎿' : 'Сноуборд 🏂';
                         
-                        // Переводим уровень группы на русский
-                        const groupLevelMap = {
-                            'beginner': 'Начальный',
-                            'intermediate': 'Средний',
-                            'advanced': 'Продвинутый'
-                        };
-                        const groupLevelRu = booking.level ? (groupLevelMap[booking.level.toLowerCase()] || booking.level) : '';
+                        // Для программ показываем название программы, иначе переводим уровень на русский
+                        let groupDisplayName = '';
+                        if (booking.program_name) {
+                            // Это программа - показываем название программы
+                            groupDisplayName = booking.program_name;
+                        } else if (booking.level) {
+                            // Это обычная групповая тренировка - переводим уровень на русский
+                            const groupLevelMap = {
+                                'beginner': 'Начальный',
+                                'intermediate': 'Средний',
+                                'advanced': 'Продвинутый'
+                            };
+                            groupDisplayName = groupLevelMap[booking.level.toLowerCase()] || booking.level;
+                        }
                         
                         message += `\n${counter}. 👤 *Участники (${participantsCount}):* ${participantsNames}\n`;
                         message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
                         message += `⏰ *Время:* ${formattedTime}\n`;
                         message += `🎿 *Снаряжение:* ${sportType}\n`;
-                        if (groupLevelRu) {
-                            message += `👥 *Группа:* ${groupLevelRu}\n`;
+                        if (groupDisplayName) {
+                            message += `👥 *Группа:* ${groupDisplayName}\n`;
                         }
                         const bookingLocation = booking.location || loc;
                         message += `🏔️ *Место:* ${getLocationDisplayName(bookingLocation)}\n`;

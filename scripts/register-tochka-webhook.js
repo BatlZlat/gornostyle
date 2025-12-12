@@ -45,25 +45,45 @@ async function registerWebhook() {
     console.log('');
 
     try {
-        const response = await axios.put(
-            `${TOCHKA_API_URL}/webhook/${TOCHKA_CLIENT_ID}/v1.0`,
-            requestBody,
-            {
-                headers: {
-                    'Authorization': `Bearer ${TOCHKA_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000 // 30 сек (банк шлёт тестовый вебхук)
+        // Согласно ответу техподдержки Точка Банка:
+        // Правильный URL: https://enter.tochka.com/uapi/webhook/v1.0/{client_id}
+        // Метод: PUT
+        // Авторизация: Authorization: Bearer {JWT_TOKEN}
+        // Тело запроса: { webhooksList: ['acquiringInternetPayment'], url: '...' }
+        
+        const webhookUrl = `https://enter.tochka.com/uapi/webhook/v1.0/${TOCHKA_CLIENT_ID}`;
+        
+        console.log(`📤 Отправляю PUT запрос на: ${webhookUrl}`);
+        console.log('');
+        
+        const axiosConfig = {
+            headers: {
+                'Authorization': `Bearer ${TOCHKA_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            timeout: 30000,
+            validateStatus: function (status) {
+                return status >= 200 && status < 500;
             }
-        );
-
-        console.log('✅ Вебхук успешно зарегистрирован!');
-        console.log('');
-        console.log('Ответ от банка:');
-        console.log(JSON.stringify(response.data, null, 2));
-        console.log('');
-        console.log('ℹ️  Банк отправил тестовый вебхук на указанный URL.');
-        console.log('   Проверьте логи сервера, чтобы убедиться, что он принят.');
+        };
+        
+        const response = await axios.put(webhookUrl, requestBody, axiosConfig);
+        
+        if (response.status === 200 || response.status === 201 || response.status === 204) {
+            console.log('✅ Вебхук успешно зарегистрирован!');
+            console.log('');
+            if (response.data) {
+                console.log('Ответ от банка:');
+                console.log(JSON.stringify(response.data, null, 2));
+                console.log('');
+            }
+            console.log('ℹ️  Банк отправит тестовый вебхук на указанный URL.');
+            console.log('   Проверьте логи сервера, чтобы убедиться, что он принят (HTTP 200).');
+            return response;
+        } else {
+            throw new Error(`HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+        }
 
     } catch (error) {
         console.error('❌ Ошибка регистрации вебхука:');

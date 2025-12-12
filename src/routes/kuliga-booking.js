@@ -660,7 +660,8 @@ const createIndividualBooking = async (req, res) => {
                     sport_type: normalizedSport,
                     instructor_name: slot.instructor_name,
                     price: totalPrice,
-                    booking_source: 'website'
+                    booking_source: 'website',
+                    location: slotLocation // МИГРАЦИЯ 038: Передаем location для корректного отображения места
                 });
 
                 // Уведомление инструктору
