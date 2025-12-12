@@ -43,17 +43,44 @@ async function logWebhook(data) {
     }
 }
 
+// Обработка GET запроса для проверки доступности (если банк использует GET для проверки)
+router.get('/callback', (req, res) => {
+    console.log('🔍 GET запрос на /callback (проверка доступности)');
+    res.status(200).send('OK');
+});
+
 router.post('/callback', express.json(), async (req, res) => {
     const payload = req.body || {};
     const headers = req.headers || {};
     const startTime = Date.now();
 
     console.log(`🔔 Получен webhook:`, {
-        headers: headers,
-        payloadKeys: Object.keys(payload)
+        method: 'POST',
+        headers: Object.keys(headers),
+        payloadKeys: Object.keys(payload),
+        userAgent: headers['user-agent'] || headers['User-Agent'],
+        contentType: headers['content-type'] || headers['Content-Type']
     });
 
     try {
+        // Обработка тестового вебхука от банка при регистрации
+        // Банк отправляет тестовый запрос для проверки доступности URL
+        // В этом случае payload может быть пустым или иметь другую структуру
+        const isEmptyPayload = !payload || Object.keys(payload).length === 0;
+        const userAgent = (headers['user-agent'] || headers['User-Agent'] || '').toLowerCase();
+        const isTestWebhook = isEmptyPayload || 
+                              userAgent.includes('tochka') ||
+                              userAgent.includes('curl') ||
+                              userAgent.includes('postman');
+        
+        if (isTestWebhook) {
+            console.log('✅ Получен тестовый вебхук от банка (проверка доступности URL)');
+            console.log('   Payload:', JSON.stringify(payload));
+            console.log('   User-Agent:', userAgent);
+            // Отвечаем 200 OK для успешной проверки доступности
+            return res.status(200).send('OK');
+        }
+
         // Определяем провайдера по структуре payload
         const providerName = PaymentProviderFactory.detectProviderFromWebhook(payload);
         const provider = PaymentProviderFactory.create(providerName);
