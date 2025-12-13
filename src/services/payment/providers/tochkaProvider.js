@@ -107,8 +107,9 @@ class TochkaProvider {
         const requestBody = {
             Data: {
                 customerCode: this.customerCode,
-                // merchantId - опциональный, но может быть обязательным для некоторых аккаунтов
-                ...(this.merchantId ? { merchantId: this.merchantId } : {}),
+                // merchantId - опциональный, но если задан, должен быть 15 символов
+                // Включаем только если длина >= 15 символов
+                ...(this.merchantId && this.merchantId.length >= 15 ? { merchantId: this.merchantId } : {}),
                 // amount должен быть number (не строка!), но в JSON это будет число с плавающей точкой
                 amount: parseFloat(amount.toFixed(2)), // Сумма в рублях как число
                 purpose: description.substring(0, 140), // Назначение платежа (до 140 символов)
