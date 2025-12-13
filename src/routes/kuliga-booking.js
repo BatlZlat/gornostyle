@@ -735,10 +735,13 @@ router.get('/availability', async (req, res) => {
                     s.location
              FROM kuliga_schedule_slots s
              JOIN kuliga_instructors i ON i.id = s.instructor_id
+             LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id 
+                 AND kgt.status IN ('open', 'confirmed')
              WHERE s.date = $1
                AND s.status = 'available'
                AND i.is_active = TRUE
-               AND (i.sport_type = $2 OR i.sport_type = 'both')`;
+               AND (i.sport_type = $2 OR i.sport_type = 'both')
+               AND kgt.id IS NULL`; // Исключаем слоты, связанные с групповыми тренировками
         const params = [date, normalizedSport];
         
         // Фильтр по location, если указан

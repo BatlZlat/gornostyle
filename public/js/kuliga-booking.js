@@ -87,7 +87,7 @@
         payerParticipation: 'self', // self | other
         participants: [],
         sportType: 'ski',
-        location: 'kuliga', // МИГРАЦИЯ 038: Место проведения тренировки
+        location: 'vorona', // МИГРАЦИЯ 038: Место проведения тренировки (по умолчанию Воронинские горки)
         date: '',
         slot: null,
         availability: [],
@@ -765,7 +765,7 @@
         });
 
         if (locationSelect) {
-            locationSelect.value = state.location || 'kuliga';
+            locationSelect.value = state.location || 'vorona';
             
             // Для программ скрываем и отключаем поле выбора локации
             if (state.program) {
@@ -843,6 +843,13 @@
         state.client.fullName = clientNameInput.value.trim();
         if (state.payerParticipation === 'self' && state.syncMainParticipant && state.participants[0]) {
             state.participants[0].fullName = state.client.fullName;
+            // Также обновляем возраст, если дата рождения уже указана
+            if (state.client.birthDate) {
+                const calculatedAge = calculateAgeFromBirthDate(state.client.birthDate);
+                if (calculatedAge !== null) {
+                    state.participants[0].age = String(calculatedAge);
+                }
+            }
             renderParticipants();
         }
         scheduleSaveState();
@@ -855,6 +862,16 @@
 
     function handleClientBirthDateChange() {
         state.client.birthDate = clientBirthDateInput.value;
+        
+        // Если выбрано "Я буду кататься", автоматически обновляем возраст первого участника
+        if (state.payerParticipation === 'self' && state.syncMainParticipant && state.participants[0]) {
+            const calculatedAge = state.client.birthDate ? calculateAgeFromBirthDate(state.client.birthDate) : null;
+            if (calculatedAge !== null) {
+                state.participants[0].age = String(calculatedAge);
+                renderParticipants();
+            }
+        }
+        
         scheduleSaveState();
     }
 
@@ -863,14 +880,39 @@
         scheduleSaveState();
     }
 
+    // Функция вычисления возраста из даты рождения
+    function calculateAgeFromBirthDate(birthDate) {
+        if (!birthDate) return null;
+        const today = new Date();
+        const birth = new Date(birthDate);
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        
+        // Если день рождения еще не наступил в этом году, уменьшаем возраст на 1
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age--;
+        }
+        
+        return Math.max(0, age);
+    }
+
     function handleParticipationChange(event) {
         state.payerParticipation = event.target.value;
         if (state.payerParticipation === 'self') {
+            // Вычисляем возраст из даты рождения заказчика
+            const calculatedAge = state.client.birthDate ? calculateAgeFromBirthDate(state.client.birthDate) : null;
+            
             if (!state.participants.length) {
-                state.participants = [{ fullName: state.client.fullName || '', age: '' }];
-            }
-            if (!state.participants[0].fullName) {
-                state.participants[0].fullName = state.client.fullName;
+                state.participants = [{ 
+                    fullName: state.client.fullName || '', 
+                    age: calculatedAge !== null ? String(calculatedAge) : '' 
+                }];
+            } else {
+                // Обновляем первого участника
+                state.participants[0].fullName = state.client.fullName || state.participants[0].fullName;
+                if (calculatedAge !== null) {
+                    state.participants[0].age = String(calculatedAge);
+                }
             }
             state.syncMainParticipant = true;
         } else {
@@ -913,11 +955,11 @@
         
         // Для программ запрещаем изменение локации
         if (state.program) {
-            locationSelect.value = state.location || 'kuliga';
+            locationSelect.value = state.location || 'vorona';
             return;
         }
         
-        const newLocation = locationSelect.value || 'kuliga';
+        const newLocation = locationSelect.value || 'vorona';
         if (state.location !== newLocation) {
             state.location = newLocation;
             state.slot = null;
@@ -1184,7 +1226,7 @@
             date: state.date,
             slotId: state.slot.slot_id,
             instructorId: state.slot.instructor_id,
-            location: state.location || 'kuliga', // МИГРАЦИЯ 038: Передаем location при создании бронирования
+            location: state.location || 'vorona', // МИГРАЦИЯ 038: Передаем location при создании бронирования
             startTime: state.slot.start_time,
             endTime: state.slot.end_time,
             participantsCount: participants.length,
@@ -1505,7 +1547,7 @@
             date: state.date,
             sport: state.sportType,
             duration: String(state.selection.duration),
-            location: state.location || 'kuliga', // МИГРАЦИЯ 038: Передаем location в API
+            location: state.location || 'vorona', // МИГРАЦИЯ 038: Передаем location в API
         });
 
         try {
@@ -1677,7 +1719,7 @@
             to,
             sport: state.sportType || 'ski',
             duration: String(state.selection.duration || 60),
-            location: state.location || 'kuliga',
+            location: state.location || 'vorona',
         });
         
         try {

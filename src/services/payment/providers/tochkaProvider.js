@@ -84,60 +84,99 @@ class TochkaProvider {
             payment_object: 'service'
         }];
 
-        // Формируем тело запроса
+        // Согласно документации Точка Банка, формат запроса:
+        // { Data: { customerCode, amount, purpose, redirectUrl, failRedirectUrl, paymentMode, ... } }
+        // amount в рублях (не копейках!), purpose - назначение платежа (до 140 символов)
+        // paymentMode - массив способов оплаты: ["card", "sbp", "tinkoff", "dolyame"]
+        
+        const paymentModes = [];
+        if (paymentMethod === 'card' || !paymentMethod) {
+            paymentModes.push('card');
+        }
+        if (paymentMethod === 'sbp' && this.enableSBP) {
+            paymentModes.push('sbp');
+        }
+        // Если не указан способ, добавляем карту по умолчанию
+        if (paymentModes.length === 0) {
+            paymentModes.push('card');
+        }
+
+        // Формируем тело запроса согласно документации
+        // Обязательные: customerCode, amount, purpose, paymentMode, paymentLinkId
+        // Опциональные: merchantId, redirectUrl, failRedirectUrl, consumerId, saveCard, preAuthorization, ttl
         const requestBody = {
-            customerCode: this.customerCode,
-            merchantId: this.merchantId,
-            orderId: orderId,
-            amount: amountKopecks,
-            currency: 'RUB',
-            description: description,
-            returnUrl: this.successUrl,
-            failUrl: this.failUrl,
-            notificationUrl: this.callbackUrl,
-            customer: {
-                email: customerEmail || undefined,
-                phone: customerPhone ? customerPhone.replace(/\D/g, '') : undefined
-            },
-            receipt: {
-                taxation: 'usn_income', // УСН доходы
-                items: receiptItems
+            Data: {
+                customerCode: this.customerCode,
+                // merchantId - опциональный, но если задан, должен быть 15 символов
+                // Включаем только если длина >= 15 символов
+                ...(this.merchantId && this.merchantId.length >= 15 ? { merchantId: this.merchantId } : {}),
+                // amount должен быть number (не строка!), но в JSON это будет число с плавающей точкой
+                amount: parseFloat(amount.toFixed(2)), // Сумма в рублях как число
+                purpose: description.substring(0, 140), // Назначение платежа (до 140 символов)
+                paymentMode: paymentModes, // Массив способов оплаты
+                paymentLinkId: orderId.length > 45 ? orderId.substring(0, 45) : orderId, // Уникальный номер заказа (до 45 символов)
+                // Опциональные поля
+                ...(this.successUrl ? { redirectUrl: this.successUrl } : {}),
+                ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
+                // consumerId - опциональный, должен быть UUID, не email
+                // Убираем consumerId, так как он опционален и может вызывать ошибки при неправильном формате
             }
         };
-
-        // Для СБП добавляем специальный параметр
-        if (paymentMethod === 'sbp' && this.enableSBP) {
-            requestBody.paymentMethod = 'SBP';
-        }
+        
+        // Примечание: receipt (чек) отправляется отдельным запросом через другой endpoint
+        // или формируется автоматически банком на основе данных платежа
 
         try {
             // Создаем JWT токен для авторизации
             const token = this.createAuthToken();
 
+            // Согласно документации Точка Банка:
+            // Правильный endpoint: POST https://enter.tochka.com/uapi/acquiring/v1.0/payments
+            // Формат запроса: { Data: { customerCode, amount, purpose, ... } }
+            const paymentEndpoint = `https://enter.tochka.com/uapi/acquiring/v1.0/payments`;
+            
+            console.log(`📤 Создаю платеж через: ${paymentEndpoint}`);
+            console.log(`📋 Тело запроса:`, JSON.stringify(requestBody, null, 2));
+            
             const response = await axios.post(
-                `${this.apiUrl}/payment-operations`,
+                paymentEndpoint,
                 requestBody,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     timeout: 15000
                 }
             );
 
-            const data = response.data;
+            const responseData = response.data;
 
-            if (!data || !data.paymentId) {
-                throw new Error('Точка Банк вернул некорректный ответ');
+            // Согласно документации, ответ имеет формат:
+            // { Data: { operationId, paymentLink, status, amount, ... }, Links: {...}, Meta: {...} }
+            if (!responseData || !responseData.Data) {
+                throw new Error('Точка Банк вернул некорректный ответ: отсутствует Data');
             }
 
+            const data = responseData.Data;
+
+            if (!data.operationId || !data.paymentLink) {
+                throw new Error('Точка Банк вернул некорректный ответ: отсутствует operationId или paymentLink');
+            }
+
+            console.log(`✅ Платеж успешно создан:`, {
+                operationId: data.operationId,
+                paymentLink: data.paymentLink,
+                status: data.status
+            });
+
             return {
-                paymentId: data.paymentId,
-                paymentURL: data.paymentURL || data.paymentUrl,
-                qrCodeUrl: data.qrCodeUrl || data.qr_code_url, // Для СБП
-                status: data.status || 'pending',
-                rawData: data
+                paymentId: data.operationId, // operationId - это ID платежа
+                paymentURL: data.paymentLink, // paymentLink - это ссылка на оплату
+                qrCodeUrl: null, // Для СБП QR код генерируется на странице оплаты
+                status: data.status || 'CREATED',
+                rawData: responseData
             };
         } catch (error) {
             console.error('Ошибка создания платежа в Точка Банке:', {
@@ -146,6 +185,12 @@ class TochkaProvider {
                 orderId,
                 amount
             });
+            
+            // Выводим детали ошибки для отладки
+            if (error.response?.data?.Errors) {
+                console.error('Детали ошибки:', JSON.stringify(error.response.data.Errors, null, 2));
+            }
+            
             throw new Error(
                 error.response?.data?.message || 
                 error.response?.data?.error || 
