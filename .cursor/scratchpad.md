@@ -355,3 +355,38 @@ node scripts/diagnose-booking-creation.js
 - Размер `provider_raw_data` и его влияние
 
 **Статус:** ✅ **СКРИПТ СОЗДАН** (15.12.2025)
+
+---
+
+## ✅ ПРОБЛЕМА РЕШЕНА (15.12.2025)
+
+### Результат диагностики:
+
+**Проблема найдена:** Ошибка PostgreSQL `inconsistent types deduced for parameter $1` (код 42P08)
+
+**Причина:** PostgreSQL не мог определить тип для параметра `$1` в CASE выражении, так как `provider_status` имеет тип `character varying(100)`, а в CASE использовалось сравнение с текстовыми константами без явного приведения типов.
+
+**Решение:** Добавлены явные приведения типов в запросе UPDATE:
+- `$1::character varying(100)` для `provider_status`
+- `$1::text = 'SUCCESS'` в CASE для корректного сравнения
+- Явные приведения для всех параметров (`provider_payment_id`, `provider_order_id`, `payment_method`, `provider_raw_data::jsonb`)
+
+### Результаты тестирования:
+
+**Логи показывают успешную работу:**
+- ✅ `UPDATE транзакции #43 выполнен успешно, результат: { rows: 1, id: 43, status: 'completed', booking_id: 97 }`
+- ✅ `Транзакция #43 обновлена: status=completed`
+- ✅ `Webhook успешно обработан за 57ms (transaction #43, bookingId: 97)`
+- ✅ `UPDATE транзакции #44 выполнен успешно, результат: { rows: 1, id: 44, status: 'completed', booking_id: 98 }`
+- ✅ `Webhook успешно обработан за 48ms (transaction #44, bookingId: 98)`
+
+**Проверка БД:**
+- ✅ Транзакции #43, #44 имеют `booking_id` и `status = 'completed'`
+- ✅ Бронирования #97, #98 созданы и имеют `status = 'confirmed'`
+- ✅ Работает как для карты, так и для СБП
+
+**Файлы:**
+- `src/routes/kuliga-payment.js` - исправлен запрос UPDATE с явными приведениями типов
+- `scripts/diagnose-booking-creation.js` - диагностический скрипт для проверки
+
+**Статус:** ✅ **ПРОБЛЕМА РЕШЕНА** (15.12.2025)
