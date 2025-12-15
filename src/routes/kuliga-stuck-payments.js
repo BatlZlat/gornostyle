@@ -83,20 +83,32 @@ router.get('/', async (req, res) => {
             [startDate.toDate(), endDate.toDate()]
         );
         
-        const stuckPayments = result.rows.map(row => ({
-            id: row.id,
-            amount: parseFloat(row.amount),
-            description: row.description,
-            providerPaymentId: row.provider_payment_id,
-            providerOrderId: row.provider_order_id,
-            status: row.status,
-            providerStatus: row.provider_status,
-            createdAt: row.created_at,
-            minutesAgo: Math.round(parseFloat(row.minutes_ago)),
-            clientName: row.client_name,
-            clientPhone: row.client_phone,
-            hasBookingData: !!(row.provider_raw_data && row.provider_raw_data.bookingData)
-        }));
+        const stuckPayments = result.rows.map(row => {
+            // provider_raw_data хранится как JSON строка, нужно распарсить
+            let rawData = null;
+            try {
+                rawData = typeof row.provider_raw_data === 'string' 
+                    ? JSON.parse(row.provider_raw_data) 
+                    : row.provider_raw_data;
+            } catch (e) {
+                console.warn(`Ошибка парсинга provider_raw_data для транзакции #${row.id}:`, e.message);
+            }
+            
+            return {
+                id: row.id,
+                amount: parseFloat(row.amount),
+                description: row.description,
+                providerPaymentId: row.provider_payment_id,
+                providerOrderId: row.provider_order_id,
+                status: row.status,
+                providerStatus: row.provider_status,
+                createdAt: row.created_at,
+                minutesAgo: Math.round(parseFloat(row.minutes_ago)),
+                clientName: row.client_name,
+                clientPhone: row.client_phone,
+                hasBookingData: !!(rawData && rawData.bookingData)
+            };
+        });
         
         res.json({
             success: true,
@@ -154,7 +166,18 @@ router.post('/:id/create-booking', async (req, res) => {
         }
         
         // Извлекаем данные бронирования
-        const rawData = transaction.provider_raw_data || {};
+        // provider_raw_data хранится как JSON строка, нужно распарсить
+        let rawData = {};
+        try {
+            rawData = typeof transaction.provider_raw_data === 'string'
+                ? JSON.parse(transaction.provider_raw_data)
+                : (transaction.provider_raw_data || {});
+        } catch (e) {
+            console.error(`Ошибка парсинга provider_raw_data для транзакции #${transactionId}:`, e.message);
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Ошибка чтения данных транзакции' });
+        }
+        
         const bookingData = rawData.bookingData;
         
         if (!bookingData) {
