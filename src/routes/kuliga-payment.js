@@ -241,19 +241,17 @@ router.post('/callback', express.json(), async (req, res) => {
                     return res.status(200).send('OK');
                 }
                 
-                // Проверяем, что слот ещё доступен
+                // Проверяем статус слота
+                // Может быть 'hold' (наш hold) или 'available' (hold истёк или снят фоновой джобой)
                 const slotCheck = await client.query(
-                    `SELECT status FROM kuliga_schedule_slots WHERE id = $1 FOR UPDATE`,
+                    `SELECT status, hold_transaction_id FROM kuliga_schedule_slots WHERE id = $1 FOR UPDATE`,
                     [bookingData.slot_id]
                 );
                 
-                if (!slotCheck.rows.length || slotCheck.rows[0].status !== 'available') {
+                if (!slotCheck.rows.length) {
                     await client.query('ROLLBACK');
-                    errorMessage = `Слот #${bookingData.slot_id} уже занят или не существует`;
+                    errorMessage = `Слот #${bookingData.slot_id} не существует`;
                     console.error(`⚠️ ${errorMessage}`);
-                    
-                    // Возвращаем деньги (нужно инициировать возврат)
-                    await client.query('COMMIT');
                     
                     await logWebhook({
                         provider: providerName,
@@ -274,13 +272,72 @@ router.post('/callback', express.json(), async (req, res) => {
                     return res.status(200).send('OK');
                 }
                 
-                // Резервируем слот
+                const slotStatus = slotCheck.rows[0].status;
+                const slotHoldTransactionId = slotCheck.rows[0].hold_transaction_id;
+                
+                // Проверяем: слот должен быть либо 'hold' с нашим transaction_id, либо 'available'
+                if (slotStatus === 'hold' && slotHoldTransactionId !== transactionId) {
+                    // Hold держит другая транзакция - конфликт!
+                    await client.query('ROLLBACK');
+                    errorMessage = `Слот #${bookingData.slot_id} заблокирован другой транзакцией (#${slotHoldTransactionId})`;
+                    console.error(`⚠️ ${errorMessage}`);
+                    
+                    await logWebhook({
+                        provider: providerName,
+                        webhookType,
+                        paymentId,
+                        orderId,
+                        bookingId: null,
+                        status,
+                        amount,
+                        paymentMethod,
+                        rawPayload: payload,
+                        headers,
+                        signatureValid: true,
+                        processed: false,
+                        errorMessage
+                    });
+                    
+                    return res.status(200).send('OK');
+                }
+                
+                if (slotStatus !== 'hold' && slotStatus !== 'available') {
+                    // Слот уже занят (booked, group, blocked)
+                    await client.query('ROLLBACK');
+                    errorMessage = `Слот #${bookingData.slot_id} уже занят (статус: ${slotStatus})`;
+                    console.error(`⚠️ ${errorMessage}`);
+                    
+                    await logWebhook({
+                        provider: providerName,
+                        webhookType,
+                        paymentId,
+                        orderId,
+                        bookingId: null,
+                        status,
+                        amount,
+                        paymentMethod,
+                        rawPayload: payload,
+                        headers,
+                        signatureValid: true,
+                        processed: false,
+                        errorMessage
+                    });
+                    
+                    return res.status(200).send('OK');
+                }
+                
+                // Резервируем слот (hold → booked или available → booked)
                 await client.query(
                     `UPDATE kuliga_schedule_slots
-                     SET status = 'booked', updated_at = CURRENT_TIMESTAMP
+                     SET status = 'booked',
+                         hold_until = NULL,
+                         hold_transaction_id = NULL,
+                         updated_at = CURRENT_TIMESTAMP
                      WHERE id = $1`,
                     [bookingData.slot_id]
                 );
+                
+                console.log(`🔓 Слот #${bookingData.slot_id}: ${slotStatus} → booked`);
                 
                 // Создаём бронирование
                 const newBookingResult = await client.query(
@@ -500,8 +557,24 @@ router.post('/callback', express.json(), async (req, res) => {
                     console.log(`💰 Бронирование #${bookingId} возвращено (refund)`);
                 }
             } else if (isFailed) {
-                // Если платёж провалился и бронирования нет - просто логируем
+                // Если платёж провалился и бронирования нет - снимаем hold со слота
                 console.log(`❌ Платёж провалился, бронирование не создано`);
+                
+                // Снимаем hold со слота (если он был)
+                const rawData = transaction.provider_raw_data || {};
+                const bookingData = rawData.bookingData;
+                if (bookingData && bookingData.slot_id) {
+                    await client.query(
+                        `UPDATE kuliga_schedule_slots
+                         SET status = 'available',
+                             hold_until = NULL,
+                             hold_transaction_id = NULL,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1 AND hold_transaction_id = $2`,
+                        [bookingData.slot_id, transactionId]
+                    );
+                    console.log(`🔓 Hold снят со слота #${bookingData.slot_id} (платёж провалился)`);
+                }
             }
 
             await client.query('COMMIT');

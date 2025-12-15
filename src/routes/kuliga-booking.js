@@ -600,6 +600,20 @@ const createIndividualBooking = async (req, res) => {
 
         const transactionId = transactionResult.rows[0].id;
 
+        // ВРЕМЕННАЯ БЛОКИРОВКА (HOLD): Ставим слот на hold на 30 минут
+        // Это предотвращает двойное бронирование, пока клиент оплачивает
+        await client.query(
+            `UPDATE kuliga_schedule_slots
+             SET status = 'hold',
+                 hold_until = NOW() + INTERVAL '30 minutes',
+                 hold_transaction_id = $1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [transactionId, slot.slot_id]
+        );
+        
+        console.log(`🔒 Слот #${slot.slot_id} заблокирован (hold) на 30 минут для транзакции #${transactionId}`);
+
         await client.query('COMMIT');
 
         let payment;
@@ -625,14 +639,28 @@ const createIndividualBooking = async (req, res) => {
                 paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
-            // При ошибке инициализации платежа просто помечаем транзакцию как failed
-            // Бронирование не создано, слот не зарезервирован - откатывать нечего
+            // При ошибке инициализации платежа помечаем транзакцию как failed
+            // И СНИМАЕМ HOLD со слота
             await pool.query(
                 `UPDATE kuliga_transactions
                  SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
+            
+            // Снимаем hold со слота
+            await pool.query(
+                `UPDATE kuliga_schedule_slots
+                 SET status = 'available',
+                     hold_until = NULL,
+                     hold_transaction_id = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1 AND hold_transaction_id = $2`,
+                [slot.slot_id, transactionId]
+            );
+            
+            console.log(`🔓 Hold снят со слота #${slot.slot_id} (ошибка инициализации платежа)`);
+            
             throw paymentError;
         }
 
@@ -721,7 +749,8 @@ router.get('/availability', async (req, res) => {
                AND s.status = 'available'
                AND i.is_active = TRUE
                AND (i.sport_type = $2 OR i.sport_type = 'both')
-               AND kgt.id IS NULL`; // Исключаем слоты, связанные с групповыми тренировками
+               AND kgt.id IS NULL  -- Исключаем слоты, связанные с групповыми тренировками
+               AND (s.hold_until IS NULL OR s.hold_until < NOW())`; // Исключаем слоты с активным hold
         const params = [date, normalizedSport];
         
         // Фильтр по location, если указан
