@@ -555,12 +555,19 @@ const createIndividualBooking = async (req, res) => {
         });
 
         // Сохраняем данные для будущего создания бронирования после оплаты
+        // Нормализуем дату: slot.date может быть Date объектом или строкой, приводим к YYYY-MM-DD
+        const normalizedDate = slot.date instanceof Date 
+            ? moment.tz(slot.date, TIMEZONE).format('YYYY-MM-DD')
+            : typeof slot.date === 'string' && slot.date.includes('T')
+                ? moment.tz(slot.date, TIMEZONE).format('YYYY-MM-DD')
+                : moment.tz(slot.date, 'YYYY-MM-DD', TIMEZONE).format('YYYY-MM-DD');
+        
         const bookingData = {
             client_id: clientRecord.id,
             booking_type: 'individual',
             instructor_id: slot.instructor_id,
             slot_id: slot.slot_id,
-            date: slot.date,
+            date: normalizedDate,
             start_time: slot.start_time,
             end_time: slot.end_time,
             sport_type: normalizedSport,
