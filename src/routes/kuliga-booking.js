@@ -767,8 +767,21 @@ router.get('/availability', async (req, res) => {
 
         const { rows } = await pool.query(query, params);
 
+        const now = moment.tz(TIMEZONE);
+        const todayStr = now.format('YYYY-MM-DD');
+
         const available = rows
-            .filter((slot) => minutesBetween(date, slot.start_time, slot.end_time) >= requiredDuration)
+            // Отсекаем слоты, чье время уже прошло (для текущей даты)
+            .filter((slot) => {
+                const durationOk = minutesBetween(date, slot.start_time, slot.end_time) >= requiredDuration;
+                if (!durationOk) return false;
+
+                if (date === todayStr) {
+                    const slotStart = moment.tz(`${slot.date} ${slot.start_time}`, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
+                    return slotStart.isAfter(now);
+                }
+                return true;
+            })
             .map((slot) => ({
                 slot_id: slot.slot_id,
                 instructor_id: slot.instructor_id,
