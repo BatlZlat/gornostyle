@@ -625,6 +625,7 @@ router.post(
                 }
             }
             
+            console.log(`🔄 Обновляю транзакцию #${transactionId} (bookingId: ${bookingId || 'null'})`);
             const txUpdateResult = await client.query(
                 `UPDATE kuliga_transactions
                  SET provider_status = $1,
