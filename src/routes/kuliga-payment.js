@@ -646,17 +646,17 @@ router.post(
                 // Не используем явное приведение ::jsonb, чтобы избежать проблем
                 txUpdateResult = await client.query(
                     `UPDATE kuliga_transactions
-                     SET provider_status = $1,
-                         provider_payment_id = $2,
-                         provider_order_id = $3,
-                         payment_method = COALESCE($4, payment_method),
-                         provider_raw_data = $5,
+                     SET provider_status = $1::character varying(100),
+                         provider_payment_id = $2::character varying(255),
+                         provider_order_id = $3::character varying(255),
+                         payment_method = COALESCE($4::character varying(50), payment_method),
+                         provider_raw_data = $5::jsonb,
                          booking_id = COALESCE($7, booking_id),
                          status = CASE
-                             WHEN $1 = 'SUCCESS' THEN 'completed'
-                             WHEN $1 = 'FAILED' THEN 'failed'
-                             WHEN $1 = 'REFUNDED' THEN 'cancelled'
-                             WHEN $1 = 'PENDING' THEN 'pending'
+                             WHEN $1::text = 'SUCCESS' THEN 'completed'::character varying(20)
+                             WHEN $1::text = 'FAILED' THEN 'failed'::character varying(20)
+                             WHEN $1::text = 'REFUNDED' THEN 'cancelled'::character varying(20)
+                             WHEN $1::text = 'PENDING' THEN 'pending'::character varying(20)
                              ELSE status
                          END,
                          updated_at = CURRENT_TIMESTAMP
