@@ -777,7 +777,14 @@ router.get('/availability', async (req, res) => {
                 if (!durationOk) return false;
 
                 if (date === todayStr) {
-                    const slotStart = moment.tz(`${slot.date} ${slot.start_time}`, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
+                    // ВАЖНО: используем строковый параметр date (YYYY-MM-DD), а не slot.date (Timestamp),
+                    // иначе формат не совпадает и момент может вернуть невалидную дату.
+                    const slotStart = moment.tz(`${date} ${slot.start_time}`, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
+                    if (!slotStart.isValid()) {
+                        // Если по какой-то причине время не распарсилось — на всякий случай показываем слот,
+                        // чтобы не терять слоты из-за ошибок парсинга.
+                        return true;
+                    }
                     return slotStart.isAfter(now);
                 }
                 return true;
