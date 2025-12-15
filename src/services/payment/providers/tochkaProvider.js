@@ -308,16 +308,29 @@ class TochkaProvider {
     parseWebhookData(payload) {
         // Формат acquiringInternetPayment от Точка Банка
         // Вебхук приходит как JWT, payload уже декодирован
-        
+        //
+        // Фактическая структура (по логам):
+        // {
+        //   customerCode,
+        //   webhookType: "acquiringInternetPayment",
+        //   amount,              // в рублях, число/строка "10.00"
+        //   paymentType,         // "card" / "sbp"
+        //   operationId,         // ID операции (наш paymentId)
+        //   purpose,             // назначение платежа
+        //   merchantId,
+        //   consumerId,
+        //   status,              // "APPROVED" / ...
+        //   paymentLinkId,       // наш orderId (gornostyle72-winter-29)
+        //   ...
+        // }
+
         const webhookType = payload.webhookType || payload.webhook_type;
-        
-        // Для acquiringInternetPayment структура:
-        // { webhookType, paymentId, orderId, status, amount, currency, paymentMethod, customerCode, ... }
-        
+
         // Маппинг статусов Точка Банка
         const statusMap = {
             'SUCCESS': 'SUCCESS',
             'CONFIRMED': 'SUCCESS',
+            'APPROVED': 'SUCCESS',
             'FAILED': 'FAILED',
             'REJECTED': 'FAILED',
             'CANCELED': 'FAILED',
@@ -325,18 +338,40 @@ class TochkaProvider {
             'PENDING': 'PENDING',
             'REFUNDED': 'REFUNDED'
         };
-        
+
         const rawStatus = payload.status || payload.Status;
         const normalizedStatus = statusMap[rawStatus] || rawStatus;
-        
+
+        // В webhook от Точки наш orderId приходит в поле paymentLinkId
+        const orderId =
+            payload.orderId ||
+            payload.order_id ||
+            payload.OrderId ||
+            payload.paymentLinkId ||
+            payload.payment_link_id ||
+            payload.PaymentLinkId;
+
+        // Сумма приходит в рублях (как число или строка), иногда в копейках
+        let amount = null;
+        if (typeof payload.amount === 'number') {
+            amount = payload.amount;
+        } else if (typeof payload.amount === 'string') {
+            const parsed = parseFloat(payload.amount.replace(',', '.'));
+            if (!Number.isNaN(parsed)) {
+                amount = parsed;
+            }
+        } else if (typeof payload.Amount === 'number') {
+            amount = payload.Amount / 100;
+        }
+
         return {
             webhookType: webhookType,
-            orderId: payload.orderId || payload.order_id || payload.OrderId,
+            orderId,
             paymentId: payload.paymentId || payload.payment_id || payload.PaymentId || payload.operationId,
             status: normalizedStatus,
-            amount: payload.amount ? payload.amount / 100 : payload.Amount ? payload.Amount / 100 : null,
+            amount,
             currency: payload.currency || payload.Currency || 'RUB',
-            paymentMethod: payload.paymentMethod || payload.payment_method || payload.PaymentMethod || 'card',
+            paymentMethod: payload.paymentMethod || payload.payment_type || payload.payment_method || payload.PaymentMethod || 'card',
             customerCode: payload.customerCode || payload.customer_code,
             rawData: payload
         };
