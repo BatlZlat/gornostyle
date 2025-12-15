@@ -15,6 +15,31 @@ const TIMEZONE = 'Asia/Yekaterinburg';
 const formatDate = (date) => moment.tz(date, TIMEZONE).format('DD.MM.YYYY');
 const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).format('HH:mm') : '');
 
+/**
+ * Форматирует название платежа для чека
+ * @param {Object} params
+ * @param {string} params.bookingType - 'individual' или 'group'
+ * @param {string} params.location - 'kuliga' или 'vorona'
+ * @param {string} params.sportType - 'ski' или 'snowboard'
+ * @param {string} params.date - Дата тренировки
+ * @param {string} params.time - Время тренировки
+ * @param {string} params.programName - Название программы (опционально, для групповых)
+ * @returns {string} - Форматированное название
+ */
+const formatPaymentDescription = ({ bookingType, location, sportType, date, time, programName }) => {
+    const bookingTypeText = bookingType === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
+    const locationText = location === 'vorona' ? 'Воронинские горки' : 'Кулига Клаб';
+    const sportText = sportType === 'ski' ? 'Лыжи' : 'Сноуборд';
+    const dateFormatted = formatDate(date);
+    const timeFormatted = formatTime(time);
+    
+    if (programName) {
+        return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${programName}, ${dateFormatted} ${timeFormatted}`;
+    }
+    
+    return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
+};
+
 const minutesBetween = (date, startTime, endTime) => {
     // Преобразуем date в строку формата YYYY-MM-DD
     const dateStr = moment(date).format('YYYY-MM-DD');
@@ -224,8 +249,13 @@ const createGroupBooking = async (req, res) => {
 
         const bookingId = bookingResult.rows[0].id;
 
-        const description =
-            `Кулига: ${training.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(training.date)}, ${formatTime(training.start_time)}`;
+        const description = formatPaymentDescription({
+            bookingType: 'group',
+            location: training.location || 'kuliga',
+            sportType: training.sport_type,
+            date: training.date,
+            time: training.start_time
+        });
 
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
@@ -516,8 +546,13 @@ const createIndividualBooking = async (req, res) => {
         const notificationMethod = notifyEmail && notifyTelegram ? 'both' : notifyTelegram ? 'telegram' : notifyEmail ? 'email' : 'none';
         const payerRides = payerParticipation !== 'other';
 
-        const description =
-            `Кулига: ${normalizedSport === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(slot.date)}, ${formatTime(slot.start_time)}`;
+        const description = formatPaymentDescription({
+            bookingType: 'individual',
+            location: slotLocation,
+            sportType: normalizedSport,
+            date: slot.date,
+            time: slot.start_time
+        });
 
         // Сохраняем данные для будущего создания бронирования после оплаты
         const bookingData = {
@@ -983,8 +1018,14 @@ const createProgramBooking = async (req, res) => {
             [safeCount, groupTraining.id]
         );
 
-        const description =
-            `Кулига: Программа "${program.name}", ${program.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(dateStr)}, ${formatTime(startTimeStr)}`;
+        const description = formatPaymentDescription({
+            bookingType: 'group',
+            location: program.location || 'kuliga',
+            sportType: program.sport_type,
+            date: dateStr,
+            time: startTimeStr,
+            programName: program.name
+        });
 
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
