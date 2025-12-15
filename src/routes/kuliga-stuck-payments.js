@@ -297,7 +297,8 @@ router.post('/:id/create-booking', async (req, res) => {
             try {
                 const { notifyAdminNaturalSlopeTrainingBooking } = require('../bot/notifications/kuliga-notifications');
                 const { notifyInstructorKuligaTrainingBooking } = require('../bot/notifications/instructor-notifications');
-                const emailService = require('../services/emailService');
+                const EmailService = require('../services/emailService');
+                const emailService = new EmailService();
                 
                 // Получаем данные инструктора
                 const instructorResult = await pool.query(
