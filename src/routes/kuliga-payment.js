@@ -639,17 +639,18 @@ router.post(
             let txUpdateResult;
             try {
                 console.log(`💾 Выполняю UPDATE транзакции #${transactionId}...`);
-                console.log(`📦 provider_raw_data будет сохранен как jsonb, размер объекта: ${JSON.stringify(updatedRawData).length} байт`);
+                const jsonString = JSON.stringify(updatedRawData);
+                console.log(`📦 provider_raw_data будет сохранен как jsonb, размер: ${jsonString.length} байт`);
                 
-                // Для jsonb типа передаем объект напрямую, PostgreSQL сам сериализует
-                // Также обновляем booking_id, если бронирование было создано
+                // Для jsonb типа передаем JSON строку, PostgreSQL автоматически преобразует в jsonb
+                // Не используем явное приведение ::jsonb, чтобы избежать проблем
                 txUpdateResult = await client.query(
                     `UPDATE kuliga_transactions
                      SET provider_status = $1,
                          provider_payment_id = $2,
                          provider_order_id = $3,
                          payment_method = COALESCE($4, payment_method),
-                         provider_raw_data = $5::jsonb,
+                         provider_raw_data = $5,
                          booking_id = COALESCE($7, booking_id),
                          status = CASE
                              WHEN $1 = 'SUCCESS' THEN 'completed'
@@ -666,17 +667,24 @@ router.post(
                         paymentId,
                         orderId,
                         paymentMethod || 'card',
-                        JSON.stringify(updatedRawData), // Сериализуем для передачи в PostgreSQL
+                        jsonString, // Передаем JSON строку, PostgreSQL автоматически преобразует в jsonb
                         transactionId,
                         bookingId || null // Обновляем booking_id, если бронирование было создано
                     ]
                 );
-                console.log(`✅ UPDATE транзакции #${transactionId} выполнен успешно`);
+                console.log(`✅ UPDATE транзакции #${transactionId} выполнен успешно, результат:`, {
+                    rows: txUpdateResult.rows.length,
+                    id: txUpdateResult.rows[0]?.id,
+                    status: txUpdateResult.rows[0]?.status,
+                    booking_id: txUpdateResult.rows[0]?.booking_id
+                });
             } catch (updateError) {
                 console.error(`❌ Ошибка при UPDATE транзакции #${transactionId}:`, updateError);
                 console.error(`   Сообщение:`, updateError.message);
                 console.error(`   Код:`, updateError.code);
                 console.error(`   Детали:`, updateError.detail);
+                console.error(`   Позиция:`, updateError.position);
+                console.error(`   Внутренний запрос:`, updateError.internalQuery);
                 console.error(`   Stack trace:`, updateError.stack);
                 throw updateError; // Пробрасываем ошибку дальше, чтобы вызвать ROLLBACK
             }
