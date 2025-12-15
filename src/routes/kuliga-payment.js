@@ -146,7 +146,11 @@ router.post('/callback', express.json(), async (req, res) => {
             return res.status(200).send('OK');
         }
 
-        const bookingId = Number(orderId.replace('kuliga-', ''));
+        // НОВАЯ ЛОГИКА: orderId = kuliga-tx-{transactionId}
+        // Находим транзакцию, проверяем есть ли booking_id
+        // Если нет - создаём бронирование из provider_raw_data
+        const transactionId = Number(orderId.replace('kuliga-tx-', ''));
+        let bookingId = null;
         let errorMessage = null;
         let processed = false;
 
@@ -154,17 +158,18 @@ router.post('/callback', express.json(), async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            const bookingResult = await client.query(
-                `SELECT id, booking_type, group_training_id, participants_count, status as booking_status
-                 FROM kuliga_bookings
+            // Находим транзакцию
+            const transactionResult = await client.query(
+                `SELECT id, booking_id, client_id, amount, status as tx_status, provider_raw_data
+                 FROM kuliga_transactions
                  WHERE id = $1
                  FOR UPDATE`,
-                [bookingId]
+                [transactionId]
             );
 
-            if (!bookingResult.rows.length) {
+            if (!transactionResult.rows.length) {
                 await client.query('ROLLBACK');
-                errorMessage = `Бронирование #${bookingId} не найдено`;
+                errorMessage = `Транзакция #${transactionId} не найдена`;
                 console.error(`⚠️ ${errorMessage}`);
                 
                 // Логируем
@@ -173,7 +178,7 @@ router.post('/callback', express.json(), async (req, res) => {
                     webhookType,
                     paymentId,
                     orderId,
-                    bookingId,
+                    bookingId: null,
                     status,
                     amount,
                     paymentMethod,
@@ -187,23 +192,221 @@ router.post('/callback', express.json(), async (req, res) => {
                 return res.status(200).send('OK');
             }
 
-            const booking = bookingResult.rows[0];
+            const transaction = transactionResult.rows[0];
+            bookingId = transaction.booking_id;
 
-            // Определяем статус бронирования на основе статуса платежа
+            // Определяем статус платежа
             const isSuccess = status === 'SUCCESS';
             const isFailed = status === 'FAILED';
             const isRefunded = status === 'REFUNDED';
             const isPending = status === 'PENDING';
 
-            console.log(`📝 Обрабатываем вебхук для booking #${bookingId}:`, {
-                currentBookingStatus: booking.booking_status,
+            console.log(`📝 Обрабатываем вебхук для transaction #${transactionId}:`, {
+                bookingId,
                 paymentStatus: status,
                 isSuccess,
                 isFailed,
                 isRefunded
             });
 
-            // Обновляем транзакцию
+            // НОВАЯ ЛОГИКА: Если оплата успешна и бронирование ещё не создано - создаём его
+            if (isSuccess && !bookingId) {
+                console.log(`🔨 Создаём бронирование для успешного платежа (transaction #${transactionId})`);
+                
+                // Извлекаем данные бронирования из provider_raw_data
+                const rawData = transaction.provider_raw_data || {};
+                const bookingData = rawData.bookingData;
+                
+                if (!bookingData) {
+                    await client.query('ROLLBACK');
+                    errorMessage = `Данные бронирования не найдены в транзакции #${transactionId}`;
+                    console.error(`⚠️ ${errorMessage}`);
+                    
+                    await logWebhook({
+                        provider: providerName,
+                        webhookType,
+                        paymentId,
+                        orderId,
+                        bookingId: null,
+                        status,
+                        amount,
+                        paymentMethod,
+                        rawPayload: payload,
+                        headers,
+                        signatureValid: true,
+                        processed: false,
+                        errorMessage
+                    });
+                    
+                    return res.status(200).send('OK');
+                }
+                
+                // Проверяем, что слот ещё доступен
+                const slotCheck = await client.query(
+                    `SELECT status FROM kuliga_schedule_slots WHERE id = $1 FOR UPDATE`,
+                    [bookingData.slot_id]
+                );
+                
+                if (!slotCheck.rows.length || slotCheck.rows[0].status !== 'available') {
+                    await client.query('ROLLBACK');
+                    errorMessage = `Слот #${bookingData.slot_id} уже занят или не существует`;
+                    console.error(`⚠️ ${errorMessage}`);
+                    
+                    // Возвращаем деньги (нужно инициировать возврат)
+                    await client.query('COMMIT');
+                    
+                    await logWebhook({
+                        provider: providerName,
+                        webhookType,
+                        paymentId,
+                        orderId,
+                        bookingId: null,
+                        status,
+                        amount,
+                        paymentMethod,
+                        rawPayload: payload,
+                        headers,
+                        signatureValid: true,
+                        processed: false,
+                        errorMessage
+                    });
+                    
+                    return res.status(200).send('OK');
+                }
+                
+                // Резервируем слот
+                await client.query(
+                    `UPDATE kuliga_schedule_slots
+                     SET status = 'booked', updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $1`,
+                    [bookingData.slot_id]
+                );
+                
+                // Создаём бронирование
+                const newBookingResult = await client.query(
+                    `INSERT INTO kuliga_bookings (
+                        client_id,
+                        booking_type,
+                        instructor_id,
+                        slot_id,
+                        date,
+                        start_time,
+                        end_time,
+                        sport_type,
+                        participants_count,
+                        participants_names,
+                        participants_birth_years,
+                        price_total,
+                        price_per_person,
+                        price_id,
+                        notification_method,
+                        payer_rides,
+                        location,
+                        status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'confirmed')
+                    RETURNING id`,
+                    [
+                        bookingData.client_id,
+                        bookingData.booking_type,
+                        bookingData.instructor_id,
+                        bookingData.slot_id,
+                        bookingData.date,
+                        bookingData.start_time,
+                        bookingData.end_time,
+                        bookingData.sport_type,
+                        bookingData.participants_count,
+                        bookingData.participants_names,
+                        bookingData.participants_birth_years,
+                        bookingData.price_total,
+                        bookingData.price_per_person,
+                        bookingData.price_id,
+                        bookingData.notification_method,
+                        bookingData.payer_rides,
+                        bookingData.location
+                    ]
+                );
+                
+                bookingId = newBookingResult.rows[0].id;
+                console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты`);
+                
+                // Обновляем транзакцию - добавляем booking_id
+                await client.query(
+                    `UPDATE kuliga_transactions
+                     SET booking_id = $1
+                     WHERE id = $2`,
+                    [bookingId, transactionId]
+                );
+                
+                // Отправляем уведомления (асинхронно)
+                setImmediate(async () => {
+                    try {
+                        const { notifyAdminNaturalSlopeTrainingBooking } = require('../bot/notifications/kuliga-notifications');
+                        const { notifyInstructorKuligaTrainingBooking } = require('../bot/notifications/instructor-notifications');
+                        
+                        // Получаем данные инструктора
+                        const instructorResult = await pool.query(
+                            'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
+                            [bookingData.instructor_id]
+                        );
+                        
+                        // Уведомление администратору
+                        await notifyAdminNaturalSlopeTrainingBooking({
+                            client_name: bookingData.client_name,
+                            client_phone: bookingData.client_phone,
+                            participant_name: bookingData.participants_names[0] || bookingData.client_name,
+                            date: bookingData.date,
+                            time: bookingData.start_time,
+                            sport_type: bookingData.sport_type,
+                            instructor_name: bookingData.instructor_name,
+                            price: bookingData.price_total,
+                            booking_source: 'website',
+                            location: bookingData.location
+                        });
+                        
+                        // Уведомление инструктору
+                        if (instructorResult.rows.length > 0) {
+                            const instructor = instructorResult.rows[0];
+                            await notifyInstructorKuligaTrainingBooking({
+                                booking_type: 'individual',
+                                client_name: bookingData.client_name,
+                                participant_name: bookingData.participants_names[0] || bookingData.client_name,
+                                client_phone: bookingData.client_phone,
+                                instructor_name: instructor.full_name,
+                                instructor_telegram_id: instructor.telegram_id,
+                                admin_percentage: instructor.admin_percentage,
+                                date: bookingData.date,
+                                time: bookingData.start_time,
+                                price: bookingData.price_total,
+                                location: bookingData.location
+                            });
+                        }
+                    } catch (notifyError) {
+                        console.error('Ошибка при отправке уведомлений после создания бронирования:', notifyError);
+                    }
+                });
+            }
+            
+            // Если бронирование уже создано (повторный webhook), загружаем его
+            let booking = null;
+            if (bookingId) {
+                const bookingResult = await client.query(
+                    `SELECT id, booking_type, group_training_id, participants_count, status as booking_status
+                     FROM kuliga_bookings
+                     WHERE id = $1
+                     FOR UPDATE`,
+                    [bookingId]
+                );
+                
+                if (bookingResult.rows.length > 0) {
+                    booking = bookingResult.rows[0];
+                    console.log(`📝 Найдено существующее бронирование #${bookingId}:`, {
+                        currentBookingStatus: booking.booking_status,
+                        paymentStatus: status
+                    });
+                }
+            }
+
+            // Обновляем транзакцию (по transactionId, а не по booking_id)
             const txUpdateResult = await client.query(
                 `UPDATE kuliga_transactions
                  SET provider_status = $1,
@@ -219,7 +422,7 @@ router.post('/callback', express.json(), async (req, res) => {
                          ELSE status
                      END,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE booking_id = $6
+                 WHERE id = $6
                  RETURNING id, status`,
                 [
                     status,
@@ -227,47 +430,78 @@ router.post('/callback', express.json(), async (req, res) => {
                     orderId,
                     paymentMethod || 'card',
                     JSON.stringify(payload),
-                    bookingId
+                    transactionId
                 ]
             );
 
             if (txUpdateResult.rows.length === 0) {
-                console.warn(`⚠️ Транзакция для booking #${bookingId} не найдена`);
+                console.warn(`⚠️ Транзакция #${transactionId} не найдена`);
             } else {
-                console.log(`✅ Транзакция обновлена: status=${txUpdateResult.rows[0].status}`);
+                console.log(`✅ Транзакция #${transactionId} обновлена: status=${txUpdateResult.rows[0].status}`);
             }
 
-            // Обновляем статус бронирования
-            if (isSuccess && booking.booking_status !== 'confirmed') {
-                await client.query(
-                    `UPDATE kuliga_bookings
-                     SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
-                     WHERE id = $1`,
-                    [bookingId]
-                );
-                console.log(`✅ Бронирование #${bookingId} подтверждено`);
-            } else if (isFailed && booking.booking_status !== 'cancelled') {
-                await client.query(
-                    `UPDATE kuliga_bookings
-                     SET status = 'cancelled', 
-                         cancellation_reason = 'Платеж отклонен банком', 
-                         cancelled_at = CURRENT_TIMESTAMP,
-                         updated_at = CURRENT_TIMESTAMP
-                     WHERE id = $1`,
-                    [bookingId]
-                );
-                console.log(`❌ Бронирование #${bookingId} отменено (платеж не прошел)`);
-            } else if (isRefunded && booking.booking_status !== 'refunded') {
-                await client.query(
-                    `UPDATE kuliga_bookings
-                     SET status = 'refunded', 
-                         cancellation_reason = 'Возврат средств', 
-                         cancelled_at = CURRENT_TIMESTAMP,
-                         updated_at = CURRENT_TIMESTAMP
-                     WHERE id = $1`,
-                    [bookingId]
-                );
-                console.log(`💰 Бронирование #${bookingId} возвращено (refund)`);
+            // Обновляем статус бронирования (если оно существует)
+            if (booking) {
+                if (isSuccess && booking.booking_status !== 'confirmed') {
+                    await client.query(
+                        `UPDATE kuliga_bookings
+                         SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [bookingId]
+                    );
+                    console.log(`✅ Бронирование #${bookingId} подтверждено`);
+                } else if (isFailed && booking.booking_status !== 'cancelled') {
+                    await client.query(
+                        `UPDATE kuliga_bookings
+                         SET status = 'cancelled', 
+                             cancellation_reason = 'Платеж отклонен банком', 
+                             cancelled_at = CURRENT_TIMESTAMP,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [bookingId]
+                    );
+                    
+                    // Освобождаем слот
+                    const rawData = transaction.provider_raw_data || {};
+                    const bookingData = rawData.bookingData;
+                    if (bookingData && bookingData.slot_id) {
+                        await client.query(
+                            `UPDATE kuliga_schedule_slots
+                             SET status = 'available', updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $1`,
+                            [bookingData.slot_id]
+                        );
+                    }
+                    
+                    console.log(`❌ Бронирование #${bookingId} отменено (платеж не прошел)`);
+                } else if (isRefunded && booking.booking_status !== 'refunded') {
+                    await client.query(
+                        `UPDATE kuliga_bookings
+                         SET status = 'refunded', 
+                             cancellation_reason = 'Возврат средств', 
+                             cancelled_at = CURRENT_TIMESTAMP,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [bookingId]
+                    );
+                    
+                    // Освобождаем слот
+                    const rawData = transaction.provider_raw_data || {};
+                    const bookingData = rawData.bookingData;
+                    if (bookingData && bookingData.slot_id) {
+                        await client.query(
+                            `UPDATE kuliga_schedule_slots
+                             SET status = 'available', updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $1`,
+                            [bookingData.slot_id]
+                        );
+                    }
+                    
+                    console.log(`💰 Бронирование #${bookingId} возвращено (refund)`);
+                }
+            } else if (isFailed) {
+                // Если платёж провалился и бронирования нет - просто логируем
+                console.log(`❌ Платёж провалился, бронирование не создано`);
             }
 
             await client.query('COMMIT');
