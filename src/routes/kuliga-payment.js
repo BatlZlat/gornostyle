@@ -741,12 +741,13 @@ router.post(
             await client.query('COMMIT');
             processed = true;
             
-            console.log(`✅ Webhook успешно обработан за ${Date.now() - startTime}ms`);
+            console.log(`✅ Webhook успешно обработан за ${Date.now() - startTime}ms (transaction #${transactionId}, bookingId: ${bookingId || 'null'})`);
 
         } catch (error) {
             await client.query('ROLLBACK');
             errorMessage = error.message;
-            console.error(`❌ Ошибка обработки webhook для booking #${bookingId}:`, error);
+            console.error(`❌ Ошибка обработки webhook для transaction #${transactionId} (bookingId: ${bookingId || 'null'}):`, error);
+            console.error(`   Stack trace:`, error.stack);
         } finally {
             client.release();
         }
