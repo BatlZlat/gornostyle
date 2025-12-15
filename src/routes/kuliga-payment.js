@@ -644,32 +644,41 @@ router.post(
                 throw new Error(`Не удалось сериализовать provider_raw_data: ${stringifyError.message}`);
             }
             
-            const txUpdateResult = await client.query(
-                `UPDATE kuliga_transactions
-                 SET provider_status = $1,
-                     provider_payment_id = $2,
-                     provider_order_id = $3,
-                     payment_method = COALESCE($4, payment_method),
-                     provider_raw_data = $5,
-                     status = CASE
-                         WHEN $1 = 'SUCCESS' THEN 'completed'
-                         WHEN $1 = 'FAILED' THEN 'failed'
-                         WHEN $1 = 'REFUNDED' THEN 'cancelled'
-                         WHEN $1 = 'PENDING' THEN 'pending'
-                         ELSE status
-                     END,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $6
-                 RETURNING id, status`,
-                [
-                    status,
-                    paymentId,
-                    orderId,
-                    paymentMethod || 'card',
-                    updatedRawDataString,
-                    transactionId
-                ]
-            );
+            let txUpdateResult;
+            try {
+                console.log(`💾 Выполняю UPDATE транзакции #${transactionId}...`);
+                txUpdateResult = await client.query(
+                    `UPDATE kuliga_transactions
+                     SET provider_status = $1,
+                         provider_payment_id = $2,
+                         provider_order_id = $3,
+                         payment_method = COALESCE($4, payment_method),
+                         provider_raw_data = $5,
+                         status = CASE
+                             WHEN $1 = 'SUCCESS' THEN 'completed'
+                             WHEN $1 = 'FAILED' THEN 'failed'
+                             WHEN $1 = 'REFUNDED' THEN 'cancelled'
+                             WHEN $1 = 'PENDING' THEN 'pending'
+                             ELSE status
+                         END,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $6
+                     RETURNING id, status`,
+                    [
+                        status,
+                        paymentId,
+                        orderId,
+                        paymentMethod || 'card',
+                        updatedRawDataString,
+                        transactionId
+                    ]
+                );
+                console.log(`✅ UPDATE транзакции #${transactionId} выполнен успешно`);
+            } catch (updateError) {
+                console.error(`❌ Ошибка при UPDATE транзакции #${transactionId}:`, updateError);
+                console.error(`   Stack trace:`, updateError.stack);
+                throw updateError; // Пробрасываем ошибку дальше, чтобы вызвать ROLLBACK
+            }
 
             if (txUpdateResult.rows.length === 0) {
                 console.warn(`⚠️ Транзакция #${transactionId} не найдена`);
