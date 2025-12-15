@@ -679,6 +679,7 @@ router.post(
 
             // Обновляем статус бронирования (если оно существует)
             if (booking) {
+                console.log(`📝 Обновляю статус бронирования #${bookingId} (текущий статус: ${booking.booking_status}, isSuccess: ${isSuccess})`);
                 if (isSuccess && booking.booking_status !== 'confirmed') {
                     await client.query(
                         `UPDATE kuliga_bookings
@@ -757,6 +758,7 @@ router.post(
                 }
             }
 
+            console.log(`💾 Выполняю COMMIT для транзакции #${transactionId} (bookingId: ${bookingId || 'null'})`);
             await client.query('COMMIT');
             processed = true;
             
