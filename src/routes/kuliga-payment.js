@@ -465,6 +465,19 @@ router.post(
                 console.log(`🔓 Слот #${bookingData.slot_id}: ${slotStatus} → booked`);
                 
                 // Создаём бронирование
+                console.log(`🔨 Параметры для создания бронирования (transaction #${transactionId}):`, {
+                    client_id: bookingData.client_id,
+                    booking_type: bookingData.booking_type,
+                    instructor_id: bookingData.instructor_id,
+                    slot_id: bookingData.slot_id,
+                    date: bookingData.date,
+                    start_time: bookingData.start_time,
+                    end_time: bookingData.end_time,
+                    sport_type: bookingData.sport_type,
+                    participants_count: bookingData.participants_count,
+                    location: bookingData.location
+                });
+                
                 const newBookingResult = await client.query(
                     `INSERT INTO kuliga_bookings (
                         client_id,
@@ -508,8 +521,12 @@ router.post(
                     ]
                 );
                 
+                if (!newBookingResult.rows || !newBookingResult.rows[0]) {
+                    throw new Error('INSERT INTO kuliga_bookings не вернул id');
+                }
+                
                 bookingId = newBookingResult.rows[0].id;
-                console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты`);
+                console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 
                 // Обновляем транзакцию - добавляем booking_id
                 await client.query(
@@ -589,6 +606,25 @@ router.post(
             }
 
             // Обновляем транзакцию (по transactionId, а не по booking_id)
+            // Важно: сохраняем bookingData при обновлении provider_raw_data
+            let updatedRawData = payload;
+            if (transaction.provider_raw_data) {
+                try {
+                    const existingRawData = typeof transaction.provider_raw_data === 'string'
+                        ? JSON.parse(transaction.provider_raw_data)
+                        : transaction.provider_raw_data;
+                    // Сохраняем bookingData, если он был
+                    if (existingRawData.bookingData) {
+                        updatedRawData = {
+                            ...payload,
+                            bookingData: existingRawData.bookingData
+                        };
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ Не удалось распарсить provider_raw_data для транзакции #${transactionId}:`, e.message);
+                }
+            }
+            
             const txUpdateResult = await client.query(
                 `UPDATE kuliga_transactions
                  SET provider_status = $1,
@@ -611,7 +647,7 @@ router.post(
                     paymentId,
                     orderId,
                     paymentMethod || 'card',
-                    JSON.stringify(payload),
+                    JSON.stringify(updatedRawData),
                     transactionId
                 ]
             );
