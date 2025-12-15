@@ -124,6 +124,7 @@ const availableSlots = maxParticipants - currentBooked;
   - Создан системный logrotate `/etc/logrotate.d/gornostyle` для `/root/project/gornostyle/logs/*.log`: `daily`, `size 10M`, `rotate 7`, `compress`, `delaycompress`, `copytruncate`, `create 640 root root`.
   - Выполнена принудительная ротация `logrotate -f`: текущие файлы ~31K/0, архивы `.1` ~1.6MB, `.2.gz` ~0.9MB; суммарно ~4.9MB.
   - Добавлена ежедневная чистка бэкапов `/etc/cron.daily/gornostyle-backup-clean`: удаляет файлы `skisimulator_*.sql.gz`, `*.dump`, `*.backup` старше 35 дней в `/root/gornostyle-backups` и `/root/project/gornostyle`, лог в `/var/log/gornostyle-backup-clean.log`.
+  - 15.12: `/api/kuliga/payment/callback` переведён на `express.raw({ type: '*/*' })` с парсингом JSON из `text/plain` и строгим определением тестового вебхука только при реально пустом теле; логируем content-length/rawLength.
 - Следующие шаги: подтвердить, что устраивает хранение 7 дней/10MB; при необходимости скорректировать (например, `retain 14` или `size 50M`).
 
 ## Executor's Feedback or Assistance Requests

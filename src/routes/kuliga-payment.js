@@ -49,33 +49,54 @@ router.get('/callback', (req, res) => {
     res.status(200).send('OK');
 });
 
-router.post('/callback', express.json(), async (req, res) => {
-    const payload = req.body || {};
-    const headers = req.headers || {};
-    const startTime = Date.now();
+router.post(
+    '/callback',
+    // Принимаем любой Content-Type, включая text/plain
+    express.raw({ type: '*/*', limit: '1mb' }),
+    async (req, res) => {
+        const headers = req.headers || {};
+        const rawBody = Buffer.isBuffer(req.body)
+            ? req.body.toString('utf8')
+            : typeof req.body === 'string'
+                ? req.body
+                : '';
 
-    console.log(`🔔 Получен webhook:`, {
-        method: 'POST',
-        headers: Object.keys(headers),
-        payloadKeys: Object.keys(payload),
-        userAgent: headers['user-agent'] || headers['User-Agent'],
-        contentType: headers['content-type'] || headers['Content-Type']
-    });
+        let payload = {};
+        try {
+            payload = rawBody ? JSON.parse(rawBody) : {};
+        } catch (err) {
+            console.warn('⚠️ Не удалось распарсить webhook как JSON, rawBody сохранён', {
+                error: err.message
+            });
+        }
+
+        const startTime = Date.now();
+        const contentLength = Number(headers['content-length'] || 0);
+        const rawLength = rawBody.length;
+        const userAgent = (headers['user-agent'] || headers['User-Agent'] || '').toLowerCase();
+
+        console.log(`🔔 Получен webhook:`, {
+            method: 'POST',
+            headers: Object.keys(headers),
+            payloadKeys: Object.keys(payload),
+            userAgent,
+            contentType: headers['content-type'] || headers['Content-Type'],
+            contentLength,
+            rawLength
+        });
 
     try {
         // Обработка тестового вебхука от банка при регистрации
-        // Банк отправляет тестовый запрос для проверки доступности URL
-        // В этом случае payload может быть пустым или иметь другую структуру
-        const isEmptyPayload = !payload || Object.keys(payload).length === 0;
-        const userAgent = (headers['user-agent'] || headers['User-Agent'] || '').toLowerCase();
-        const isTestWebhook = isEmptyPayload || 
-                              userAgent.includes('tochka') ||
-                              userAgent.includes('curl') ||
-                              userAgent.includes('postman');
-        
+        // Тестовый — только если действительно пустое тело (rawLength === 0)
+        const isParsedEmpty = !payload || Object.keys(payload).length === 0;
+        const isTrulyEmpty = rawLength === 0 || contentLength === 0;
+        const isTestWebhook =
+            isTrulyEmpty ||
+            (isParsedEmpty && (userAgent.includes('tochka') || userAgent.includes('curl') || userAgent.includes('postman')));
+
         if (isTestWebhook) {
             console.log('✅ Получен тестовый вебхук от банка (проверка доступности URL)');
-            console.log('   Payload:', JSON.stringify(payload));
+            console.log('   Payload:', rawBody || '{}');
             console.log('   User-Agent:', userAgent);
             // Отвечаем 200 OK для успешной проверки доступности
             return res.status(200).send('OK');
