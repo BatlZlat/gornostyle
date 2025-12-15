@@ -634,6 +634,16 @@ router.post(
             }
             
             console.log(`🔄 Обновляю транзакцию #${transactionId} (bookingId: ${bookingId || 'null'})`);
+            
+            let updatedRawDataString;
+            try {
+                updatedRawDataString = JSON.stringify(updatedRawData);
+                console.log(`📦 provider_raw_data сериализован, размер: ${updatedRawDataString.length} байт`);
+            } catch (stringifyError) {
+                console.error(`❌ Ошибка при сериализации provider_raw_data для транзакции #${transactionId}:`, stringifyError);
+                throw new Error(`Не удалось сериализовать provider_raw_data: ${stringifyError.message}`);
+            }
+            
             const txUpdateResult = await client.query(
                 `UPDATE kuliga_transactions
                  SET provider_status = $1,
@@ -656,7 +666,7 @@ router.post(
                     paymentId,
                     orderId,
                     paymentMethod || 'card',
-                    JSON.stringify(updatedRawData),
+                    updatedRawDataString,
                     transactionId
                 ]
             );
