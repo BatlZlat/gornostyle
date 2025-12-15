@@ -61,32 +61,59 @@ router.post(
                 ? req.body
                 : '';
 
-        let payload = {};
-        try {
-            payload = rawBody ? JSON.parse(rawBody) : {};
-        } catch (err) {
-            console.warn('⚠️ Не удалось распарсить webhook как JSON, rawBody сохранён', {
-                error: err.message
-            });
-        }
-
         const startTime = Date.now();
         const contentLength = Number(headers['content-length'] || 0);
         const rawLength = rawBody.length;
         const userAgent = (headers['user-agent'] || headers['User-Agent'] || '').toLowerCase();
+        const contentType = headers['content-type'] || headers['Content-Type'] || '';
+
+        // Проверяем, является ли rawBody JWT токеном (Точка Банк отправляет вебхуки как JWT)
+        // JWT формат: header.payload.signature (три части, разделенные точками)
+        const trimmedBody = rawBody.trim();
+        const isJWT = trimmedBody && trimmedBody.split('.').length === 3 && trimmedBody.startsWith('eyJ');
+        
+        let payload = {};
+        let jwtToken = null;
+
+        if (isJWT) {
+            // Это JWT токен - декодируем без проверки подписи (проверим позже)
+            jwtToken = rawBody.trim();
+            try {
+                const jwt = require('jsonwebtoken');
+                // Декодируем без проверки подписи, чтобы извлечь payload
+                payload = jwt.decode(jwtToken, { complete: false });
+                if (!payload) {
+                    throw new Error('Не удалось декодировать JWT');
+                }
+                console.log('✅ Распознан JWT токен, payload декодирован');
+            } catch (err) {
+                console.error('❌ Ошибка декодирования JWT:', err.message);
+                return res.status(400).send('Invalid JWT format');
+            }
+        } else {
+            // Пытаемся распарсить как JSON
+            try {
+                payload = rawBody ? JSON.parse(rawBody) : {};
+            } catch (err) {
+                console.warn('⚠️ Не удалось распарсить webhook как JSON, rawBody сохранён', {
+                    error: err.message
+                });
+            }
+        }
 
         console.log(`🔔 Получен webhook:`, {
             method: 'POST',
             headers: Object.keys(headers),
             payloadKeys: Object.keys(payload),
             userAgent,
-            contentType: headers['content-type'] || headers['Content-Type'],
+            contentType,
             contentLength,
-            rawLength
+            rawLength,
+            isJWT: !!isJWT
         });
 
         // Логируем первые 500 символов rawBody для отладки
-        if (rawLength > 0 && Object.keys(payload).length === 0) {
+        if (rawLength > 0 && Object.keys(payload).length === 0 && !isJWT) {
             console.log('⚠️ Payload не распарсился, rawBody (первые 500 символов):', rawBody.substring(0, 500));
         }
 
@@ -107,18 +134,24 @@ router.post(
             return res.status(200).send('OK');
         }
 
-        // Если payload пустой, но тело не пустое - пытаемся распарсить еще раз
-        if (isParsedEmpty && !isTrulyEmpty) {
-            console.warn('⚠️ Payload пустой, но тело не пустое. Попытка повторного парсинга...');
-            console.log('   RawBody (первые 1000 символов):', rawBody.substring(0, 1000));
-        }
-
         // Определяем провайдера по структуре payload
         const providerName = PaymentProviderFactory.detectProviderFromWebhook(payload);
         const provider = PaymentProviderFactory.create(providerName);
 
-        // Проверяем подпись webhook (строго!)
-        const signatureValid = provider.verifyWebhookSignature(payload, headers);
+        // Проверяем подпись webhook
+        // Для JWT токенов проверяем подпись самого токена, для JSON - через verifyWebhookSignature
+        let signatureValid = false;
+        if (isJWT && jwtToken) {
+            // Для JWT проверяем подпись токена напрямую
+            signatureValid = provider.verifyJWT(jwtToken);
+            if (!signatureValid) {
+                console.error('❌ Некорректная подпись JWT токена');
+                console.error('   JWT (первые 200 символов):', jwtToken.substring(0, 200));
+            }
+        } else {
+            // Для JSON проверяем через стандартный метод
+            signatureValid = provider.verifyWebhookSignature(payload, headers);
+        }
         
         if (!signatureValid) {
             console.error(`❌ Некорректная подпись ${providerName} webhook`);
