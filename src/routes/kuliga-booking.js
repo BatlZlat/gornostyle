@@ -583,6 +583,7 @@ const createIndividualBooking = async (req, res) => {
 
         // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
         // Данные бронирования сохраняем в provider_raw_data
+        const rawDataForInsert = { bookingData };
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (
                 client_id, 
@@ -595,7 +596,7 @@ const createIndividualBooking = async (req, res) => {
             )
              VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
-            [clientRecord.id, totalPrice, description, JSON.stringify({ bookingData })]
+            [clientRecord.id, totalPrice, description, JSON.stringify(rawDataForInsert)]
         );
 
         const transactionId = transactionResult.rows[0].id;
@@ -667,9 +668,12 @@ const createIndividualBooking = async (req, res) => {
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         
         // Обновляем транзакцию с данными от провайдера
-        // provider_raw_data уже содержит bookingData, добавляем к нему paymentData
-        const rawData = JSON.parse(transactionResult.rows[0].provider_raw_data || '{}');
-        rawData.paymentData = payment.rawData || payment;
+        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // Это гарантирует, что bookingData не потеряется
+        const rawData = {
+            ...rawDataForInsert, // bookingData уже здесь
+            paymentData: payment.rawData || payment
+        };
         
         await pool.query(
             `UPDATE kuliga_transactions
