@@ -27,7 +27,9 @@ class TochkaProvider {
         this.failUrl = process.env.PAYMENT_FAIL_URL;
         this.callbackUrl = process.env.PAYMENT_CALLBACK_URL;
 
-        if (!this.apiKey || !this.clientId || !this.merchantId) {
+        // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
+        // Пробуем работать без merchantId, так как он опционален
+        if (!this.apiKey || !this.clientId) {
             console.warn('⚠️  Tochka Bank: отсутствуют обязательные credentials');
         }
     }
@@ -53,7 +55,9 @@ class TochkaProvider {
         items = [],
         paymentMethod = 'card'
     }) {
-        if (!this.apiKey || !this.clientId || !this.merchantId) {
+        // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
+        // Пробуем работать без merchantId, так как он опционален
+        if (!this.apiKey || !this.clientId) {
             throw new Error('Точка Банк не настроен (отсутствуют credentials)');
         }
 
@@ -107,9 +111,12 @@ class TochkaProvider {
         const requestBody = {
             Data: {
                 customerCode: this.customerCode,
-                // merchantId - опциональный, но если задан, должен быть 15 символов
-                // Включаем только если длина >= 15 символов
-                ...(this.merchantId && this.merchantId.length >= 15 ? { merchantId: this.merchantId } : {}),
+                // merchantId - опциональный параметр
+                // Согласно документации API, должен быть 15 символов
+                // Техподдержка дала MB0002168266 (13 символов) - это QR-код для СБП, но API требует 15 символов
+                // Пробуем без merchantId, так как он опционален и может не требоваться для интернет-эквайринга
+                // Если API вернет ошибку, что merchantId обязателен, нужно будет уточнить правильный 15-символьный merchantId
+                // ...(this.merchantId && this.merchantId.length >= 15 ? { merchantId: this.merchantId } : {}),
                 // amount должен быть number (не строка!), но в JSON это будет число с плавающей точкой
                 amount: parseFloat(amount.toFixed(2)), // Сумма в рублях как число
                 purpose: description.substring(0, 140), // Назначение платежа (до 140 символов)
