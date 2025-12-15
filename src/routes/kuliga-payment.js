@@ -588,20 +588,28 @@ router.post(
             // Если бронирование уже создано (повторный webhook), загружаем его
             let booking = null;
             if (bookingId) {
-                const bookingResult = await client.query(
-                    `SELECT id, booking_type, group_training_id, participants_count, status as booking_status
-                     FROM kuliga_bookings
-                     WHERE id = $1
-                     FOR UPDATE`,
-                    [bookingId]
-                );
-                
-                if (bookingResult.rows.length > 0) {
-                    booking = bookingResult.rows[0];
-                    console.log(`📝 Найдено существующее бронирование #${bookingId}:`, {
-                        currentBookingStatus: booking.booking_status,
-                        paymentStatus: status
-                    });
+                try {
+                    console.log(`🔍 Ищу бронирование #${bookingId} в транзакции (transaction #${transactionId})`);
+                    const bookingResult = await client.query(
+                        `SELECT id, booking_type, group_training_id, participants_count, status as booking_status
+                         FROM kuliga_bookings
+                         WHERE id = $1
+                         FOR UPDATE`,
+                        [bookingId]
+                    );
+                    
+                    if (bookingResult.rows.length > 0) {
+                        booking = bookingResult.rows[0];
+                        console.log(`📝 Найдено существующее бронирование #${bookingId}:`, {
+                            currentBookingStatus: booking.booking_status,
+                            paymentStatus: status
+                        });
+                    } else {
+                        console.warn(`⚠️ Бронирование #${bookingId} не найдено в БД после создания (transaction #${transactionId})`);
+                    }
+                } catch (bookingSelectError) {
+                    console.error(`❌ Ошибка при поиске бронирования #${bookingId} (transaction #${transactionId}):`, bookingSelectError);
+                    // Продолжаем выполнение, так как это не критично
                 }
             }
 
