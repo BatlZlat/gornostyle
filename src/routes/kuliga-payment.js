@@ -528,13 +528,7 @@ router.post(
                 bookingId = newBookingResult.rows[0].id;
                 console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 
-                // Обновляем транзакцию - добавляем booking_id
-                await client.query(
-                    `UPDATE kuliga_transactions
-                     SET booking_id = $1
-                     WHERE id = $2`,
-                    [bookingId, transactionId]
-                );
+                // booking_id будет обновлен в основном запросе UPDATE транзакции ниже
                 
                 // Отправляем уведомления (асинхронно, после COMMIT)
                 setImmediate(async () => {
@@ -648,6 +642,7 @@ router.post(
                 console.log(`📦 provider_raw_data будет сохранен как jsonb, размер объекта: ${JSON.stringify(updatedRawData).length} байт`);
                 
                 // Для jsonb типа передаем объект напрямую, PostgreSQL сам сериализует
+                // Также обновляем booking_id, если бронирование было создано
                 txUpdateResult = await client.query(
                     `UPDATE kuliga_transactions
                      SET provider_status = $1,
@@ -655,6 +650,7 @@ router.post(
                          provider_order_id = $3,
                          payment_method = COALESCE($4, payment_method),
                          provider_raw_data = $5::jsonb,
+                         booking_id = COALESCE($7, booking_id),
                          status = CASE
                              WHEN $1 = 'SUCCESS' THEN 'completed'
                              WHEN $1 = 'FAILED' THEN 'failed'
@@ -664,14 +660,15 @@ router.post(
                          END,
                          updated_at = CURRENT_TIMESTAMP
                      WHERE id = $6
-                     RETURNING id, status`,
+                     RETURNING id, status, booking_id`,
                     [
                         status,
                         paymentId,
                         orderId,
                         paymentMethod || 'card',
                         JSON.stringify(updatedRawData), // Сериализуем для передачи в PostgreSQL
-                        transactionId
+                        transactionId,
+                        bookingId || null // Обновляем booking_id, если бронирование было создано
                     ]
                 );
                 console.log(`✅ UPDATE транзакции #${transactionId} выполнен успешно`);
