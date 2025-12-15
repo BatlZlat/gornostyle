@@ -1815,6 +1815,9 @@
             : null;
         
         const fpOptions = {
+            // ВАЖНО: используем один и тот же календарь и на десктопе, и на мобильных
+            // иначе на мобильных устройствах показывается нативный datepicker без наших стилей
+            disableMobile: true,
             dateFormat: 'Y-m-d',
             altInput: true,
             altFormat: 'd.m.Y',
