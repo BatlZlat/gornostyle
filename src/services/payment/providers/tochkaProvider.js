@@ -347,13 +347,25 @@ class TochkaProvider {
         const normalizedStatus = statusMap[rawStatus] || rawStatus;
 
         // В webhook от Точки наш orderId приходит в поле paymentLinkId
-        const orderId =
+        // Для СБП-платежей paymentLinkId может отсутствовать, извлекаем из purpose
+        let orderId =
             payload.orderId ||
             payload.order_id ||
             payload.OrderId ||
             payload.paymentLinkId ||
             payload.payment_link_id ||
             payload.PaymentLinkId;
+        
+        // Если orderId не найден, пытаемся извлечь из purpose
+        // purpose содержит paymentLinkId в начале строки (наш формат description)
+        if (!orderId && payload.purpose) {
+            // Ищем наш формат: "gornostyle72-winter-31" или "Горностайл72..."
+            // Наш paymentLinkId всегда в начале purpose (см. formatPaymentDescription)
+            const purposeMatch = payload.purpose.match(/^(gornostyle72-winter-\d+)/);
+            if (purposeMatch) {
+                orderId = purposeMatch[1];
+            }
+        }
 
         // Сумма приходит в рублях (как число или строка), иногда в копейках
         let amount = null;

@@ -189,6 +189,11 @@ router.post(
             paymentId,
             status
         });
+        
+        // Временное логирование для отладки СБП
+        if (!orderId) {
+            console.warn('⚠️ orderId не определён, полный payload:', JSON.stringify(payload, null, 2));
+        }
 
         // Поддерживаем новый формат gornostyle72-winter-{id} и старый kuliga-{id} для обратной совместимости
         if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && !orderId.startsWith('kuliga-'))) {
