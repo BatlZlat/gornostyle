@@ -273,7 +273,7 @@ const createGroupBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `kuliga-${bookingId}`,
+                orderId: `gornostyle72-winter-${bookingId}`,
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -320,7 +320,7 @@ const createGroupBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `kuliga-${bookingId}`,
+                `gornostyle72-winter-${bookingId}`,
                 payment.status,
                 paymentMethod,
                 JSON.stringify(payment.rawData || payment),
@@ -620,7 +620,7 @@ const createIndividualBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `kuliga-tx-${transactionId}`, // Используем transactionId вместо bookingId
+                orderId: `gornostyle72-winter-${transactionId}`, // Используем transactionId вместо bookingId
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -683,7 +683,7 @@ const createIndividualBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `kuliga-tx-${transactionId}`,
+                `gornostyle72-winter-${transactionId}`,
                 payment.status,
                 paymentMethod,
                 JSON.stringify(rawData),
@@ -1072,7 +1072,7 @@ const createProgramBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `kuliga-${bookingId}`,
+                orderId: `gornostyle72-winter-${bookingId}`,
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -1119,7 +1119,7 @@ const createProgramBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `kuliga-${bookingId}`,
+                `gornostyle72-winter-${bookingId}`,
                 payment.status,
                 paymentMethod,
                 JSON.stringify(payment.rawData || payment),

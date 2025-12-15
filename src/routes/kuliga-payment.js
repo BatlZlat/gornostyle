@@ -85,6 +85,11 @@ router.post(
             rawLength
         });
 
+        // Логируем первые 500 символов rawBody для отладки
+        if (rawLength > 0 && Object.keys(payload).length === 0) {
+            console.log('⚠️ Payload не распарсился, rawBody (первые 500 символов):', rawBody.substring(0, 500));
+        }
+
     try {
         // Обработка тестового вебхука от банка при регистрации
         // Тестовый — только если действительно пустое тело (rawLength === 0)
@@ -102,6 +107,12 @@ router.post(
             return res.status(200).send('OK');
         }
 
+        // Если payload пустой, но тело не пустое - пытаемся распарсить еще раз
+        if (isParsedEmpty && !isTrulyEmpty) {
+            console.warn('⚠️ Payload пустой, но тело не пустое. Попытка повторного парсинга...');
+            console.log('   RawBody (первые 1000 символов):', rawBody.substring(0, 1000));
+        }
+
         // Определяем провайдера по структуре payload
         const providerName = PaymentProviderFactory.detectProviderFromWebhook(payload);
         const provider = PaymentProviderFactory.create(providerName);
@@ -111,6 +122,8 @@ router.post(
         
         if (!signatureValid) {
             console.error(`❌ Некорректная подпись ${providerName} webhook`);
+            console.error('   Payload:', JSON.stringify(payload, null, 2));
+            console.error('   Headers (authorization):', headers['authorization'] || headers['Authorization'] || 'отсутствует');
             
             // Логируем неудачную попытку
             await logWebhook({
@@ -144,7 +157,8 @@ router.post(
             status
         });
 
-        if (!orderId || !orderId.startsWith('kuliga-')) {
+        // Поддерживаем новый формат gornostyle72-winter-{id} и старый kuliga-{id} для обратной совместимости
+        if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && !orderId.startsWith('kuliga-'))) {
             console.warn(`⚠️ Получен callback ${providerName} с неподдерживаемым OrderId:`, orderId);
             
             // Логируем неподдерживаемый webhook
@@ -167,10 +181,32 @@ router.post(
             return res.status(200).send('OK');
         }
 
-        // НОВАЯ ЛОГИКА: orderId = kuliga-tx-{transactionId}
+        // НОВАЯ ЛОГИКА: orderId = gornostyle72-winter-{transactionId} (или старый формат kuliga-tx-{transactionId})
         // Находим транзакцию, проверяем есть ли booking_id
         // Если нет - создаём бронирование из provider_raw_data
-        const transactionId = Number(orderId.replace('kuliga-tx-', ''));
+        let transactionId;
+        if (orderId.startsWith('gornostyle72-winter-')) {
+            // Новый формат: gornostyle72-winter-{transactionId}
+            transactionId = Number(orderId.replace('gornostyle72-winter-', ''));
+        } else if (orderId.startsWith('kuliga-tx-')) {
+            // Старый формат: kuliga-tx-{transactionId}
+            transactionId = Number(orderId.replace('kuliga-tx-', ''));
+        } else if (orderId.startsWith('kuliga-')) {
+            // Очень старый формат: kuliga-{bookingId} - ищем транзакцию по booking_id
+            const oldBookingId = Number(orderId.replace('kuliga-', ''));
+            const txResult = await pool.query(
+                `SELECT id FROM kuliga_transactions WHERE booking_id = $1 LIMIT 1`,
+                [oldBookingId]
+            );
+            if (!txResult.rows.length) {
+                console.warn(`⚠️ Транзакция для booking #${oldBookingId} не найдена`);
+                return res.status(200).send('OK');
+            }
+            transactionId = txResult.rows[0].id;
+        } else {
+            console.warn(`⚠️ Неизвестный формат orderId: ${orderId}`);
+            return res.status(200).send('OK');
+        }
         let bookingId = null;
         let errorMessage = null;
         let processed = false;
