@@ -131,6 +131,8 @@ class TochkaProvider {
                 // Опциональные поля
                 ...(this.successUrl ? { redirectUrl: this.successUrl } : {}),
                 ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
+                // Email для отправки чека (если указан)
+                ...(customerEmail ? { consumerId: customerEmail } : {}),
             }
         };
         

@@ -180,7 +180,37 @@ router.post(
 
         // Парсим данные webhook
         const webhookData = provider.parseWebhookData(payload);
-        const { orderId, paymentId, status, amount, paymentMethod, webhookType } = webhookData;
+        let { orderId, paymentId, status, amount, paymentMethod, webhookType } = webhookData;
+        
+        // Если orderId не определён (например, для СБП), пытаемся найти транзакцию по paymentId
+        if (!orderId && paymentId) {
+            console.warn(`⚠️ orderId не определён в webhook, ищем транзакцию по paymentId: ${paymentId}`);
+            const txResult = await pool.query(
+                `SELECT id, provider_order_id FROM kuliga_transactions 
+                 WHERE provider_payment_id = $1 OR provider_order_id LIKE $2
+                 ORDER BY id DESC LIMIT 1`,
+                [paymentId, `%${paymentId}%`]
+            );
+            
+            if (txResult.rows.length && txResult.rows[0].provider_order_id) {
+                orderId = txResult.rows[0].provider_order_id;
+                console.log(`✅ Найден orderId из транзакции: ${orderId}`);
+            } else {
+                // Пробуем найти по operationId в самом payload
+                const operationId = payload.operationId || payload.operation_id;
+                if (operationId) {
+                    const txByOpId = await pool.query(
+                        `SELECT id, provider_order_id FROM kuliga_transactions 
+                         WHERE provider_payment_id = $1 ORDER BY id DESC LIMIT 1`,
+                        [operationId]
+                    );
+                    if (txByOpId.rows.length && txByOpId.rows[0].provider_order_id) {
+                        orderId = txByOpId.rows[0].provider_order_id;
+                        console.log(`✅ Найден orderId по operationId: ${orderId}`);
+                    }
+                }
+            }
+        }
         
         console.log(`✅ Webhook валиден:`, {
             provider: providerName,
@@ -192,7 +222,7 @@ router.post(
         
         // Временное логирование для отладки СБП
         if (!orderId) {
-            console.warn('⚠️ orderId не определён, полный payload:', JSON.stringify(payload, null, 2));
+            console.error('❌ orderId не определён после всех попыток, полный payload:', JSON.stringify(payload, null, 2));
         }
 
         // Поддерживаем новый формат gornostyle72-winter-{id} и старый kuliga-{id} для обратной совместимости
