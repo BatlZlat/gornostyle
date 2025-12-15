@@ -635,25 +635,26 @@ router.post(
             
             console.log(`🔄 Обновляю транзакцию #${transactionId} (bookingId: ${bookingId || 'null'})`);
             
-            let updatedRawDataString;
-            try {
-                updatedRawDataString = JSON.stringify(updatedRawData);
-                console.log(`📦 provider_raw_data сериализован, размер: ${updatedRawDataString.length} байт`);
-            } catch (stringifyError) {
-                console.error(`❌ Ошибка при сериализации provider_raw_data для транзакции #${transactionId}:`, stringifyError);
-                throw new Error(`Не удалось сериализовать provider_raw_data: ${stringifyError.message}`);
+            // Для jsonb типа нужно передавать объект или валидный JSON
+            // Проверяем, что updatedRawData является объектом
+            if (typeof updatedRawData !== 'object' || updatedRawData === null) {
+                console.error(`❌ updatedRawData не является объектом для транзакции #${transactionId}:`, typeof updatedRawData);
+                throw new Error(`updatedRawData должен быть объектом, получен: ${typeof updatedRawData}`);
             }
             
             let txUpdateResult;
             try {
                 console.log(`💾 Выполняю UPDATE транзакции #${transactionId}...`);
+                console.log(`📦 provider_raw_data будет сохранен как jsonb, размер объекта: ${JSON.stringify(updatedRawData).length} байт`);
+                
+                // Для jsonb типа передаем объект напрямую, PostgreSQL сам сериализует
                 txUpdateResult = await client.query(
                     `UPDATE kuliga_transactions
                      SET provider_status = $1,
                          provider_payment_id = $2,
                          provider_order_id = $3,
                          payment_method = COALESCE($4, payment_method),
-                         provider_raw_data = $5,
+                         provider_raw_data = $5::jsonb,
                          status = CASE
                              WHEN $1 = 'SUCCESS' THEN 'completed'
                              WHEN $1 = 'FAILED' THEN 'failed'
@@ -669,13 +670,16 @@ router.post(
                         paymentId,
                         orderId,
                         paymentMethod || 'card',
-                        updatedRawDataString,
+                        JSON.stringify(updatedRawData), // Сериализуем для передачи в PostgreSQL
                         transactionId
                     ]
                 );
                 console.log(`✅ UPDATE транзакции #${transactionId} выполнен успешно`);
             } catch (updateError) {
                 console.error(`❌ Ошибка при UPDATE транзакции #${transactionId}:`, updateError);
+                console.error(`   Сообщение:`, updateError.message);
+                console.error(`   Код:`, updateError.code);
+                console.error(`   Детали:`, updateError.detail);
                 console.error(`   Stack trace:`, updateError.stack);
                 throw updateError; // Пробрасываем ошибку дальше, чтобы вызвать ROLLBACK
             }
