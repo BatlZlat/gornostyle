@@ -27,7 +27,9 @@ class TochkaProvider {
         this.failUrl = process.env.PAYMENT_FAIL_URL;
         this.callbackUrl = process.env.PAYMENT_CALLBACK_URL;
 
-        if (!this.apiKey || !this.clientId || !this.merchantId) {
+        // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
+        // Пробуем работать без merchantId, так как он опционален
+        if (!this.apiKey || !this.clientId) {
             console.warn('⚠️  Tochka Bank: отсутствуют обязательные credentials');
         }
     }
@@ -53,7 +55,9 @@ class TochkaProvider {
         items = [],
         paymentMethod = 'card'
     }) {
-        if (!this.apiKey || !this.clientId || !this.merchantId) {
+        // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
+        // Пробуем работать без merchantId, так как он опционален
+        if (!this.apiKey || !this.clientId) {
             throw new Error('Точка Банк не настроен (отсутствуют credentials)');
         }
 
@@ -89,16 +93,21 @@ class TochkaProvider {
         // amount в рублях (не копейках!), purpose - назначение платежа (до 140 символов)
         // paymentMode - массив способов оплаты: ["card", "sbp", "tinkoff", "dolyame"]
         
+        // Формируем список способов оплаты
         const paymentModes = [];
-        if (paymentMethod === 'card' || !paymentMethod) {
-            paymentModes.push('card');
-        }
-        if (paymentMethod === 'sbp' && this.enableSBP) {
+        
+        if (paymentMethod === 'sbp') {
+            // Только СБП
             paymentModes.push('sbp');
-        }
-        // Если не указан способ, добавляем карту по умолчанию
-        if (paymentModes.length === 0) {
+        } else if (paymentMethod === 'card') {
+            // Только карта
             paymentModes.push('card');
+        } else {
+            // Не указан способ - предлагаем оба (если СБП включён)
+            paymentModes.push('card');
+            if (this.enableSBP) {
+                paymentModes.push('sbp');
+            }
         }
 
         // Формируем тело запроса согласно документации
@@ -107,10 +116,10 @@ class TochkaProvider {
         const requestBody = {
             Data: {
                 customerCode: this.customerCode,
-                // merchantId - опциональный, но если задан, должен быть 15 символов
-                // Включаем только если длина >= 15 символов
-                ...(this.merchantId && this.merchantId.length >= 15 ? { merchantId: this.merchantId } : {}),
-                // amount должен быть number (не строка!), но в JSON это будет число с плавающей точкой
+                // merchantId - опциональный при одной торговой точке, но рекомендуется передавать
+                // для будущего масштабирования (например, для бота)
+                // Техподдержка дала правильный merchantId: 200000000030280 (15 символов)
+                ...(this.merchantId ? { merchantId: this.merchantId } : {}),
                 amount: parseFloat(amount.toFixed(2)), // Сумма в рублях как число
                 purpose: description.substring(0, 140), // Назначение платежа (до 140 символов)
                 paymentMode: paymentModes, // Массив способов оплаты
@@ -118,8 +127,6 @@ class TochkaProvider {
                 // Опциональные поля
                 ...(this.successUrl ? { redirectUrl: this.successUrl } : {}),
                 ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
-                // consumerId - опциональный, должен быть UUID, не email
-                // Убираем consumerId, так как он опционален и может вызывать ошибки при неправильном формате
             }
         };
         

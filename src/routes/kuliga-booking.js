@@ -15,6 +15,31 @@ const TIMEZONE = 'Asia/Yekaterinburg';
 const formatDate = (date) => moment.tz(date, TIMEZONE).format('DD.MM.YYYY');
 const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).format('HH:mm') : '');
 
+/**
+ * Форматирует название платежа для чека
+ * @param {Object} params
+ * @param {string} params.bookingType - 'individual' или 'group'
+ * @param {string} params.location - 'kuliga' или 'vorona'
+ * @param {string} params.sportType - 'ski' или 'snowboard'
+ * @param {string} params.date - Дата тренировки
+ * @param {string} params.time - Время тренировки
+ * @param {string} params.programName - Название программы (опционально, для групповых)
+ * @returns {string} - Форматированное название
+ */
+const formatPaymentDescription = ({ bookingType, location, sportType, date, time, programName }) => {
+    const bookingTypeText = bookingType === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
+    const locationText = location === 'vorona' ? 'Воронинские горки' : 'Кулига Клаб';
+    const sportText = sportType === 'ski' ? 'Лыжи' : 'Сноуборд';
+    const dateFormatted = formatDate(date);
+    const timeFormatted = formatTime(time);
+    
+    if (programName) {
+        return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${programName}, ${dateFormatted} ${timeFormatted}`;
+    }
+    
+    return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
+};
+
 const minutesBetween = (date, startTime, endTime) => {
     // Преобразуем date в строку формата YYYY-MM-DD
     const dateStr = moment(date).format('YYYY-MM-DD');
@@ -224,8 +249,13 @@ const createGroupBooking = async (req, res) => {
 
         const bookingId = bookingResult.rows[0].id;
 
-        const description =
-            `Кулига: ${training.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(training.date)}, ${formatTime(training.start_time)}`;
+        const description = formatPaymentDescription({
+            bookingType: 'group',
+            location: training.location || 'kuliga',
+            sportType: training.sport_type,
+            date: training.date,
+            time: training.start_time
+        });
 
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
@@ -508,71 +538,81 @@ const createIndividualBooking = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Длительность выбранного слота меньше требуемой по тарифу' });
         }
 
-        await client.query(
-            `UPDATE kuliga_schedule_slots
-             SET status = 'booked', updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1`,
-            [slot.slot_id]
-        );
-
+        // НОВАЯ ЛОГИКА: Бронирование создаётся ТОЛЬКО после успешной оплаты
+        // 1. НЕ резервируем слот сразу (он остаётся available до оплаты)
+        // 2. НЕ создаём бронирование
+        // 3. Создаём транзакцию с данными для будущего бронирования
+        
         const notificationMethod = notifyEmail && notifyTelegram ? 'both' : notifyTelegram ? 'telegram' : notifyEmail ? 'email' : 'none';
         const payerRides = payerParticipation !== 'other';
 
-        const bookingResult = await client.query(
-            `INSERT INTO kuliga_bookings (
-                client_id,
-                booking_type,
-                instructor_id,
-                slot_id,
-                date,
-                start_time,
-                end_time,
-                sport_type,
-                participants_count,
-                participants_names,
-                participants_birth_years,
-                price_total,
-                price_per_person,
-                price_id,
-                notification_method,
-                payer_rides,
-                location,
-                status
-            ) VALUES ($1, 'individual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'pending')
-            RETURNING id`,
-            [
-                clientRecord.id,
-                slot.instructor_id,
-                slot.slot_id,
-                slot.date,
-                slot.start_time,
-                slot.end_time,
-                normalizedSport,
-                participantsCount,
-                participantsNames,
-                participantsBirthYears,
-                totalPrice,
-                pricePerPerson,
-                price.id,
-                notificationMethod,
-                payerRides,
-                slotLocation, // МИГРАЦИЯ 038: Используем location из слота
-            ]
-        );
+        const description = formatPaymentDescription({
+            bookingType: 'individual',
+            location: slotLocation,
+            sportType: normalizedSport,
+            date: slot.date,
+            time: slot.start_time
+        });
 
-        const bookingId = bookingResult.rows[0].id;
+        // Сохраняем данные для будущего создания бронирования после оплаты
+        const bookingData = {
+            client_id: clientRecord.id,
+            booking_type: 'individual',
+            instructor_id: slot.instructor_id,
+            slot_id: slot.slot_id,
+            date: slot.date,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            sport_type: normalizedSport,
+            participants_count: participantsCount,
+            participants_names: participantsNames,
+            participants_birth_years: participantsBirthYears,
+            price_total: totalPrice,
+            price_per_person: pricePerPerson,
+            price_id: price.id,
+            notification_method: notificationMethod,
+            payer_rides: payerRides,
+            location: slotLocation,
+            // Дополнительные данные для уведомлений
+            client_name: fullName,
+            client_phone: normalizedPhone,
+            client_email: email?.trim() || null,
+            instructor_name: slot.instructor_name,
+            price_duration: price.duration,
+        };
 
-        const description =
-            `Кулига: ${normalizedSport === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(slot.date)}, ${formatTime(slot.start_time)}`;
-
+        // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
+        // Данные бронирования сохраняем в provider_raw_data
         const transactionResult = await client.query(
-            `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
-             VALUES ($1, $2, 'payment', $3, 'pending', $4)
+            `INSERT INTO kuliga_transactions (
+                client_id, 
+                booking_id, 
+                type, 
+                amount, 
+                status, 
+                description,
+                provider_raw_data
+            )
+             VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
-            [clientRecord.id, bookingId, totalPrice, description]
+            [clientRecord.id, totalPrice, description, JSON.stringify({ bookingData })]
         );
 
         const transactionId = transactionResult.rows[0].id;
+
+        // ВРЕМЕННАЯ БЛОКИРОВКА (HOLD): Ставим слот на hold на 30 минут
+        // Это предотвращает двойное бронирование, пока клиент оплачивает
+        await client.query(
+            `UPDATE kuliga_schedule_slots
+             SET status = 'hold',
+                 hold_until = NOW() + INTERVAL '30 minutes',
+                 hold_transaction_id = $1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [transactionId, slot.slot_id]
+        );
+        
+        console.log(`🔒 Слот #${slot.slot_id} заблокирован (hold) на 30 минут для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 
@@ -580,7 +620,7 @@ const createIndividualBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `kuliga-${bookingId}`,
+                orderId: `kuliga-tx-${transactionId}`, // Используем transactionId вместо bookingId
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -599,28 +639,38 @@ const createIndividualBooking = async (req, res) => {
                 paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
+            // При ошибке инициализации платежа помечаем транзакцию как failed
+            // И СНИМАЕМ HOLD со слота
             await pool.query(
                 `UPDATE kuliga_transactions
                  SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
-            await pool.query(
-                `UPDATE kuliga_bookings
-                 SET status = 'cancelled', cancellation_reason = 'Ошибка инициализации платежа', cancelled_at = CURRENT_TIMESTAMP
-                 WHERE id = $1`,
-                [bookingId]
-            );
+            
+            // Снимаем hold со слота
             await pool.query(
                 `UPDATE kuliga_schedule_slots
-                 SET status = 'available', updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $1`,
-                [slot.slot_id]
+                 SET status = 'available',
+                     hold_until = NULL,
+                     hold_transaction_id = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1 AND hold_transaction_id = $2`,
+                [slot.slot_id, transactionId]
             );
+            
+            console.log(`🔓 Hold снят со слота #${slot.slot_id} (ошибка инициализации платежа)`);
+            
             throw paymentError;
         }
 
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
+        
+        // Обновляем транзакцию с данными от провайдера
+        // provider_raw_data уже содержит bookingData, добавляем к нему paymentData
+        const rawData = JSON.parse(transactionResult.rows[0].provider_raw_data || '{}');
+        rawData.paymentData = payment.rawData || payment;
+        
         await pool.query(
             `UPDATE kuliga_transactions
              SET payment_provider = $1,
@@ -633,62 +683,20 @@ const createIndividualBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `kuliga-${bookingId}`,
+                `kuliga-tx-${transactionId}`,
                 payment.status,
                 paymentMethod,
-                JSON.stringify(payment.rawData || payment),
+                JSON.stringify(rawData),
                 transactionId
             ]
         );
 
-        // Отправляем уведомления (асинхронно, не блокируем ответ)
-        setImmediate(async () => {
-            try {
-                // Получаем данные инструктора для уведомления
-                const instructorResult = await pool.query(
-                    'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
-                    [slot.instructor_id]
-                );
-
-                // Уведомление администратору
-                await notifyAdminNaturalSlopeTrainingBooking({
-                    client_name: fullName,
-                    client_phone: normalizedPhone,
-                    participant_name: participantsNames[0] || fullName,
-                    date: slot.date,
-                    time: slot.start_time,
-                    sport_type: normalizedSport,
-                    instructor_name: slot.instructor_name,
-                    price: totalPrice,
-                    booking_source: 'website',
-                    location: slotLocation // МИГРАЦИЯ 038: Передаем location для корректного отображения места
-                });
-
-                // Уведомление инструктору
-                if (instructorResult.rows.length > 0) {
-                    const instructor = instructorResult.rows[0];
-                    await notifyInstructorKuligaTrainingBooking({
-                        booking_type: 'individual',
-                        client_name: fullName,
-                        participant_name: participantsNames[0] || fullName,
-                        client_phone: normalizedPhone,
-                        instructor_name: instructor.full_name,
-                        instructor_telegram_id: instructor.telegram_id,
-                        admin_percentage: instructor.admin_percentage,
-                        date: slot.date,
-                        time: slot.start_time,
-                        price: totalPrice,
-                        location: slotLocation // МИГРАЦИЯ 038: Передаем location
-                    });
-                }
-            } catch (notifyError) {
-                console.error('Ошибка при отправке уведомлений о бронировании Кулиги:', notifyError);
-            }
-        });
+        // УВЕДОМЛЕНИЯ НЕ ОТПРАВЛЯЕМ ЗДЕСЬ!
+        // Они будут отправлены при обработке webhook после создания бронирования
 
         return res.json({ 
             success: true, 
-            bookingId, 
+            transactionId, // Возвращаем transactionId вместо bookingId
             paymentUrl: payment.paymentURL,
             paymentMethod: paymentMethod,
             qrCodeUrl: payment.qrCodeUrl || null
@@ -741,7 +749,8 @@ router.get('/availability', async (req, res) => {
                AND s.status = 'available'
                AND i.is_active = TRUE
                AND (i.sport_type = $2 OR i.sport_type = 'both')
-               AND kgt.id IS NULL`; // Исключаем слоты, связанные с групповыми тренировками
+               AND kgt.id IS NULL  -- Исключаем слоты, связанные с групповыми тренировками
+               AND (s.hold_until IS NULL OR s.hold_until < NOW())`; // Исключаем слоты с активным hold
         const params = [date, normalizedSport];
         
         // Фильтр по location, если указан
@@ -1038,8 +1047,14 @@ const createProgramBooking = async (req, res) => {
             [safeCount, groupTraining.id]
         );
 
-        const description =
-            `Кулига: Программа "${program.name}", ${program.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${formatDate(dateStr)}, ${formatTime(startTimeStr)}`;
+        const description = formatPaymentDescription({
+            bookingType: 'group',
+            location: program.location || 'kuliga',
+            sportType: program.sport_type,
+            date: dateStr,
+            time: startTimeStr,
+            programName: program.name
+        });
 
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)

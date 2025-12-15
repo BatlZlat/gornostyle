@@ -19,7 +19,8 @@ class Scheduler {
             statusUpdates: false,
             scheduledMessages: false,
             programTrainingsGeneration: false,
-            certificateExpiration: false
+            certificateExpiration: false,
+            holdCleanup: false
         };
     }
 
@@ -46,6 +47,9 @@ class Scheduler {
         
         // Запускаем задачу автоматического сгорания сертификатов
         this.scheduleCertificateExpiration();
+        
+        // Запускаем задачу очистки истёкших hold
+        this.scheduleHoldCleanup();
         
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
@@ -636,6 +640,47 @@ class Scheduler {
         } catch (notifyError) {
             console.error('Ошибка при отправке уведомления об ошибке пометки сертификатов администратору:', notifyError.message);
         }
+    }
+
+    /**
+     * Настраивает задачу очистки истёкших hold на слотах
+     * Запускается каждые 5 минут
+     */
+    scheduleHoldCleanup() {
+        const task = cron.schedule('*/5 * * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.holdCleanup) {
+                return;
+            }
+            
+            this.isRunning.holdCleanup = true;
+            
+            try {
+                // Вызываем функцию БД для очистки истёкших hold
+                const result = await pool.query('SELECT clear_expired_holds()');
+                const clearedCount = result.rows[0].clear_expired_holds;
+                
+                if (clearedCount > 0) {
+                    console.log(`[${new Date().toISOString()}] 🔓 Очистка hold: освобождено слотов: ${clearedCount}`);
+                }
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Ошибка при очистке истёкших hold:`, error);
+            } finally {
+                this.isRunning.holdCleanup = false;
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'hold_cleanup',
+            description: 'Очистка истёкших hold (временных блокировок слотов)',
+            schedule: 'каждые 5 минут',
+            task: task
+        });
+
+        console.log('✓ Задача "Очистка hold" настроена на каждые 5 минут');
     }
 }
 
