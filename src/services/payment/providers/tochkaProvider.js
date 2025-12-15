@@ -100,8 +100,12 @@ class TochkaProvider {
             // Только СБП
             paymentModes.push('sbp');
         } else if (paymentMethod === 'card') {
-            // Только карта
+            // Если указана карта, но СБП включён - предлагаем оба способа
+            // Это позволяет клиенту выбрать на странице оплаты банка
             paymentModes.push('card');
+            if (this.enableSBP) {
+                paymentModes.push('sbp');
+            }
         } else {
             // Не указан способ - предлагаем оба (если СБП включён)
             paymentModes.push('card');
