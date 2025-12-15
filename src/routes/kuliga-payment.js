@@ -519,7 +519,7 @@ router.post(
                     [bookingId, transactionId]
                 );
                 
-                // Отправляем уведомления (асинхронно)
+                // Отправляем уведомления (асинхронно, после COMMIT)
                 setImmediate(async () => {
                     try {
                         const { notifyAdminNaturalSlopeTrainingBooking } = require('../bot/notifications/kuliga-notifications');
