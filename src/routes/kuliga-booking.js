@@ -483,6 +483,7 @@ const createGroupBooking = async (req, res) => {
                 description,
                 customerPhone: normalizedPhone,
                 customerEmail: email?.trim() || undefined,
+                clientId: clientRecord.id, // Передаем client_id для формирования deep link
                 items: [
                     {
                         Name: `Групповая тренировка (${safeCount} чел.)`,
@@ -859,6 +860,7 @@ const createIndividualBooking = async (req, res) => {
                 description,
                 customerPhone: normalizedPhone,
                 customerEmail: email?.trim() || undefined,
+                clientId: clientRecord.id, // Передаем client_id для формирования deep link
                 items: [
                     {
                         Name: `${price.type === 'individual' ? 'Индивидуальная' : 'Групповая'} тренировка (${participantsCount} чел.)`,
@@ -1348,6 +1350,7 @@ const createProgramBooking = async (req, res) => {
                 description,
                 customerPhone: normalizedPhone,
                 customerEmail: email?.trim() || undefined,
+                clientId: clientRecord.id, // Передаем client_id для формирования deep link
                 items: [
                     {
                         Name: `Программа "${program.name}" (${safeCount} чел.)`,

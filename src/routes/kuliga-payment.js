@@ -758,6 +758,7 @@ router.post(
                         }
 
                         // Email уведомление клиенту (если есть email)
+                        console.log(`📧 Проверка email для отправки: client_email=${bookingData.client_email}, валидный=${bookingData.client_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingData.client_email)}`);
                         if (bookingData.client_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingData.client_email)) {
                             try {
                                 const EmailService = require('../services/emailService');

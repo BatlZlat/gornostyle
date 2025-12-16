@@ -105,7 +105,12 @@
         чтобы оперативно получать напоминания и любые изменения по тренировке
         (включая отмены из-за погоды или отключения электричества).
       </p>
-      <a class="btn btn-primary bot-btn" href="https://t.me/<%= cleanBot %>" target="_blank" rel="noopener noreferrer">
+      <% 
+        const botLink = typeof clientId !== 'undefined' && clientId 
+          ? `https://t.me/${cleanBot}?start=client_${clientId}`
+          : `https://t.me/${cleanBot}`;
+      %>
+      <a class="btn btn-primary bot-btn" href="<%= botLink %>" target="_blank" rel="noopener noreferrer">
         Подключить бота в Telegram
       </a>
     <% } else { %>

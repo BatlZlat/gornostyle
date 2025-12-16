@@ -28,7 +28,7 @@ const generateToken = (params) => {
     return crypto.createHash('sha256').update(concatenated).digest('hex');
 };
 
-const initPayment = async ({ orderId, amount, description, customerPhone, customerEmail, items }) => {
+const initPayment = async ({ orderId, amount, description, customerPhone, customerEmail, items, clientId }) => {
     if (!TERMINAL_KEY || !PASSWORD) {
         throw new Error('Платежный шлюз не настроен (отсутствуют TERMINAL_KEY/PASSWORD)');
     }
@@ -38,13 +38,20 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
         throw new Error('Отсутствуют обязательные параметры для создания платежа');
     }
 
+    // Формируем SUCCESS_URL с clientId если он передан
+    let successUrl = SUCCESS_URL;
+    if (clientId) {
+        const separator = SUCCESS_URL.includes('?') ? '&' : '?';
+        successUrl = `${SUCCESS_URL}${separator}clientId=${clientId}`;
+    }
+
     const params = {
         TerminalKey: TERMINAL_KEY,
         Amount: normalizeAmount(amount),
         OrderId: orderId,
         Description: description,
         NotificationURL: CALLBACK_URL,
-        SuccessURL: SUCCESS_URL,
+        SuccessURL: successUrl,
         FailURL: FAIL_URL,
     };
 

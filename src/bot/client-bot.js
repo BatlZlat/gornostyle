@@ -12367,11 +12367,96 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
         );
     }
     
-    // Извлекаем реферальный код из команды /start
-    const referralCode = match[1] ? match[1].trim() : null;
+    // Извлекаем параметр из команды /start
+    const startParam = match[1] ? match[1].trim() : null;
+    let referralCode = null;
+    let clientIdFromParam = null;
+    
+    // Проверяем формат client_{CLIENT_ID}
+    if (startParam && startParam.startsWith('client_')) {
+        const clientIdStr = startParam.replace('client_', '').trim();
+        const parsedClientId = parseInt(clientIdStr);
+        if (!isNaN(parsedClientId) && parsedClientId > 0) {
+            clientIdFromParam = parsedClientId;
+            console.log(`🔗 Deep link с client_id: ${clientIdFromParam}`);
+        } else {
+            // Если не удалось распарсить, считаем это реферальным кодом
+            referralCode = startParam;
+        }
+    } else if (startParam) {
+        // Если параметр есть, но не в формате client_, считаем реферальным кодом
+        referralCode = startParam;
+    }
 
     // Очищаем предыдущее состояние
     userStates.delete(chatId);
+
+    // Если передан client_id через deep link и клиент не найден по telegram_id
+    if (!client && clientIdFromParam) {
+        try {
+            // Ищем клиента по client_id
+            const clientResult = await pool.query(
+                'SELECT id, full_name, phone, email, telegram_id, telegram_username FROM clients WHERE id = $1',
+                [clientIdFromParam]
+            );
+            
+            if (clientResult.rows.length > 0) {
+                const existingClient = clientResult.rows[0];
+                
+                // Если у клиента уже есть telegram_id и он не совпадает с текущим
+                if (existingClient.telegram_id && existingClient.telegram_id !== telegramId) {
+                    return bot.sendMessage(chatId,
+                        '⚠️ Этот аккаунт уже привязан к другому Telegram аккаунту.\n\n' +
+                        'Если это ваш аккаунт, обратитесь к администратору для решения вопроса.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
+                // Обновляем telegram_id, username и nickname для существующего клиента
+                await pool.query(
+                    `UPDATE clients 
+                     SET telegram_id = $1, 
+                         telegram_username = $2,
+                         nickname = $3,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $4`,
+                    [telegramId, username || null, nickname, clientIdFromParam]
+                );
+                
+                console.log(`✅ Клиент #${clientIdFromParam} успешно связан с Telegram ${telegramId}`);
+                
+                // Получаем обновленного клиента
+                client = await getClientByTelegramId(telegramId);
+                
+                // Показываем сообщение об успешной идентификации
+                await bot.sendMessage(chatId,
+                    '✅ <b>Отлично! Ваши данные из формы бронирования сохранены.</b>\n\n' +
+                    'Теперь вы будете получать все уведомления о тренировках прямо в Telegram! 🎉',
+                    {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                
+                // Показываем главное меню
+                await showMainMenu(chatId, telegramId);
+                return;
+            } else {
+                console.log(`⚠️ Клиент с ID ${clientIdFromParam} не найден в БД`);
+            }
+        } catch (error) {
+            console.error('Ошибка при идентификации клиента по client_id:', error);
+            // Продолжаем обычную регистрацию
+        }
+    }
 
     if (!client) {
         // Проверяем наличие реферального кода
