@@ -756,6 +756,41 @@ router.post(
                                 participants_count: bookingData.participants_count || 1
                             });
                         }
+
+                        // Email уведомление клиенту (если есть email)
+                        if (bookingData.client_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingData.client_email)) {
+                            try {
+                                const EmailService = require('../services/emailService');
+                                const emailTemplateService = require('../services/email-template-service');
+                                const emailService = new EmailService();
+                                
+                                const htmlContent = await emailTemplateService.generateBookingConfirmationEmail({
+                                    client_id: bookingData.client_id,
+                                    client_name: bookingData.client_name,
+                                    booking_type: bookingData.booking_type,
+                                    date: bookingData.date,
+                                    start_time: bookingData.start_time,
+                                    end_time: bookingData.end_time,
+                                    sport_type: bookingData.sport_type,
+                                    location: bookingData.location,
+                                    instructor_name: bookingData.instructor_name || (instructorResult?.rows[0]?.full_name) || null,
+                                    participants_count: bookingData.participants_count || 1,
+                                    price_total: bookingData.price_total,
+                                    price_per_person: bookingData.price_per_person || null
+                                });
+
+                                const dateFormatted = emailTemplateService.formatDate(bookingData.date);
+                                const subject = `✅ Подтверждение записи на тренировку - ${dateFormatted}`;
+                                
+                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                console.log(`✅ Email уведомление отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                            } catch (emailError) {
+                                console.error('Ошибка отправки email клиенту:', emailError);
+                                // Не прерываем выполнение, продолжаем работу
+                            }
+                        } else {
+                            console.log(`⚠️ Email клиента не указан или невалиден для бронирования #${bookingId}`);
+                        }
                     } catch (notifyError) {
                         console.error('Ошибка при отправке уведомлений после создания бронирования:', notifyError);
                     }
@@ -927,6 +962,40 @@ router.post(
                     }
                     
                     console.log(`❌ Бронирование #${bookingId} отменено (платеж не прошел)`);
+                    
+                    // Отправляем email уведомление об отмене (асинхронно)
+                    setImmediate(async () => {
+                        try {
+                            const rawData = transaction.provider_raw_data || {};
+                            const bookingData = rawData.bookingData;
+                            
+                            if (bookingData && bookingData.client_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingData.client_email)) {
+                                const EmailService = require('../services/emailService');
+                                const emailTemplateService = require('../services/email-template-service');
+                                const emailService = new EmailService();
+                                
+                                const htmlContent = await emailTemplateService.generateBookingCancellationEmail({
+                                    client_name: bookingData.client_name,
+                                    booking_type: bookingData.booking_type,
+                                    date: bookingData.date,
+                                    start_time: bookingData.start_time,
+                                    end_time: bookingData.end_time,
+                                    sport_type: bookingData.sport_type,
+                                    location: bookingData.location,
+                                    cancellation_reason: 'Платеж отклонен банком',
+                                    refund_info: null
+                                });
+
+                                const dateFormatted = emailTemplateService.formatDate(bookingData.date);
+                                const subject = `❌ Отмена тренировки - ${dateFormatted}`;
+                                
+                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                console.log(`✅ Email уведомление об отмене отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                            }
+                        } catch (emailError) {
+                            console.error('Ошибка отправки email об отмене клиенту:', emailError);
+                        }
+                    });
                 } else if (isRefunded && booking.booking_status !== 'refunded') {
                     await client.query(
                         `UPDATE kuliga_bookings
@@ -965,6 +1034,40 @@ router.post(
                     }
                     
                     console.log(`💰 Бронирование #${bookingId} возвращено (refund)`);
+                    
+                    // Отправляем email уведомление о возврате (асинхронно)
+                    setImmediate(async () => {
+                        try {
+                            const rawData = transaction.provider_raw_data || {};
+                            const bookingData = rawData.bookingData;
+                            
+                            if (bookingData && bookingData.client_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookingData.client_email)) {
+                                const EmailService = require('../services/emailService');
+                                const emailTemplateService = require('../services/email-template-service');
+                                const emailService = new EmailService();
+                                
+                                const htmlContent = await emailTemplateService.generateBookingCancellationEmail({
+                                    client_name: bookingData.client_name,
+                                    booking_type: bookingData.booking_type,
+                                    date: bookingData.date,
+                                    start_time: bookingData.start_time,
+                                    end_time: bookingData.end_time,
+                                    sport_type: bookingData.sport_type,
+                                    location: bookingData.location,
+                                    cancellation_reason: 'Возврат средств',
+                                    refund_info: `Средства в размере ${bookingData.price_total || 0} ₽ будут возвращены на карту в течение 3-5 рабочих дней`
+                                });
+
+                                const dateFormatted = emailTemplateService.formatDate(bookingData.date);
+                                const subject = `💰 Возврат средств - ${dateFormatted}`;
+                                
+                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                console.log(`✅ Email уведомление о возврате отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                            }
+                        } catch (emailError) {
+                            console.error('Ошибка отправки email о возврате клиенту:', emailError);
+                        }
+                    });
                 }
             } else if (isFailed) {
                 // Если платёж провалился и бронирования нет - снимаем hold со слота или возвращаем места

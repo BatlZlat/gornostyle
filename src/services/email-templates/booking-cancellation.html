@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отмена тренировки</title>
+</head>
+<body style="margin: 0; padding: 20px; background-color: #f8f9fa; font-family: Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; overflow: hidden;">
+        <!-- Заголовок -->
+        <tr>
+            <td style="padding: 30px; text-align: center; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white;">
+                <h1 style="margin: 0; font-size: 1.8rem;">❌ Тренировка отменена</h1>
+                <p style="margin: 10px 0 0 0; font-size: 1rem; opacity: 0.9;">Горностайл72</p>
+            </td>
+        </tr>
+
+        <!-- Приветствие -->
+        <tr>
+            <td style="padding: 30px;">
+                <p style="margin: 0 0 20px 0; color: #333; font-size: 1.1rem;">
+                    Здравствуйте, <strong>{{client_name}}</strong>!
+                </p>
+                <p style="margin: 0 0 20px 0; color: #555; font-size: 1rem; line-height: 1.6;">
+                    К сожалению, ваша запись на тренировку была отменена.
+                </p>
+                {{#if cancellation_reason}}
+                <p style="margin: 0 0 20px 0; color: #555; font-size: 1rem; line-height: 1.6;">
+                    <strong>Причина:</strong> {{cancellation_reason}}
+                </p>
+                {{/if}}
+            </td>
+        </tr>
+
+        <!-- Детали отмененной тренировки -->
+        <tr>
+            <td style="padding: 0 30px;">
+                <div style="background: #f8f9fa; border-radius: 10px; padding: 25px; margin-bottom: 20px; border-left: 4px solid #e74c3c;">
+                    <h2 style="margin: 0 0 20px 0; color: #2c3e50; font-size: 1.3rem; text-align: center;">
+                        📅 Отмененная тренировка
+                    </h2>
+                    
+                    <table width="100%" cellpadding="8" cellspacing="0" style="margin-bottom: 15px;">
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Дата:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{date}}</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Время:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{start_time}} - {{end_time}}</td>
+                        </tr>
+                        {{#if booking_type_individual}}
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Тип:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">Индивидуальная тренировка</td>
+                        </tr>
+                        {{/if}}
+                        {{#if booking_type_group}}
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Тип:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">Групповая тренировка</td>
+                        </tr>
+                        {{/if}}
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Вид спорта:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{sport_type_text}}</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0;">Место:</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; text-align: right;">{{location_text}}</td>
+                        </tr>
+                    </table>
+                </div>
+            </td>
+        </tr>
+
+        <!-- Информация о возврате -->
+        {{#if refund_info}}
+        <tr>
+            <td style="padding: 0 30px 20px 30px;">
+                <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                    <p style="margin: 0; color: #155724; font-size: 0.95rem; line-height: 1.6;">
+                        <strong>💰 Возврат средств:</strong> {{refund_info}}
+                    </p>
+                </div>
+            </td>
+        </tr>
+        {{/if}}
+
+        <!-- Призыв записаться снова -->
+        <tr>
+            <td style="padding: 0 30px 30px 30px;">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 25px; text-align: center; color: white;">
+                    <h3 style="margin: 0 0 15px 0; font-size: 1.2rem;">📅 Запишитесь на другую тренировку!</h3>
+                    <p style="margin: 0 0 20px 0; font-size: 0.95rem; line-height: 1.6; opacity: 0.95;">
+                        Мы будем рады видеть вас на другой тренировке. Выберите удобное время и место!
+                    </p>
+                    <a href="https://gornostyle72.ru" 
+                       style="display: inline-block; background: white; color: #667eea; padding: 12px 30px; border-radius: 25px; text-decoration: none; font-weight: bold; font-size: 1rem; margin-top: 10px;">
+                        🔗 Записаться снова
+                    </a>
+                </div>
+            </td>
+        </tr>
+
+        <!-- Контакты -->
+        <tr>
+            <td style="padding: 0 30px 30px 30px;">
+                <div style="background: #f8f9fa; border-radius: 10px; padding: 20px;">
+                    <h3 style="margin: 0 0 15px 0; color: #2c3e50; font-size: 1.1rem;">📞 Контакты:</h3>
+                    <p style="margin: 5px 0; color: #333; font-size: 0.95rem;"><strong>Телефон:</strong> +7 (912) 392-49-56</p>
+                    <p style="margin: 5px 0; color: #333; font-size: 0.95rem;"><strong>Telegram:</strong> @Ski_Instruktor72_bot</p>
+                    <p style="margin: 5px 0; color: #333; font-size: 0.95rem;">По всем вопросам обращайтесь к нам - мы всегда готовы помочь!</p>
+                </div>
+            </td>
+        </tr>
+
+        <!-- Подвал -->
+        <tr>
+            <td style="padding: 20px 30px; text-align: center; background: #f8f9fa; border-top: 1px solid #e9ecef;">
+                <p style="margin: 0 0 10px 0; color: #7f8c8d; font-size: 0.9rem;">
+                    С уважением,<br>Команда Горностайл72 🎿
+                </p>
+                <p style="margin: 0; color: #95a5a6; font-size: 0.85rem;">
+                    Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него.<br>
+                    По всем вопросам обращайтесь по указанным выше контактам.
+                </p>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
