@@ -194,6 +194,7 @@ const createGroupBooking = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Запись на это занятие временно недоступна' });
         }
 
+        // Проверяем доступность мест (без учета временных резервов, так как их еще нет)
         if (training.current_participants + safeCount > training.max_participants) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: 'Недостаточно мест в группе' });
@@ -215,39 +216,10 @@ const createGroupBooking = async (req, res) => {
         const pricePerPerson = Number(training.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
 
-        const bookingResult = await client.query(
-            `INSERT INTO kuliga_bookings (
-                client_id,
-                booking_type,
-                group_training_id,
-                date,
-                start_time,
-                end_time,
-                sport_type,
-                participants_count,
-                participants_names,
-                price_total,
-                price_per_person,
-                location,
-                status
-            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
-            RETURNING id`,
-            [
-                clientRecord.id,
-                training.id,
-                training.date,
-                training.start_time,
-                training.end_time,
-                training.sport_type,
-                safeCount,
-                namesArray,
-                totalPrice,
-                pricePerPerson,
-                training.location || 'kuliga', // МИГРАЦИЯ 038: Используем location из групповой тренировки
-            ]
-        );
-
-        const bookingId = bookingResult.rows[0].id;
+        // НОВАЯ ЛОГИКА: Бронирование создаётся ТОЛЬКО после успешной оплаты
+        // 1. НЕ создаём бронирование сразу
+        // 2. НЕ увеличиваем current_participants
+        // 3. Создаём транзакцию с данными для будущего бронирования
 
         const description = formatPaymentDescription({
             bookingType: 'group',
@@ -257,14 +229,63 @@ const createGroupBooking = async (req, res) => {
             time: training.start_time
         });
 
+        // Сохраняем данные для будущего создания бронирования после оплаты
+        const bookingData = {
+            client_id: clientRecord.id,
+            booking_type: 'group',
+            group_training_id: training.id,
+            date: training.date instanceof Date 
+                ? moment.tz(training.date, TIMEZONE).format('YYYY-MM-DD')
+                : typeof training.date === 'string' && training.date.includes('T')
+                    ? moment.tz(training.date, TIMEZONE).format('YYYY-MM-DD')
+                    : moment.tz(training.date, 'YYYY-MM-DD', TIMEZONE).format('YYYY-MM-DD'),
+            start_time: training.start_time,
+            end_time: training.end_time,
+            sport_type: training.sport_type,
+            participants_count: safeCount,
+            participants_names: namesArray,
+            price_total: totalPrice,
+            price_per_person: pricePerPerson,
+            location: training.location || 'kuliga',
+            // Дополнительные данные для уведомлений
+            client_name: fullName,
+            client_phone: normalizedPhone,
+            client_email: email?.trim() || null,
+            instructor_id: training.instructor_id || null,
+        };
+
+        // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
+        // Данные бронирования сохраняем в provider_raw_data
+        const rawDataForInsert = { bookingData };
         const transactionResult = await client.query(
-            `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
-             VALUES ($1, $2, 'payment', $3, 'pending', $4)
+            `INSERT INTO kuliga_transactions (
+                client_id, 
+                booking_id, 
+                type, 
+                amount, 
+                status, 
+                description,
+                provider_raw_data
+            )
+             VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
-            [clientRecord.id, bookingId, totalPrice, description]
+            [clientRecord.id, totalPrice, description, JSON.stringify(rawDataForInsert)]
         );
 
         const transactionId = transactionResult.rows[0].id;
+
+        // ВРЕМЕННАЯ БЛОКИРОВКА МЕСТ: Увеличиваем current_participants на время оплаты
+        // Это предотвращает двойное бронирование, пока клиент оплачивает
+        // При успешной оплате места останутся занятыми, при неудаче - вернутся обратно
+        await client.query(
+            `UPDATE kuliga_group_trainings
+             SET current_participants = current_participants + $1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [safeCount, training.id]
+        );
+        
+        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке #${training.id} для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 
@@ -273,7 +294,7 @@ const createGroupBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `gornostyle72-winter-${bookingId}`,
+                orderId: `gornostyle72-winter-${transactionId}`, // Используем transactionId вместо bookingId
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -292,22 +313,39 @@ const createGroupBooking = async (req, res) => {
                 paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
+            // При ошибке инициализации платежа помечаем транзакцию как failed
+            // И ВОЗВРАЩАЕМ места в групповой тренировке
             await pool.query(
                 `UPDATE kuliga_transactions
                  SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
+            
+            // Возвращаем места в групповой тренировке
             await pool.query(
-                `UPDATE kuliga_bookings
-                 SET status = 'cancelled', cancellation_reason = 'Ошибка инициализации платежа', cancelled_at = CURRENT_TIMESTAMP
-                 WHERE id = $1`,
-                [bookingId]
+                `UPDATE kuliga_group_trainings
+                 SET current_participants = current_participants - $1,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $2`,
+                [safeCount, training.id]
             );
+            
+            console.log(`🔓 Возвращено ${safeCount} мест в групповой тренировке #${training.id} (ошибка инициализации платежа)`);
+            
             throw paymentError;
         }
 
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
+        
+        // Обновляем транзакцию с данными от провайдера
+        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // Это гарантирует, что bookingData не потеряется
+        const rawData = {
+            ...rawDataForInsert, // bookingData уже здесь
+            paymentData: payment.rawData || payment
+        };
+        
         await pool.query(
             `UPDATE kuliga_transactions
              SET payment_provider = $1,
@@ -320,17 +358,20 @@ const createGroupBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `gornostyle72-winter-${bookingId}`,
+                `gornostyle72-winter-${transactionId}`,
                 payment.status,
                 paymentMethod,
-                JSON.stringify(payment.rawData || payment),
+                JSON.stringify(rawData),
                 transactionId
             ]
         );
 
+        // УВЕДОМЛЕНИЯ НЕ ОТПРАВЛЯЕМ ЗДЕСЬ!
+        // Они будут отправлены при обработке webhook после создания бронирования
+
         return res.json({ 
             success: true, 
-            bookingId, 
+            transactionId, // Возвращаем transactionId вместо bookingId
             paymentUrl: payment.paymentURL,
             paymentMethod: paymentMethod,
             qrCodeUrl: payment.qrCodeUrl || null
@@ -1007,7 +1048,7 @@ const createProgramBooking = async (req, res) => {
 
         const groupTraining = existingTrainingResult.rows[0];
 
-        // Проверяем наличие мест
+        // Проверяем наличие мест (без учета временных резервов, так как их еще нет)
         if (groupTraining.current_participants + safeCount > groupTraining.max_participants) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: 'Недостаточно мест в группе' });
@@ -1035,48 +1076,10 @@ const createProgramBooking = async (req, res) => {
         const pricePerPerson = Number(groupTraining.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
 
-        // Создаем бронирование
-        const bookingResult = await client.query(
-            `INSERT INTO kuliga_bookings (
-                client_id,
-                booking_type,
-                group_training_id,
-                date,
-                start_time,
-                end_time,
-                sport_type,
-                participants_count,
-                participants_names,
-                price_total,
-                price_per_person,
-                location,
-                status
-            ) VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
-            RETURNING id`,
-            [
-                clientRecord.id,
-                groupTraining.id,
-                dateStr,
-                startTimeStr,
-                endTimeStr,
-                program.sport_type,
-                safeCount,
-                namesArray,
-                totalPrice,
-                pricePerPerson,
-                program.location,
-            ]
-        );
-
-        const bookingId = bookingResult.rows[0].id;
-
-        // Увеличиваем счетчик участников
-        await client.query(
-            `UPDATE kuliga_group_trainings
-             SET current_participants = current_participants + $1
-             WHERE id = $2`,
-            [safeCount, groupTraining.id]
-        );
+        // НОВАЯ ЛОГИКА: Бронирование создаётся ТОЛЬКО после успешной оплаты
+        // 1. НЕ создаём бронирование сразу
+        // 2. НЕ увеличиваем current_participants сразу (только временно)
+        // 3. Создаём транзакцию с данными для будущего бронирования
 
         const description = formatPaymentDescription({
             bookingType: 'group',
@@ -1087,14 +1090,61 @@ const createProgramBooking = async (req, res) => {
             programName: program.name
         });
 
+        // Сохраняем данные для будущего создания бронирования после оплаты
+        const bookingData = {
+            client_id: clientRecord.id,
+            booking_type: 'group',
+            group_training_id: groupTraining.id,
+            date: dateStr,
+            start_time: startTimeStr,
+            end_time: endTimeStr,
+            sport_type: program.sport_type,
+            participants_count: safeCount,
+            participants_names: namesArray,
+            price_total: totalPrice,
+            price_per_person: pricePerPerson,
+            location: program.location || 'kuliga',
+            // Дополнительные данные для уведомлений
+            client_name: fullName,
+            client_phone: normalizedPhone,
+            client_email: email?.trim() || null,
+            instructor_id: groupTraining.instructor_id || null,
+            program_id: programId,
+            program_name: program.name,
+        };
+
+        // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
+        // Данные бронирования сохраняем в provider_raw_data
+        const rawDataForInsert = { bookingData };
         const transactionResult = await client.query(
-            `INSERT INTO kuliga_transactions (client_id, booking_id, type, amount, status, description)
-             VALUES ($1, $2, 'payment', $3, 'pending', $4)
+            `INSERT INTO kuliga_transactions (
+                client_id, 
+                booking_id, 
+                type, 
+                amount, 
+                status, 
+                description,
+                provider_raw_data
+            )
+             VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
-            [clientRecord.id, bookingId, totalPrice, description]
+            [clientRecord.id, totalPrice, description, JSON.stringify(rawDataForInsert)]
         );
 
         const transactionId = transactionResult.rows[0].id;
+
+        // ВРЕМЕННАЯ БЛОКИРОВКА МЕСТ: Увеличиваем current_participants на время оплаты
+        // Это предотвращает двойное бронирование, пока клиент оплачивает
+        // При успешной оплате места останутся занятыми, при неудаче - вернутся обратно
+        await client.query(
+            `UPDATE kuliga_group_trainings
+             SET current_participants = current_participants + $1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [safeCount, groupTraining.id]
+        );
+        
+        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке программы #${groupTraining.id} для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 
@@ -1103,7 +1153,7 @@ const createProgramBooking = async (req, res) => {
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
-                orderId: `gornostyle72-winter-${bookingId}`,
+                orderId: `gornostyle72-winter-${transactionId}`, // Используем transactionId вместо bookingId
                 amount: totalPrice,
                 description,
                 customerPhone: normalizedPhone,
@@ -1122,22 +1172,39 @@ const createProgramBooking = async (req, res) => {
                 paymentMethod: paymentMethod,
             });
         } catch (paymentError) {
+            // При ошибке инициализации платежа помечаем транзакцию как failed
+            // И ВОЗВРАЩАЕМ места в групповой тренировке
             await pool.query(
                 `UPDATE kuliga_transactions
                  SET status = 'failed', provider_status = $1
                  WHERE id = $2`,
                 [paymentError.message.slice(0, 120), transactionId]
             );
+            
+            // Возвращаем места в групповой тренировке
             await pool.query(
-                `UPDATE kuliga_bookings
-                 SET status = 'cancelled', cancellation_reason = 'Ошибка инициализации платежа', cancelled_at = CURRENT_TIMESTAMP
-                 WHERE id = $1`,
-                [bookingId]
+                `UPDATE kuliga_group_trainings
+                 SET current_participants = current_participants - $1,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $2`,
+                [safeCount, groupTraining.id]
             );
+            
+            console.log(`🔓 Возвращено ${safeCount} мест в групповой тренировке программы #${groupTraining.id} (ошибка инициализации платежа)`);
+            
             throw paymentError;
         }
 
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
+        
+        // Обновляем транзакцию с данными от провайдера
+        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // Это гарантирует, что bookingData не потеряется
+        const rawData = {
+            ...rawDataForInsert, // bookingData уже здесь
+            paymentData: payment.rawData || payment
+        };
+        
         await pool.query(
             `UPDATE kuliga_transactions
              SET payment_provider = $1,
@@ -1150,17 +1217,20 @@ const createProgramBooking = async (req, res) => {
             [
                 providerName,
                 payment.paymentId,
-                `gornostyle72-winter-${bookingId}`,
+                `gornostyle72-winter-${transactionId}`,
                 payment.status,
                 paymentMethod,
-                JSON.stringify(payment.rawData || payment),
+                JSON.stringify(rawData),
                 transactionId
             ]
         );
 
+        // УВЕДОМЛЕНИЯ НЕ ОТПРАВЛЯЕМ ЗДЕСЬ!
+        // Они будут отправлены при обработке webhook после создания бронирования
+
         return res.json({ 
             success: true, 
-            bookingId, 
+            transactionId, // Возвращаем transactionId вместо bookingId
             paymentUrl: payment.paymentURL,
             paymentMethod: paymentMethod,
             qrCodeUrl: payment.qrCodeUrl || null
