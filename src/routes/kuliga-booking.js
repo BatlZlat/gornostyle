@@ -833,19 +833,20 @@ const createIndividualBooking = async (req, res) => {
 
         const transactionId = transactionResult.rows[0].id;
 
-        // ВРЕМЕННАЯ БЛОКИРОВКА (HOLD): Ставим слот на hold на 30 минут
+        // ВРЕМЕННАЯ БЛОКИРОВКА (HOLD): Ставим слот на hold на 5 минут
         // Это предотвращает двойное бронирование, пока клиент оплачивает
+        // Вебхуки от банка приходят быстро, поэтому 5 минут достаточно
         await client.query(
             `UPDATE kuliga_schedule_slots
              SET status = 'hold',
-                 hold_until = NOW() + INTERVAL '30 minutes',
+                 hold_until = NOW() + INTERVAL '5 minutes',
                  hold_transaction_id = $1,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = $2`,
             [transactionId, slot.slot_id]
         );
         
-        console.log(`🔒 Слот #${slot.slot_id} заблокирован (hold) на 30 минут для транзакции #${transactionId}`);
+        console.log(`🔒 Слот #${slot.slot_id} заблокирован (hold) на 5 минут для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 

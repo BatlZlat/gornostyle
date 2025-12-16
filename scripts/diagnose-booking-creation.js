@@ -223,7 +223,7 @@ async function testBookingCreation(transactionId, bookingData) {
         await client.query(`
             UPDATE kuliga_schedule_slots
             SET status = 'hold',
-                hold_until = NOW() + INTERVAL '30 minutes',
+                hold_until = NOW() + INTERVAL '5 minutes',
                 hold_transaction_id = $1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
