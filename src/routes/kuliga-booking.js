@@ -296,9 +296,9 @@ const createGroupBooking = async (req, res) => {
                 const newGroupTrainingResult = await client.query(
                     `INSERT INTO kuliga_group_trainings (
                         instructor_id, slot_id, date, start_time, end_time,
-                        sport_type, price_per_person,
+                        sport_type, level, price_per_person,
                         min_participants, max_participants, current_participants, status, location
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 'open', $10)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, 'open', $11)
                     RETURNING id, instructor_id, slot_id, date, start_time, end_time, sport_type,
                             price_per_person, max_participants, current_participants, status, location`,
                     [
@@ -308,6 +308,7 @@ const createGroupBooking = async (req, res) => {
                         slot.start_time,
                         slot.end_time,
                         normalizedSport,
+                        'beginner', // Уровень подготовки: по умолчанию начальный
                         pricePerPerson,
                         2, // min_participants
                         maxParticipants,
