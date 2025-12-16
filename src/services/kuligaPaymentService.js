@@ -43,6 +43,9 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
     if (clientId) {
         const separator = SUCCESS_URL.includes('?') ? '&' : '?';
         successUrl = `${SUCCESS_URL}${separator}clientId=${clientId}`;
+        console.log(`🔗 [Payment] SUCCESS_URL с clientId: ${successUrl}`);
+    } else {
+        console.warn(`⚠️ [Payment] clientId не передан в initPayment, SUCCESS_URL без clientId: ${successUrl}`);
     }
 
     const params = {
