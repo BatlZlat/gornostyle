@@ -291,6 +291,13 @@ router.post(
                  FOR UPDATE`,
                 [transactionId]
             );
+            
+            // Логируем provider_raw_data для отладки
+            if (transactionResult.rows.length > 0) {
+                const rawDataFromDb = transactionResult.rows[0].provider_raw_data;
+                console.log(`🔍 [Webhook] provider_raw_data из БД (тип: ${typeof rawDataFromDb}):`, 
+                    typeof rawDataFromDb === 'string' ? rawDataFromDb.substring(0, 300) : JSON.stringify(rawDataFromDb).substring(0, 300));
+            }
 
             if (!transactionResult.rows.length) {
                 await client.query('ROLLBACK');
@@ -341,6 +348,16 @@ router.post(
                 // Извлекаем данные бронирования из provider_raw_data
                 const rawData = transaction.provider_raw_data || {};
                 const bookingData = rawData.bookingData;
+                
+                // Логируем данные для отладки
+                console.log(`🔍 [Webhook] Извлечение bookingData из транзакции #${transactionId}:`);
+                console.log(`   - bookingData существует: ${!!bookingData}`);
+                if (bookingData) {
+                    console.log(`   - client_id: ${bookingData.client_id}`);
+                    console.log(`   - client_email: ${bookingData.client_email}`);
+                    console.log(`   - client_name: ${bookingData.client_name}`);
+                    console.log(`   - booking_type: ${bookingData.booking_type}`);
+                }
                 
                 if (!bookingData) {
                     await client.query('ROLLBACK');

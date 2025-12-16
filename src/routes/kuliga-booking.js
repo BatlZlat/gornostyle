@@ -437,6 +437,8 @@ const createGroupBooking = async (req, res) => {
             client_email: email?.trim() || null,
             instructor_id: training.instructor_id || null,
         };
+        
+        console.log(`📝 [GroupBooking] Сохранение bookingData: client_id=${bookingData.client_id}, client_email=${bookingData.client_email}, client_name=${bookingData.client_name}`);
 
         // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
         // Данные бронирования сохраняем в provider_raw_data
@@ -813,6 +815,8 @@ const createIndividualBooking = async (req, res) => {
             instructor_name: slot.instructor_name,
             price_duration: price.duration,
         };
+        
+        console.log(`📝 [IndividualBooking] Сохранение bookingData: client_id=${bookingData.client_id}, client_email=${bookingData.client_email}, client_name=${bookingData.client_name}`);
 
         // Создаём транзакцию БЕЗ бронирования (booking_id = NULL)
         // Данные бронирования сохраняем в provider_raw_data

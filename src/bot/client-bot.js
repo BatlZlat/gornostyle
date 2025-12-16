@@ -12372,20 +12372,26 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
     let referralCode = null;
     let clientIdFromParam = null;
     
+    console.log(`🔍 [Bot /start] Получен параметр: "${startParam}" от пользователя ${telegramId}`);
+    
     // Проверяем формат client_{CLIENT_ID}
     if (startParam && startParam.startsWith('client_')) {
         const clientIdStr = startParam.replace('client_', '').trim();
         const parsedClientId = parseInt(clientIdStr);
         if (!isNaN(parsedClientId) && parsedClientId > 0) {
             clientIdFromParam = parsedClientId;
-            console.log(`🔗 Deep link с client_id: ${clientIdFromParam}`);
+            console.log(`🔗 [Bot /start] Deep link с client_id: ${clientIdFromParam}`);
         } else {
+            console.log(`⚠️ [Bot /start] Не удалось распарсить client_id из "${startParam}", считаем реферальным кодом`);
             // Если не удалось распарсить, считаем это реферальным кодом
             referralCode = startParam;
         }
     } else if (startParam) {
+        console.log(`ℹ️ [Bot /start] Параметр "${startParam}" не в формате client_, считаем реферальным кодом`);
         // Если параметр есть, но не в формате client_, считаем реферальным кодом
         referralCode = startParam;
+    } else {
+        console.log(`ℹ️ [Bot /start] Параметр отсутствует`);
     }
 
     // Очищаем предыдущее состояние
@@ -12393,12 +12399,15 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
 
     // Если передан client_id через deep link и клиент не найден по telegram_id
     if (!client && clientIdFromParam) {
+        console.log(`🔍 [Bot /start] Клиент не найден по telegram_id, ищем по client_id: ${clientIdFromParam}`);
         try {
             // Ищем клиента по client_id
             const clientResult = await pool.query(
                 'SELECT id, full_name, phone, email, telegram_id, telegram_username FROM clients WHERE id = $1',
                 [clientIdFromParam]
             );
+            
+            console.log(`🔍 [Bot /start] Результат поиска по client_id: найдено ${clientResult.rows.length} записей`);
             
             if (clientResult.rows.length > 0) {
                 const existingClient = clientResult.rows[0];
