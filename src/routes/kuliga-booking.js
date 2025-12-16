@@ -169,7 +169,12 @@ const createGroupBooking = async (req, res) => {
     }
 
     const normalizedPhone = normalizePhone(phone);
-    const safeCount = Math.max(1, Math.min(8, Number(participantsCount) || 1));
+    // Определяем количество участников: из participantsCount или из массива participants
+    let actualParticipantsCount = Number(participantsCount) || 1;
+    if (Array.isArray(participants) && participants.length > 0) {
+        actualParticipantsCount = Math.max(actualParticipantsCount, participants.length);
+    }
+    const safeCount = Math.max(1, Math.min(8, actualParticipantsCount));
 
     const client = await pool.connect();
 
@@ -224,12 +229,40 @@ const createGroupBooking = async (req, res) => {
 
                 const slot = slotResult.rows[0];
 
-                if (slot.status !== 'available' && slot.status !== 'hold') {
+                // Проверяем статус слота: должен быть available или hold (hold может быть от предыдущей попытки оплаты)
+                // Если слот уже в статусе 'group' или 'booked', значит групповая тренировка уже создана
+                if (slot.status === 'group') {
+                    // Групповая тренировка уже создана на этот слот - используем её
+                    const existingGroupTraining = await client.query(
+                        `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
+                                price_per_person, max_participants, current_participants, status, location
+                         FROM kuliga_group_trainings
+                         WHERE slot_id = $1 AND date = $2
+                         FOR UPDATE`,
+                        [slot.slot_id, date]
+                    );
+                    if (existingGroupTraining.rows.length > 0) {
+                        training = existingGroupTraining.rows[0];
+                        groupTrainingIdToUse = training.id;
+                        console.log(`✅ Используем существующую групповую тренировку #${groupTrainingIdToUse} на слот #${slot.slot_id} (слот уже в статусе 'group')`);
+                        // Пропускаем создание новой групповой тренировки
+                    } else {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ success: false, error: 'Слот уже занят групповой тренировкой, но тренировка не найдена. Обратитесь к администратору.' });
+                    }
+                } else if (slot.status === 'booked') {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ success: false, error: 'Слот уже занят. Выберите другое время.' });
+                } else if (slot.status !== 'available' && slot.status !== 'hold') {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, error: `Слот недоступен (статус: ${slot.status}). Выберите другое время.` });
                 }
-
-                // Получаем данные тарифа
+                
+                // Если слот в статусе 'group', то training уже найден выше, пропускаем создание
+                if (slot.status !== 'group' || !training) {
+                    // Создаем новую групповую тренировку только если слот не в статусе 'group'
+                    
+                    // Получаем данные тарифа
                 const priceResult = await client.query(
                     `SELECT id, type, duration, participants, price
                      FROM winter_prices
@@ -293,7 +326,8 @@ const createGroupBooking = async (req, res) => {
                     [slot.slot_id]
                 );
 
-                console.log(`✅ Создана групповая тренировка #${groupTrainingIdToUse} на слот #${slot.slot_id} для ${safeCount} участников`);
+                    console.log(`✅ Создана групповая тренировка #${groupTrainingIdToUse} на слот #${slot.slot_id} для ${safeCount} участников`);
+                }
             }
         } else if (!groupTrainingIdToUse) {
             await client.query('ROLLBACK');
@@ -1136,7 +1170,12 @@ const createProgramBooking = async (req, res) => {
     }
 
     const normalizedPhone = normalizePhone(phone);
-    const safeCount = Math.max(1, Math.min(8, Number(participantsCount) || 1));
+    // Определяем количество участников: из participantsCount или из массива participants
+    let actualParticipantsCount = Number(participantsCount) || 1;
+    if (Array.isArray(participants) && participants.length > 0) {
+        actualParticipantsCount = Math.max(actualParticipantsCount, participants.length);
+    }
+    const safeCount = Math.max(1, Math.min(8, actualParticipantsCount));
 
     const client = await pool.connect();
     try {
