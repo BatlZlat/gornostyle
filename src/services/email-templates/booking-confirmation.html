@@ -22,7 +22,7 @@
                     Здравствуйте, <strong>{{client_name}}</strong>!
                 </p>
                 <p style="margin: 0 0 20px 0; color: #555; font-size: 1rem; line-height: 1.6;">
-                    Ваша запись на тренировку успешно подтверждена. Мы ждём вас!
+                    <strong>Поздравляем!</strong> Ваша запись на тренировку успешно подтверждена. Мы ждём вас!
                 </p>
             </td>
         </tr>
@@ -44,24 +44,10 @@
                             <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Время:</td>
                             <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{start_time}} - {{end_time}}</td>
                         </tr>
-                        {{#if booking_type_individual}}
                         <tr>
                             <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Тип:</td>
-                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">Индивидуальная тренировка</td>
+                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{booking_type_text}}</td>
                         </tr>
-                        {{/if}}
-                        {{#if booking_type_group}}
-                        <tr>
-                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Тип:</td>
-                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">Групповая тренировка</td>
-                        </tr>
-                        {{#if participants_count}}
-                        <tr>
-                            <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Участников:</td>
-                            <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{participants_count}}</td>
-                        </tr>
-                        {{/if}}
-                        {{/if}}
                         <tr>
                             <td style="color: #7f8c8d; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef;">Вид спорта:</td>
                             <td style="color: #2c3e50; font-weight: bold; font-size: 0.95rem; padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">{{sport_type_text}}</td>
@@ -86,6 +72,13 @@
                             <td></td>
                         </tr>
                         {{/if}}
+                        <tr>
+                            <td colspan="2" style="padding: 15px 0 0 0;">
+                                <p style="margin: 0; color: #555; font-size: 0.95rem; line-height: 1.6;">
+                                    <strong>Настоятельно рекомендуем</strong> <a href="{{bot_deep_link}}" style="color: #667eea; text-decoration: none; font-weight: bold;">подключиться к нашему Telegram-боту</a>, для мгновенного информирования и напоминаний, связанных с тренировками.
+                                </p>
+                            </td>
+                        </tr>
                     </table>
                 </div>
             </td>
@@ -102,21 +95,7 @@
             </td>
         </tr>
 
-        <!-- Призыв подключить Telegram бота -->
-        <tr>
-            <td style="padding: 0 30px 30px 30px;">
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 25px; text-align: center; color: white;">
-                    <h3 style="margin: 0 0 15px 0; font-size: 1.2rem;">📱 Подключите Telegram бота!</h3>
-                    <p style="margin: 0 0 20px 0; font-size: 0.95rem; line-height: 1.6; opacity: 0.95;">
-                        Получайте мгновенные уведомления о тренировках, напоминания и важные обновления прямо в Telegram!
-                    </p>
-                    <a href="https://t.me/Ski_Instruktor72_bot?start=client_{{client_id}}" 
-                       style="display: inline-block; background: white; color: #667eea; padding: 12px 30px; border-radius: 25px; text-decoration: none; font-weight: bold; font-size: 1rem; margin-top: 10px;">
-                        🔗 Подключить бота
-                    </a>
-                </div>
-            </td>
-        </tr>
+        <!-- Призыв подключить Telegram бота (уже есть в таблице деталей, можно оставить или убрать) -->
 
         <!-- Контакты -->
         <tr>
