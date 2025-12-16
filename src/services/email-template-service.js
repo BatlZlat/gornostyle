@@ -233,8 +233,10 @@ class EmailTemplateService {
      */
     getLocationDisplayName(location) {
         const locations = {
-            'kuliga': 'Воронинские горки',
-            'kuliga-club': 'База отдыха «Кулига-Клуб»',
+            'kuliga': 'Кулига-Клуб',
+            'kuliga-club': 'Кулига-Клуб',
+            'vorona': 'Воронинские горки',
+            'voroniny': 'Воронинские горки',
             'natural_slope': 'Естественный склон'
         };
         return locations[location] || location || 'Место не указано';
