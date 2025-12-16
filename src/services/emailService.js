@@ -20,9 +20,13 @@ class EmailService {
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
             },
             // Увеличиваем timeout для стабильности соединения
-            connectionTimeout: 60000, // 60 секунд
-            greetingTimeout: 30000,   // 30 секунд
-            socketTimeout: 60000      // 60 секунд
+            connectionTimeout: 10000, // 10 секунд (было 60)
+            greetingTimeout: 10000,   // 10 секунд (было 30)
+            socketTimeout: 30000,     // 30 секунд (было 60)
+            // Дополнительные настройки для надежности
+            tls: {
+                rejectUnauthorized: false // Для тестирования
+            }
         });
 
         // Проверяем настройки
@@ -459,10 +463,11 @@ class EmailService {
 
     // Универсальный метод отправки email
     async sendEmail(recipientEmail, subject, htmlContent, attachments = []) {
+        // Сначала пробуем SMTP Yandex
         try {
             if (!process.env.EMAIL_PASS) {
-                console.warn(`⚠️  Не удалось отправить email на ${recipientEmail}: EMAIL_PASS не настроен`);
-                return { success: false, error: 'EMAIL_PASS не настроен' };
+                console.warn(`⚠️  EMAIL_PASS не настроен, пробуем Resend...`);
+                throw new Error('EMAIL_PASS не настроен');
             }
 
             const mailOptions = {
@@ -476,13 +481,54 @@ class EmailService {
                 attachments: attachments
             };
 
-            console.log(`📧 Отправка email на ${recipientEmail}...`);
-            const result = await this.transporter.sendMail(mailOptions);
-            console.log('✅ Email отправлен успешно:', result.messageId);
-            return { success: true, messageId: result.messageId };
-        } catch (error) {
-            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
-            return { success: false, error: error.message };
+            console.log(`📧 Попытка отправки email через SMTP Yandex на ${recipientEmail}...`);
+            console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
+            console.log(`📧 Тема: ${mailOptions.subject}`);
+            
+            // Добавляем таймаут для отправки (10 секунд)
+            const sendPromise = this.transporter.sendMail(mailOptions);
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('SMTP timeout: отправка заняла более 10 секунд')), 10000)
+            );
+            
+            const result = await Promise.race([sendPromise, timeoutPromise]);
+            console.log('✅ Email отправлен успешно через SMTP Yandex, messageId:', result.messageId);
+            console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
+            return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
+        } catch (smtpError) {
+            console.error(`❌ Ошибка SMTP Yandex:`, smtpError.message);
+            console.log(`🔄 Пробуем отправить через Resend как fallback...`);
+            
+            // Fallback на Resend, если SMTP не работает
+            try {
+                if (this.resendService && this.resendService.resend) {
+                    console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
+                    const resendResult = await this.resendService.resend.emails.send({
+                        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+                        to: recipientEmail,
+                        subject: subject,
+                        html: htmlContent
+                    });
+                    
+                    console.log('✅ Email отправлен успешно через Resend, messageId:', resendResult.data?.id);
+                    return { success: true, messageId: resendResult.data?.id, service: 'resend' };
+                } else {
+                    console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
+                    throw new Error('Resend не настроен');
+                }
+            } catch (resendError) {
+                console.error(`❌ Ошибка Resend:`, resendError.message);
+                if (resendError.response) {
+                    console.error(`❌ Детали ошибки Resend:`, JSON.stringify(resendError.response.body || resendError.response, null, 2));
+                }
+                console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}: SMTP timeout/error`);
+                return { 
+                    success: false, 
+                    error: `SMTP: ${smtpError.message}, Resend: ${resendError.message}`,
+                    code: smtpError.code,
+                    service: 'none'
+                };
+            }
         }
     }
 

@@ -823,8 +823,12 @@ router.post(
                                 const dateFormatted = emailTemplateService.formatDate(bookingData.date);
                                 const subject = `✅ Подтверждение записи на тренировку - ${dateFormatted}`;
                                 
-                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
-                                console.log(`✅ Email уведомление отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                                const emailResult = await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                if (emailResult.success) {
+                                    console.log(`✅ Email уведомление отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}, messageId: ${emailResult.messageId || 'N/A'}`);
+                                } else {
+                                    console.error(`❌ Ошибка отправки email клиенту ${bookingData.client_name} на ${bookingData.client_email}: ${emailResult.error}`);
+                                }
                             } catch (emailError) {
                                 console.error('Ошибка отправки email клиенту:', emailError);
                                 // Не прерываем выполнение, продолжаем работу
@@ -1071,8 +1075,12 @@ router.post(
                                 const dateFormatted = emailTemplateService.formatDate(bookingData.date);
                                 const subject = `❌ Отмена тренировки - ${dateFormatted}`;
                                 
-                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
-                                console.log(`✅ Email уведомление об отмене отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                                const emailResult = await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                if (emailResult.success) {
+                                    console.log(`✅ Email уведомление об отмене отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}, messageId: ${emailResult.messageId || 'N/A'}`);
+                                } else {
+                                    console.error(`❌ Ошибка отправки email об отмене клиенту ${bookingData.client_name} на ${bookingData.client_email}: ${emailResult.error}`);
+                                }
                             }
                         } catch (emailError) {
                             console.error('Ошибка отправки email об отмене клиенту:', emailError);
@@ -1143,8 +1151,12 @@ router.post(
                                 const dateFormatted = emailTemplateService.formatDate(bookingData.date);
                                 const subject = `💰 Возврат средств - ${dateFormatted}`;
                                 
-                                await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
-                                console.log(`✅ Email уведомление о возврате отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}`);
+                                const emailResult = await emailService.sendEmail(bookingData.client_email, subject, htmlContent);
+                                if (emailResult.success) {
+                                    console.log(`✅ Email уведомление о возврате отправлено клиенту ${bookingData.client_name} на ${bookingData.client_email}, messageId: ${emailResult.messageId || 'N/A'}`);
+                                } else {
+                                    console.error(`❌ Ошибка отправки email о возврате клиенту ${bookingData.client_name} на ${bookingData.client_email}: ${emailResult.error}`);
+                                }
                             }
                         } catch (emailError) {
                             console.error('Ошибка отправки email о возврате клиенту:', emailError);
