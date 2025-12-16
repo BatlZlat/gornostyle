@@ -502,8 +502,9 @@ class EmailService {
             // Fallback на Resend, если SMTP не работает
             try {
                 if (this.resendService && this.resendService.resend) {
+                    console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
                     const resendResult = await this.resendService.resend.emails.send({
-                        from: process.env.RESEND_FROM_EMAIL || 'noreply@gornostyle72.ru',
+                        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
                         to: recipientEmail,
                         subject: subject,
                         html: htmlContent
@@ -512,12 +513,15 @@ class EmailService {
                     console.log('✅ Email отправлен успешно через Resend, messageId:', resendResult.data?.id);
                     return { success: true, messageId: resendResult.data?.id, service: 'resend' };
                 } else {
-                    console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует)');
+                    console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
                     throw new Error('Resend не настроен');
                 }
             } catch (resendError) {
                 console.error(`❌ Ошибка Resend:`, resendError.message);
-                console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}:`, smtpError.message);
+                if (resendError.response) {
+                    console.error(`❌ Детали ошибки Resend:`, JSON.stringify(resendError.response.body || resendError.response, null, 2));
+                }
+                console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}: SMTP timeout/error`);
                 return { 
                     success: false, 
                     error: `SMTP: ${smtpError.message}, Resend: ${resendError.message}`,
