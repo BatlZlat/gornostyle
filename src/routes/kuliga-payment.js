@@ -914,8 +914,33 @@ router.post(
             let txUpdateResult;
             try {
                 console.log(`💾 Выполняю UPDATE транзакции #${transactionId}...`);
+                
+                // ФИНАЛЬНАЯ ПРОВЕРКА: убеждаемся, что bookingData сохранен
+                if (!updatedRawData.bookingData && transaction.provider_raw_data) {
+                    console.warn(`⚠️ [Webhook] bookingData отсутствует в updatedRawData, пытаемся восстановить из transaction.provider_raw_data`);
+                    try {
+                        let existingRawData = {};
+                        if (typeof transaction.provider_raw_data === 'string') {
+                            existingRawData = JSON.parse(transaction.provider_raw_data);
+                        } else {
+                            existingRawData = transaction.provider_raw_data;
+                        }
+                        if (existingRawData.bookingData) {
+                            updatedRawData.bookingData = existingRawData.bookingData;
+                            console.log(`✅ [Webhook] bookingData восстановлен: client_id=${existingRawData.bookingData.client_id}`);
+                        }
+                    } catch (e) {
+                        console.error(`❌ [Webhook] Не удалось восстановить bookingData:`, e.message);
+                    }
+                }
+                
                 const jsonString = JSON.stringify(updatedRawData);
                 console.log(`📦 provider_raw_data будет сохранен как jsonb, размер: ${jsonString.length} байт`);
+                console.log(`📦 updatedRawData содержит bookingData: ${!!updatedRawData.bookingData}`);
+                if (updatedRawData.bookingData) {
+                    console.log(`📦 bookingData.client_id: ${updatedRawData.bookingData.client_id}`);
+                    console.log(`📦 bookingData.client_email: ${updatedRawData.bookingData.client_email || 'ОТСУТСТВУЕТ'}`);
+                }
                 
                 // Для jsonb типа передаем JSON строку, PostgreSQL автоматически преобразует в jsonb
                 // Не используем явное приведение ::jsonb, чтобы избежать проблем
