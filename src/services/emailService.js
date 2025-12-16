@@ -20,9 +20,13 @@ class EmailService {
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
             },
             // Увеличиваем timeout для стабильности соединения
-            connectionTimeout: 60000, // 60 секунд
-            greetingTimeout: 30000,   // 30 секунд
-            socketTimeout: 60000      // 60 секунд
+            connectionTimeout: 10000, // 10 секунд (было 60)
+            greetingTimeout: 10000,   // 10 секунд (было 30)
+            socketTimeout: 30000,     // 30 секунд (было 60)
+            // Дополнительные настройки для надежности
+            tls: {
+                rejectUnauthorized: false // Для тестирования
+            }
         });
 
         // Проверяем настройки
@@ -479,13 +483,24 @@ class EmailService {
             console.log(`📧 Отправка email на ${recipientEmail}...`);
             console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
             console.log(`📧 Тема: ${mailOptions.subject}`);
-            const result = await this.transporter.sendMail(mailOptions);
+            
+            // Добавляем таймаут для отправки
+            const sendPromise = this.transporter.sendMail(mailOptions);
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('SMTP timeout: отправка заняла более 30 секунд')), 30000)
+            );
+            
+            const result = await Promise.race([sendPromise, timeoutPromise]);
             console.log('✅ Email отправлен успешно через SMTP, messageId:', result.messageId);
             console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
             return { success: true, messageId: result.messageId, response: result.response };
         } catch (error) {
             console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
-            return { success: false, error: error.message };
+            console.error(`❌ Детали ошибки:`, error.code, error.command, error.response);
+            if (error.stack) {
+                console.error(`❌ Stack trace:`, error.stack.substring(0, 500));
+            }
+            return { success: false, error: error.message, code: error.code, command: error.command };
         }
     }
 
