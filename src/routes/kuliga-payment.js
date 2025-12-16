@@ -346,17 +346,32 @@ router.post(
                 console.log(`🔨 Создаём бронирование для успешного платежа (transaction #${transactionId})`);
                 
                 // Извлекаем данные бронирования из provider_raw_data
-                const rawData = transaction.provider_raw_data || {};
+                // provider_raw_data может быть строкой (JSON) или объектом
+                let rawData = {};
+                try {
+                    if (typeof transaction.provider_raw_data === 'string') {
+                        rawData = JSON.parse(transaction.provider_raw_data);
+                    } else if (transaction.provider_raw_data) {
+                        rawData = transaction.provider_raw_data;
+                    }
+                } catch (parseError) {
+                    console.error(`❌ [Webhook] Ошибка парсинга provider_raw_data для транзакции #${transactionId}:`, parseError);
+                    rawData = {};
+                }
+                
                 const bookingData = rawData.bookingData;
                 
                 // Логируем данные для отладки
                 console.log(`🔍 [Webhook] Извлечение bookingData из транзакции #${transactionId}:`);
+                console.log(`   - rawData существует: ${!!rawData}`);
                 console.log(`   - bookingData существует: ${!!bookingData}`);
                 if (bookingData) {
                     console.log(`   - client_id: ${bookingData.client_id}`);
-                    console.log(`   - client_email: ${bookingData.client_email}`);
-                    console.log(`   - client_name: ${bookingData.client_name}`);
+                    console.log(`   - client_email: ${bookingData.client_email || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`   - client_name: ${bookingData.client_name || 'ОТСУТСТВУЕТ'}`);
                     console.log(`   - booking_type: ${bookingData.booking_type}`);
+                } else {
+                    console.error(`❌ [Webhook] bookingData отсутствует в rawData! rawData:`, JSON.stringify(rawData).substring(0, 500));
                 }
                 
                 if (!bookingData) {
