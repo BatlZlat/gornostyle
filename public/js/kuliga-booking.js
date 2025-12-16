@@ -416,17 +416,34 @@
         }
 
         const participantsFromPrice = Math.max(1, Number(price.participants) || 1);
-        const currentParticipants =
-            Number.isFinite(participantsParam) && participantsParam >= 1 && participantsParam <= participantsFromPrice
-                ? participantsParam
-                : Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+        
+        // Для групповых тренировок: если в URL указано количество участников, используем его
+        // Для индивидуальных: ограничиваем значением из тарифа
+        let currentParticipants;
+        if (price.type === 'group') {
+            // Для групповых тренировок используем participantsParam из URL, если он передан и валиден
+            if (Number.isFinite(participantsParam) && participantsParam >= 1) {
+                currentParticipants = participantsParam;
+            } else {
+                currentParticipants = Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+            }
+        } else {
+            // Для индивидуальных тренировок ограничиваем значением из тарифа
+            currentParticipants =
+                Number.isFinite(participantsParam) && participantsParam >= 1 && participantsParam <= participantsFromPrice
+                    ? participantsParam
+                    : Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+        }
 
         state.selection = {
             priceId: price.id,
             priceType: price.type,
             duration: Number(price.duration) || 60,
             baseParticipants: participantsFromPrice,
-            currentParticipants: Math.max(1, Math.min(participantsFromPrice, currentParticipants)),
+            // Для групповых тренировок не ограничиваем currentParticipants значением из тарифа
+            currentParticipants: price.type === 'group' 
+                ? Math.max(1, currentParticipants)
+                : Math.max(1, Math.min(participantsFromPrice, currentParticipants)),
             priceValue: Number(price.price) || 0,
             pricePerPerson:
                 price.type === 'individual'
