@@ -75,21 +75,26 @@ class EmailTemplateService {
         const startTime = this.formatTime(bookingData.start_time);
         const endTime = this.formatTime(bookingData.end_time);
 
+        const botUsername = process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || 'Ski_Instruktor72_bot';
+        const botDeepLink = bookingData.client_id 
+            ? `https://t.me/${botUsername}?start=client_${bookingData.client_id}`
+            : `https://t.me/${botUsername}`;
+        
         const data = {
             client_name: bookingData.client_name || 'Клиент',
             client_id: bookingData.client_id || '',
             date: date,
             start_time: startTime,
             end_time: endTime,
-            booking_type_individual: bookingData.booking_type === 'individual',
-            booking_type_group: bookingData.booking_type === 'group',
+            booking_type_text: bookingData.booking_type === 'individual' ? 'Индивидуальная тренировка' : 'Групповая тренировка',
             participants_count: bookingData.participants_count || 1,
             sport_type_text: sportTypeText,
             instructor_name: bookingData.instructor_name || null,
             location_text: locationText,
             location_address: locationAddress,
             price_total: bookingData.price_total || 0,
-            price_per_person: bookingData.price_per_person || null
+            price_per_person: bookingData.price_per_person || null,
+            bot_deep_link: botDeepLink
         };
 
         return this.renderTemplate(template, data);
@@ -228,8 +233,10 @@ class EmailTemplateService {
      */
     getLocationDisplayName(location) {
         const locations = {
-            'kuliga': 'Воронинские горки',
-            'kuliga-club': 'База отдыха «Кулига-Клуб»',
+            'kuliga': 'Кулига-Клуб',
+            'kuliga-club': 'Кулига-Клуб',
+            'vorona': 'Воронинские горки',
+            'voroniny': 'Воронинские горки',
             'natural_slope': 'Естественный склон'
         };
         return locations[location] || location || 'Место не указано';
