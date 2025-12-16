@@ -463,10 +463,11 @@ class EmailService {
 
     // Универсальный метод отправки email
     async sendEmail(recipientEmail, subject, htmlContent, attachments = []) {
+        // Сначала пробуем SMTP Yandex
         try {
             if (!process.env.EMAIL_PASS) {
-                console.warn(`⚠️  Не удалось отправить email на ${recipientEmail}: EMAIL_PASS не настроен`);
-                return { success: false, error: 'EMAIL_PASS не настроен' };
+                console.warn(`⚠️  EMAIL_PASS не настроен, пробуем Resend...`);
+                throw new Error('EMAIL_PASS не настроен');
             }
 
             const mailOptions = {
@@ -480,27 +481,50 @@ class EmailService {
                 attachments: attachments
             };
 
-            console.log(`📧 Отправка email на ${recipientEmail}...`);
+            console.log(`📧 Попытка отправки email через SMTP Yandex на ${recipientEmail}...`);
             console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
             console.log(`📧 Тема: ${mailOptions.subject}`);
             
-            // Добавляем таймаут для отправки
+            // Добавляем таймаут для отправки (10 секунд)
             const sendPromise = this.transporter.sendMail(mailOptions);
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('SMTP timeout: отправка заняла более 30 секунд')), 30000)
+                setTimeout(() => reject(new Error('SMTP timeout: отправка заняла более 10 секунд')), 10000)
             );
             
             const result = await Promise.race([sendPromise, timeoutPromise]);
-            console.log('✅ Email отправлен успешно через SMTP, messageId:', result.messageId);
+            console.log('✅ Email отправлен успешно через SMTP Yandex, messageId:', result.messageId);
             console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
-            return { success: true, messageId: result.messageId, response: result.response };
-        } catch (error) {
-            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
-            console.error(`❌ Детали ошибки:`, error.code, error.command, error.response);
-            if (error.stack) {
-                console.error(`❌ Stack trace:`, error.stack.substring(0, 500));
+            return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
+        } catch (smtpError) {
+            console.error(`❌ Ошибка SMTP Yandex:`, smtpError.message);
+            console.log(`🔄 Пробуем отправить через Resend как fallback...`);
+            
+            // Fallback на Resend, если SMTP не работает
+            try {
+                if (this.resendService && this.resendService.resend) {
+                    const resendResult = await this.resendService.resend.emails.send({
+                        from: process.env.RESEND_FROM_EMAIL || 'noreply@gornostyle72.ru',
+                        to: recipientEmail,
+                        subject: subject,
+                        html: htmlContent
+                    });
+                    
+                    console.log('✅ Email отправлен успешно через Resend, messageId:', resendResult.data?.id);
+                    return { success: true, messageId: resendResult.data?.id, service: 'resend' };
+                } else {
+                    console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует)');
+                    throw new Error('Resend не настроен');
+                }
+            } catch (resendError) {
+                console.error(`❌ Ошибка Resend:`, resendError.message);
+                console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}:`, smtpError.message);
+                return { 
+                    success: false, 
+                    error: `SMTP: ${smtpError.message}, Resend: ${resendError.message}`,
+                    code: smtpError.code,
+                    service: 'none'
+                };
             }
-            return { success: false, error: error.message, code: error.code, command: error.command };
         }
     }
 
