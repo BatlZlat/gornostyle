@@ -526,12 +526,19 @@ const createGroupBooking = async (req, res) => {
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         
         // Обновляем транзакцию с данными от провайдера
-        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // КРИТИЧНО: Используем исходный rawDataForInsert и добавляем к нему paymentData
         // Это гарантирует, что bookingData не потеряется
+        const paymentData = payment.rawData || payment;
+        // Удаляем bookingData из paymentData если он там есть (чтобы не перезаписать наш)
+        if (paymentData && typeof paymentData === 'object') {
+            delete paymentData.bookingData;
+        }
         const rawData = {
             ...rawDataForInsert, // bookingData уже здесь
-            paymentData: payment.rawData || payment
+            paymentData: paymentData
         };
+        
+        console.log(`💾 [Booking] Обновление транзакции #${transactionId} с paymentData, bookingData сохранен: client_id=${rawDataForInsert.bookingData?.client_id}`);
         
         await pool.query(
             `UPDATE kuliga_transactions
@@ -907,12 +914,19 @@ const createIndividualBooking = async (req, res) => {
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         
         // Обновляем транзакцию с данными от провайдера
-        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // КРИТИЧНО: Используем исходный rawDataForInsert и добавляем к нему paymentData
         // Это гарантирует, что bookingData не потеряется
+        const paymentData = payment.rawData || payment;
+        // Удаляем bookingData из paymentData если он там есть (чтобы не перезаписать наш)
+        if (paymentData && typeof paymentData === 'object') {
+            delete paymentData.bookingData;
+        }
         const rawData = {
             ...rawDataForInsert, // bookingData уже здесь
-            paymentData: payment.rawData || payment
+            paymentData: paymentData
         };
+        
+        console.log(`💾 [Booking] Обновление транзакции #${transactionId} с paymentData, bookingData сохранен: client_id=${rawDataForInsert.bookingData?.client_id}`);
         
         await pool.query(
             `UPDATE kuliga_transactions
@@ -1395,12 +1409,19 @@ const createProgramBooking = async (req, res) => {
         const providerName = process.env.PAYMENT_PROVIDER || 'tochka';
         
         // Обновляем транзакцию с данными от провайдера
-        // Используем исходный rawDataForInsert и добавляем к нему paymentData
+        // КРИТИЧНО: Используем исходный rawDataForInsert и добавляем к нему paymentData
         // Это гарантирует, что bookingData не потеряется
+        const paymentData = payment.rawData || payment;
+        // Удаляем bookingData из paymentData если он там есть (чтобы не перезаписать наш)
+        if (paymentData && typeof paymentData === 'object') {
+            delete paymentData.bookingData;
+        }
         const rawData = {
             ...rawDataForInsert, // bookingData уже здесь
-            paymentData: payment.rawData || payment
+            paymentData: paymentData
         };
+        
+        console.log(`💾 [Booking] Обновление транзакции #${transactionId} с paymentData, bookingData сохранен: client_id=${rawDataForInsert.bookingData?.client_id}`);
         
         await pool.query(
             `UPDATE kuliga_transactions
