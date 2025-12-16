@@ -142,8 +142,15 @@ const createGroupBooking = async (req, res) => {
         phone,
         email,
         groupTrainingId,
+        slotId,
+        instructorId,
+        date,
+        priceId,
+        sportType,
+        location,
         participantsCount = 1,
         participantsNames = [],
+        participants = [], // Массив объектов {fullName, birthYear} из формы
         consentConfirmed,
     } = req.body || {};
 
@@ -161,10 +168,6 @@ const createGroupBooking = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Неверный формат email' });
     }
 
-    if (!groupTrainingId) {
-        return res.status(400).json({ success: false, error: 'Не выбрано групповое занятие' });
-    }
-
     const normalizedPhone = normalizePhone(phone);
     const safeCount = Math.max(1, Math.min(8, Number(participantsCount) || 1));
 
@@ -173,21 +176,146 @@ const createGroupBooking = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const groupResult = await client.query(
-            `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
-                    price_per_person, max_participants, current_participants, status, location
-             FROM kuliga_group_trainings
-             WHERE id = $1
-             FOR UPDATE`,
-            [groupTrainingId]
-        );
+        let training;
+        let groupTrainingIdToUse = groupTrainingId;
 
-        if (!groupResult.rows.length) {
+        // НОВАЯ ЛОГИКА: Если нет groupTrainingId, но есть slotId - создаем групповую тренировку автоматически
+        if (!groupTrainingIdToUse && slotId && instructorId && date && priceId) {
+            console.log(`🔨 Автоматическое создание групповой тренировки на слот #${slotId} для ${safeCount} участников`);
+
+            // Проверяем, не создана ли уже групповая тренировка на этот слот
+            const existingGroupTraining = await client.query(
+                `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
+                        price_per_person, max_participants, current_participants, status, location
+                 FROM kuliga_group_trainings
+                 WHERE slot_id = $1 AND date = $2
+                 FOR UPDATE`,
+                [slotId, date]
+            );
+
+            if (existingGroupTraining.rows.length > 0) {
+                // Используем существующую групповую тренировку
+                training = existingGroupTraining.rows[0];
+                groupTrainingIdToUse = training.id;
+                console.log(`✅ Используем существующую групповую тренировку #${groupTrainingIdToUse} на слот #${slotId}`);
+            } else {
+                // Получаем данные слота
+                const slotResult = await client.query(
+                    `SELECT s.id AS slot_id,
+                            s.instructor_id,
+                            s.date,
+                            s.start_time,
+                            s.end_time,
+                            s.status,
+                            s.location AS slot_location,
+                            i.full_name AS instructor_name,
+                            i.sport_type AS instructor_sport_type
+                     FROM kuliga_schedule_slots s
+                     JOIN kuliga_instructors i ON i.id = s.instructor_id
+                     WHERE s.id = $1 AND s.date = $2
+                     FOR UPDATE`,
+                    [slotId, date]
+                );
+
+                if (!slotResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ success: false, error: 'Выбранный слот не найден' });
+                }
+
+                const slot = slotResult.rows[0];
+
+                if (slot.status !== 'available' && slot.status !== 'hold') {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, error: 'Слот уже занят. Выберите другое время.' });
+                }
+
+                // Получаем данные тарифа
+                const priceResult = await client.query(
+                    `SELECT id, type, duration, participants, price
+                     FROM winter_prices
+                     WHERE id = $1`,
+                    [priceId]
+                );
+
+                if (!priceResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ success: false, error: 'Выбранный тариф не найден' });
+                }
+
+                const price = priceResult.rows[0];
+                const normalizedSport = sportType === 'snowboard' ? 'snowboard' : 'ski';
+                const slotLocation = location || slot.slot_location || 'vorona';
+
+                // Вычисляем цену за человека и максимальное количество участников
+                // Если тариф на группу (например, 2 человека за 5000), то price.price - это общая цена за группу
+                const baseParticipants = Math.max(2, Number(price.participants) || safeCount);
+                const pricePerPerson = Number(price.price) / baseParticipants; // Цена за человека = общая цена / количество в тарифе
+                const maxParticipants = Math.max(safeCount, baseParticipants, 8); // Максимум 8 участников
+
+                // Нормализуем дату
+                const normalizedDate = slot.date instanceof Date 
+                    ? moment.tz(slot.date, TIMEZONE).format('YYYY-MM-DD')
+                    : typeof slot.date === 'string' && slot.date.includes('T')
+                        ? moment.tz(slot.date, TIMEZONE).format('YYYY-MM-DD')
+                        : moment.tz(slot.date, 'YYYY-MM-DD', TIMEZONE).format('YYYY-MM-DD');
+
+                // Создаем групповую тренировку
+                const newGroupTrainingResult = await client.query(
+                    `INSERT INTO kuliga_group_trainings (
+                        instructor_id, slot_id, date, start_time, end_time,
+                        sport_type, price_per_person,
+                        min_participants, max_participants, current_participants, status, location
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 'open', $10)
+                    RETURNING id, instructor_id, slot_id, date, start_time, end_time, sport_type,
+                            price_per_person, max_participants, current_participants, status, location`,
+                    [
+                        slot.instructor_id,
+                        slot.slot_id,
+                        normalizedDate,
+                        slot.start_time,
+                        slot.end_time,
+                        normalizedSport,
+                        pricePerPerson,
+                        2, // min_participants
+                        maxParticipants,
+                        slotLocation
+                    ]
+                );
+
+                training = newGroupTrainingResult.rows[0];
+                groupTrainingIdToUse = training.id;
+
+                // Обновляем статус слота на 'group'
+                await client.query(
+                    `UPDATE kuliga_schedule_slots
+                     SET status = 'group', updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $1`,
+                    [slot.slot_id]
+                );
+
+                console.log(`✅ Создана групповая тренировка #${groupTrainingIdToUse} на слот #${slot.slot_id} для ${safeCount} участников`);
+            }
+        } else if (!groupTrainingIdToUse) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ success: false, error: 'Групповое занятие не найдено' });
-        }
+            return res.status(400).json({ success: false, error: 'Не выбрано групповое занятие. Выберите слот или существующую групповую тренировку.' });
+        } else {
+            // Используем существующую групповую тренировку
+            const groupResult = await client.query(
+                `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
+                        price_per_person, max_participants, current_participants, status, location
+                 FROM kuliga_group_trainings
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [groupTrainingIdToUse]
+            );
 
-        const training = groupResult.rows[0];
+            if (!groupResult.rows.length) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ success: false, error: 'Групповое занятие не найдено' });
+            }
+
+            training = groupResult.rows[0];
+        }
 
         if (training.status !== 'open' && training.status !== 'confirmed') {
             await client.query('ROLLBACK');
@@ -206,12 +334,33 @@ const createGroupBooking = async (req, res) => {
         );
         await ensurePrivacyConsent(clientRecord.id, client);
 
-        const namesArray = Array.from({ length: safeCount }, (_, index) => {
-            if (index === 0) {
-                return fullName.trim();
+        // Обрабатываем участников: поддерживаем как массив объектов {fullName, birthYear}, так и массив строк
+        let namesArray = [];
+        if (Array.isArray(participants) && participants.length > 0) {
+            // Форма отправляет массив объектов {fullName, birthYear}
+            namesArray = participants.map(p => (p.fullName || '').trim()).filter(Boolean);
+            // Если первый участник - это заказчик, используем его имя
+            if (namesArray.length === 0 || namesArray[0] !== fullName.trim()) {
+                namesArray.unshift(fullName.trim());
             }
-            return (participantsNames[index] || participantsNames[index - 1] || '').toString().trim();
-        }).filter(Boolean);
+        } else if (Array.isArray(participantsNames) && participantsNames.length > 0) {
+            // Старый формат: массив строк
+            namesArray = participantsNames.map(name => (name || '').toString().trim()).filter(Boolean);
+            if (namesArray.length === 0 || namesArray[0] !== fullName.trim()) {
+                namesArray.unshift(fullName.trim());
+            }
+        } else {
+            // Если участники не переданы, создаем массив из имени заказчика
+            namesArray = Array.from({ length: safeCount }, (_, index) => {
+                if (index === 0) {
+                    return fullName.trim();
+                }
+                return fullName.trim(); // По умолчанию все участники - заказчик
+            });
+        }
+        
+        // Ограничиваем массив до safeCount
+        namesArray = namesArray.slice(0, safeCount);
 
         const pricePerPerson = Number(training.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
@@ -233,7 +382,7 @@ const createGroupBooking = async (req, res) => {
         const bookingData = {
             client_id: clientRecord.id,
             booking_type: 'group',
-            group_training_id: training.id,
+            group_training_id: groupTrainingIdToUse,
             date: training.date instanceof Date 
                 ? moment.tz(training.date, TIMEZONE).format('YYYY-MM-DD')
                 : typeof training.date === 'string' && training.date.includes('T')
@@ -328,10 +477,10 @@ const createGroupBooking = async (req, res) => {
                  SET current_participants = current_participants - $1,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = $2`,
-                [safeCount, training.id]
+                [safeCount, groupTrainingIdToUse]
             );
             
-            console.log(`🔓 Возвращено ${safeCount} мест в групповой тренировке #${training.id} (ошибка инициализации платежа)`);
+            console.log(`🔓 Возвращено ${safeCount} мест в групповой тренировке #${groupTrainingIdToUse} (ошибка инициализации платежа)`);
             
             throw paymentError;
         }
@@ -1141,10 +1290,10 @@ const createProgramBooking = async (req, res) => {
              SET current_participants = current_participants + $1,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = $2`,
-            [safeCount, groupTraining.id]
+            [safeCount, groupTrainingIdToUse]
         );
         
-        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке программы #${groupTraining.id} для транзакции #${transactionId}`);
+        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке #${groupTrainingIdToUse} для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 
