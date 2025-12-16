@@ -363,15 +363,23 @@ router.post(
                 
                 // Логируем данные для отладки
                 console.log(`🔍 [Webhook] Извлечение bookingData из транзакции #${transactionId}:`);
+                console.log(`   - provider_raw_data тип: ${typeof transaction.provider_raw_data}`);
                 console.log(`   - rawData существует: ${!!rawData}`);
+                console.log(`   - rawData ключи: ${rawData ? Object.keys(rawData).join(', ') : 'нет'}`);
                 console.log(`   - bookingData существует: ${!!bookingData}`);
                 if (bookingData) {
-                    console.log(`   - client_id: ${bookingData.client_id}`);
-                    console.log(`   - client_email: ${bookingData.client_email || 'ОТСУТСТВУЕТ'}`);
-                    console.log(`   - client_name: ${bookingData.client_name || 'ОТСУТСТВУЕТ'}`);
-                    console.log(`   - booking_type: ${bookingData.booking_type}`);
+                    console.log(`   ✅ bookingData найден:`);
+                    console.log(`      - client_id: ${bookingData.client_id}`);
+                    console.log(`      - client_email: ${bookingData.client_email || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`      - client_name: ${bookingData.client_name || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`      - booking_type: ${bookingData.booking_type}`);
                 } else {
-                    console.error(`❌ [Webhook] bookingData отсутствует в rawData! rawData:`, JSON.stringify(rawData).substring(0, 500));
+                    console.error(`❌ [Webhook] bookingData отсутствует в rawData!`);
+                    console.error(`   rawData содержимое:`, JSON.stringify(rawData).substring(0, 1000));
+                    console.error(`   provider_raw_data (первые 500 символов):`, 
+                        typeof transaction.provider_raw_data === 'string' 
+                            ? transaction.provider_raw_data.substring(0, 500)
+                            : JSON.stringify(transaction.provider_raw_data).substring(0, 500));
                 }
                 
                 if (!bookingData) {
@@ -859,23 +867,39 @@ router.post(
             }
 
             // Обновляем транзакцию (по transactionId, а не по booking_id)
-            // Важно: сохраняем bookingData при обновлении provider_raw_data
+            // КРИТИЧНО: сохраняем bookingData при обновлении provider_raw_data
             let updatedRawData = payload;
-            if (transaction.provider_raw_data) {
-                try {
-                    const existingRawData = typeof transaction.provider_raw_data === 'string'
-                        ? JSON.parse(transaction.provider_raw_data)
-                        : transaction.provider_raw_data;
-                    // Сохраняем bookingData, если он был
-                    if (existingRawData.bookingData) {
-                        updatedRawData = {
-                            ...payload,
-                            bookingData: existingRawData.bookingData
-                        };
+            
+            // Всегда пытаемся сохранить bookingData из существующих данных
+            try {
+                let existingRawData = {};
+                if (transaction.provider_raw_data) {
+                    if (typeof transaction.provider_raw_data === 'string') {
+                        existingRawData = JSON.parse(transaction.provider_raw_data);
+                    } else {
+                        existingRawData = transaction.provider_raw_data;
                     }
-                } catch (e) {
-                    console.warn(`⚠️ Не удалось распарсить provider_raw_data для транзакции #${transactionId}:`, e.message);
                 }
+                
+                console.log(`🔍 [Webhook] Проверка сохранения bookingData:`, {
+                    hasExistingRawData: !!transaction.provider_raw_data,
+                    hasBookingData: !!existingRawData.bookingData,
+                    bookingDataClientId: existingRawData.bookingData?.client_id,
+                    bookingDataClientEmail: existingRawData.bookingData?.client_email
+                });
+                
+                // Сохраняем bookingData, если он был
+                if (existingRawData.bookingData) {
+                    updatedRawData = {
+                        ...payload,
+                        bookingData: existingRawData.bookingData // КРИТИЧНО: сохраняем bookingData
+                    };
+                    console.log(`✅ [Webhook] bookingData сохранен в updatedRawData: client_id=${existingRawData.bookingData.client_id}`);
+                } else {
+                    console.error(`❌ [Webhook] bookingData отсутствует в existingRawData! existingRawData:`, JSON.stringify(existingRawData).substring(0, 500));
+                }
+            } catch (e) {
+                console.error(`❌ [Webhook] Ошибка при сохранении bookingData для транзакции #${transactionId}:`, e.message, e.stack);
             }
             
             console.log(`🔄 Обновляю транзакцию #${transactionId} (bookingId: ${bookingId || 'null'})`);
