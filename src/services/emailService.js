@@ -477,9 +477,12 @@ class EmailService {
             };
 
             console.log(`📧 Отправка email на ${recipientEmail}...`);
+            console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
+            console.log(`📧 Тема: ${mailOptions.subject}`);
             const result = await this.transporter.sendMail(mailOptions);
-            console.log('✅ Email отправлен успешно:', result.messageId);
-            return { success: true, messageId: result.messageId };
+            console.log('✅ Email отправлен успешно через SMTP, messageId:', result.messageId);
+            console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
+            return { success: true, messageId: result.messageId, response: result.response };
         } catch (error) {
             console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
             return { success: false, error: error.message };
