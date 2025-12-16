@@ -738,11 +738,37 @@ router.post(
                         
                         // Получаем данные инструктора (для индивидуальных или из групповой тренировки)
                         let instructorResult = null;
-                        if (bookingData.booking_type === 'individual' && bookingData.instructor_id) {
-                            instructorResult = await pool.query(
-                                'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
-                                [bookingData.instructor_id]
-                            );
+                        let instructorId = null;
+                        
+                        if (bookingData.booking_type === 'individual') {
+                            // Для индивидуальных тренировок сначала пробуем получить instructor_id из bookingData
+                            instructorId = bookingData.instructor_id;
+                            
+                            // Если instructor_id не в bookingData, получаем его из слота
+                            if (!instructorId && bookingData.slot_id) {
+                                console.log(`🔍 instructor_id не найден в bookingData, получаем из слота #${bookingData.slot_id}`);
+                                const slotResult = await pool.query(
+                                    'SELECT instructor_id FROM kuliga_schedule_slots WHERE id = $1',
+                                    [bookingData.slot_id]
+                                );
+                                if (slotResult.rows.length && slotResult.rows[0].instructor_id) {
+                                    instructorId = slotResult.rows[0].instructor_id;
+                                    console.log(`✅ Получен instructor_id=${instructorId} из слота #${bookingData.slot_id}`);
+                                }
+                            }
+                            
+                            if (instructorId) {
+                                instructorResult = await pool.query(
+                                    'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
+                                    [instructorId]
+                                );
+                                if (instructorResult.rows.length === 0) {
+                                    console.log(`⚠️ Инструктор с id=${instructorId} не найден в базе`);
+                                    instructorResult = null;
+                                }
+                            } else {
+                                console.log(`⚠️ instructor_id не найден для индивидуальной тренировки (slot_id=${bookingData.slot_id})`);
+                            }
                         } else if (bookingData.booking_type === 'group' && bookingData.group_training_id) {
                             // Для групповых тренировок получаем инструктора из групповой тренировки
                             const groupTrainingResult = await pool.query(
@@ -750,10 +776,17 @@ router.post(
                                 [bookingData.group_training_id]
                             );
                             if (groupTrainingResult.rows.length && groupTrainingResult.rows[0].instructor_id) {
+                                instructorId = groupTrainingResult.rows[0].instructor_id;
                                 instructorResult = await pool.query(
                                     'SELECT full_name, telegram_id, admin_percentage FROM kuliga_instructors WHERE id = $1',
-                                    [groupTrainingResult.rows[0].instructor_id]
+                                    [instructorId]
                                 );
+                                if (instructorResult.rows.length === 0) {
+                                    console.log(`⚠️ Инструктор с id=${instructorId} не найден в базе`);
+                                    instructorResult = null;
+                                }
+                            } else {
+                                console.log(`⚠️ instructor_id не найден в групповой тренировке #${bookingData.group_training_id}`);
                             }
                         }
                         
@@ -781,20 +814,27 @@ router.post(
                         // Уведомление инструктору (если он назначен)
                         if (instructorResult && instructorResult.rows.length > 0) {
                             const instructor = instructorResult.rows[0];
-                            await notifyInstructorKuligaTrainingBooking({
-                                booking_type: bookingData.booking_type,
-                                client_name: bookingData.client_name,
-                                participant_name: participantName,
-                                client_phone: bookingData.client_phone,
-                                instructor_name: instructor.full_name,
-                                instructor_telegram_id: instructor.telegram_id,
-                                admin_percentage: instructor.admin_percentage,
-                                date: bookingData.date,
-                                time: bookingData.start_time,
-                                price: bookingData.price_total,
-                                location: bookingData.location,
-                                participants_count: bookingData.participants_count || 1
-                            });
+                            if (instructor.telegram_id) {
+                                console.log(`📤 Отправка уведомления инструктору ${instructor.full_name} (telegram_id=${instructor.telegram_id})`);
+                                await notifyInstructorKuligaTrainingBooking({
+                                    booking_type: bookingData.booking_type,
+                                    client_name: bookingData.client_name,
+                                    participant_name: participantName,
+                                    client_phone: bookingData.client_phone,
+                                    instructor_name: instructor.full_name,
+                                    instructor_telegram_id: instructor.telegram_id,
+                                    admin_percentage: instructor.admin_percentage,
+                                    date: bookingData.date,
+                                    time: bookingData.start_time,
+                                    price: bookingData.price_total,
+                                    location: bookingData.location,
+                                    participants_count: bookingData.participants_count || 1
+                                });
+                            } else {
+                                console.log(`⚠️ Инструктор ${instructor.full_name} не зарегистрирован в Telegram (telegram_id отсутствует)`);
+                            }
+                        } else {
+                            console.log(`⚠️ Уведомление инструктору не отправлено: инструктор не найден или не назначен`);
                         }
 
                         // Email уведомление клиенту (если есть email)
