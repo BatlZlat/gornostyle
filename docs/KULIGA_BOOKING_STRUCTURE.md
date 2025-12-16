@@ -382,3 +382,4 @@ WHERE kb.client_id = 789  -- ID клиента
 
 
 
+

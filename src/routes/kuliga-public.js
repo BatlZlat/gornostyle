@@ -66,8 +66,10 @@ router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', (req, res) =
 
 // Страницы после оплаты
 router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/success', (req, res) => {
+    const clientId = req.query.clientId || req.query.client_id || null;
     res.render('booking-success', {
-        botUsername: process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || ''
+        botUsername: process.env.KULIGA_CLIENT_BOT_USERNAME || process.env.BOT_USERNAME || '',
+        clientId: clientId
     });
 });
 

@@ -83,20 +83,32 @@ router.get('/', async (req, res) => {
             [startDate.toDate(), endDate.toDate()]
         );
         
-        const stuckPayments = result.rows.map(row => ({
-            id: row.id,
-            amount: parseFloat(row.amount),
-            description: row.description,
-            providerPaymentId: row.provider_payment_id,
-            providerOrderId: row.provider_order_id,
-            status: row.status,
-            providerStatus: row.provider_status,
-            createdAt: row.created_at,
-            minutesAgo: Math.round(parseFloat(row.minutes_ago)),
-            clientName: row.client_name,
-            clientPhone: row.client_phone,
-            hasBookingData: !!(row.provider_raw_data && row.provider_raw_data.bookingData)
-        }));
+        const stuckPayments = result.rows.map(row => {
+            // provider_raw_data хранится как JSON строка, нужно распарсить
+            let rawData = null;
+            try {
+                rawData = typeof row.provider_raw_data === 'string' 
+                    ? JSON.parse(row.provider_raw_data) 
+                    : row.provider_raw_data;
+            } catch (e) {
+                console.warn(`Ошибка парсинга provider_raw_data для транзакции #${row.id}:`, e.message);
+            }
+            
+            return {
+                id: row.id,
+                amount: parseFloat(row.amount),
+                description: row.description,
+                providerPaymentId: row.provider_payment_id,
+                providerOrderId: row.provider_order_id,
+                status: row.status,
+                providerStatus: row.provider_status,
+                createdAt: row.created_at,
+                minutesAgo: Math.round(parseFloat(row.minutes_ago)),
+                clientName: row.client_name,
+                clientPhone: row.client_phone,
+                hasBookingData: !!(rawData && rawData.bookingData)
+            };
+        });
         
         res.json({
             success: true,
@@ -154,13 +166,41 @@ router.post('/:id/create-booking', async (req, res) => {
         }
         
         // Извлекаем данные бронирования
-        const rawData = transaction.provider_raw_data || {};
+        // provider_raw_data хранится как JSON строка, нужно распарсить
+        let rawData = {};
+        try {
+            rawData = typeof transaction.provider_raw_data === 'string'
+                ? JSON.parse(transaction.provider_raw_data)
+                : (transaction.provider_raw_data || {});
+        } catch (e) {
+            console.error(`Ошибка парсинга provider_raw_data для транзакции #${transactionId}:`, e.message);
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Ошибка чтения данных транзакции' });
+        }
+        
         const bookingData = rawData.bookingData;
         
         if (!bookingData) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Данные бронирования не найдены в транзакции' });
         }
+        
+        // Нормализуем дату: может быть Date объектом, ISO строкой или уже в формате YYYY-MM-DD
+        let normalizedDate = bookingData.date;
+        if (normalizedDate instanceof Date) {
+            normalizedDate = moment.tz(normalizedDate, TIMEZONE).format('YYYY-MM-DD');
+        } else if (typeof normalizedDate === 'string') {
+            if (normalizedDate.includes('T') || normalizedDate.includes(' ')) {
+                // ISO строка или строка с временем - парсим и нормализуем
+                normalizedDate = moment.tz(normalizedDate, TIMEZONE).format('YYYY-MM-DD');
+            } else if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                // Неправильный формат - пытаемся распарсить
+                normalizedDate = moment.tz(normalizedDate, TIMEZONE).format('YYYY-MM-DD');
+            }
+            // Если уже в формате YYYY-MM-DD, оставляем как есть
+        }
+        
+        console.log(`📅 Нормализация даты для транзакции #${transactionId}: ${bookingData.date} → ${normalizedDate}`);
         
         // Проверяем слот
         const slotCheck = await client.query(
@@ -173,7 +213,7 @@ router.post('/:id/create-booking', async (req, res) => {
             return res.status(400).json({ error: `Слот #${bookingData.slot_id} не найден` });
         }
         
-        if (slotCheck.rows[0].status !== 'available') {
+        if (slotCheck.rows[0].status !== 'available' && slotCheck.rows[0].status !== 'hold') {
             await client.query('ROLLBACK');
             return res.status(400).json({ 
                 error: `Слот #${bookingData.slot_id} уже занят (статус: ${slotCheck.rows[0].status})`,
@@ -185,7 +225,10 @@ router.post('/:id/create-booking', async (req, res) => {
         // Резервируем слот
         await client.query(
             `UPDATE kuliga_schedule_slots
-             SET status = 'booked', updated_at = CURRENT_TIMESTAMP
+             SET status = 'booked', 
+                 hold_until = NULL,
+                 hold_transaction_id = NULL,
+                 updated_at = CURRENT_TIMESTAMP
              WHERE id = $1`,
             [bookingData.slot_id]
         );
@@ -218,7 +261,7 @@ router.post('/:id/create-booking', async (req, res) => {
                 bookingData.booking_type,
                 bookingData.instructor_id,
                 bookingData.slot_id,
-                bookingData.date,
+                normalizedDate, // Используем нормализованную дату
                 bookingData.start_time,
                 bookingData.end_time,
                 bookingData.sport_type,
@@ -254,6 +297,8 @@ router.post('/:id/create-booking', async (req, res) => {
             try {
                 const { notifyAdminNaturalSlopeTrainingBooking } = require('../bot/notifications/kuliga-notifications');
                 const { notifyInstructorKuligaTrainingBooking } = require('../bot/notifications/instructor-notifications');
+                const EmailService = require('../services/emailService');
+                const emailService = new EmailService();
                 
                 // Получаем данные инструктора
                 const instructorResult = await pool.query(
@@ -261,12 +306,25 @@ router.post('/:id/create-booking', async (req, res) => {
                     [bookingData.instructor_id]
                 );
                 
+                // Получаем email клиента
+                const clientResult = await pool.query(
+                    'SELECT email FROM clients WHERE id = $1',
+                    [bookingData.client_id]
+                );
+                const clientEmail = bookingData.client_email || (clientResult.rows[0]?.email);
+                
+                // Форматируем дату и время для уведомлений
+                const dateFormatted = moment.tz(normalizedDate, 'YYYY-MM-DD', TIMEZONE).format('DD.MM.YYYY');
+                const timeFormatted = bookingData.start_time ? bookingData.start_time.substring(0, 5) : '';
+                const locationText = bookingData.location === 'vorona' ? 'Воронинские горки' : 'Кулига Клаб';
+                const sportText = bookingData.sport_type === 'ski' ? 'лыжи' : 'сноуборд';
+                
                 // Уведомление администратору
                 await notifyAdminNaturalSlopeTrainingBooking({
                     client_name: bookingData.client_name,
                     client_phone: bookingData.client_phone,
                     participant_name: bookingData.participants_names[0] || bookingData.client_name,
-                    date: bookingData.date,
+                    date: normalizedDate,
                     time: bookingData.start_time,
                     sport_type: bookingData.sport_type,
                     instructor_name: bookingData.instructor_name,
@@ -286,11 +344,40 @@ router.post('/:id/create-booking', async (req, res) => {
                         instructor_name: instructor.full_name,
                         instructor_telegram_id: instructor.telegram_id,
                         admin_percentage: instructor.admin_percentage,
-                        date: bookingData.date,
+                        date: normalizedDate,
                         time: bookingData.start_time,
                         price: bookingData.price_total,
                         location: bookingData.location
                     });
+                }
+                
+                // Уведомление клиенту по email
+                if (clientEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) {
+                    try {
+                        const emailSubject = `Подтверждение записи на тренировку - ${dateFormatted} ${timeFormatted}`;
+                        const emailHtml = `
+                            <h2>Ваша запись подтверждена!</h2>
+                            <p>Здравствуйте, ${bookingData.client_name}!</p>
+                            <p>Ваша запись на тренировку подтверждена:</p>
+                            <ul>
+                                <li><strong>Дата:</strong> ${dateFormatted}</li>
+                                <li><strong>Время:</strong> ${timeFormatted}</li>
+                                <li><strong>Инструктор:</strong> ${bookingData.instructor_name}</li>
+                                <li><strong>Вид спорта:</strong> ${sportText}</li>
+                                <li><strong>Место:</strong> ${locationText}</li>
+                                <li><strong>Стоимость:</strong> ${bookingData.price_total} ₽</li>
+                            </ul>
+                            <p>Ждём вас на тренировке!</p>
+                            <p>С уважением,<br>Команда Горностайл72</p>
+                        `;
+                        
+                        await emailService.sendEmail(clientEmail, emailSubject, emailHtml);
+                        console.log(`✅ Email уведомление отправлено клиенту ${bookingData.client_name} на ${clientEmail}`);
+                    } catch (emailError) {
+                        console.error('Ошибка отправки email клиенту:', emailError);
+                    }
+                } else {
+                    console.log(`⚠️ Email клиента не указан или невалиден для транзакции #${transactionId}`);
                 }
             } catch (notifyError) {
                 console.error('Ошибка при отправке уведомлений после ручного создания бронирования:', notifyError);

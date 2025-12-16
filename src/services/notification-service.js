@@ -2,6 +2,8 @@ require('dotenv').config();
 const { pool } = require('../db');
 const TelegramBot = require('node-telegram-bot-api');
 const { getClientSilentMode } = require('./silent-notification-helper');
+const EmailService = require('./emailService');
+const emailTemplateService = require('./email-template-service');
 
 /**
  * Сервис для отправки уведомлений клиентам о предстоящих тренировках
@@ -64,6 +66,7 @@ class NotificationService {
                     END as is_child,
                     ch.birth_date as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     ch.full_name as participant_name,
                     CASE 
@@ -82,7 +85,7 @@ class NotificationService {
                 WHERE ts.session_date = $1
                     AND ts.status = 'scheduled'
                     AND sp.status = 'confirmed'
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
 
                 UNION ALL
 
@@ -112,6 +115,7 @@ class NotificationService {
                     END as is_child,
                     ch.birth_date as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     CASE 
                         WHEN its.child_id IS NOT NULL THEN ch.full_name
@@ -128,7 +132,7 @@ class NotificationService {
                 LEFT JOIN children ch ON its.child_id = ch.id
                 LEFT JOIN simulators s ON its.simulator_id = s.id
                 WHERE its.preferred_date = $1
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
 
                 UNION ALL
 
@@ -159,6 +163,7 @@ class NotificationService {
                     END as is_child,
                     ch.birth_date as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     CASE 
                         WHEN sp.is_child = true THEN ch.full_name
@@ -181,7 +186,7 @@ class NotificationService {
                     AND sp.status = 'confirmed'
                     AND ts.simulator_id IS NULL
                     AND ts.group_id IS NOT NULL
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
 
                 UNION ALL
 
@@ -211,6 +216,7 @@ class NotificationService {
                     END as is_child,
                     ch.birth_date as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     CASE 
                         WHEN sp.is_child = true THEN ch.full_name
@@ -234,7 +240,7 @@ class NotificationService {
                     AND ts.group_id IS NULL
                     AND ts.training_type = FALSE
                     AND ts.slope_type = 'natural_slope'
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
 
                 UNION ALL
 
@@ -260,6 +266,7 @@ class NotificationService {
                     FALSE as is_child,
                     NULL as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     COALESCE(
                         CASE 
@@ -285,7 +292,7 @@ class NotificationService {
                 WHERE kb.date = $1
                     AND kb.booking_type = 'individual'
                     AND kb.status IN ('pending', 'confirmed')
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
 
                 UNION ALL
 
@@ -314,6 +321,7 @@ class NotificationService {
                     FALSE as is_child,
                     NULL as participant_birth_date,
                     c.telegram_id,
+                    c.email as client_email,
                     c.full_name as client_name,
                     COALESCE(
                         CASE 
@@ -340,7 +348,7 @@ class NotificationService {
                 WHERE kb.date = $1
                     AND kb.booking_type = 'group'
                     AND kb.status IN ('pending', 'confirmed')
-                    AND c.telegram_id IS NOT NULL
+                    AND (c.telegram_id IS NOT NULL OR c.email IS NOT NULL)
             )
             SELECT * FROM trainings_on_date
             ORDER BY client_id, start_time
@@ -364,6 +372,7 @@ class NotificationService {
             if (!grouped[clientId]) {
                 grouped[clientId] = {
                     telegram_id: training.telegram_id,
+                    client_email: training.client_email,
                     client_name: training.client_name,
                     trainings: []
                 };
@@ -484,16 +493,44 @@ class NotificationService {
 
         message += '━━━━━━━━━━━━━━━━━━━━\n\n';
         message += 'Ждем вас! Приезжайте на тренировку за 10-15 минут до начала.\n\n';
-        message += '💧 <b>Важно:</b> На склон подается вода для лучшего скольжения. ';
-        message += 'При падениях есть вероятность немного намочить одежду. ';
-        message += '<b>Настоятельно рекомендуем переодеваться</b> после тренировки.\n\n';
-        message += 'Не забудьте взять с собой воду и одежду, желательно закрывающую колени и локти 😊';
+        
+        // Проверяем, есть ли среди тренировок тренировки на естественном склоне
+        const hasNaturalSlopeTraining = trainings.some(t => 
+            t.slope_type === 'natural_slope' || t.slope_type === 'kuliga_natural_slope'
+        );
+        
+        // Проверяем, есть ли среди тренировок тренировки на тренажере
+        const hasSimulatorTraining = trainings.some(t => t.slope_type === 'simulator');
+        
+        if (hasNaturalSlopeTraining && !hasSimulatorTraining) {
+            // Только тренировки на естественном склоне - текст про одежду
+            message += '👕 <b>Важно:</b> Одевайтесь по погоде. ';
+            message += 'Крайне желательно, чтобы одежда была непромокаемая, с широкими штанинами. ';
+            message += 'В идеале сноубордические или горнолыжные штаны. ';
+            message += 'Варежки тоже лучше одевать непромокаемые, вязаные быстро намокнут и руки будут мерзнуть. 🥶';
+        } else if (hasSimulatorTraining && !hasNaturalSlopeTraining) {
+            // Только тренировки на тренажере - текст про воду
+            message += '💧 <b>Важно:</b> На склон подается вода для лучшего скольжения. ';
+            message += 'При падениях есть вероятность немного намочить одежду. ';
+            message += '<b>Настоятельно рекомендуем переодеваться</b> после тренировки.\n\n';
+            message += 'Не забудьте взять с собой воду и одежду, желательно закрывающую колени и локти 😊';
+        } else {
+            // Смешанные тренировки (и тренажер, и естественный склон) - оба текста
+            message += '💧 <b>Для тренировок на тренажере:</b> На склон подается вода для лучшего скольжения. ';
+            message += 'При падениях есть вероятность немного намочить одежду. ';
+            message += '<b>Настоятельно рекомендуем переодеваться</b> после тренировки.\n\n';
+            message += '👕 <b>Для тренировок на естественном склоне:</b> Одевайтесь по погоде. ';
+            message += 'Крайне желательно, чтобы одежда была непромокаемая, с широкими штанинами. ';
+            message += 'В идеале сноубордические или горнолыжные штаны. ';
+            message += 'Варежки тоже лучше одевать непромокаемые, вязаные быстро намокнут и руки будут мерзнуть.\n\n';
+            message += 'Не забудьте взять с собой воду и одежду, желательно закрывающую колени и локти 😊';
+        }
 
         return message;
     }
 
     /**
-     * Отправляет уведомление клиенту
+     * Отправляет уведомление клиенту в Telegram
      * @param {string} telegramId - Telegram ID клиента
      * @param {string} message - Текст сообщения
      * @returns {Promise<Object>} Результат отправки
@@ -510,6 +547,53 @@ class NotificationService {
             return { success: true };
         } catch (error) {
             console.error(`Ошибка отправки уведомления клиенту ${telegramId}:`, error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Отправляет email уведомление клиенту
+     * @param {string} email - Email адрес клиента
+     * @param {Object} trainingData - Данные тренировки
+     * @param {Date} date - Дата тренировки
+     * @returns {Promise<Object>} Результат отправки
+     */
+    async sendEmailNotification(email, trainingData, date) {
+        try {
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                return { success: false, error: 'Невалидный email адрес' };
+            }
+
+            const emailService = new EmailService();
+            
+            // Генерируем HTML из шаблона
+            const htmlContent = await emailTemplateService.generateTrainingReminderEmail({
+                client_id: trainingData.client_id,
+                client_name: trainingData.client_name,
+                date: trainingData.trainings[0].date,
+                start_time: trainingData.trainings[0].start_time,
+                end_time: trainingData.trainings[0].end_time,
+                training_type: trainingData.trainings[0].training_type,
+                sport_type: trainingData.trainings[0].equipment_type,
+                location: trainingData.trainings[0].location,
+                slope_type: trainingData.trainings[0].slope_type,
+                instructor_name: trainingData.trainings[0].trainer_name,
+                participants_count: trainingData.trainings[0].current_participants || 1
+            });
+
+            const subject = `🔔 Напоминание о тренировке - ${emailTemplateService.formatDate(date)}`;
+            
+            const result = await emailService.sendEmail(email, subject, htmlContent);
+            
+            if (result.success) {
+                console.log(`✓ Email отправлен клиенту ${trainingData.client_name} на ${email}`);
+            } else {
+                console.error(`✗ Не удалось отправить email клиенту ${trainingData.client_name} на ${email}: ${result.error}`);
+            }
+            
+            return result;
+        } catch (error) {
+            console.error(`Ошибка отправки email клиенту ${email}:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -571,35 +655,85 @@ class NotificationService {
             // Отправляем уведомления
             for (const [clientId, clientData] of Object.entries(groupedByClient)) {
                 try {
-                    const message = this.formatNotificationMessage(clientData, date);
-                    const result = await this.sendNotification(clientData.telegram_id, message);
+                    // Если есть telegram_id - отправляем в Telegram
+                    if (clientData.telegram_id) {
+                        const message = this.formatNotificationMessage(clientData, date);
+                        const result = await this.sendNotification(clientData.telegram_id, message);
 
-                    if (result.success) {
-                        stats.sent++;
-                        await this.logNotification(
-                            parseInt(clientId),
-                            clientData.telegram_id,
-                            date,
-                            message,
-                            'sent'
-                        );
-                        console.log(`✓ Отправлено клиенту ${clientData.client_name} (ID: ${clientId})`);
-                    } else {
+                        if (result.success) {
+                            stats.sent++;
+                            await this.logNotification(
+                                parseInt(clientId),
+                                clientData.telegram_id,
+                                date,
+                                message,
+                                'sent'
+                            );
+                            console.log(`✓ Telegram отправлен клиенту ${clientData.client_name} (ID: ${clientId})`);
+                        } else {
+                            stats.failed++;
+                            stats.errors.push({
+                                client_id: clientId,
+                                client_name: clientData.client_name,
+                                error: result.error
+                            });
+                            await this.logNotification(
+                                parseInt(clientId),
+                                clientData.telegram_id,
+                                date,
+                                message,
+                                'failed',
+                                result.error
+                            );
+                            console.error(`✗ Не удалось отправить Telegram клиенту ${clientData.client_name} (ID: ${clientId}): ${result.error}`);
+                        }
+                    }
+                    // Если нет telegram_id, но есть email - отправляем email
+                    else if (clientData.client_email) {
+                        // Добавляем client_id в clientData для шаблона
+                        const clientDataWithId = {
+                            ...clientData,
+                            client_id: parseInt(clientId)
+                        };
+                        const result = await this.sendEmailNotification(clientData.client_email, clientDataWithId, date);
+
+                        if (result.success) {
+                            stats.sent++;
+                            await this.logNotification(
+                                parseInt(clientId),
+                                null, // telegram_id отсутствует
+                                date,
+                                'Email уведомление',
+                                'sent'
+                            );
+                            console.log(`✓ Email отправлен клиенту ${clientData.client_name} (ID: ${clientId})`);
+                        } else {
+                            stats.failed++;
+                            stats.errors.push({
+                                client_id: clientId,
+                                client_name: clientData.client_name,
+                                error: result.error
+                            });
+                            await this.logNotification(
+                                parseInt(clientId),
+                                null,
+                                date,
+                                'Email уведомление',
+                                'failed',
+                                result.error
+                            );
+                            console.error(`✗ Не удалось отправить email клиенту ${clientData.client_name} (ID: ${clientId}): ${result.error}`);
+                        }
+                    }
+                    // Если нет ни telegram_id, ни email - пропускаем
+                    else {
+                        console.warn(`⚠️ Клиент ${clientData.client_name} (ID: ${clientId}) не имеет ни telegram_id, ни email - уведомление не отправлено`);
                         stats.failed++;
                         stats.errors.push({
                             client_id: clientId,
                             client_name: clientData.client_name,
-                            error: result.error
+                            error: 'Нет telegram_id и email'
                         });
-                        await this.logNotification(
-                            parseInt(clientId),
-                            clientData.telegram_id,
-                            date,
-                            message,
-                            'failed',
-                            result.error
-                        );
-                        console.error(`✗ Не удалось отправить клиенту ${clientData.client_name} (ID: ${clientId}): ${result.error}`);
                     }
 
                     // Небольшая задержка между отправками

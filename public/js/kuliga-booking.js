@@ -399,15 +399,33 @@
         // Обычная логика инициализации для тарифов
         let price;
         
-        // Если есть priceType из URL (при клике на слот), ищем подходящий тариф
-        if (priceTypeParam && prices.length > 0) {
-            price = prices.find((item) => item.type === priceTypeParam) || prices[0];
-        } else if (priceIdParam && priceMap.has(priceIdParam)) {
-            price = priceMap.get(priceIdParam);
-        } else if (state.selection.priceId && priceMap.has(String(state.selection.priceId))) {
-            price = priceMap.get(String(state.selection.priceId));
-        } else if (prices.length > 0) {
-            price = prices.find((item) => item.type === 'individual') || prices[0];
+        // Для групповых тренировок: если в URL указано количество участников, ищем тариф с этим количеством
+        if (priceTypeParam === 'group' && Number.isFinite(participantsParam) && participantsParam >= 1) {
+            // Ищем тариф для групповой тренировки с указанным количеством участников
+            price = prices.find((item) => 
+                item.type === 'group' && 
+                Number(item.participants) === participantsParam &&
+                Number(item.duration) === 60 // Обычно 60 минут
+            );
+            
+            // Если не нашли точное совпадение, ищем ближайший тариф для групповых тренировок
+            if (!price) {
+                price = prices.find((item) => item.type === 'group');
+            }
+        }
+        
+        // Если не нашли по количеству участников, используем стандартную логику
+        if (!price) {
+            // Если есть priceType из URL (при клике на слот), ищем подходящий тариф
+            if (priceTypeParam && prices.length > 0) {
+                price = prices.find((item) => item.type === priceTypeParam) || prices[0];
+            } else if (priceIdParam && priceMap.has(priceIdParam)) {
+                price = priceMap.get(priceIdParam);
+            } else if (state.selection.priceId && priceMap.has(String(state.selection.priceId))) {
+                price = priceMap.get(String(state.selection.priceId));
+            } else if (prices.length > 0) {
+                price = prices.find((item) => item.type === 'individual') || prices[0];
+            }
         }
 
         if (!price) {
@@ -416,22 +434,63 @@
         }
 
         const participantsFromPrice = Math.max(1, Number(price.participants) || 1);
-        const currentParticipants =
-            Number.isFinite(participantsParam) && participantsParam >= 1 && participantsParam <= participantsFromPrice
-                ? participantsParam
-                : Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+        
+        // Для групповых тренировок: если в URL указано количество участников, используем его
+        // Для индивидуальных: ограничиваем значением из тарифа
+        let currentParticipants;
+        if (price.type === 'group') {
+            // Для групповых тренировок используем participantsParam из URL, если он передан и валиден
+            if (Number.isFinite(participantsParam) && participantsParam >= 1) {
+                currentParticipants = participantsParam;
+            } else {
+                currentParticipants = Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+            }
+        } else {
+            // Для индивидуальных тренировок ограничиваем значением из тарифа
+            currentParticipants =
+                Number.isFinite(participantsParam) && participantsParam >= 1 && participantsParam <= participantsFromPrice
+                    ? participantsParam
+                    : Math.max(1, Number(state.selection.currentParticipants) || participantsFromPrice);
+        }
+
+        // Для групповых тренировок: если нашли тариф по количеству участников, используем его цену
+        // Если нет - рассчитываем цену за человека на основе фактического количества участников
+        let pricePerPerson;
+        if (price.type === 'group') {
+            // Если тариф найден для нужного количества участников, используем его цену
+            if (Number(price.participants) === currentParticipants) {
+                // Цена в тарифе - это общая стоимость группы, делим на количество участников
+                pricePerPerson = Number(price.price) / currentParticipants;
+            } else {
+                // Если тариф для другого количества, ищем правильный тариф
+                const correctPrice = prices.find((item) => 
+                    item.type === 'group' && 
+                    Number(item.participants) === currentParticipants &&
+                    Number(item.duration) === 60
+                );
+                if (correctPrice) {
+                    price = correctPrice; // Обновляем тариф на правильный
+                    pricePerPerson = Number(correctPrice.price) / currentParticipants;
+                } else {
+                    // Если не нашли, используем пропорциональный расчет (не идеально, но лучше чем ничего)
+                    pricePerPerson = (Number(price.price) / participantsFromPrice);
+                }
+            }
+        } else {
+            pricePerPerson = Number(price.price) || 0;
+        }
 
         state.selection = {
             priceId: price.id,
             priceType: price.type,
             duration: Number(price.duration) || 60,
             baseParticipants: participantsFromPrice,
-            currentParticipants: Math.max(1, Math.min(participantsFromPrice, currentParticipants)),
+            // Для групповых тренировок не ограничиваем currentParticipants значением из тарифа
+            currentParticipants: price.type === 'group' 
+                ? Math.max(1, currentParticipants)
+                : Math.max(1, Math.min(participantsFromPrice, currentParticipants)),
             priceValue: Number(price.price) || 0,
-            pricePerPerson:
-                price.type === 'individual'
-                    ? Number(price.price) || 0
-                    : (Number(price.price) || 0) / participantsFromPrice,
+            pricePerPerson: pricePerPerson,
             title: priceTypeLabels[price.type] || 'Тренировка',
             description: price.description || '',
         };
@@ -1815,6 +1874,9 @@
             : null;
         
         const fpOptions = {
+            // ВАЖНО: используем один и тот же календарь и на десктопе, и на мобильных
+            // иначе на мобильных устройствах показывается нативный datepicker без наших стилей
+            disableMobile: true,
             dateFormat: 'Y-m-d',
             altInput: true,
             altFormat: 'd.m.Y',

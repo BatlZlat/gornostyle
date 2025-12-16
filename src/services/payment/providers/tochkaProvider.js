@@ -100,8 +100,12 @@ class TochkaProvider {
             // Только СБП
             paymentModes.push('sbp');
         } else if (paymentMethod === 'card') {
-            // Только карта
+            // Если указана карта, но СБП включён - предлагаем оба способа
+            // Это позволяет клиенту выбрать на странице оплаты банка
             paymentModes.push('card');
+            if (this.enableSBP) {
+                paymentModes.push('sbp');
+            }
         } else {
             // Не указан способ - предлагаем оба (если СБП включён)
             paymentModes.push('card');
@@ -127,6 +131,8 @@ class TochkaProvider {
                 // Опциональные поля
                 ...(this.successUrl ? { redirectUrl: this.successUrl } : {}),
                 ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
+                // Email для отправки чека (если указан)
+                ...(customerEmail ? { consumerId: customerEmail } : {}),
             }
         };
         
@@ -308,16 +314,29 @@ class TochkaProvider {
     parseWebhookData(payload) {
         // Формат acquiringInternetPayment от Точка Банка
         // Вебхук приходит как JWT, payload уже декодирован
-        
+        //
+        // Фактическая структура (по логам):
+        // {
+        //   customerCode,
+        //   webhookType: "acquiringInternetPayment",
+        //   amount,              // в рублях, число/строка "10.00"
+        //   paymentType,         // "card" / "sbp"
+        //   operationId,         // ID операции (наш paymentId)
+        //   purpose,             // назначение платежа
+        //   merchantId,
+        //   consumerId,
+        //   status,              // "APPROVED" / ...
+        //   paymentLinkId,       // наш orderId (gornostyle72-winter-29)
+        //   ...
+        // }
+
         const webhookType = payload.webhookType || payload.webhook_type;
-        
-        // Для acquiringInternetPayment структура:
-        // { webhookType, paymentId, orderId, status, amount, currency, paymentMethod, customerCode, ... }
-        
+
         // Маппинг статусов Точка Банка
         const statusMap = {
             'SUCCESS': 'SUCCESS',
             'CONFIRMED': 'SUCCESS',
+            'APPROVED': 'SUCCESS',
             'FAILED': 'FAILED',
             'REJECTED': 'FAILED',
             'CANCELED': 'FAILED',
@@ -325,18 +344,52 @@ class TochkaProvider {
             'PENDING': 'PENDING',
             'REFUNDED': 'REFUNDED'
         };
-        
+
         const rawStatus = payload.status || payload.Status;
         const normalizedStatus = statusMap[rawStatus] || rawStatus;
+
+        // В webhook от Точки наш orderId приходит в поле paymentLinkId
+        // Для СБП-платежей paymentLinkId может отсутствовать, извлекаем из purpose
+        let orderId =
+            payload.orderId ||
+            payload.order_id ||
+            payload.OrderId ||
+            payload.paymentLinkId ||
+            payload.payment_link_id ||
+            payload.PaymentLinkId;
         
+        // Если orderId не найден, пытаемся извлечь из purpose
+        // purpose содержит paymentLinkId в начале строки (наш формат description)
+        if (!orderId && payload.purpose) {
+            // Ищем наш формат: "gornostyle72-winter-31" или "Горностайл72..."
+            // Наш paymentLinkId всегда в начале purpose (см. formatPaymentDescription)
+            const purposeMatch = payload.purpose.match(/^(gornostyle72-winter-\d+)/);
+            if (purposeMatch) {
+                orderId = purposeMatch[1];
+            }
+        }
+
+        // Сумма приходит в рублях (как число или строка), иногда в копейках
+        let amount = null;
+        if (typeof payload.amount === 'number') {
+            amount = payload.amount;
+        } else if (typeof payload.amount === 'string') {
+            const parsed = parseFloat(payload.amount.replace(',', '.'));
+            if (!Number.isNaN(parsed)) {
+                amount = parsed;
+            }
+        } else if (typeof payload.Amount === 'number') {
+            amount = payload.Amount / 100;
+        }
+
         return {
             webhookType: webhookType,
-            orderId: payload.orderId || payload.order_id || payload.OrderId,
+            orderId,
             paymentId: payload.paymentId || payload.payment_id || payload.PaymentId || payload.operationId,
             status: normalizedStatus,
-            amount: payload.amount ? payload.amount / 100 : payload.Amount ? payload.Amount / 100 : null,
+            amount,
             currency: payload.currency || payload.Currency || 'RUB',
-            paymentMethod: payload.paymentMethod || payload.payment_method || payload.PaymentMethod || 'card',
+            paymentMethod: payload.paymentMethod || payload.payment_type || payload.payment_method || payload.PaymentMethod || 'card',
             customerCode: payload.customerCode || payload.customer_code,
             rawData: payload
         };
