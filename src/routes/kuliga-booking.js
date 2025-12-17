@@ -1423,8 +1423,54 @@ const createProgramBooking = async (req, res) => {
         // Ограничиваем массив до safeCount
         namesArray = namesArray.slice(0, safeCount);
 
+        console.log(`💰 [ProgramBooking] Расчет цены:`, {
+            groupTrainingId: groupTraining.id,
+            price_per_person_raw: groupTraining.price_per_person,
+            price_per_person_type: typeof groupTraining.price_per_person,
+            safeCount,
+            safeCount_type: typeof safeCount
+        });
+
         const pricePerPerson = Number(groupTraining.price_per_person);
+        
+        if (isNaN(pricePerPerson) || pricePerPerson <= 0) {
+            console.error(`❌ [ProgramBooking] Некорректная цена за человека:`, {
+                price_per_person_raw: groupTraining.price_per_person,
+                pricePerPerson,
+                groupTrainingId: groupTraining.id,
+                programId,
+                programName: program.name
+            });
+            throw new Error(`Некорректная цена за человека в тренировке программы "${program.name}". Обратитесь к администратору.`);
+        }
+        
+        if (isNaN(safeCount) || safeCount <= 0) {
+            console.error(`❌ [ProgramBooking] Некорректное количество участников:`, {
+                safeCount,
+                participantsCount,
+                participantsLength: participants ? participants.length : 0,
+                participantsNamesLength: participantsNames ? participantsNames.length : 0
+            });
+            throw new Error(`Некорректное количество участников: ${safeCount}`);
+        }
+        
         const totalPrice = pricePerPerson * safeCount;
+        
+        console.log(`✅ [ProgramBooking] Цена рассчитана:`, {
+            pricePerPerson,
+            safeCount,
+            totalPrice
+        });
+        
+        if (isNaN(totalPrice) || totalPrice <= 0) {
+            console.error(`❌ [ProgramBooking] Некорректная общая сумма:`, {
+                pricePerPerson,
+                safeCount,
+                totalPrice,
+                calculation: `${pricePerPerson} * ${safeCount} = ${totalPrice}`
+            });
+            throw new Error(`Некорректная общая сумма платежа: ${totalPrice}`);
+        }
 
         // Проверяем корректность данных перед формированием description
         console.log(`🔍 [ProgramBooking] Данные для description:`, {
