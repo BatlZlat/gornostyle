@@ -463,6 +463,20 @@ class EmailService {
 
     // Универсальный метод отправки email
     async sendEmail(recipientEmail, subject, htmlContent, attachments = []) {
+        // Проверяем, является ли получатель Yandex адресом, привязанным к тому же аккаунту
+        // Yandex может блокировать отправку на адреса того же аккаунта через SMTP
+        const emailUser = process.env.EMAIL_USER || 'batl-zlat@yandex.ru';
+        const isYandexSameAccount = recipientEmail.includes('@yandex.ru') && 
+                                     (recipientEmail === 'gornostyle72@yandex.ru' || 
+                                      recipientEmail === 'batl-zlat@yandex.ru' ||
+                                      recipientEmail.includes('@yandex.ru'));
+        
+        // Для Yandex адресов того же аккаунта используем Resend напрямую
+        if (isYandexSameAccount && recipientEmail !== 'batl.zlat87@gmail.com') {
+            console.log(`📧 Обнаружен Yandex адрес того же аккаунта (${recipientEmail}), используем Resend напрямую для избежания блокировки SMTP`);
+            return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments);
+        }
+        
         // Сначала пробуем SMTP Yandex
         try {
             if (!process.env.EMAIL_PASS) {
@@ -473,7 +487,7 @@ class EmailService {
             const mailOptions = {
                 from: {
                     name: 'Горностайл72',
-                    address: process.env.EMAIL_USER || 'batl-zlat@yandex.ru'
+                    address: emailUser
                 },
                 to: recipientEmail,
                 subject: subject,
@@ -485,10 +499,11 @@ class EmailService {
             console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
             console.log(`📧 Тема: ${mailOptions.subject}`);
             
-            // Добавляем таймаут для отправки (10 секунд)
+            // Увеличиваем таймаут для Yandex адресов (может быть медленнее)
+            const timeout = recipientEmail.includes('@yandex.ru') ? 20000 : 10000;
             const sendPromise = this.transporter.sendMail(mailOptions);
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('SMTP timeout: отправка заняла более 10 секунд')), 10000)
+                setTimeout(() => reject(new Error(`SMTP timeout: отправка заняла более ${timeout/1000} секунд`)), timeout)
             );
             
             const result = await Promise.race([sendPromise, timeoutPromise]);
@@ -500,42 +515,80 @@ class EmailService {
             console.log(`🔄 Пробуем отправить через Resend как fallback...`);
             
             // Fallback на Resend, если SMTP не работает
-            try {
-                if (this.resendService && this.resendService.resend) {
-                    console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
-                    const resendResult = await this.resendService.resend.emails.send({
-                        from: process.env.RESEND_FROM_EMAIL || 'gornostyle@resend.dev',
-                        to: recipientEmail,
-                        subject: subject,
-                        html: htmlContent
-                    });
-                    
-                    console.log('📋 Полный ответ Resend:', JSON.stringify(resendResult, null, 2));
-                    const messageId = resendResult?.data?.id || resendResult?.id || null;
-                    if (messageId) {
-                        console.log('✅ Email отправлен успешно через Resend, messageId:', messageId);
-                        return { success: true, messageId: messageId, service: 'resend' };
-                    } else {
-                        console.warn('⚠️ Resend вернул успешный ответ, но messageId отсутствует. Ответ:', resendResult);
-                        return { success: true, messageId: null, service: 'resend', warning: 'messageId отсутствует в ответе' };
-                    }
-                } else {
-                    console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
-                    throw new Error('Resend не настроен');
-                }
-            } catch (resendError) {
-                console.error(`❌ Ошибка Resend:`, resendError.message);
-                if (resendError.response) {
-                    console.error(`❌ Детали ошибки Resend:`, JSON.stringify(resendError.response.body || resendError.response, null, 2));
-                }
-                console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}: SMTP timeout/error`);
-                return { 
-                    success: false, 
-                    error: `SMTP: ${smtpError.message}, Resend: ${resendError.message}`,
-                    code: smtpError.code,
-                    service: 'none'
+            return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments, smtpError);
+        }
+    }
+    
+    // Вспомогательный метод для отправки через Resend
+    async sendViaResend(recipientEmail, subject, htmlContent, attachments = [], originalError = null) {
+        try {
+            if (this.resendService && this.resendService.resend) {
+                console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
+                
+                // Resend не поддерживает вложения в простом формате, поэтому отправляем без них
+                // или конвертируем в base64 если нужно
+                const emailData = {
+                    from: process.env.RESEND_FROM_EMAIL || 'gornostyle@resend.dev',
+                    to: recipientEmail,
+                    subject: subject,
+                    html: htmlContent
                 };
+                
+                // Если есть вложения, пытаемся их добавить (Resend поддерживает base64)
+                if (attachments && attachments.length > 0) {
+                    console.log(`📎 Обнаружены вложения (${attachments.length}), пытаемся добавить...`);
+                    try {
+                        const emailAttachments = [];
+                        for (const attachment of attachments) {
+                            if (attachment.path) {
+                                const fs = require('fs');
+                                const fileBuffer = await fs.promises.readFile(attachment.path);
+                                emailAttachments.push({
+                                    filename: attachment.filename || 'attachment',
+                                    content: fileBuffer.toString('base64'),
+                                    type: attachment.contentType || 'application/octet-stream'
+                                });
+                            }
+                        }
+                        if (emailAttachments.length > 0) {
+                            emailData.attachments = emailAttachments;
+                            console.log(`📎 Добавлено ${emailAttachments.length} вложений`);
+                        }
+                    } catch (attachError) {
+                        console.warn(`⚠️ Не удалось добавить вложения: ${attachError.message}`);
+                    }
+                }
+                
+                const resendResult = await this.resendService.resend.emails.send(emailData);
+                
+                console.log('📋 Полный ответ Resend:', JSON.stringify(resendResult, null, 2));
+                const messageId = resendResult?.data?.id || resendResult?.id || null;
+                if (messageId) {
+                    console.log('✅ Email отправлен успешно через Resend, messageId:', messageId);
+                    return { success: true, messageId: messageId, service: 'resend' };
+                } else {
+                    console.warn('⚠️ Resend вернул успешный ответ, но messageId отсутствует. Ответ:', resendResult);
+                    return { success: true, messageId: null, service: 'resend', warning: 'messageId отсутствует в ответе' };
+                }
+            } else {
+                console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
+                throw new Error('Resend не настроен');
             }
+        } catch (resendError) {
+            console.error(`❌ Ошибка Resend:`, resendError.message);
+            if (resendError.response) {
+                console.error(`❌ Детали ошибки Resend:`, JSON.stringify(resendError.response.body || resendError.response, null, 2));
+            }
+            const errorMsg = originalError 
+                ? `SMTP: ${originalError.message}, Resend: ${resendError.message}`
+                : `Resend: ${resendError.message}`;
+            console.error(`❌ Итоговая ошибка отправки email на ${recipientEmail}: ${errorMsg}`);
+            return { 
+                success: false, 
+                error: errorMsg,
+                code: originalError?.code || resendError.code,
+                service: 'none'
+            };
         }
     }
 
