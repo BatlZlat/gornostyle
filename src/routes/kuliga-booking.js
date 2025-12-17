@@ -1445,10 +1445,10 @@ const createProgramBooking = async (req, res) => {
              SET current_participants = current_participants + $1,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = $2`,
-            [safeCount, groupTrainingIdToUse]
+            [safeCount, groupTraining.id]
         );
         
-        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке #${groupTrainingIdToUse} для транзакции #${transactionId}`);
+        console.log(`🔒 Временно забронировано ${safeCount} мест в групповой тренировке программы #${groupTraining.id} для транзакции #${transactionId}`);
 
         await client.query('COMMIT');
 
