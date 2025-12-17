@@ -1569,6 +1569,11 @@
         setMessage('Создаём бронирование и перенаправляем на оплату...', 'neutral');
 
         try {
+            console.log('📤 [Booking] Отправка запроса на создание бронирования:', {
+                payload,
+                url: API.createBooking
+            });
+
             const response = await fetch(API.createBooking, {
                 method: 'POST',
                 headers: {
@@ -1578,18 +1583,33 @@
                 body: JSON.stringify(payload),
             });
 
+            console.log('📥 [Booking] Получен ответ от сервера:', {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok
+            });
+
             const data = await response.json();
+            console.log('📦 [Booking] Данные ответа:', data);
+
             if (!response.ok || !data.success) {
-                throw new Error(data.error || 'Не удалось создать бронирование');
+                const errorMessage = data.error || 'Не удалось создать бронирование';
+                console.error('❌ [Booking] Ошибка создания бронирования:', errorMessage);
+                throw new Error(errorMessage);
             }
 
+            if (!data.paymentUrl) {
+                console.error('❌ [Booking] paymentUrl отсутствует в ответе:', data);
+                throw new Error('Не получена ссылка на оплату. Обратитесь к администратору.');
+            }
+
+            console.log('✅ [Booking] Бронирование создано, перенаправление на оплату:', data.paymentUrl);
             setMessage('Перенаправляем на страницу оплаты...', 'success');
             localStorage.removeItem(STORAGE_KEY);
-            if (data.paymentUrl) {
-                window.location.href = data.paymentUrl;
-            }
+            window.location.href = data.paymentUrl;
         } catch (error) {
-            console.error('Ошибка бронирования Кулиги:', error);
+            console.error('❌ [Booking] Ошибка бронирования Кулиги:', error);
+            console.error('❌ [Booking] Stack trace:', error.stack);
             setMessage(error.message || 'Произошла ошибка. Попробуйте позже или обратитесь к администратору.', 'error');
         }
     }
