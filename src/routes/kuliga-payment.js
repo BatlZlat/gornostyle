@@ -373,6 +373,10 @@ router.post(
                     console.log(`      - client_email: ${bookingData.client_email || 'ОТСУТСТВУЕТ'}`);
                     console.log(`      - client_name: ${bookingData.client_name || 'ОТСУТСТВУЕТ'}`);
                     console.log(`      - booking_type: ${bookingData.booking_type}`);
+                    console.log(`      - group_training_id: ${bookingData.group_training_id || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`      - program_id: ${bookingData.program_id || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`      - program_name: ${bookingData.program_name || 'ОТСУТСТВУЕТ'}`);
+                    console.log(`      - participants_count: ${bookingData.participants_count || 'ОТСУТСТВУЕТ'}`);
                 } else {
                     console.error(`❌ [Webhook] bookingData отсутствует в rawData!`);
                     console.error(`   rawData содержимое:`, JSON.stringify(rawData).substring(0, 1000));
@@ -796,7 +800,8 @@ router.post(
                             : bookingData.client_name;
                         
                         // Уведомление администратору
-                        await notifyAdminNaturalSlopeTrainingBooking({
+                        // Для программ добавляем информацию о программе
+                        const adminNotificationData = {
                             client_name: bookingData.client_name,
                             client_phone: bookingData.client_phone,
                             participant_name: participantName,
@@ -809,7 +814,15 @@ router.post(
                             location: bookingData.location,
                             booking_type: bookingData.booking_type,
                             participants_count: bookingData.participants_count || 1
-                        });
+                        };
+                        
+                        // Если это программа, добавляем информацию о программе
+                        if (bookingData.program_id || bookingData.program_name) {
+                            adminNotificationData.program_name = bookingData.program_name || 'Программа';
+                            console.log(`📋 [Webhook] Уведомление администратору о бронировании программы: ${adminNotificationData.program_name}`);
+                        }
+                        
+                        await notifyAdminNaturalSlopeTrainingBooking(adminNotificationData);
                         
                         // Уведомление инструктору (если он назначен)
                         if (instructorResult && instructorResult.rows.length > 0) {
