@@ -1079,6 +1079,28 @@ router.put('/programs/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Программа не найдена' });
         }
 
+        // Получаем старую цену программы для сравнения
+        const oldProgramResult = await client.query(
+            'SELECT price FROM kuliga_programs WHERE id = $1',
+            [id]
+        );
+        const oldPrice = oldProgramResult.rows.length > 0 ? Number(oldProgramResult.rows[0].price) : null;
+
+        // Если цена изменилась, обновляем цену во всех существующих тренировках программы
+        if (oldPrice !== null && oldPrice !== priceValue) {
+            const updateResult = await client.query(
+                `UPDATE kuliga_group_trainings
+                 SET price_per_person = $1, updated_at = CURRENT_TIMESTAMP
+                 WHERE program_id = $2 
+                   AND status IN ('open', 'confirmed')
+                   AND price_per_person != $1`,
+                [priceValue, id]
+            );
+            if (updateResult.rowCount > 0) {
+                console.log(`💰 Обновлена цена для ${updateResult.rowCount} тренировок программы ID=${id}: ${oldPrice} → ${priceValue}`);
+            }
+        }
+
         // Получаем список старых инструкторов ДО удаления связей
         const oldInstructorsResult = await client.query(
             'SELECT instructor_id FROM kuliga_program_instructors WHERE program_id = $1',

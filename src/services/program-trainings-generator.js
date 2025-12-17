@@ -83,7 +83,7 @@ async function generateTrainingsForAllPrograms() {
                             
                             // Проверяем, существует ли уже тренировка для этой программы в это время
                             const existingCheck = await client.query(
-                                `SELECT id FROM kuliga_group_trainings
+                                `SELECT id, price_per_person FROM kuliga_group_trainings
                                  WHERE program_id = $1 
                                    AND date = $2 
                                    AND start_time = $3
@@ -92,6 +92,17 @@ async function generateTrainingsForAllPrograms() {
                             );
                             
                             if (existingCheck.rows.length > 0) {
+                                // Если тренировка существует, обновляем цену, если она изменилась в программе
+                                const existingTraining = existingCheck.rows[0];
+                                if (Number(existingTraining.price_per_person) !== pricePerPerson) {
+                                    await client.query(
+                                        `UPDATE kuliga_group_trainings
+                                         SET price_per_person = $1, updated_at = CURRENT_TIMESTAMP
+                                         WHERE id = $2`,
+                                        [pricePerPerson, existingTraining.id]
+                                    );
+                                    console.log(`[Program Generator] Обновлена цена для тренировки ID=${existingTraining.id}: ${existingTraining.price_per_person} → ${pricePerPerson}`);
+                                }
                                 skipped++;
                                 continue;
                             }
