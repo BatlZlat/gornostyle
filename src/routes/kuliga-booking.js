@@ -1540,6 +1540,21 @@ const createProgramBooking = async (req, res) => {
         // УВЕДОМЛЕНИЯ НЕ ОТПРАВЛЯЕМ ЗДЕСЬ!
         // Они будут отправлены при обработке webhook после создания бронирования
 
+        console.log(`✅ [ProgramBooking] Бронирование программы создано успешно:`, {
+            transactionId,
+            paymentUrl: payment.paymentURL,
+            paymentMethod,
+            qrCodeUrl: payment.qrCodeUrl || null,
+            programId,
+            clientId: clientRecord.id,
+            totalPrice
+        });
+
+        if (!payment.paymentURL) {
+            console.error(`❌ [ProgramBooking] payment.paymentURL отсутствует! payment объект:`, JSON.stringify(payment, null, 2));
+            throw new Error('Не удалось получить ссылку на оплату от платежного провайдера');
+        }
+
         return res.json({ 
             success: true, 
             transactionId, // Возвращаем transactionId вместо bookingId
@@ -1548,7 +1563,8 @@ const createProgramBooking = async (req, res) => {
             qrCodeUrl: payment.qrCodeUrl || null
         });
     } catch (error) {
-        console.error('Ошибка бронирования программы Кулиги:', error);
+        console.error('❌ [ProgramBooking] Ошибка бронирования программы Кулиги:', error);
+        console.error('❌ [ProgramBooking] Stack trace:', error.stack);
         try {
             await client.query('ROLLBACK');
         } catch (rollbackError) {
