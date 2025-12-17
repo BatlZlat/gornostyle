@@ -1,12 +1,34 @@
+// Убеждаемся, что dotenv загружен (на случай, если модуль загружается до app.js)
+if (!process.env.KULIGA_INSTRUKTOR_BOT && !process.env.ADMIN_BOT_TOKEN) {
+    try {
+        require('dotenv').config();
+    } catch (e) {
+        // dotenv уже загружен или не установлен
+    }
+}
+
 const TelegramBot = require('node-telegram-bot-api');
 
 // Создаем экземпляр бота для уведомлений администратора
 const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
 // Создаем экземпляр бота для уведомлений инструкторов Кулиги
-const instructorBot = process.env.KULIGA_INSTRUKTOR_BOT 
-    ? new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false })
-    : null;
+let instructorBot = null;
+if (process.env.KULIGA_INSTRUKTOR_BOT) {
+    try {
+        console.log('[NOTIFY] Инициализация бота инструкторов...');
+        console.log('[NOTIFY] Токен присутствует, длина:', process.env.KULIGA_INSTRUKTOR_BOT.length);
+        instructorBot = new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false });
+        console.log('[NOTIFY] ✅ Бот инструкторов успешно создан (polling: false, только для отправки сообщений)');
+    } catch (error) {
+        console.error('[NOTIFY] ❌ Ошибка при создании бота инструкторов:', error.message);
+        console.error('[NOTIFY] Стек ошибки:', error.stack);
+        instructorBot = null;
+    }
+} else {
+    console.log('[NOTIFY] ⚠️ KULIGA_INSTRUKTOR_BOT не настроен в переменных окружения');
+    console.log('[NOTIFY] Доступные переменные окружения с KULIGA:', Object.keys(process.env).filter(k => k.includes('KULIGA')));
+}
 
 // Функция для форматирования даты
 function formatDate(dateStr) {
@@ -753,6 +775,17 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
         console.log(`[NOTIFY] 📤 Попытка отправки сообщения инструктору ${trainingData.instructor_name} (telegram_id=${trainingData.instructor_telegram_id})...`);
+        console.log(`[NOTIFY] 🔍 Проверка instructorBot:`, {
+            exists: !!instructorBot,
+            hasSendMessage: typeof instructorBot?.sendMessage === 'function',
+            token_set: !!process.env.KULIGA_INSTRUKTOR_BOT,
+            token_length: process.env.KULIGA_INSTRUKTOR_BOT?.length || 0
+        });
+        
+        if (!instructorBot || typeof instructorBot.sendMessage !== 'function') {
+            throw new Error('instructorBot не инициализирован или не имеет метода sendMessage');
+        }
+        
         const sendResult = await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
         console.log(`[NOTIFY] ✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (Telegram ID: ${trainingData.instructor_telegram_id}, Location: ${locationName})`);
         console.log(`[NOTIFY] 📋 Результат отправки:`, {
@@ -768,8 +801,14 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             error_message: error.message,
             error_code: error.code,
             error_response: error.response?.body || error.response,
+            error_description: error.response?.body?.description || error.description,
             error_stack: error.stack?.substring(0, 500)
         });
+        
+        // Дополнительная проверка токена
+        if (error.code === 'ETELEGRAM' && (error.message?.includes('401') || error.message?.includes('Unauthorized'))) {
+            console.error('[NOTIFY] ⚠️ Ошибка авторизации бота инструкторов. Проверьте токен KULIGA_INSTRUKTOR_BOT');
+        }
     }
 }
 
