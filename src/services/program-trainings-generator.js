@@ -15,6 +15,24 @@ const TIMEZONE = 'Asia/Yekaterinburg';
 async function generateTrainingsForAllPrograms() {
     const client = await pool.connect();
     
+    // Сначала синхронизируем цены во всех существующих тренировках
+    try {
+        const syncResult = await client.query(
+            `UPDATE kuliga_group_trainings kgt
+             SET price_per_person = kp.price, updated_at = CURRENT_TIMESTAMP
+             FROM kuliga_programs kp
+             WHERE kgt.program_id = kp.id
+               AND kgt.status IN ('open', 'confirmed')
+               AND kgt.price_per_person != kp.price`
+        );
+        if (syncResult.rowCount > 0) {
+            console.log(`[Program Generator] Синхронизирована цена для ${syncResult.rowCount} тренировок всех программ`);
+        }
+    } catch (syncError) {
+        console.error('[Program Generator] Ошибка синхронизации цен:', syncError);
+        // Продолжаем работу даже если синхронизация не удалась
+    }
+    
     try {
         await client.query('BEGIN');
         
