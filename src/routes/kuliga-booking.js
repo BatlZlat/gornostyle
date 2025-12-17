@@ -1476,6 +1476,33 @@ const createProgramBooking = async (req, res) => {
 
         let payment;
         const paymentMethod = req.body.paymentMethod || 'card';
+        
+        // Логируем параметры перед созданием платежа
+        console.log(`💳 [ProgramBooking] Параметры для initPayment:`, {
+            transactionId,
+            orderId: `gornostyle72-winter-${transactionId}`,
+            amount: totalPrice,
+            description,
+            customerPhone: normalizedPhone,
+            customerEmail: email?.trim() || undefined,
+            clientId: clientRecord.id,
+            paymentMethod,
+            pricePerPerson,
+            safeCount,
+            programName: program.name
+        });
+        
+        // Проверяем обязательные параметры перед вызовом
+        if (!transactionId) {
+            throw new Error('transactionId не создан');
+        }
+        if (!totalPrice || totalPrice <= 0) {
+            throw new Error(`Некорректная сумма платежа: ${totalPrice}`);
+        }
+        if (!description || description.trim() === '') {
+            throw new Error('Описание платежа не может быть пустым');
+        }
+        
         try {
             const provider = PaymentProviderFactory.create();
             payment = await provider.initPayment({
