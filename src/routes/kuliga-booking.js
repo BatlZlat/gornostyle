@@ -1265,6 +1265,7 @@ const createProgramBooking = async (req, res) => {
         email,
         participantsCount = 1,
         participantsNames = [],
+        participants = [], // Массив объектов {fullName, birthYear} из формы
         consentConfirmed,
     } = req.body || {};
 
