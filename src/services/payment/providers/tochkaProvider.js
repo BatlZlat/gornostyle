@@ -63,8 +63,24 @@ class TochkaProvider {
         }
 
         // Валидация обязательных параметров
+        console.log(`🔍 [TochkaProvider] Валидация параметров initPayment:`, {
+            orderId: orderId || 'ОТСУТСТВУЕТ',
+            amount: amount || 'ОТСУТСТВУЕТ',
+            description: description || 'ОТСУТСТВУЕТ',
+            hasCustomerPhone: !!customerPhone,
+            hasCustomerEmail: !!customerEmail,
+            itemsCount: items ? items.length : 0,
+            paymentMethod,
+            clientId: clientId || 'ОТСУТСТВУЕТ'
+        });
+        
         if (!orderId || !amount || !description) {
-            throw new Error('Отсутствуют обязательные параметры для создания платежа');
+            const missingParams = [];
+            if (!orderId) missingParams.push('orderId');
+            if (!amount) missingParams.push('amount');
+            if (!description) missingParams.push('description');
+            console.error(`❌ [TochkaProvider] Отсутствуют обязательные параметры: ${missingParams.join(', ')}`);
+            throw new Error(`Отсутствуют обязательные параметры для создания платежа: ${missingParams.join(', ')}`);
         }
 
         // Сумма в копейках

@@ -34,8 +34,23 @@ const initPayment = async ({ orderId, amount, description, customerPhone, custom
     }
 
     // Валидация обязательных параметров
+    console.log(`🔍 [TinkoffProvider] Валидация параметров initPayment:`, {
+        orderId: orderId || 'ОТСУТСТВУЕТ',
+        amount: amount || 'ОТСУТСТВУЕТ',
+        description: description || 'ОТСУТСТВУЕТ',
+        hasCustomerPhone: !!customerPhone,
+        hasCustomerEmail: !!customerEmail,
+        itemsCount: items ? items.length : 0,
+        clientId: clientId || 'ОТСУТСТВУЕТ'
+    });
+    
     if (!orderId || !amount || !description) {
-        throw new Error('Отсутствуют обязательные параметры для создания платежа');
+        const missingParams = [];
+        if (!orderId) missingParams.push('orderId');
+        if (!amount) missingParams.push('amount');
+        if (!description) missingParams.push('description');
+        console.error(`❌ [TinkoffProvider] Отсутствуют обязательные параметры: ${missingParams.join(', ')}`);
+        throw new Error(`Отсутствуют обязательные параметры для создания платежа: ${missingParams.join(', ')}`);
     }
 
     // Формируем SUCCESS_URL с clientId если он передан
