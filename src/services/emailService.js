@@ -504,7 +504,7 @@ class EmailService {
                 if (this.resendService && this.resendService.resend) {
                     console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
                     const resendResult = await this.resendService.resend.emails.send({
-                        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+                        from: process.env.RESEND_FROM_EMAIL || 'gornostyle@resend.dev',
                         to: recipientEmail,
                         subject: subject,
                         html: htmlContent
