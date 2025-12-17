@@ -1402,6 +1402,28 @@ const createProgramBooking = async (req, res) => {
         const pricePerPerson = Number(groupTraining.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
 
+        // Проверяем корректность данных перед формированием description
+        console.log(`🔍 [ProgramBooking] Данные для description:`, {
+            date,
+            time,
+            dateStr,
+            startTimeStr,
+            programLocation: program.location,
+            programSportType: program.sport_type,
+            programName: program.name,
+            pricePerPerson,
+            totalPrice,
+            safeCount
+        });
+
+        if (!dateStr || !startTimeStr) {
+            throw new Error(`Некорректные дата или время: date="${date}", time="${time}"`);
+        }
+
+        if (!program.sport_type) {
+            console.warn(`⚠️ [ProgramBooking] program.sport_type отсутствует, используем 'ski' по умолчанию`);
+        }
+
         // НОВАЯ ЛОГИКА: Бронирование создаётся ТОЛЬКО после успешной оплаты
         // 1. НЕ создаём бронирование сразу
         // 2. НЕ увеличиваем current_participants сразу (только временно)
@@ -1410,11 +1432,17 @@ const createProgramBooking = async (req, res) => {
         const description = formatPaymentDescription({
             bookingType: 'group',
             location: program.location || 'kuliga',
-            sportType: program.sport_type,
+            sportType: program.sport_type || 'ski',
             date: dateStr,
             time: startTimeStr,
             programName: program.name
         });
+
+        console.log(`📝 [ProgramBooking] Сформированное описание платежа: "${description}"`);
+
+        if (!description || description.trim() === '') {
+            throw new Error('Не удалось сформировать описание платежа');
+        }
 
         // Сохраняем данные для будущего создания бронирования после оплаты
         const bookingData = {
