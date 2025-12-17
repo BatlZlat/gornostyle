@@ -1034,6 +1034,17 @@ router.put('/programs/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Получаем старую цену программы ДО обновления
+        const oldProgramResult = await client.query(
+            'SELECT price FROM kuliga_programs WHERE id = $1',
+            [id]
+        );
+        if (oldProgramResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Программа не найдена' });
+        }
+        const oldPrice = Number(oldProgramResult.rows[0].price);
+
         const normalizedWeekdays = normalizeWeekdays(weekdays);
         const normalizedTimeSlots = normalizeTimeSlots(timeSlots);
 
@@ -1079,15 +1090,8 @@ router.put('/programs/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Программа не найдена' });
         }
 
-        // Получаем старую цену программы для сравнения
-        const oldProgramResult = await client.query(
-            'SELECT price FROM kuliga_programs WHERE id = $1',
-            [id]
-        );
-        const oldPrice = oldProgramResult.rows.length > 0 ? Number(oldProgramResult.rows[0].price) : null;
-
         // Если цена изменилась, обновляем цену во всех существующих тренировках программы
-        if (oldPrice !== null && oldPrice !== priceValue) {
+        if (oldPrice !== priceValue) {
             const updateResult = await client.query(
                 `UPDATE kuliga_group_trainings
                  SET price_per_person = $1, updated_at = CURRENT_TIMESTAMP
