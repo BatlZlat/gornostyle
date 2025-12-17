@@ -463,20 +463,10 @@ class EmailService {
 
     // Универсальный метод отправки email
     async sendEmail(recipientEmail, subject, htmlContent, attachments = []) {
-        // Проверяем, является ли получатель Yandex адресом, привязанным к тому же аккаунту
-        // Yandex может блокировать отправку на адреса того же аккаунта через SMTP
         const emailUser = process.env.EMAIL_USER || 'batl-zlat@yandex.ru';
-        const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
-        const isYandexSameAccount = recipientEmail.includes('@yandex.ru') && 
-                                     knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
         
-        // Для Yandex адресов того же аккаунта используем Resend напрямую
-        if (isYandexSameAccount) {
-            console.log(`📧 Обнаружен Yandex адрес того же аккаунта (${recipientEmail}), используем Resend напрямую для избежания блокировки SMTP`);
-            return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments);
-        }
-        
-        // Сначала пробуем SMTP Yandex
+        // Сначала пробуем SMTP Yandex (основной метод для всех клиентов)
+        // SMTP работает для всех адресов, включая Yandex адреса того же аккаунта
         try {
             if (!process.env.EMAIL_PASS) {
                 console.warn(`⚠️  EMAIL_PASS не настроен, пробуем Resend...`);
@@ -498,8 +488,19 @@ class EmailService {
             console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
             console.log(`📧 Тема: ${mailOptions.subject}`);
             
-            // Увеличиваем таймаут для Yandex адресов (может быть медленнее)
-            const timeout = recipientEmail.includes('@yandex.ru') ? 20000 : 10000;
+            // Увеличиваем таймаут для Yandex адресов (может быть медленнее из-за антиспам проверок)
+            // Для адресов того же аккаунта Yandex может делать дополнительные проверки
+            const isYandexEmail = recipientEmail.includes('@yandex.ru');
+            const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
+            const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
+            
+            // Для Yandex адресов того же аккаунта увеличиваем таймаут еще больше
+            const timeout = isYandexSameAccount ? 30000 : (isYandexEmail ? 20000 : 10000);
+            
+            if (isYandexSameAccount) {
+                console.log(`⏱️  Yandex адрес того же аккаунта, увеличенный таймаут: ${timeout/1000} сек`);
+            }
+            
             const sendPromise = this.transporter.sendMail(mailOptions);
             const timeoutPromise = new Promise((_, reject) => 
                 setTimeout(() => reject(new Error(`SMTP timeout: отправка заняла более ${timeout/1000} секунд`)), timeout)
@@ -511,18 +512,57 @@ class EmailService {
             return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
         } catch (smtpError) {
             console.error(`❌ Ошибка SMTP Yandex:`, smtpError.message);
-            console.log(`🔄 Пробуем отправить через Resend как fallback...`);
             
-            // Fallback на Resend, если SMTP не работает
+            // Для Yandex адресов того же аккаунта пробуем еще раз с увеличенным таймаутом
+            const isYandexEmail = recipientEmail.includes('@yandex.ru');
+            const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
+            const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
+            
+            if (isYandexSameAccount && smtpError.message.includes('timeout')) {
+                console.log(`🔄 Повторная попытка отправки через SMTP для Yandex адреса того же аккаунта с увеличенным таймаутом...`);
+                try {
+                    const mailOptions = {
+                        from: {
+                            name: 'Горностайл72',
+                            address: emailUser
+                        },
+                        to: recipientEmail,
+                        subject: subject,
+                        html: htmlContent,
+                        attachments: attachments
+                    };
+                    
+                    const sendPromise = this.transporter.sendMail(mailOptions);
+                    const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('SMTP timeout: повторная попытка также не удалась')), 40000)
+                    );
+                    
+                    const result = await Promise.race([sendPromise, timeoutPromise]);
+                    console.log('✅ Email отправлен успешно через SMTP Yandex при повторной попытке, messageId:', result.messageId);
+                    return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
+                } catch (retryError) {
+                    console.error(`❌ Повторная попытка SMTP также не удалась:`, retryError.message);
+                    console.log(`🔄 Пробуем отправить через Resend как последний fallback...`);
+                }
+            } else {
+                console.log(`🔄 Пробуем отправить через Resend как fallback...`);
+            }
+            
+            // Fallback на Resend только если SMTP полностью не работает
+            // ВАЖНО: Resend в тестовом режиме может отправлять только на верифицированные адреса
+            // Поэтому это только крайний случай, основной метод - SMTP
             return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments, smtpError);
         }
     }
     
     // Вспомогательный метод для отправки через Resend
+    // ВАЖНО: Resend в тестовом режиме может отправлять только на верифицированные адреса
+    // Этот метод используется только как fallback при полном провале SMTP
     async sendViaResend(recipientEmail, subject, htmlContent, attachments = [], originalError = null) {
         try {
             if (this.resendService && this.resendService.resend) {
                 console.log(`📧 Попытка отправки через Resend на ${recipientEmail}...`);
+                console.warn(`⚠️  ВНИМАНИЕ: Resend может не доставить письмо, если адрес не верифицирован в Resend. Это fallback метод.`);
                 
                 // Resend не поддерживает вложения в простом формате, поэтому отправляем без них
                 // или конвертируем в base64 если нужно
