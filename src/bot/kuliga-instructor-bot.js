@@ -14,11 +14,25 @@ const pool = new Pool({
     connectionTimeoutMillis: 2000,
 });
 
+// Убеждаемся, что dotenv загружен
+if (!process.env.KULIGA_INSTRUKTOR_BOT) {
+    try {
+        require('dotenv').config();
+    } catch (e) {
+        // dotenv уже загружен или не установлен
+    }
+}
+
 // Проверяем наличие токена бота
 if (!process.env.KULIGA_INSTRUKTOR_BOT) {
     console.error('❌ Ошибка: KULIGA_INSTRUKTOR_BOT не настроен в .env файле');
+    console.error('Доступные переменные окружения с KULIGA:', Object.keys(process.env).filter(k => k.includes('KULIGA')));
     process.exit(1);
 }
+
+console.log('[KULIGA-INSTRUCTOR-BOT] Инициализация бота инструкторов...');
+console.log('[KULIGA-INSTRUCTOR-BOT] Токен присутствует, длина:', process.env.KULIGA_INSTRUKTOR_BOT.length);
+console.log('[KULIGA-INSTRUCTOR-BOT] Первые 10 символов токена:', process.env.KULIGA_INSTRUKTOR_BOT.substring(0, 10) + '...');
 
 // Создаем экземпляр бота с обработкой ошибок
 let bot;
@@ -26,30 +40,70 @@ let bot;
 try {
     // Создаем бота с отложенным запуском polling для избежания падения при сетевых ошибках
     bot = new TelegramBot(process.env.KULIGA_INSTRUKTOR_BOT, { polling: false });
+    console.log('[KULIGA-INSTRUCTOR-BOT] ✅ Экземпляр бота создан успешно');
     
     // Глобальные обработчики ошибок бота
     bot.on('polling_error', (error) => {
-        console.error('❌ Ошибка polling бота инструкторов:', error.code || 'EFATAL', error.message);
+        console.error('[KULIGA-INSTRUCTOR-BOT] ❌ Ошибка polling бота инструкторов:', error.code || 'EFATAL', error.message);
+        console.error('[KULIGA-INSTRUCTOR-BOT] Детали ошибки polling:', {
+            code: error.code,
+            message: error.message,
+            response: error.response?.body || error.response,
+            description: error.response?.body?.description || error.description
+        });
         // Не падаем, просто логируем ошибку
         // Бот автоматически попытается переподключиться
     });
     
     bot.on('error', (error) => {
-        console.error('❌ Ошибка бота инструкторов:', error.code || 'ERROR', error.message);
+        console.error('[KULIGA-INSTRUCTOR-BOT] ❌ Ошибка бота инструкторов:', error.code || 'ERROR', error.message);
+        console.error('[KULIGA-INSTRUCTOR-BOT] Детали ошибки:', {
+            code: error.code,
+            message: error.message,
+            response: error.response?.body || error.response
+        });
     });
     
     // Запускаем polling с обработкой ошибок асинхронно
     // Это предотвращает падение приложения при проблемах с сетью
     setTimeout(() => {
-        bot.startPolling().catch((error) => {
-            console.error('❌ Ошибка при запуске polling бота инструкторов:', error.message);
-            console.log('⚠️ Бот инструкторов будет перезапущен через 30 секунд...');
+        console.log('[KULIGA-INSTRUCTOR-BOT] 🚀 Запуск polling...');
+        bot.startPolling({
+            restart: true
+        }).then(() => {
+            console.log('[KULIGA-INSTRUCTOR-BOT] ✅ Polling успешно запущен');
+        }).catch((error) => {
+            console.error('[KULIGA-INSTRUCTOR-BOT] ❌ Ошибка при запуске polling бота инструкторов:', error.message);
+            console.error('[KULIGA-INSTRUCTOR-BOT] Детали ошибки запуска polling:', {
+                code: error.code,
+                message: error.message,
+                response: error.response?.body || error.response,
+                description: error.response?.body?.description || error.description,
+                stack: error.stack?.substring(0, 500)
+            });
+            
+            if (error.code === 'ETELEGRAM' && (error.message?.includes('401') || error.message?.includes('Unauthorized'))) {
+                console.error('[KULIGA-INSTRUCTOR-BOT] ⚠️ Ошибка авторизации! Проверьте токен KULIGA_INSTRUKTOR_BOT');
+                console.error('[KULIGA-INSTRUCTOR-BOT] Токен, который используется:', process.env.KULIGA_INSTRUKTOR_BOT.substring(0, 15) + '...');
+            }
+            
+            console.log('[KULIGA-INSTRUCTOR-BOT] ⚠️ Бот инструкторов будет перезапущен через 30 секунд...');
             
             // Retry через 30 секунд
             setTimeout(() => {
-                bot.startPolling().catch((retryError) => {
-                    console.error('❌ Ошибка при повторном подключении:', retryError.message);
-                    console.log('⚠️ Бот инструкторов будет работать в ограниченном режиме');
+                console.log('[KULIGA-INSTRUCTOR-BOT] 🔄 Повторная попытка запуска polling...');
+                bot.startPolling({
+                    restart: true
+                }).then(() => {
+                    console.log('[KULIGA-INSTRUCTOR-BOT] ✅ Polling успешно запущен после повторной попытки');
+                }).catch((retryError) => {
+                    console.error('[KULIGA-INSTRUCTOR-BOT] ❌ Ошибка при повторном подключении:', retryError.message);
+                    console.error('[KULIGA-INSTRUCTOR-BOT] Детали ошибки повторного подключения:', {
+                        code: retryError.code,
+                        message: retryError.message,
+                        response: retryError.response?.body || retryError.response
+                    });
+                    console.log('[KULIGA-INSTRUCTOR-BOT] ⚠️ Бот инструкторов будет работать в ограниченном режиме');
                 });
             }, 30000);
         });
