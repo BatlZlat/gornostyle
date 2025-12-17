@@ -53,7 +53,8 @@ class TochkaProvider {
         customerPhone,
         customerEmail,
         items = [],
-        paymentMethod = 'card'
+        paymentMethod = 'card',
+        clientId
     }) {
         // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
         // Пробуем работать без merchantId, так как он опционален
@@ -129,7 +130,20 @@ class TochkaProvider {
                 paymentMode: paymentModes, // Массив способов оплаты
                 paymentLinkId: orderId.length > 45 ? orderId.substring(0, 45) : orderId, // Уникальный номер заказа (до 45 символов)
                 // Опциональные поля
-                ...(this.successUrl ? { redirectUrl: this.successUrl } : {}),
+                // Формируем redirectUrl с clientId если он передан
+                ...(this.successUrl ? { 
+                    redirectUrl: (() => {
+                        let successUrl = this.successUrl;
+                        if (clientId) {
+                            const separator = successUrl.includes('?') ? '&' : '?';
+                            successUrl = `${successUrl}${separator}clientId=${clientId}`;
+                            console.log(`🔗 [Tochka] redirectUrl с clientId: ${successUrl}`);
+                        } else {
+                            console.warn(`⚠️ [Tochka] clientId не передан в initPayment, redirectUrl без clientId: ${successUrl}`);
+                        }
+                        return successUrl;
+                    })()
+                } : {}),
                 ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
                 // Email для отправки чека (если указан)
                 ...(customerEmail ? { consumerId: customerEmail } : {}),
