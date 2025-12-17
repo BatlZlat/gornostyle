@@ -1320,11 +1320,35 @@ const createProgramBooking = async (req, res) => {
         const program = programResult.rows[0];
 
         // Вычисляем время окончания тренировки
-        const startTime = moment.tz(`${date} ${time}`, 'YYYY-MM-DD HH:mm', TIMEZONE);
+        // Нормализуем формат времени: "10:15" -> "10:15:00"
+        let normalizedTime = time.trim();
+        if (normalizedTime.length === 5 && normalizedTime.includes(':')) {
+            normalizedTime = normalizedTime + ':00';
+        }
+        
+        console.log(`🕐 [ProgramBooking] Парсинг времени:`, {
+            originalTime: time,
+            normalizedTime,
+            date,
+            combined: `${date} ${normalizedTime}`
+        });
+        
+        const startTime = moment.tz(`${date} ${normalizedTime}`, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
+        
+        if (!startTime.isValid()) {
+            throw new Error(`Некорректный формат даты/времени: date="${date}", time="${time}" (нормализовано: "${normalizedTime}")`);
+        }
+        
         const endTime = startTime.clone().add(program.training_duration, 'minutes');
         const dateStr = startTime.format('YYYY-MM-DD');
         const startTimeStr = startTime.format('HH:mm:ss');
         const endTimeStr = endTime.format('HH:mm:ss');
+        
+        console.log(`✅ [ProgramBooking] Время успешно распарсено:`, {
+            dateStr,
+            startTimeStr,
+            endTimeStr
+        });
 
         // НОВАЯ ЛОГИКА: Ищем уже созданную тренировку из программы
         // Программы автоматически генерируют тренировки без инструктора
