@@ -510,8 +510,15 @@ class EmailService {
                         html: htmlContent
                     });
                     
-                    console.log('✅ Email отправлен успешно через Resend, messageId:', resendResult.data?.id);
-                    return { success: true, messageId: resendResult.data?.id, service: 'resend' };
+                    console.log('📋 Полный ответ Resend:', JSON.stringify(resendResult, null, 2));
+                    const messageId = resendResult?.data?.id || resendResult?.id || null;
+                    if (messageId) {
+                        console.log('✅ Email отправлен успешно через Resend, messageId:', messageId);
+                        return { success: true, messageId: messageId, service: 'resend' };
+                    } else {
+                        console.warn('⚠️ Resend вернул успешный ответ, но messageId отсутствует. Ответ:', resendResult);
+                        return { success: true, messageId: null, service: 'resend', warning: 'messageId отсутствует в ответе' };
+                    }
                 } else {
                     console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
                     throw new Error('Resend не настроен');

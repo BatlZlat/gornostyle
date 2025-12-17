@@ -752,15 +752,23 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             `🏔️ *Место:* ${locationName}\n\n` +
             `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
-        await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
+        console.log(`[NOTIFY] 📤 Попытка отправки сообщения инструктору ${trainingData.instructor_name} (telegram_id=${trainingData.instructor_telegram_id})...`);
+        const sendResult = await instructorBot.sendMessage(trainingData.instructor_telegram_id, message, { parse_mode: 'Markdown' });
         console.log(`[NOTIFY] ✅ Уведомление отправлено инструктору ${trainingData.instructor_name} (Telegram ID: ${trainingData.instructor_telegram_id}, Location: ${locationName})`);
+        console.log(`[NOTIFY] 📋 Результат отправки:`, {
+            message_id: sendResult?.message_id,
+            chat_id: sendResult?.chat?.id,
+            date: sendResult?.date
+        });
     } catch (error) {
         console.error('[NOTIFY] ❌ Ошибка при отправке уведомления инструктору:', error);
         console.error('[NOTIFY] Детали ошибки:', {
             instructor_name: trainingData.instructor_name,
             instructor_telegram_id: trainingData.instructor_telegram_id,
             error_message: error.message,
-            error_stack: error.stack
+            error_code: error.code,
+            error_response: error.response?.body || error.response,
+            error_stack: error.stack?.substring(0, 500)
         });
     }
 }
