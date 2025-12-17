@@ -1371,12 +1371,33 @@ const createProgramBooking = async (req, res) => {
         );
         await ensurePrivacyConsent(clientRecord.id, client);
 
-        const namesArray = Array.from({ length: safeCount }, (_, index) => {
-            if (index === 0) {
-                return fullName.trim();
+        // Обрабатываем участников: поддерживаем как массив объектов {fullName, birthYear}, так и массив строк
+        let namesArray = [];
+        if (Array.isArray(participants) && participants.length > 0) {
+            // Форма отправляет массив объектов {fullName, birthYear}
+            namesArray = participants.map(p => (p.fullName || '').trim()).filter(Boolean);
+            // Если первый участник - это заказчик, используем его имя
+            if (namesArray.length === 0 || namesArray[0] !== fullName.trim()) {
+                namesArray.unshift(fullName.trim());
             }
-            return (participantsNames[index] || participantsNames[index - 1] || '').toString().trim();
-        }).filter(Boolean);
+        } else if (Array.isArray(participantsNames) && participantsNames.length > 0) {
+            // Старый формат: массив строк
+            namesArray = participantsNames.map(name => (name || '').toString().trim()).filter(Boolean);
+            if (namesArray.length === 0 || namesArray[0] !== fullName.trim()) {
+                namesArray.unshift(fullName.trim());
+            }
+        } else {
+            // Если участники не переданы, создаем массив из имени заказчика
+            namesArray = Array.from({ length: safeCount }, (_, index) => {
+                if (index === 0) {
+                    return fullName.trim();
+                }
+                return fullName.trim(); // По умолчанию все участники - заказчик
+            });
+        }
+        
+        // Ограничиваем массив до safeCount
+        namesArray = namesArray.slice(0, safeCount);
 
         const pricePerPerson = Number(groupTraining.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
