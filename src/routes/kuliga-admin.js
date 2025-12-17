@@ -1332,6 +1332,22 @@ router.put('/programs/:id', async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Синхронизируем цены во всех существующих тренировках программы
+        // Это нужно на случай, если цена была изменена напрямую в БД
+        const syncResult = await client.query(
+            `UPDATE kuliga_group_trainings kgt
+             SET price_per_person = kp.price, updated_at = CURRENT_TIMESTAMP
+             FROM kuliga_programs kp
+             WHERE kgt.program_id = kp.id
+               AND kgt.program_id = $1
+               AND kgt.status IN ('open', 'confirmed')
+               AND kgt.price_per_person != kp.price`,
+            [id]
+        );
+        if (syncResult.rowCount > 0) {
+            console.log(`💰 Синхронизирована цена для ${syncResult.rowCount} тренировок программы ID=${id}`);
+        }
+
         // Генерируем тренировки из программы (асинхронно, не блокируем ответ)
         setImmediate(async () => {
             try {
@@ -4254,6 +4270,40 @@ async function generateProgramTrainings(programId) {
 }
 
 // API для ручной генерации тренировок из программы
+// POST /api/kuliga/admin/programs/sync-prices - Синхронизация цен во всех тренировках программ
+router.post('/programs/sync-prices', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Синхронизируем цены во всех тренировках всех программ
+        const syncResult = await client.query(
+            `UPDATE kuliga_group_trainings kgt
+             SET price_per_person = kp.price, updated_at = CURRENT_TIMESTAMP
+             FROM kuliga_programs kp
+             WHERE kgt.program_id = kp.id
+               AND kgt.status IN ('open', 'confirmed')
+               AND kgt.price_per_person != kp.price`
+        );
+        
+        await client.query('COMMIT');
+        
+        console.log(`💰 Синхронизирована цена для ${syncResult.rowCount} тренировок всех программ`);
+        
+        res.json({ 
+            success: true, 
+            message: `Синхронизирована цена для ${syncResult.rowCount} тренировок`,
+            updated_count: syncResult.rowCount
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка синхронизации цен программ:', error);
+        res.status(500).json({ success: false, error: error.message || 'Не удалось синхронизировать цены' });
+    } finally {
+        client.release();
+    }
+});
+
 router.post('/programs/:id/generate-trainings', async (req, res) => {
     const { id } = req.params;
     
