@@ -1353,7 +1353,7 @@ const createProgramBooking = async (req, res) => {
         // НОВАЯ ЛОГИКА: Ищем уже созданную тренировку из программы
         // Программы автоматически генерируют тренировки без инструктора
         const existingTrainingResult = await client.query(
-            `SELECT id, current_participants, max_participants, status, instructor_id
+            `SELECT id, current_participants, max_participants, status, instructor_id, price_per_person
              FROM kuliga_group_trainings
              WHERE program_id = $1 
                AND date = $2 
