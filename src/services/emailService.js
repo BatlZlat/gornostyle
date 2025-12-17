@@ -466,13 +466,12 @@ class EmailService {
         // Проверяем, является ли получатель Yandex адресом, привязанным к тому же аккаунту
         // Yandex может блокировать отправку на адреса того же аккаунта через SMTP
         const emailUser = process.env.EMAIL_USER || 'batl-zlat@yandex.ru';
+        const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
         const isYandexSameAccount = recipientEmail.includes('@yandex.ru') && 
-                                     (recipientEmail === 'gornostyle72@yandex.ru' || 
-                                      recipientEmail === 'batl-zlat@yandex.ru' ||
-                                      recipientEmail.includes('@yandex.ru'));
+                                     knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
         
         // Для Yandex адресов того же аккаунта используем Resend напрямую
-        if (isYandexSameAccount && recipientEmail !== 'batl.zlat87@gmail.com') {
+        if (isYandexSameAccount) {
             console.log(`📧 Обнаружен Yandex адрес того же аккаунта (${recipientEmail}), используем Resend напрямую для избежания блокировки SMTP`);
             return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments);
         }
