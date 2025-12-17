@@ -56,6 +56,51 @@ const isDateWithinRange = (dateString) => {
     return !day.isBefore(today) && !day.isAfter(max);
 };
 
+// Генерация уникального реферального кода
+const generateUniqueReferralCode = async (trx) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    while (!isUnique && attempts < maxAttempts) {
+        code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+
+        // Проверяем уникальность
+        const result = await trx.query(
+            'SELECT COUNT(*) FROM clients WHERE referral_code = $1',
+            [code]
+        );
+        
+        isUnique = parseInt(result.rows[0].count) === 0;
+        attempts++;
+    }
+
+    if (!isUnique) {
+        throw new Error('Не удалось сгенерировать уникальный реферальный код');
+    }
+
+    return code;
+};
+
+// Генерация уникального номера кошелька
+const generateUniqueWalletNumber = async (trx) => {
+    const generateNumber = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join('');
+    let walletNumber, isUnique = false, attempts = 0;
+    while (!isUnique && attempts < 10) {
+        walletNumber = generateNumber();
+        const result = await trx.query('SELECT COUNT(*) FROM wallets WHERE wallet_number = $1', [walletNumber]);
+        if (result.rows[0].count === '0') isUnique = true;
+        attempts++;
+    }
+    if (!isUnique) throw new Error('Не удалось сгенерировать уникальный номер кошелька');
+    return walletNumber;
+};
+
 // МИГРАЦИЯ 033: Теперь используем таблицу clients вместо kuliga_clients
 const upsertClient = async (client, trx) => {
     const phone = normalizePhone(client.phone);
@@ -75,6 +120,40 @@ const upsertClient = async (client, trx) => {
         // Клиент найден, обновляем email (если его нет) и birth_date (если был временным)
         const existingBirthDate = rows[0].birth_date;
         const isTemporaryBirthDate = existingBirthDate && new Date(existingBirthDate).getFullYear() === 1900;
+        const clientId = rows[0].id;
+        
+        // Проверяем наличие referral_code у существующего клиента
+        const clientCheck = await trx.query(
+            'SELECT referral_code FROM clients WHERE id = $1',
+            [clientId]
+        );
+        const hasReferralCode = clientCheck.rows[0]?.referral_code;
+        
+        // Если нет referral_code, генерируем его
+        if (!hasReferralCode) {
+            const newReferralCode = await generateUniqueReferralCode(trx);
+            await trx.query(
+                'UPDATE clients SET referral_code = $1 WHERE id = $2',
+                [newReferralCode, clientId]
+            );
+            console.log(`[KULIGA-BOOKING] ✅ Создан referral_code для существующего клиента #${clientId}: ${newReferralCode}`);
+        }
+        
+        // Проверяем наличие кошелька у существующего клиента
+        const walletCheck = await trx.query(
+            'SELECT id FROM wallets WHERE client_id = $1 LIMIT 1',
+            [clientId]
+        );
+        
+        // Если нет кошелька, создаем его
+        if (walletCheck.rows.length === 0) {
+            const walletNumber = await generateUniqueWalletNumber(trx);
+            await trx.query(
+                'INSERT INTO wallets (client_id, wallet_number, balance) VALUES ($1, $2, 0)',
+                [clientId, walletNumber]
+            );
+            console.log(`[KULIGA-BOOKING] ✅ Создан кошелек для существующего клиента #${clientId}: ${walletNumber}`);
+        }
         
         await trx.query(
             `UPDATE clients
@@ -90,10 +169,10 @@ const upsertClient = async (client, trx) => {
                 client.email || null, 
                 client.birthDate || null,
                 existingBirthDate ? existingBirthDate.toISOString().split('T')[0] : null,
-                rows[0].id
+                clientId
             ]
         );
-        return { id: rows[0].id, telegram_id: rows[0].telegram_id };
+        return { id: clientId, telegram_id: rows[0].telegram_id };
     }
 
     // Клиент не найден, создаем нового с датой рождения из формы или временной датой
@@ -101,14 +180,29 @@ const upsertClient = async (client, trx) => {
     if (!client.email) {
         throw new Error('Email обязателен для создания клиента');
     }
+    
+    // Генерируем уникальный реферальный код для нового клиента
+    const newReferralCode = await generateUniqueReferralCode(trx);
+    console.log(`[KULIGA-BOOKING] Сгенерирован referral_code для нового клиента: ${newReferralCode}`);
+    
     const insertResult = await trx.query(
-        `INSERT INTO clients (full_name, phone, email, birth_date, created_at, updated_at)
-         VALUES ($1, $2, $3, COALESCE($4::date, '1900-01-01'::date), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `INSERT INTO clients (full_name, phone, email, birth_date, referral_code, created_at, updated_at)
+         VALUES ($1, $2, $3, COALESCE($4::date, '1900-01-01'::date), $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id, telegram_id`,
-        [client.fullName, phone, client.email.trim(), client.birthDate || null]
+        [client.fullName, phone, client.email.trim(), client.birthDate || null, newReferralCode]
     );
 
-    return { id: insertResult.rows[0].id, telegram_id: insertResult.rows[0].telegram_id };
+    const clientId = insertResult.rows[0].id;
+    
+    // Создаем кошелек для нового клиента
+    const walletNumber = await generateUniqueWalletNumber(trx);
+    await trx.query(
+        'INSERT INTO wallets (client_id, wallet_number, balance) VALUES ($1, $2, 0)',
+        [clientId, walletNumber]
+    );
+    console.log(`[KULIGA-BOOKING] ✅ Создан кошелек для нового клиента #${clientId}: ${walletNumber}`);
+
+    return { id: clientId, telegram_id: insertResult.rows[0].telegram_id };
 };
 
 const ensurePrivacyConsent = async (clientId, trx) => {
