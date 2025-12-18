@@ -610,9 +610,12 @@ async function notifyAdminNaturalSlopeTrainingCancellation(trainingData) {
             }
         }
         
+        // Форматируем время в ЧЧ:ММ (убираем секунды)
+        const formattedTime = trainingData.time ? String(trainingData.time).substring(0, 5) : trainingData.time;
+        
         message += `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formatDate(trainingData.date)}\n` +
-            `⏰ *Время:* ${trainingData.time}\n`;
+            `⏰ *Время:* ${formattedTime}\n`;
         
         // Для групповых тренировок показываем тип спорта
         if (isGroupTraining && trainingData.sport_type) {
@@ -700,6 +703,9 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
         const location = trainingData.location || 'kuliga';
         const locationName = getLocationDisplayName(location);
         
+        // Форматируем время в ЧЧ:ММ (убираем секунды)
+        const formattedTime = trainingData.time ? String(trainingData.time).substring(0, 5) : trainingData.time;
+        
         const message = 
             `✅ *Новая запись на ${trainingType} тренировку!*\n\n` +
             `👨‍💼 *Клиент:* ${trainingData.client_name}\n` +
@@ -707,7 +713,7 @@ async function notifyAdminNaturalSlopeTrainingBooking(trainingData) {
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `👨‍🏫 *Инструктор:* ${trainingData.instructor_name || 'Не указан'}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
-            `⏰ *Время:* ${trainingData.time}\n` +
+            `⏰ *Время:* ${formattedTime}\n` +
             `🏔️ *Место:* ${locationName}\n` +
             `💰 *Стоимость:* ${Number(trainingData.price).toFixed(2)} руб.`;
 
@@ -763,6 +769,9 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
         const location = trainingData.location || 'kuliga';
         const locationName = getLocationDisplayName(location);
         
+        // Форматируем время в ЧЧ:ММ (убираем секунды)
+        const formattedTime = trainingData.time ? String(trainingData.time).substring(0, 5) : trainingData.time;
+        
         const message = 
             '🎉 *Новая запись на вашу тренировку!*\n\n' +
             `*${trainingType}*\n\n` +
@@ -770,7 +779,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             `${participantLine}\n` +
             `📱 *Телефон:* ${trainingData.client_phone}\n` +
             `📅 *Дата:* ${formattedDateWithDay}\n` +
-            `⏰ *Время:* ${trainingData.time}\n` +
+            `⏰ *Время:* ${formattedTime}\n` +
             `🏔️ *Место:* ${locationName}\n\n` +
             `💵 *Ваш заработок:* ${instructorEarnings.toFixed(2)} руб.`;
 
