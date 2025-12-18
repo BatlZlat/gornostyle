@@ -941,20 +941,68 @@ function calculatePrice() {
     // Ищем цену в прайсе для групповых тренировок
     // Для групповых тренировок инструктора используем type='group' с participants=maxParticipants
     // В прайсе type='group' означает общую цену группы, делим на количество для получения цены за человека
-    const groupPrice = pricesData.find(p => 
-        p.type === 'group' && 
-        parseInt(p.participants) === maxParticipants &&
-        parseInt(p.duration) === 60
-    );
+    // ВАЖНО: используем фильтр вместо find, чтобы найти все подходящие записи и выбрать правильную
+    const matchingPrices = pricesData.filter(p => {
+        const pType = String(p.type || '').toLowerCase();
+        const pParticipants = parseInt(p.participants) || 0;
+        const pDuration = parseInt(p.duration) || 0;
+        
+        return pType === 'group' && 
+               pParticipants === maxParticipants &&
+               pDuration === 60;
+    });
+    
+    // Если найдено несколько записей, выбираем первую (все должны быть одинаковыми, но на всякий случай)
+    // Если записей нет, пытаемся найти запись с duration=60, но без проверки participants
+    let groupPrice = matchingPrices.length > 0 ? matchingPrices[0] : null;
+    
+    // Если не нашли точное совпадение для 8 участников, попробуем найти запись только по duration=60 и participants=8
+    // с более строгой проверкой типов
+    if (!groupPrice) {
+        groupPrice = pricesData.find(p => {
+            // Более строгая проверка типов
+            const pType = String(p.type || '').trim().toLowerCase();
+            const pParticipants = Number(p.participants);
+            const pDuration = Number(p.duration);
+            
+            const isTypeMatch = pType === 'group';
+            const isParticipantsMatch = pParticipants === maxParticipants;
+            const isDurationMatch = pDuration === 60;
+            
+            return isTypeMatch && isParticipantsMatch && isDurationMatch;
+        });
+    }
     
     if (!groupPrice) {
+        // Отладочная информация
+        console.error('Не найдена цена для:', {
+            maxParticipants,
+            pricesData: pricesData.filter(p => String(p.type || '').toLowerCase() === 'group'),
+            allGroupPrices: pricesData.filter(p => String(p.type || '').toLowerCase() === 'group' && parseInt(p.duration) === 60)
+        });
         priceInfo.innerHTML = `⚠️ Цена для ${maxParticipants} участников не найдена в прайсе`;
         return;
     }
     
-    // Для типа 'group' цена - это общая стоимость группы
-    const totalPrice = parseFloat(groupPrice.price);
-    const pricePerPerson = totalPrice / maxParticipants;
+    // Для типа 'group' цена может быть:
+    // - Общей стоимостью группы (для 2-7 участников) - нужно делить на количество
+    // - Ценой за человека (для 8 участников) - используется как есть
+    const priceFromPricelist = parseFloat(groupPrice.price);
+    
+    if (isNaN(priceFromPricelist) || priceFromPricelist <= 0) {
+        console.error('Некорректная цена в прайсе:', groupPrice);
+        priceInfo.innerHTML = `⚠️ Некорректная цена в прайсе для ${maxParticipants} участников`;
+        return;
+    }
+    
+    // Для 8 участников цена в прайсе уже является ценой за человека
+    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+    const pricePerPerson = maxParticipants === 8 
+        ? priceFromPricelist 
+        : priceFromPricelist / maxParticipants;
+    
+    // Общая стоимость группы = цена за человека * количество участников
+    const totalPrice = pricePerPerson * maxParticipants;
     
     const adminPercentage = instructorData?.admin_percentage || 20;
     const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
@@ -997,20 +1045,58 @@ async function createGroupTraining(event) {
     // Получаем цену из прайса
     // Для групповых тренировок инструктора используем type='group' с participants=maxParticipants
     // В прайсе type='group' означает общую цену группы, делим на количество для получения цены за человека
-    const groupPrice = pricesData?.find(p => 
-        p.type === 'group' && 
-        parseInt(p.participants) === maxParticipants &&
-        parseInt(p.duration) === 60
-    );
+    // Используем улучшенную логику поиска с более строгой проверкой типов
+    const matchingPrices = pricesData?.filter(p => {
+        const pType = String(p.type || '').toLowerCase();
+        const pParticipants = parseInt(p.participants) || 0;
+        const pDuration = parseInt(p.duration) || 0;
+        
+        return pType === 'group' && 
+               pParticipants === maxParticipants &&
+               pDuration === 60;
+    }) || [];
+    
+    // Выбираем первую подходящую запись
+    let groupPrice = matchingPrices.length > 0 ? matchingPrices[0] : null;
+    
+    // Если не нашли точное совпадение, пробуем более строгую проверку
+    if (!groupPrice && pricesData) {
+        groupPrice = pricesData.find(p => {
+            const pType = String(p.type || '').trim().toLowerCase();
+            const pParticipants = Number(p.participants);
+            const pDuration = Number(p.duration);
+            
+            return pType === 'group' && 
+                   pParticipants === maxParticipants &&
+                   pDuration === 60;
+        });
+    }
     
     if (!groupPrice) {
+        console.error('Не найдена цена для создания тренировки:', {
+            maxParticipants,
+            availablePrices: pricesData?.filter(p => String(p.type || '').toLowerCase() === 'group')
+        });
         showError(`Цена для ${maxParticipants} участников не найдена в прайсе`);
         return;
     }
     
-    // Для типа 'group' цена - это общая стоимость группы, делим на количество участников
-    const totalPrice = parseFloat(groupPrice.price);
-    const pricePerPerson = totalPrice / maxParticipants;
+    // Для типа 'group' цена может быть:
+    // - Общей стоимостью группы (для 2-7 участников) - нужно делить на количество
+    // - Ценой за человека (для 8 участников) - используется как есть
+    const priceFromPricelist = parseFloat(groupPrice.price);
+    
+    if (isNaN(priceFromPricelist) || priceFromPricelist <= 0) {
+        console.error('Некорректная цена в прайсе при создании тренировки:', groupPrice);
+        showError(`Некорректная цена в прайсе для ${maxParticipants} участников`);
+        return;
+    }
+    
+    // Для 8 участников цена в прайсе уже является ценой за человека
+    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+    const pricePerPerson = maxParticipants === 8 
+        ? priceFromPricelist 
+        : priceFromPricelist / maxParticipants;
     
     try {
         const response = await fetch('/api/kuliga/instructor/group-trainings', {
@@ -1518,9 +1604,14 @@ async function editGroupTraining(trainingId) {
         
         // Если цена не установлена или нужно пересчитать, используем прайс
         if (!initialPricePerPerson && pricesData && pricesData.length > 0) {
-            const priceInfo = getPriceFromPricelist(training.max_participants || 2);
+            const maxParticipants = training.max_participants || 2;
+            const priceInfo = getPriceFromPricelist(maxParticipants);
             if (priceInfo) {
-                initialPricePerPerson = priceInfo.price / (training.max_participants || 2);
+                // Для 8 участников цена в прайсе уже является ценой за человека
+                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                initialPricePerPerson = maxParticipants === 8 
+                    ? priceInfo.price 
+                    : priceInfo.price / maxParticipants;
             }
         }
         
@@ -1623,7 +1714,11 @@ async function editGroupTraining(trainingId) {
                     if (!priceInfo) {
                         warningText = `⚠️ Цена для ${maxParticipants} участников не найдена`;
                     } else {
-                        pricePerPerson = priceInfo.price / maxParticipants;
+                        // Для 8 участников цена в прайсе уже является ценой за человека
+                        // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                        pricePerPerson = maxParticipants === 8 
+                            ? priceInfo.price 
+                            : priceInfo.price / maxParticipants;
                     }
                 }
             }
@@ -1705,11 +1800,13 @@ async function editGroupTraining(trainingId) {
                     return;
                 }
                 
-                // priceInfo.price - это общая цена группы, нужно разделить на количество участников
-                // чтобы получить цену за человека
-                pricePerPerson = priceInfo.price / maxParticipants;
+                // Для 8 участников цена в прайсе уже является ценой за человека
+                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                pricePerPerson = maxParticipants === 8 
+                    ? priceInfo.price 
+                    : priceInfo.price / maxParticipants;
                 
-                console.log(`💰 Расчет цены при сохранении: общая цена=${priceInfo.price}, участников=${maxParticipants}, цена за человека=${pricePerPerson.toFixed(2)}`);
+                console.log(`💰 Расчет цены при сохранении: цена из прайса=${priceInfo.price}, участников=${maxParticipants}, цена за человека=${pricePerPerson.toFixed(2)}`);
             }
             
             try {
@@ -2030,27 +2127,51 @@ function getPriceFromPricelist(maxParticipants) {
     
     console.log('Поиск цены для', maxParticipants, 'участников. Прайс:', pricesData);
     
-    // Ищем цену в прайсе для групповых тренировок
-    const groupPrice = pricesData.find(p => {
-        const pType = p.type;
-        const pParticipants = parseInt(p.participants);
-        const pDuration = parseInt(p.duration);
+    // Ищем цену в прайсе для групповых тренировок с улучшенной проверкой типов
+    const matchingPrices = pricesData.filter(p => {
+        const pType = String(p.type || '').toLowerCase();
+        const pParticipants = parseInt(p.participants) || 0;
+        const pDuration = parseInt(p.duration) || 0;
         
         return pType === 'group' && 
                pParticipants === maxParticipants &&
                pDuration === 60;
     });
     
+    // Выбираем первую подходящую запись
+    let groupPrice = matchingPrices.length > 0 ? matchingPrices[0] : null;
+    
+    // Если не нашли точное совпадение, пробуем более строгую проверку типов
+    if (!groupPrice) {
+        groupPrice = pricesData.find(p => {
+            const pType = String(p.type || '').trim().toLowerCase();
+            const pParticipants = Number(p.participants);
+            const pDuration = Number(p.duration);
+            
+            return pType === 'group' && 
+                   pParticipants === maxParticipants &&
+                   pDuration === 60;
+        });
+    }
+    
     if (!groupPrice) {
         console.log('Цена не найдена для', maxParticipants, 'участников');
+        console.log('Доступные групповые цены:', pricesData.filter(p => String(p.type || '').toLowerCase() === 'group' && parseInt(p.duration) === 60));
         return null;
     }
     
-    console.log('Найдена цена:', groupPrice);
+    const totalPrice = parseFloat(groupPrice.price);
+    
+    if (isNaN(totalPrice) || totalPrice <= 0) {
+        console.error('Некорректная цена в прайсе:', groupPrice);
+        return null;
+    }
+    
+    console.log('Найдена цена:', groupPrice, 'Общая цена:', totalPrice);
     
     // Возвращаем объект с общей стоимостью группы
     return {
-        price: parseFloat(groupPrice.price),
+        price: totalPrice,
         ...groupPrice
     };
 }
@@ -2075,9 +2196,15 @@ function calculateRegularPrice() {
         return;
     }
     
-    // priceInfoObj.price - это общая цена группы
-    const totalPrice = priceInfoObj.price;
-    const pricePerPerson = totalPrice / maxParticipants;
+    // Для 8 участников цена в прайсе уже является ценой за человека
+    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+    const priceFromPricelist = priceInfoObj.price;
+    const pricePerPerson = maxParticipants === 8 
+        ? priceFromPricelist 
+        : priceFromPricelist / maxParticipants;
+    
+    // Общая стоимость группы = цена за человека * количество участников
+    const totalPrice = pricePerPerson * maxParticipants;
     
     const adminPercentage = instructorData?.admin_percentage || 20;
     const instructorEarnings = totalPrice * (1 - adminPercentage / 100);

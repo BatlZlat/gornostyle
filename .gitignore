@@ -88,6 +88,7 @@ public/generated/
 
 # Trainer photos (uploaded directly to host)
 public/images/trainers/
+public/images/kuliga/
 
 *.docx
 uploads/
