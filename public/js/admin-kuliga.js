@@ -257,7 +257,7 @@ function setupKuligaPhotoHandlers() {
     }
 }
 
-function openKuligaInstructorModal(instructorId = null) {
+function openKuligaInstructorModal(instructorId = null, defaultLocation = 'kuliga') {
     const modal = document.getElementById('kuliga-instructor-modal');
     const form = document.getElementById('kuliga-instructor-form');
     const title = document.getElementById('kuliga-instructor-modal-title');
@@ -295,6 +295,9 @@ function openKuligaInstructorModal(instructorId = null) {
 
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('kuliga-instructor-hire-date').value = today;
+        
+        // Устанавливаем location по умолчанию при создании нового инструктора
+        document.getElementById('kuliga-instructor-location').value = defaultLocation || 'kuliga';
     }
 
     setupKuligaPhotoHandlers();

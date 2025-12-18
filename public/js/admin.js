@@ -2097,9 +2097,16 @@ async function loadKuligaInstructorsForTrainersPage() {
 
 // Показать модальное окно создания инструктора Кулиги
 function showCreateKuligaInstructorModal() {
-    // TODO: Создать модальное окно аналогично create-trainer.html
-    // Пока используем существующий модал из admin-kuliga.js или создаём новый
-    alert('Функция создания инструктора Кулиги будет реализована');
+    // Проверяем, доступна ли функция openKuligaInstructorModal
+    if (typeof window.openKuligaInstructorModal === 'function') {
+        // Открываем модальное окно с предустановленным location = 'vorona' для зимних тренировок
+        // Пользователь может изменить location на 'kuliga' если нужно
+        window.openKuligaInstructorModal(null, 'vorona');
+    } else {
+        // Если функция еще не загружена, показываем сообщение
+        console.error('Функция openKuligaInstructorModal не найдена. Убедитесь, что admin-kuliga.js загружен.');
+        alert('Ошибка: функция создания инструктора недоступна. Пожалуйста, обновите страницу.');
+    }
 }
 
 // Редактировать инструктора Кулиги (для страницы "Тренера")
