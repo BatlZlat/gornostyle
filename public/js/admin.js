@@ -2057,6 +2057,7 @@ async function loadKuligaInstructorsForTrainersPage() {
             trainersList.appendChild(noInstructorsMsg);
         } else {
             activeInstructors.forEach(instructor => {
+                console.log(`[loadKuligaInstructorsForTrainersPage] Инструктор ${instructor.full_name}: photo_url=${instructor.photo_url || 'НЕТ'}`);
                 console.log(`[loadKuligaInstructorsForTrainersPage] Инструктор ${instructor.full_name}: plain_password=`, instructor.plain_password, 'username=', instructor.username);
                 
                 const instructorCard = document.createElement('div');

@@ -132,7 +132,9 @@ async function loadKuligaInstructors() {
             container.innerHTML = '<p>Загрузка инструкторов...</p>';
         }
 
-        const response = await fetch(`${KULIGA_API.instructors}?status=${statusFilter}&sport=${sportFilter}`, {
+        // Добавляем timestamp для обхода кэша браузера
+        const cacheBuster = `&_t=${Date.now()}`;
+        const response = await fetch(`${KULIGA_API.instructors}?status=${statusFilter}&sport=${sportFilter}${cacheBuster}`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
         });
 
@@ -142,6 +144,15 @@ async function loadKuligaInstructors() {
 
         const data = await response.json();
         kuligaInstructors = data.data || [];
+        
+        console.log(`📋 Загружено инструкторов: ${kuligaInstructors.length}`);
+        if (kuligaInstructors.length > 0) {
+            kuligaInstructors.forEach(instructor => {
+                if (instructor.photo_url) {
+                    console.log(`  - ${instructor.full_name}: photo_url = ${instructor.photo_url}`);
+                }
+            });
+        }
 
         if (shouldRender) {
             if (kuligaInstructors.length === 0) {
@@ -168,13 +179,17 @@ function renderKuligaInstructors() {
         .map((instructor) => {
             const statusClass = instructor.is_active ? 'success' : 'secondary';
             const statusText = instructor.is_active ? 'Активен' : 'Неактивен';
-            const photoUrl = instructor.photo_url || KULIGA_PLACEHOLDER;
+            // Добавляем timestamp для обхода кэша браузера, если photo_url уже содержит параметр v
+            let photoUrl = instructor.photo_url || KULIGA_PLACEHOLDER;
+            if (photoUrl && photoUrl !== KULIGA_PLACEHOLDER && !photoUrl.includes('?v=')) {
+                photoUrl = `${photoUrl}?v=${Date.now()}`;
+            }
             const description = instructor.description || 'Описание отсутствует';
 
             return `
             <div class="kuliga-instructor-item" data-id="${instructor.id}">
                 <div class="kuliga-instructor-photo">
-                    <img src="${photoUrl}" alt="${instructor.full_name}" onerror="this.onerror=null;this.src='${KULIGA_PLACEHOLDER}';">
+                    <img src="${photoUrl}" alt="${instructor.full_name}" onerror="this.onerror=null;this.src='${KULIGA_PLACEHOLDER}';" loading="lazy">
                 </div>
                 <div class="kuliga-instructor-info">
                     <h4>${instructor.full_name}</h4>
@@ -388,20 +403,34 @@ async function handleKuligaInstructorSubmit(event) {
 
         if (kuligaPendingPhotoFile) {
             try {
+                console.log('📷 Начинаем загрузку фото для инструктора:', savedInstructor.id);
                 const photoUrl = await uploadKuligaInstructorPhoto(savedInstructor.id);
                 if (photoUrl) {
+                    console.log('✅ Фото успешно загружено, URL:', photoUrl);
                     updateKuligaPhotoPreview(photoUrl);
                     kuligaRemovePhoto = false;
+                    // Обновляем локальный объект инструктора с новым photoUrl
+                    if (savedInstructor) {
+                        savedInstructor.photo_url = photoUrl;
+                    }
+                } else {
+                    console.warn('⚠️ Фото загружено, но URL не получен');
                 }
             } catch (uploadError) {
-                console.error(uploadError);
+                console.error('❌ Ошибка загрузки фото:', uploadError);
                 alert(uploadError.message || 'Фото не загружено');
             }
         }
 
         alert(isEdit ? 'Инструктор успешно обновлён' : 'Инструктор успешно добавлен');
         closeKuligaInstructorModal();
-        loadKuligaInstructors();
+        
+        // Принудительно обновляем список инструкторов, чтобы показать новое фото
+        // Используем небольшой таймаут, чтобы дать время БД обновиться
+        setTimeout(() => {
+            console.log('🔄 Обновляем список инструкторов после сохранения...');
+            loadKuligaInstructors();
+        }, 500);
     } catch (error) {
         console.error('Ошибка сохранения инструктора:', error);
         alert(error.message || 'Не удалось сохранить инструктора');

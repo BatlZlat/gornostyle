@@ -558,6 +558,10 @@ router.post('/instructors/:id/upload-photo', upload.single('photo'), async (req,
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
+        console.log(`📷 Загрузка фото для инструктора: ${instructor.full_name} (ID: ${id})`);
+        console.log(`📁 Имя файла: ${filename}`);
+        console.log(`📍 Путь сохранения: ${outputPath}`);
+
         await sharp(req.file.buffer)
             .resize({ height: 400, fit: 'cover', position: 'centre' })
             .webp({ quality: 85, effort: 6 })
@@ -566,12 +570,22 @@ router.post('/instructors/:id/upload-photo', upload.single('photo'), async (req,
         const timestamp = Date.now();
         const photoUrl = `/images/kuliga/${filename}?v=${timestamp}`;
 
-        await pool.query(
+        console.log(`💾 Обновление photo_url в БД: ${photoUrl}`);
+
+        const updateResult = await pool.query(
             `UPDATE kuliga_instructors
              SET photo_url = $1, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2`,
+             WHERE id = $2
+             RETURNING id, full_name, photo_url`,
             [photoUrl, id]
         );
+
+        if (updateResult.rows.length > 0) {
+            console.log(`✅ photo_url успешно обновлен в БД для инструктора ${updateResult.rows[0].full_name}`);
+            console.log(`   Проверка: photo_url в БД = ${updateResult.rows[0].photo_url}`);
+        } else {
+            console.warn(`⚠️  Инструктор с ID ${id} не найден при обновлении photo_url`);
+        }
 
         res.json({ success: true, photoUrl });
     } catch (error) {
