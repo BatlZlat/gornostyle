@@ -273,13 +273,30 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                     [instructorIds, startDate, endDate]
                 ),
                 pool.query(
-                    `SELECT id, instructor_id, slot_id, date, start_time, end_time, status, sport_type, 
-                            max_participants, current_participants, price_per_person, description, program_id, level
-                     FROM kuliga_group_trainings
-                     WHERE instructor_id = ANY($1)
-                       AND date BETWEEN $2 AND $3
-                       AND status IN ('open', 'confirmed')
-                     ORDER BY date, start_time`,
+                    `SELECT 
+                        kgt.id, 
+                        kgt.instructor_id, 
+                        kgt.slot_id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time, 
+                        kgt.status, 
+                        kgt.sport_type, 
+                        kgt.max_participants, 
+                        COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
+                        kgt.price_per_person, 
+                        kgt.description, 
+                        kgt.program_id, 
+                        kgt.level
+                     FROM kuliga_group_trainings kgt
+                     LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
+                     WHERE kgt.instructor_id = ANY($1)
+                       AND kgt.date BETWEEN $2 AND $3
+                       AND kgt.status IN ('open', 'confirmed')
+                     GROUP BY kgt.id, kgt.instructor_id, kgt.slot_id, kgt.date, kgt.start_time, kgt.end_time, 
+                              kgt.status, kgt.sport_type, kgt.max_participants, kgt.price_per_person, 
+                              kgt.description, kgt.program_id, kgt.level
+                     ORDER BY kgt.date, kgt.start_time`,
                     [instructorIds, startDate, endDate]
                 )
             ]);
@@ -396,16 +413,29 @@ router.get('/api/kuliga/programs/:id', async (req, res) => {
             }
             
             const trainingResult = await pool.query(
-                `SELECT kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.current_participants,
-                        kgt.max_participants, kgt.price_per_person, kgt.status,
-                        kgt.instructor_id, ki.full_name as instructor_name, ki.photo_url as instructor_photo_url,
+                `SELECT 
+                        kgt.id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time,
+                        COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
+                        kgt.max_participants, 
+                        kgt.price_per_person, 
+                        kgt.status,
+                        kgt.instructor_id, 
+                        ki.full_name as instructor_name, 
+                        ki.photo_url as instructor_photo_url,
                         ki.description as instructor_description
                  FROM kuliga_group_trainings kgt
                  LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                 LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
                  WHERE kgt.program_id = $1
                    AND kgt.date = $2
                    AND kgt.start_time = $3
                    AND kgt.status IN ('open', 'confirmed')
+                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.max_participants, 
+                          kgt.price_per_person, kgt.status, kgt.instructor_id, ki.full_name, 
+                          ki.photo_url, ki.description
                  LIMIT 1`,
                 [programId, date, normalizedTime]
             );
@@ -488,7 +518,7 @@ router.get('/api/kuliga/programs', async (req, res) => {
                 kgt.end_time,
                 kgt.price_per_person,
                 kgt.max_participants,
-                kgt.current_participants,
+                COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
                 kgt.status,
                 kgt.instructor_id,
                 kgt.location,
@@ -498,10 +528,14 @@ router.get('/api/kuliga/programs', async (req, res) => {
              FROM kuliga_group_trainings kgt
              JOIN kuliga_programs kp ON kgt.program_id = kp.id
              LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+             LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
              WHERE kgt.program_id IS NOT NULL
                AND kgt.date >= $1
                AND kgt.date <= $2
-               AND kgt.status IN ('open', 'confirmed')`;
+               AND kgt.status IN ('open', 'confirmed')
+             GROUP BY kgt.id, kgt.program_id, kgt.date, kgt.start_time, kgt.end_time, 
+                      kgt.price_per_person, kgt.max_participants, kgt.status, kgt.instructor_id, 
+                      kgt.location, ki.full_name, kp.name, kp.sport_type`;
         const trainingParams = [now.format('YYYY-MM-DD'), end.format('YYYY-MM-DD')];
         
         // Применяем фильтр по location к тренировкам, если указан
