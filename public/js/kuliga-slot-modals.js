@@ -408,6 +408,9 @@
                 url.searchParams.set('gtPricePerPerson', groupTraining.pricePerPerson);
                 url.searchParams.set('gtMaxParticipants', groupTraining.maxParticipants);
                 url.searchParams.set('gtCurrentParticipants', groupTraining.currentParticipants);
+                if (groupTraining.level !== null && groupTraining.level !== undefined) {
+                    url.searchParams.set('gtLevel', groupTraining.level);
+                }
             }
             window.location.href = url.toString();
         });

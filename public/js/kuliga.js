@@ -537,7 +537,8 @@
                                                                     programId: slot.programId || null,
                                                                     maxParticipants: slot.maxParticipants || 0,
                                                                     currentParticipants: slot.currentParticipants || 0,
-                                                                    pricePerPerson: slot.pricePerPerson || 0
+                                                                    pricePerPerson: slot.pricePerPerson || 0,
+                                                                    level: slot.level || null
                                                                 }
                                                             };
                                                         } else {

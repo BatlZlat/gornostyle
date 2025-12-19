@@ -301,6 +301,7 @@
         const gtPricePerPersonParam = params.get('gtPricePerPerson');
         const gtMaxParticipantsParam = params.get('gtMaxParticipants');
         const gtCurrentParticipantsParam = params.get('gtCurrentParticipants');
+        const gtLevelParam = params.get('gtLevel');
 
         // Очищаем state.program если в URL нет programId (чтобы не показывались данные программы из сохраненного состояния)
         if (!programIdParam) {
@@ -421,10 +422,27 @@
                 ? Math.min(participantsParam, availableSlots) 
                 : Math.min(1, availableSlots);
             
+            // Вычисляем длительность из времени начала и окончания, если есть
+            let duration = 60; // По умолчанию 60 минут
+            if (startTimeParam && params.get('endTime')) {
+                try {
+                    const endTimeParam = params.get('endTime');
+                    const startParts = startTimeParam.split(':').map(Number);
+                    const endParts = endTimeParam.split(':').map(Number);
+                    const startMinutes = startParts[0] * 60 + (startParts[1] || 0);
+                    const endMinutes = endParts[0] * 60 + (endParts[1] || 0);
+                    let durationMinutes = endMinutes - startMinutes;
+                    if (durationMinutes < 0) durationMinutes += 24 * 60;
+                    if (durationMinutes > 0) duration = durationMinutes;
+                } catch (e) {
+                    // Ошибка парсинга, используем значение по умолчанию
+                }
+            }
+            
             state.selection = {
                 priceId: null, // Нет priceId, так как это групповая тренировка
                 priceType: 'group',
-                duration: 60, // По умолчанию 60 минут
+                duration: duration,
                 baseParticipants: maxParticipants,
                 currentParticipants: currentParticipantsCount,
                 priceValue: 0,
@@ -436,6 +454,7 @@
                 groupTrainingMaxParticipants: maxParticipants,
                 groupTrainingCurrentParticipants: currentParticipants,
                 groupTrainingAvailableSlots: availableSlots,
+                groupTrainingLevel: gtLevelParam !== null && gtLevelParam !== undefined ? gtLevelParam : null,
             };
 
             state.participants = Array.from(
@@ -460,23 +479,50 @@
             // Если есть startTime и endTime, создаем объект слота для отображения
             if (startTimeParam) {
                 const endTimeParam = params.get('endTime');
-                // Создаем минимальный объект слота для отображения
+                
+                // Загружаем данные инструктора, если instructorId есть
+                let instructorName = '';
+                let instructorPhotoUrl = '';
+                let instructorSportType = state.sportType || 'ski';
+                
+                if (instructorIdParam) {
+                    try {
+                        // Загружаем данные инструктора из API
+                        const instructorsResponse = await fetch('/api/kuliga/instructors', {
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        if (instructorsResponse.ok) {
+                            const instructorsData = await instructorsResponse.json();
+                            if (instructorsData.success && instructorsData.data && instructorsData.data.instructors) {
+                                const instructor = instructorsData.data.instructors.find(inst => inst.id === parseInt(instructorIdParam));
+                                if (instructor) {
+                                    instructorName = instructor.full_name || '';
+                                    instructorPhotoUrl = instructor.photo_url || '';
+                                    instructorSportType = instructor.sport_type || instructorSportType;
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Не удалось загрузить данные инструктора:', error);
+                    }
+                }
+                
+                // Создаем объект слота для отображения
                 state.slot = {
                     slot_id: parseInt(slotIdParam) || null,
                     instructor_id: parseInt(instructorIdParam) || null,
                     start_time: startTimeParam,
                     end_time: endTimeParam || startTimeParam,
-                    instructor_name: '', // Будет заполнено при загрузке availability, если нужно
-                    instructor_photo_url: '',
-                    instructor_sport_type: state.sportType || 'ski',
+                    instructor_name: instructorName,
+                    instructor_photo_url: instructorPhotoUrl,
+                    instructor_sport_type: instructorSportType,
                     instructor_description: '',
                 };
                 
-                // Функция для форматирования времени
-                const formatTime = (timeStr) => {
-                    if (!timeStr) return '';
-                    return timeStr.substring(0, 5); // Берем первые 5 символов (HH:mm)
-                };
+                // Обновляем sportType из данных инструктора, если загружено
+                if (instructorSportType && instructorSportType !== state.sportType) {
+                    state.sportType = instructorSportType;
+                }
                 
                 // Время будет отображаться в renderGroupTrainingInfo() в bootstrap
             } else {
@@ -693,19 +739,56 @@
             const {
                 pricePerPerson,
                 duration,
-                groupTrainingMaxParticipants,
-                groupTrainingCurrentParticipants,
+                groupTrainingLevel,
             } = state.selection;
             
             selectionTitle.textContent = 'Групповая тренировка';
             
-            // Форматируем уровень (используем максимальное количество участников как индикатор уровня)
-            const level = groupTrainingMaxParticipants || '—';
+            // Получаем данные для отображения
+            const level = groupTrainingLevel !== null && groupTrainingLevel !== undefined ? groupTrainingLevel : '—';
+            const sportTypeName = state.sportType === 'snowboard' ? 'Сноуборд' : (state.sportType === 'both' ? 'Лыжи и сноуборд' : 'Горные лыжи');
+            
+            // Получаем название локации
+            let locationName = 'Место не указано';
+            if (state.location) {
+                locationName = state.location === 'vorona' 
+                    ? 'Воронинские горки' 
+                    : (state.location === 'kuliga' ? 'База отдыха «Кулига-Клуб»' : state.location);
+            }
+            
+            // Форматируем дату
+            let dateStr = '';
+            if (state.date) {
+                const dateObj = new Date(state.date + 'T00:00:00');
+                const weekdays = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+                const weekday = weekdays[dateObj.getDay()];
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                dateStr = `${weekday}, ${day}.${month}.${year} г.`;
+            }
+            
+            // Форматируем время начала
+            let startTimeStr = '—';
+            if (state.slot && state.slot.start_time) {
+                startTimeStr = formatTime(state.slot.start_time);
+            }
+            
+            // Получаем имя инструктора
+            let instructorName = '—';
+            if (state.slot && state.slot.instructor_name) {
+                instructorName = state.slot.instructor_name;
+            }
             
             const details = [
                 `<span><i class="fa-regular fa-clock"></i>${duration || 60} мин.</span>`,
                 `<span><i class="fa-solid fa-users"></i>Уровень: ${level}</span>`,
                 `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson || 0)}</span>`,
+                `<span><i class="fa-solid fa-skiing"></i>Вид спорта: ${sportTypeName}</span>`,
+                `<span><i class="fa-solid fa-map-marker-alt"></i>Место: ${locationName}</span>`,
+                `<span><i class="fa-solid fa-calendar"></i>Дата: ${dateStr || '—'}</span>`,
+                `<span><i class="fa-solid fa-clock"></i>Начало тренировки: ${startTimeStr}</span>`,
+                `<span><i class="fa-solid fa-user-tie"></i>Тренер: ${instructorName}</span>`,
             ];
             
             selectionDetails.innerHTML = details.join('');
