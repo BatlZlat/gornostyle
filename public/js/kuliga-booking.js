@@ -1580,7 +1580,7 @@
                 ? state.selection.priceValue
                 : state.selection.pricePerPerson * participants.length;
 
-        return {
+        const payload = {
             bookingType: state.selection.priceType === 'group' ? 'group' : 'individual',
             fullName: state.client.fullName.trim(),
             birthDate: state.client.birthDate,
@@ -1591,11 +1591,9 @@
             duration: state.selection.duration,
             sportType: state.sportType,
             date: state.date,
-            slotId: state.slot.slot_id,
-            instructorId: state.slot.instructor_id,
+            slotId: state.slot ? state.slot.slot_id : null,
+            instructorId: state.slot ? state.slot.instructor_id : null,
             location: state.location || 'vorona', // МИГРАЦИЯ 038: Передаем location при создании бронирования
-            startTime: state.slot.start_time,
-            endTime: state.slot.end_time,
             participantsCount: participants.length,
             participants: participants.map(({ fullName, birthYear }) => ({ fullName, birthYear })),
             notification: {
@@ -1607,6 +1605,19 @@
             totalPrice,
             consentConfirmed: consentCheckbox.checked,
         };
+        
+        // Добавляем startTime и endTime, если есть слот
+        if (state.slot) {
+            payload.startTime = state.slot.start_time;
+            payload.endTime = state.slot.end_time;
+        }
+        
+        // Для групповых тренировок на слотах передаем groupTrainingId
+        if (state.selection.groupTrainingId) {
+            payload.groupTrainingId = state.selection.groupTrainingId;
+        }
+        
+        return payload;
     }
 
     function showTelegramBookingModal(payload) {
