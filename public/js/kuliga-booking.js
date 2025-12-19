@@ -76,6 +76,11 @@
             pricePerPerson: 0,
             title: '',
             description: '',
+            // Поля для групповой тренировки на слоте
+            groupTrainingId: null,
+            groupTrainingMaxParticipants: null,
+            groupTrainingCurrentParticipants: null,
+            groupTrainingAvailableSlots: null,
         },
         program: null, // Данные программы (если бронирование через программу)
         client: {
@@ -290,6 +295,14 @@
             };
         }
 
+        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
+        const groupTrainingIdParam = params.get('groupTrainingId');
+        const fromSlotParam = params.get('fromSlot') === 'true';
+        const gtPricePerPersonParam = params.get('gtPricePerPerson');
+        const gtMaxParticipantsParam = params.get('gtMaxParticipants');
+        const gtCurrentParticipantsParam = params.get('gtCurrentParticipants');
+        const gtLevelParam = params.get('gtLevel');
+
         // Очищаем state.program если в URL нет programId (чтобы не показывались данные программы из сохраненного состояния)
         if (!programIdParam) {
             state.program = null;
@@ -396,7 +409,141 @@
             }
         }
 
-        // Обычная логика инициализации для тарифов
+        // ПРОВЕРКА: Если переход со слота с групповой тренировкой (fromSlot=true и groupTrainingId)
+        // Используем данные групповой тренировки, а не прайс
+        if (fromSlotParam && groupTrainingIdParam && gtPricePerPersonParam) {
+            const pricePerPerson = parseFloat(gtPricePerPersonParam) || 0;
+            const maxParticipants = parseInt(gtMaxParticipantsParam) || 0;
+            const currentParticipants = parseInt(gtCurrentParticipantsParam) || 0;
+            const availableSlots = maxParticipants - currentParticipants;
+            
+            // Ограничиваем количество участников доступными местами
+            let currentParticipantsCount = Number.isFinite(participantsParam) && participantsParam >= 1 
+                ? Math.min(participantsParam, availableSlots) 
+                : Math.min(1, availableSlots);
+            
+            // Вычисляем длительность из времени начала и окончания, если есть
+            let duration = 60; // По умолчанию 60 минут
+            if (startTimeParam && params.get('endTime')) {
+                try {
+                    const endTimeParam = params.get('endTime');
+                    const startParts = startTimeParam.split(':').map(Number);
+                    const endParts = endTimeParam.split(':').map(Number);
+                    const startMinutes = startParts[0] * 60 + (startParts[1] || 0);
+                    const endMinutes = endParts[0] * 60 + (endParts[1] || 0);
+                    let durationMinutes = endMinutes - startMinutes;
+                    if (durationMinutes < 0) durationMinutes += 24 * 60;
+                    if (durationMinutes > 0) duration = durationMinutes;
+                } catch (e) {
+                    // Ошибка парсинга, используем значение по умолчанию
+                }
+            }
+            
+            state.selection = {
+                priceId: null, // Нет priceId, так как это групповая тренировка
+                priceType: 'group',
+                duration: duration,
+                baseParticipants: maxParticipants,
+                currentParticipants: currentParticipantsCount,
+                priceValue: 0,
+                pricePerPerson: pricePerPerson, // Цена из групповой тренировки
+                title: `Групповая тренировка (${currentParticipants}/${maxParticipants} записано)`,
+                description: `Доступно мест: ${availableSlots}`,
+                // Сохраняем информацию о групповой тренировке
+                groupTrainingId: parseInt(groupTrainingIdParam),
+                groupTrainingMaxParticipants: maxParticipants,
+                groupTrainingCurrentParticipants: currentParticipants,
+                groupTrainingAvailableSlots: availableSlots,
+                groupTrainingLevel: gtLevelParam !== null && gtLevelParam !== undefined ? gtLevelParam : null,
+            };
+
+            state.participants = Array.from(
+                { length: currentParticipantsCount },
+                (_, index) => state.participants[index] || { fullName: '', age: '' }
+            );
+
+            if (!state.client.fullName) {
+                state.syncMainParticipant = true;
+            }
+
+            // Устанавливаем дату и время для предзаполнения
+            if (dateParam) {
+                state.date = dateParam;
+                // Предзаполняем поле даты
+                const dateInput = document.getElementById('kuligaDate');
+                if (dateInput) {
+                    dateInput.value = dateParam;
+                }
+            }
+            
+            // Если есть startTime и endTime, создаем объект слота для отображения
+            if (startTimeParam) {
+                const endTimeParam = params.get('endTime');
+                
+                // Загружаем данные инструктора, если instructorId есть
+                let instructorName = '';
+                let instructorPhotoUrl = '';
+                let instructorSportType = state.sportType || 'ski';
+                
+                if (instructorIdParam) {
+                    try {
+                        // Загружаем данные инструктора из API
+                        const instructorsResponse = await fetch('/api/kuliga/instructors', {
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        if (instructorsResponse.ok) {
+                            const instructorsData = await instructorsResponse.json();
+                            if (instructorsData.success && instructorsData.data && instructorsData.data.instructors) {
+                                const instructor = instructorsData.data.instructors.find(inst => inst.id === parseInt(instructorIdParam));
+                                if (instructor) {
+                                    instructorName = instructor.full_name || '';
+                                    instructorPhotoUrl = instructor.photo_url || '';
+                                    instructorSportType = instructor.sport_type || instructorSportType;
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Не удалось загрузить данные инструктора:', error);
+                    }
+                }
+                
+                // Создаем объект слота для отображения
+                state.slot = {
+                    slot_id: parseInt(slotIdParam) || null,
+                    instructor_id: parseInt(instructorIdParam) || null,
+                    start_time: startTimeParam,
+                    end_time: endTimeParam || startTimeParam,
+                    instructor_name: instructorName,
+                    instructor_photo_url: instructorPhotoUrl,
+                    instructor_sport_type: instructorSportType,
+                    instructor_description: '',
+                };
+                
+                // Обновляем sportType из данных инструктора, если загружено
+                if (instructorSportType && instructorSportType !== state.sportType) {
+                    state.sportType = instructorSportType;
+                }
+                
+                // Время будет отображаться в renderGroupTrainingInfo() в bootstrap
+            } else {
+                // Если нет presetSlot, сбрасываем слот
+                if (!state.presetSlot) {
+                    state.slot = null;
+                }
+            }
+            
+            state.availability = [];
+            
+            // Обновляем UI после установки данных
+            setClientFieldValues();
+            renderParticipants();
+            renderSelectionSummary();
+            updateTotalPrice();
+            
+            return; // Выходим, так как данные уже установлены из групповой тренировки
+        }
+
+        // Обычная логика инициализации для тарифов (карточки прайса)
         let price;
         
         // Для групповых тренировок: если в URL указано количество участников, ищем тариф с этим количеством
@@ -459,8 +606,11 @@
         if (price.type === 'group') {
             // Если тариф найден для нужного количества участников, используем его цену
             if (Number(price.participants) === currentParticipants) {
-                // Цена в тарифе - это общая стоимость группы, делим на количество участников
-                pricePerPerson = Number(price.price) / currentParticipants;
+                // Для 8 участников цена в прайсе уже является ценой за человека
+                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                pricePerPerson = Number(price.participants) === 8 
+                    ? Number(price.price)
+                    : Number(price.price) / currentParticipants;
             } else {
                 // Если тариф для другого количества, ищем правильный тариф
                 const correctPrice = prices.find((item) => 
@@ -470,10 +620,17 @@
                 );
                 if (correctPrice) {
                     price = correctPrice; // Обновляем тариф на правильный
-                    pricePerPerson = Number(correctPrice.price) / currentParticipants;
+                    // Для 8 участников цена в прайсе уже является ценой за человека
+                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                    pricePerPerson = Number(correctPrice.participants) === 8
+                        ? Number(correctPrice.price)
+                        : Number(correctPrice.price) / currentParticipants;
                 } else {
                     // Если не нашли, используем пропорциональный расчет (не идеально, но лучше чем ничего)
-                    pricePerPerson = (Number(price.price) / participantsFromPrice);
+                    // Для 8 участников цена в прайсе уже является ценой за человека
+                    pricePerPerson = Number(price.participants) === 8
+                        ? Number(price.price)
+                        : (Number(price.price) / participantsFromPrice);
                 }
             }
         } else {
@@ -572,6 +729,70 @@
             ];
             
             selectionDetails.innerHTML = details.join('');
+            updateParticipantsHint();
+            updateTotalPrice();
+            return;
+        }
+        
+        // Если это групповая тренировка на слоте (без priceId, но с groupTrainingId)
+        if (!state.selection.priceId && state.selection.groupTrainingId) {
+            const {
+                pricePerPerson,
+                duration,
+                groupTrainingLevel,
+            } = state.selection;
+            
+            selectionTitle.textContent = 'Групповая тренировка';
+            
+            // Получаем данные для отображения
+            const level = groupTrainingLevel !== null && groupTrainingLevel !== undefined ? groupTrainingLevel : '—';
+            const sportTypeName = state.sportType === 'snowboard' ? 'Сноуборд' : (state.sportType === 'both' ? 'Лыжи и сноуборд' : 'Горные лыжи');
+            
+            // Получаем название локации
+            let locationName = 'Место не указано';
+            if (state.location) {
+                locationName = state.location === 'vorona' 
+                    ? 'Воронинские горки' 
+                    : (state.location === 'kuliga' ? 'База отдыха «Кулига-Клуб»' : state.location);
+            }
+            
+            // Форматируем дату
+            let dateStr = '';
+            if (state.date) {
+                const dateObj = new Date(state.date + 'T00:00:00');
+                const weekdays = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+                const weekday = weekdays[dateObj.getDay()];
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                dateStr = `${weekday}, ${day}.${month}.${year} г.`;
+            }
+            
+            // Форматируем время начала
+            let startTimeStr = '—';
+            if (state.slot && state.slot.start_time) {
+                startTimeStr = formatTime(state.slot.start_time);
+            }
+            
+            // Получаем имя инструктора
+            let instructorName = '—';
+            if (state.slot && state.slot.instructor_name) {
+                instructorName = state.slot.instructor_name;
+            }
+            
+            const details = [
+                `<span><i class="fa-regular fa-clock"></i>${duration || 60} мин.</span>`,
+                `<span><i class="fa-solid fa-users"></i>Уровень: ${level}</span>`,
+                `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson || 0)}</span>`,
+                `<span><i class="fa-solid fa-skiing"></i>Вид спорта: ${sportTypeName}</span>`,
+                `<span><i class="fa-solid fa-map-marker-alt"></i>Место: ${locationName}</span>`,
+                `<span><i class="fa-solid fa-calendar"></i>Дата: ${dateStr || '—'}</span>`,
+                `<span><i class="fa-solid fa-clock"></i>Начало тренировки: ${startTimeStr}</span>`,
+                `<span><i class="fa-solid fa-user-tie"></i>Тренер: ${instructorName}</span>`,
+            ];
+            
+            selectionDetails.innerHTML = details.join('');
+            
             updateParticipantsHint();
             updateTotalPrice();
             return;
@@ -700,32 +921,49 @@
 
         participantsContainer.appendChild(fragment);
         
-        // Показываем/скрываем кнопку "Добавить участника" для программ
-        if (state.program && addParticipantBtn) {
-            const maxParticipants = state.program.max_participants || 4;
-            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
-            const availableSlots = maxParticipants - currentBooked;
-            // Можно добавить участников только если есть свободные места
-            // Учитываем что мы уже добавляем участников в этой форме
-            const canAddMore = state.participants.length < availableSlots;
+        // Показываем/скрываем кнопку "Добавить участника"
+        if (addParticipantBtn) {
+            let canAddMore = false;
             
-            if (canAddMore && state.participants.length < maxParticipants) {
+            if (state.program) {
+                // Для программ
+                const maxParticipants = state.program.max_participants || 4;
+                const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+                const availableSlots = maxParticipants - currentBooked;
+                canAddMore = state.participants.length < availableSlots && state.participants.length < maxParticipants;
+            } else if (state.selection.groupTrainingId && state.selection.groupTrainingAvailableSlots !== null) {
+                // Для групповой тренировки на слоте - ограничение по доступным местам
+                const availableSlots = state.selection.groupTrainingAvailableSlots || 0;
+                const maxParticipants = state.selection.groupTrainingMaxParticipants || 0;
+                canAddMore = state.participants.length < availableSlots && state.participants.length < maxParticipants;
+            } else if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+                // Для свободного слота с групповой тренировкой - можно добавить до 8 человек
+                canAddMore = state.participants.length < 8;
+            }
+            
+            if (canAddMore) {
                 addParticipantBtn.style.display = 'block';
             } else {
                 addParticipantBtn.style.display = 'none';
             }
-        } else if (addParticipantBtn) {
-            addParticipantBtn.style.display = 'none';
         }
         
         // Добавляем обработчики для кнопок удаления
         participantsContainer.querySelectorAll('.kuliga-participant-remove').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 const index = Number(btn.dataset.index);
-                if (index > 0 && state.participants.length > index) {
+                if (index > 0 && index < state.participants.length) {
+                    // Удаляем участника
                     state.participants.splice(index, 1);
+                    // Обновляем количество участников в selection
+                    state.selection.currentParticipants = state.participants.length;
+                    // Перерисовываем список участников
                     renderParticipants();
+                    // Обновляем цену
                     updateTotalPrice();
+                    // Обновляем сводку выбора
+                    renderSelectionSummary();
+                    // Сохраняем состояние
                     scheduleSaveState();
                 }
             });
@@ -733,35 +971,69 @@
     }
     
     function handleAddParticipant() {
-        if (!state.program) return;
+        let maxAllowed = 0;
+        let availableSlots = 0;
+        let messagePrefix = '';
         
-        const maxParticipants = state.program.max_participants || 4;
-        const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
-        const availableSlots = maxParticipants - currentBooked;
-        
-        // Проверяем доступное количество мест с учетом уже записанных участников
-        if (state.participants.length >= availableSlots) {
-            setMessage(`Недостаточно мест. Доступно: ${availableSlots} мест (уже записано: ${currentBooked} из ${maxParticipants}).`, 'info');
+        if (state.program) {
+            // Для программ
+            const maxParticipants = state.program.max_participants || 4;
+            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+            availableSlots = maxParticipants - currentBooked;
+            maxAllowed = maxParticipants;
+            messagePrefix = `Программа "${state.program.name}"`;
+        } else if (state.selection.groupTrainingId && state.selection.groupTrainingAvailableSlots !== null) {
+            // Для групповой тренировки на слоте
+            availableSlots = state.selection.groupTrainingAvailableSlots || 0;
+            maxAllowed = state.selection.groupTrainingMaxParticipants || 0;
+            messagePrefix = `Групповая тренировка`;
+        } else if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+            // Для свободного слота с групповой тренировкой - можно добавить до 8 человек
+            maxAllowed = 8;
+            availableSlots = 8;
+            messagePrefix = `Групповая тренировка`;
+        } else {
+            // Не поддерживается добавление участников
             return;
         }
         
-        if (state.participants.length >= maxParticipants) {
-            setMessage(`Максимальное количество участников: ${maxParticipants}`, 'info');
+        // Проверяем ограничения
+        if (state.participants.length >= availableSlots) {
+            const currentBooked = state.program 
+                ? (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0
+                : (state.selection.groupTrainingCurrentParticipants || 0);
+            setMessage(`Недостаточно мест. Доступно: ${availableSlots} мест (уже записано: ${currentBooked} из ${maxAllowed}).`, 'info');
+            return;
+        }
+        
+        if (state.participants.length >= maxAllowed) {
+            setMessage(`Максимальное количество участников: ${maxAllowed}`, 'info');
             return;
         }
         
         state.participants.push({ fullName: '', age: '' });
         state.selection.currentParticipants = state.participants.length;
+        
+        // Если это свободный слот без групповой тренировки, пересчитываем цену из прайса
+        if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+            // Нужно пересчитать цену из прайса для нового количества участников
+            // Но для этого нужно иметь доступ к prices
+            // Пока оставляем текущую цену, пересчет будет при изменении участников
+        }
+        
         renderParticipants();
         updateTotalPrice();
+        renderSelectionSummary();
         scheduleSaveState();
     }
 
     function updateTotalPrice() {
-        // Для программ считаем по количеству реальных участников
-        const count = state.program 
-            ? Math.max(1, state.participants.length || 1)
-            : Math.max(1, state.selection.currentParticipants);
+        // Всегда используем актуальное количество участников из массива state.participants
+        const count = Math.max(1, state.participants.length || 1);
+        
+        // Обновляем currentParticipants в selection для консистентности
+        state.selection.currentParticipants = count;
+        
         const total =
             state.program
                 ? state.selection.pricePerPerson * count
@@ -848,6 +1120,36 @@
         
         // Для программ показываем дату в читаемом формате вместо поля ввода
         if (state.program && state.date) {
+            const dateField = dateInput.closest('.kuliga-field');
+            if (dateField) {
+                // Скрываем input
+                dateInput.style.display = 'none';
+                dateInput.disabled = true;
+                dateInput.removeAttribute('required');
+                
+                // Проверяем, не создан ли уже блок с датой
+                let dateDisplay = dateField.querySelector('.kuliga-date-display');
+                if (!dateDisplay) {
+                    // Создаем блок для отображения даты
+                    dateDisplay = document.createElement('div');
+                    dateDisplay.className = 'kuliga-date-display';
+                    dateDisplay.style.cssText = 'padding: 12px 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1rem; font-weight: 600; color: #1976d2;';
+                    dateInput.parentNode.insertBefore(dateDisplay, dateInput.nextSibling);
+                }
+                
+                // Форматируем и отображаем дату
+                const dateObj = new Date(state.date + 'T00:00:00');
+                const formattedDate = dateObj.toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    weekday: 'long'
+                });
+                dateDisplay.textContent = formattedDate;
+                dateDisplay.style.display = 'block';
+            }
+        } else if (state.selection && state.selection.groupTrainingId && state.date) {
+            // Для групповых тренировок на слотах - та же логика, что и для программ
             const dateField = dateInput.closest('.kuliga-field');
             if (dateField) {
                 // Скрываем input
@@ -1056,15 +1358,31 @@
             return;
         }
         
+        // Для групповых тренировок на слотах тоже запрещаем изменение даты
+        if (state.selection && state.selection.groupTrainingId && state.date) {
+            // Восстанавливаем исходную дату
+            if (datePickerInstance) {
+                datePickerInstance.setDate(state.date, false);
+            } else {
+                dateInput.value = state.date;
+            }
+            return;
+        }
+        
         const newDate = datePickerInstance ? datePickerInstance.input.value : dateInput.value;
         state.date = newDate;
         state.slot = null;
         state.availability = [];
-        renderAvailability();
-        scheduleSaveState();
-        if (state.date) {
-            loadAvailability();
+        
+        // Не загружаем availability для групповых тренировок на слотах
+        const isGroupTrainingOnSlot = state.selection && state.selection.groupTrainingId;
+        if (!isGroupTrainingOnSlot) {
+            renderAvailability();
+            if (state.date) {
+                loadAvailability();
+            }
         }
+        scheduleSaveState();
     }
 
     function renderAvailability() {
@@ -1272,7 +1590,7 @@
                 ? state.selection.priceValue
                 : state.selection.pricePerPerson * participants.length;
 
-        return {
+        const payload = {
             bookingType: state.selection.priceType === 'group' ? 'group' : 'individual',
             fullName: state.client.fullName.trim(),
             birthDate: state.client.birthDate,
@@ -1283,11 +1601,9 @@
             duration: state.selection.duration,
             sportType: state.sportType,
             date: state.date,
-            slotId: state.slot.slot_id,
-            instructorId: state.slot.instructor_id,
+            slotId: state.slot ? state.slot.slot_id : null,
+            instructorId: state.slot ? state.slot.instructor_id : null,
             location: state.location || 'vorona', // МИГРАЦИЯ 038: Передаем location при создании бронирования
-            startTime: state.slot.start_time,
-            endTime: state.slot.end_time,
             participantsCount: participants.length,
             participants: participants.map(({ fullName, birthYear }) => ({ fullName, birthYear })),
             notification: {
@@ -1299,6 +1615,19 @@
             totalPrice,
             consentConfirmed: consentCheckbox.checked,
         };
+        
+        // Добавляем startTime и endTime, если есть слот
+        if (state.slot) {
+            payload.startTime = state.slot.start_time;
+            payload.endTime = state.slot.end_time;
+        }
+        
+        // Для групповых тренировок на слотах передаем groupTrainingId
+        if (state.selection.groupTrainingId) {
+            payload.groupTrainingId = state.selection.groupTrainingId;
+        }
+        
+        return payload;
     }
 
     function showTelegramBookingModal(payload) {
@@ -1652,13 +1981,44 @@
                 );
                 if (targetSlot) {
                     state.slot = targetSlot;
+                    // Если на найденном слоте есть групповая тренировка, обновляем данные
+                    if (targetSlot.group_training && !state.selection.groupTrainingId) {
+                        const gt = targetSlot.group_training;
+                        state.selection.pricePerPerson = gt.price_per_person;
+                        state.selection.groupTrainingId = gt.id;
+                        state.selection.groupTrainingMaxParticipants = gt.max_participants;
+                        state.selection.groupTrainingCurrentParticipants = gt.current_participants;
+                        state.selection.groupTrainingAvailableSlots = gt.available_slots;
+                        
+                        // Ограничиваем количество участников доступными местами
+                        const maxAllowed = Math.min(gt.available_slots, gt.max_participants);
+                        if (state.selection.currentParticipants > maxAllowed) {
+                            state.selection.currentParticipants = maxAllowed;
+                            while (state.participants.length > maxAllowed) {
+                                state.participants.pop();
+                            }
+                        }
+                    }
                     // Очищаем presetSlot, так как слот найден
                     delete state.presetSlot;
                 }
             } else if (state.slot) {
                 // Сохраняем текущий выбранный слот, если он доступен
                 const preserved = state.availability.find((slot) => slot.slot_id === state.slot.slot_id);
-                state.slot = preserved || null;
+                if (preserved) {
+                    state.slot = preserved;
+                    // Обновляем информацию о групповой тренировке, если она есть
+                    if (preserved.group_training) {
+                        const gt = preserved.group_training;
+                        state.selection.pricePerPerson = gt.price_per_person;
+                        state.selection.groupTrainingId = gt.id;
+                        state.selection.groupTrainingMaxParticipants = gt.max_participants;
+                        state.selection.groupTrainingCurrentParticipants = gt.current_participants;
+                        state.selection.groupTrainingAvailableSlots = gt.available_slots;
+                    }
+                } else {
+                    state.slot = null;
+                }
             }
 
             renderAvailability();
@@ -2045,6 +2405,27 @@
                     dateInput.setAttribute('required', 'required');
                 }
             }
+        } else if (state.selection && state.selection.groupTrainingId) {
+            // Для групповых тренировок на слотах применяем аналогичную логику
+            renderGroupTrainingInfo();
+            
+            // Скрываем и отключаем выбор локации для групповых тренировок на слотах
+            if (locationSelect) {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = 'none';
+                }
+                locationSelect.disabled = true;
+                locationSelect.removeAttribute('required');
+            }
+            
+            // Скрываем radio-кнопки выбора вида спорта для групповых тренировок на слотах
+            sportRadios.forEach((radio) => {
+                const radioContainer = radio.closest('.kuliga-choice');
+                if (radioContainer) {
+                    radioContainer.style.display = 'none';
+                }
+            });
         } else {
             renderAvailability();
             // Показываем выбор локации для обычных тренировок
@@ -2079,7 +2460,10 @@
         attachListeners();
         scheduleSaveState();
 
-        if (state.date && !state.program) {
+        // Загружаем availability только если нет программы и групповой тренировки на слоте
+        // (для программ и групповых тренировок все данные уже есть в URL и state)
+        const isGroupTrainingOnSlot = state.selection && state.selection.groupTrainingId;
+        if (state.date && !state.program && !isGroupTrainingOnSlot) {
             loadAvailability();
         }
     })();
@@ -2149,6 +2533,71 @@
             }
             if (availabilityMessage) {
                 availabilityMessage.style.display = '';
+            }
+        }
+    }
+    
+    function renderGroupTrainingInfo() {
+        // Для групповых тренировок на слотах заменяем "Свободные слоты" на фиксированное время
+        if (state.selection && state.selection.groupTrainingId && timeSlotsContainer && state.slot) {
+            const timeStr = state.slot.start_time ? formatTime(state.slot.start_time) : '';
+            const endTimeStr = state.slot.end_time ? formatTime(state.slot.end_time) : '';
+            const displayTime = endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
+            
+            // Всегда меняем метку на "Время тренировки" для групповых тренировок
+            let timeSlotLabel = timeSlotsContainer.closest('label');
+            if (!timeSlotLabel) {
+                timeSlotLabel = timeSlotsContainer.parentElement;
+            }
+            
+            if (timeSlotLabel) {
+                const labelSpan = timeSlotLabel.querySelector('span');
+                if (labelSpan) {
+                    labelSpan.textContent = 'Время тренировки *';
+                } else {
+                    const firstChild = timeSlotLabel.firstChild;
+                    if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+                        firstChild.textContent = 'Время тренировки *';
+                    }
+                }
+            }
+            
+            // Показываем фиксированное время
+            if (displayTime) {
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1.1rem; font-weight: 600; color: #1976d2; text-align: center;">
+                        ${displayTime}
+                    </div>
+                `;
+            } else {
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; font-size: 0.95rem; color: #856404; text-align: center;">
+                        Время тренировки будет указано администратором
+                    </div>
+                `;
+            }
+            
+            // Скрываем сообщение о доступности, так как время фиксировано
+            if (availabilityMessage) {
+                availabilityMessage.innerHTML = '';
+                availabilityMessage.style.display = 'none';
+            }
+            
+            // Показываем карточку инструктора, если есть данные
+            if (state.slot && state.slot.instructor_name) {
+                renderInstructorCard(state.slot);
+            } else if (instructorCard && state.slot) {
+                // Если есть slot, но нет имени инструктора, можно попробовать загрузить
+                // Пока просто скрываем
+                instructorCard.hidden = true;
+                instructorCard.style.display = 'none';
+            }
+        } else if (timeSlotsContainer && state.selection && state.selection.groupTrainingId) {
+            // Если нет данных о слоте, но есть групповая тренировка, скрываем контейнер
+            timeSlotsContainer.innerHTML = '';
+            if (availabilityMessage) {
+                availabilityMessage.innerHTML = '';
+                availabilityMessage.style.display = 'none';
             }
         }
     }

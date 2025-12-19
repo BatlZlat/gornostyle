@@ -197,6 +197,69 @@ router.get('/api/kuliga/instructors', async (req, res) => {
 
         const instructorIds = instructorsResult.rows.map((i) => i.id);
         let slots = [];
+        // Функция для освобождения мест из устаревших транзакций
+        const releaseExpiredHolds = async () => {
+            try {
+                // Находим транзакции со статусом pending старше 5 минут, где бронирование не создано
+                const expiredTransactions = await pool.query(
+                    `SELECT id, provider_raw_data
+                     FROM kuliga_transactions
+                     WHERE booking_id IS NULL
+                       AND status = 'pending'
+                       AND created_at < NOW() - INTERVAL '5 minutes'`
+                );
+
+                if (expiredTransactions.rows.length === 0) {
+                    return;
+                }
+
+                console.log(`🔍 Найдено ${expiredTransactions.rows.length} устаревших транзакций для освобождения мест`);
+
+                for (const transaction of expiredTransactions.rows) {
+                    try {
+                        const rawData = transaction.provider_raw_data;
+                        if (!rawData || typeof rawData !== 'object') continue;
+
+                        const bookingData = rawData.bookingData;
+                        if (!bookingData || !bookingData.group_training_id || !bookingData.participants_count) {
+                            continue;
+                        }
+
+                        const groupTrainingId = bookingData.group_training_id;
+                        const participantsCount = Number(bookingData.participants_count) || 1;
+
+                        // Освобождаем места в групповой тренировке
+                        await pool.query(
+                            `UPDATE kuliga_group_trainings
+                             SET current_participants = GREATEST(0, current_participants - $1),
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $2`,
+                            [participantsCount, groupTrainingId]
+                        );
+
+                        // Помечаем транзакцию как failed
+                        await pool.query(
+                            `UPDATE kuliga_transactions
+                             SET status = 'failed',
+                                 provider_status = 'Expired: автоматически освобождено после 5 минут ожидания'
+                             WHERE id = $1`,
+                            [transaction.id]
+                        );
+
+                        console.log(`🔓 Освобождено ${participantsCount} мест в групповой тренировке #${groupTrainingId} (транзакция #${transaction.id} истекла)`);
+                    } catch (error) {
+                        console.error(`❌ Ошибка при освобождении мест для транзакции #${transaction.id}:`, error);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Ошибка при освобождении устаревших броней:', error);
+                // Не прерываем выполнение основного запроса
+            }
+        };
+
+        // Освобождаем устаревшие брони перед загрузкой данных
+        await releaseExpiredHolds();
+
         let groupTrainings = [];
 
         if (instructorIds.length > 0) {
@@ -210,13 +273,30 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                     [instructorIds, startDate, endDate]
                 ),
                 pool.query(
-                    `SELECT id, instructor_id, slot_id, date, start_time, end_time, status, sport_type, 
-                            max_participants, current_participants, price_per_person, description
-                     FROM kuliga_group_trainings
-                     WHERE instructor_id = ANY($1)
-                       AND date BETWEEN $2 AND $3
-                       AND status IN ('open', 'confirmed')
-                     ORDER BY date, start_time`,
+                    `SELECT 
+                        kgt.id, 
+                        kgt.instructor_id, 
+                        kgt.slot_id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time, 
+                        kgt.status, 
+                        kgt.sport_type, 
+                        kgt.max_participants, 
+                        COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
+                        kgt.price_per_person, 
+                        kgt.description, 
+                        kgt.program_id, 
+                        kgt.level
+                     FROM kuliga_group_trainings kgt
+                     LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
+                     WHERE kgt.instructor_id = ANY($1)
+                       AND kgt.date BETWEEN $2 AND $3
+                       AND kgt.status IN ('open', 'confirmed')
+                     GROUP BY kgt.id, kgt.instructor_id, kgt.slot_id, kgt.date, kgt.start_time, kgt.end_time, 
+                              kgt.status, kgt.sport_type, kgt.max_participants, kgt.price_per_person, 
+                              kgt.description, kgt.program_id, kgt.level
+                     ORDER BY kgt.date, kgt.start_time`,
                     [instructorIds, startDate, endDate]
                 )
             ]);
@@ -232,20 +312,27 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             return acc;
         }, {});
 
-        // Добавляем слоты
+        // Добавляем слоты (только те, на которых НЕТ групповых тренировок)
+        // Слоты с групповыми тренировками будут показаны только как групповые тренировки
         slots.forEach((slot) => {
             const dateKey = formatDate(slot.date);
             if (!scheduleByInstructor[slot.instructor_id]) return;
             if (!scheduleByInstructor[slot.instructor_id][dateKey]) {
                 scheduleByInstructor[slot.instructor_id][dateKey] = [];
             }
-            scheduleByInstructor[slot.instructor_id][dateKey].push({
-                id: slot.id,
-                startTime: slot.start_time,
-                endTime: slot.end_time,
-                status: slot.status,
-                type: 'slot'
-            });
+            // Проверяем, есть ли на этом слоте групповая тренировка
+            const trainingOnSlot = groupTrainings.find(gt => gt.slot_id === slot.id);
+            // Показываем слот только если на нем НЕТ групповой тренировки
+            // (групповые тренировки будут показаны отдельно ниже)
+            if (!trainingOnSlot) {
+                scheduleByInstructor[slot.instructor_id][dateKey].push({
+                    id: slot.id,
+                    startTime: slot.start_time,
+                    endTime: slot.end_time,
+                    status: slot.status,
+                    type: 'slot'
+                });
+            }
         });
 
         // Добавляем групповые тренировки (даже если slot_id = null)
@@ -257,6 +344,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             }
             scheduleByInstructor[training.instructor_id][dateKey].push({
                 id: training.id,
+                slotId: training.slot_id,
                 startTime: training.start_time,
                 endTime: training.end_time,
                 status: training.status,
@@ -265,7 +353,9 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 maxParticipants: training.max_participants,
                 currentParticipants: training.current_participants,
                 pricePerPerson: training.price_per_person,
-                description: training.description
+                description: training.description,
+                programId: training.program_id || null,
+                level: training.level || null
             });
         });
 
@@ -323,16 +413,29 @@ router.get('/api/kuliga/programs/:id', async (req, res) => {
             }
             
             const trainingResult = await pool.query(
-                `SELECT kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.current_participants,
-                        kgt.max_participants, kgt.price_per_person, kgt.status,
-                        kgt.instructor_id, ki.full_name as instructor_name, ki.photo_url as instructor_photo_url,
+                `SELECT 
+                        kgt.id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time,
+                        COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
+                        kgt.max_participants, 
+                        kgt.price_per_person, 
+                        kgt.status,
+                        kgt.instructor_id, 
+                        ki.full_name as instructor_name, 
+                        ki.photo_url as instructor_photo_url,
                         ki.description as instructor_description
                  FROM kuliga_group_trainings kgt
                  LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+                 LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
                  WHERE kgt.program_id = $1
                    AND kgt.date = $2
                    AND kgt.start_time = $3
                    AND kgt.status IN ('open', 'confirmed')
+                 GROUP BY kgt.id, kgt.date, kgt.start_time, kgt.end_time, kgt.max_participants, 
+                          kgt.price_per_person, kgt.status, kgt.instructor_id, ki.full_name, 
+                          ki.photo_url, ki.description
                  LIMIT 1`,
                 [programId, date, normalizedTime]
             );
@@ -415,7 +518,7 @@ router.get('/api/kuliga/programs', async (req, res) => {
                 kgt.end_time,
                 kgt.price_per_person,
                 kgt.max_participants,
-                kgt.current_participants,
+                COALESCE(SUM(kb.participants_count) FILTER (WHERE kb.status = 'confirmed'), 0)::INTEGER as current_participants,
                 kgt.status,
                 kgt.instructor_id,
                 kgt.location,
@@ -425,10 +528,14 @@ router.get('/api/kuliga/programs', async (req, res) => {
              FROM kuliga_group_trainings kgt
              JOIN kuliga_programs kp ON kgt.program_id = kp.id
              LEFT JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
+             LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id AND kb.status = 'confirmed'
              WHERE kgt.program_id IS NOT NULL
                AND kgt.date >= $1
                AND kgt.date <= $2
-               AND kgt.status IN ('open', 'confirmed')`;
+               AND kgt.status IN ('open', 'confirmed')
+             GROUP BY kgt.id, kgt.program_id, kgt.date, kgt.start_time, kgt.end_time, 
+                      kgt.price_per_person, kgt.max_participants, kgt.status, kgt.instructor_id, 
+                      kgt.location, ki.full_name, kp.name, kp.sport_type`;
         const trainingParams = [now.format('YYYY-MM-DD'), end.format('YYYY-MM-DD')];
         
         // Применяем фильтр по location к тренировкам, если указан
