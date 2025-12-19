@@ -463,10 +463,14 @@
                             <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
                                 ${days.map((day, index) => {
                                     const daySchedule = instructor.schedule[day.iso] || [];
-                                    const availableSlots = daySchedule.filter(slot => slot.status === 'available').length;
-                                    const groupSlots = daySchedule.filter(slot => slot.status === 'group').length;
-                                    const totalSlots = daySchedule.length;
-                                    const hasSlots = totalSlots > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group');
+                                    // Фильтруем только видимые слоты (доступные и групповые тренировки)
+                                    const visibleSlots = daySchedule.filter(slot => 
+                                        slot.status === 'available' || slot.status === 'group' || slot.type === 'group_training'
+                                    );
+                                    const availableSlots = visibleSlots.filter(slot => slot.status === 'available').length;
+                                    const groupSlots = visibleSlots.filter(slot => slot.status === 'group' || slot.type === 'group_training').length;
+                                    const totalSlots = visibleSlots.length;
+                                    const hasSlots = totalSlots > 0;
                                     
                                     // Определяем, является ли день сегодняшним
                                     const today = new Date();
@@ -492,66 +496,78 @@
                                                 ${slotCounter}
                                             </div>
                                             <div class="kuliga-slot-list">
-                                                ${daySchedule.length > 0 ? daySchedule.map((slot) => {
-                                                    // Делаем слот кликабельным только если он доступен или групповая тренировка
-                                                    const isClickable = slot.status === 'available' || slot.status === 'group';
-                                                    const clickableClass = isClickable ? 'kuliga-slot--clickable' : '';
-                                                    const cursorStyle = isClickable ? 'cursor: pointer;' : '';
+                                                ${daySchedule.length > 0 ? (() => {
+                                                    // Фильтруем слоты - показываем только доступные (available) или групповые тренировки (group)
+                                                    // Не показываем занятые (booked) или заблокированные (blocked) слоты
+                                                    const visibleSlots = daySchedule.filter(slot => 
+                                                        slot.status === 'available' || slot.status === 'group' || slot.type === 'group_training'
+                                                    );
                                                     
-                                                    // Собираем данные о слоте для передачи в модальное окно
-                                                    // Для групповых тренировок используем данные из самого слота
-                                                    let slotData;
-                                                    if (slot.type === 'group_training') {
-                                                        // Это групповая тренировка - используем её данные напрямую
-                                                        slotData = {
-                                                            id: slot.id,
-                                                            slotId: slot.slotId || null,
-                                                            instructorId: instructor.id,
-                                                            date: day.iso,
-                                                            startTime: slot.startTime,
-                                                            endTime: slot.endTime || '',
-                                                            status: 'group',
-                                                            location: instructor.location || 'kuliga',
-                                                            slotType: 'group_training',
-                                                            programId: slot.programId || null,
-                                                            groupTraining: {
-                                                                id: slot.id,
-                                                                programId: slot.programId || null,
-                                                                maxParticipants: slot.maxParticipants || 0,
-                                                                currentParticipants: slot.currentParticipants || 0,
-                                                                pricePerPerson: slot.pricePerPerson || 0
-                                                            }
-                                                        };
-                                                    } else {
-                                                        // Это обычный слот (может быть свободный или с групповой тренировкой)
-                                                        slotData = {
-                                                            slotId: slot.id,
-                                                            instructorId: instructor.id,
-                                                            date: day.iso,
-                                                            startTime: slot.startTime,
-                                                            endTime: slot.endTime || '',
-                                                            status: slot.status,
-                                                            location: instructor.location || 'kuliga',
-                                                            slotType: 'slot',
-                                                            groupTraining: slot.groupTraining || null,
-                                                            programId: slot.groupTraining ? (slot.groupTraining.programId || null) : null
-                                                        };
+                                                    if (visibleSlots.length === 0) {
+                                                        return '<span class="kuliga-slot kuliga-slot--empty">Нет расписания</span>';
                                                     }
                                                     
-                                                    // Экранируем JSON для безопасной вставки в HTML
-                                                    const dataAttrs = isClickable 
-                                                        ? `data-slot-data="${encodeURIComponent(JSON.stringify(slotData))}"` 
-                                                        : '';
-                                                    return `
-                                                        <span class="kuliga-slot ${statusClasses[slot.status] || ''} ${clickableClass}" 
-                                                              ${dataAttrs}
-                                                              style="${cursorStyle}"
-                                                              title="${isClickable ? 'Нажмите для записи на тренировку' : ''}">
-                                                            <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
-                                                            <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
-                                                        </span>
-                                                    `;
-                                                }).join('') : '<span class="kuliga-slot kuliga-slot--empty">Нет расписания</span>'}
+                                                    return visibleSlots.map((slot) => {
+                                                        // Делаем слот кликабельным только если он доступен или групповая тренировка
+                                                        const isClickable = slot.status === 'available' || slot.status === 'group' || slot.type === 'group_training';
+                                                        const clickableClass = isClickable ? 'kuliga-slot--clickable' : '';
+                                                        const cursorStyle = isClickable ? 'cursor: pointer;' : '';
+                                                        
+                                                        // Собираем данные о слоте для передачи в модальное окно
+                                                        // Для групповых тренировок используем данные из самого слота
+                                                        let slotData;
+                                                        if (slot.type === 'group_training') {
+                                                            // Это групповая тренировка - используем её данные напрямую
+                                                            slotData = {
+                                                                id: slot.id,
+                                                                slotId: slot.slotId || null,
+                                                                instructorId: instructor.id,
+                                                                date: day.iso,
+                                                                startTime: slot.startTime,
+                                                                endTime: slot.endTime || '',
+                                                                status: 'group',
+                                                                location: instructor.location || 'kuliga',
+                                                                slotType: 'group_training',
+                                                                programId: slot.programId || null,
+                                                                groupTraining: {
+                                                                    id: slot.id,
+                                                                    programId: slot.programId || null,
+                                                                    maxParticipants: slot.maxParticipants || 0,
+                                                                    currentParticipants: slot.currentParticipants || 0,
+                                                                    pricePerPerson: slot.pricePerPerson || 0
+                                                                }
+                                                            };
+                                                        } else {
+                                                            // Это обычный слот (может быть свободный или с групповой тренировкой)
+                                                            slotData = {
+                                                                slotId: slot.id,
+                                                                instructorId: instructor.id,
+                                                                date: day.iso,
+                                                                startTime: slot.startTime,
+                                                                endTime: slot.endTime || '',
+                                                                status: slot.status,
+                                                                location: instructor.location || 'kuliga',
+                                                                slotType: 'slot',
+                                                                groupTraining: slot.groupTraining || null,
+                                                                programId: slot.groupTraining ? (slot.groupTraining.programId || null) : null
+                                                            };
+                                                        }
+                                                        
+                                                        // Экранируем JSON для безопасной вставки в HTML
+                                                        const dataAttrs = isClickable 
+                                                            ? `data-slot-data="${encodeURIComponent(JSON.stringify(slotData))}"` 
+                                                            : '';
+                                                        return `
+                                                            <span class="kuliga-slot ${statusClasses[slot.status] || ''} ${clickableClass}" 
+                                                                  ${dataAttrs}
+                                                                  style="${cursorStyle}"
+                                                                  title="${isClickable ? 'Нажмите для записи на тренировку' : ''}">
+                                                                <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
+                                                                <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
+                                                            </span>
+                                                        `;
+                                                    }).join('');
+                                                })() : '<span class="kuliga-slot kuliga-slot--empty">Нет расписания</span>'}
                                             </div>
                                         </div>
                                     `;

@@ -235,6 +235,7 @@
 
         submitBtn.addEventListener('click', () => {
             // Переход на страницу бронирования с параметрами
+            // Используем специальный параметр fromSlot=true, чтобы открыть страницу, а не модальное окно
             const url = new URL('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', window.location.origin);
             url.searchParams.set('slotId', slotData.slotId);
             url.searchParams.set('instructorId', slotData.instructorId);
@@ -245,6 +246,7 @@
             url.searchParams.set('bookingType', participantsCount === 1 ? 'individual' : 'group');
             url.searchParams.set('priceType', participantsCount === 1 ? 'individual' : 'group');
             url.searchParams.set('participants', participantsCount);
+            url.searchParams.set('fromSlot', 'true'); // Маркер, что переход со слота
             window.location.href = url.toString();
         });
 
@@ -388,6 +390,7 @@
 
         submitBtn.addEventListener('click', () => {
             // Переход на страницу бронирования с параметрами
+            // Используем специальный параметр fromSlot=true, чтобы открыть страницу, а не модальное окно
             const url = new URL('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking', window.location.origin);
             url.searchParams.set('slotId', slotData.slotId || slotData.id);
             url.searchParams.set('instructorId', slotData.instructorId);
@@ -398,8 +401,13 @@
             url.searchParams.set('bookingType', 'group');
             url.searchParams.set('priceType', 'group');
             url.searchParams.set('participants', participantsCount);
+            url.searchParams.set('fromSlot', 'true'); // Маркер, что переход со слота
             if (groupTraining.id) {
                 url.searchParams.set('groupTrainingId', groupTraining.id);
+                // Передаем данные групповой тренировки для использования на странице бронирования
+                url.searchParams.set('gtPricePerPerson', groupTraining.pricePerPerson);
+                url.searchParams.set('gtMaxParticipants', groupTraining.maxParticipants);
+                url.searchParams.set('gtCurrentParticipants', groupTraining.currentParticipants);
             }
             window.location.href = url.toString();
         });

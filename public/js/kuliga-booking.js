@@ -76,6 +76,11 @@
             pricePerPerson: 0,
             title: '',
             description: '',
+            // Поля для групповой тренировки на слоте
+            groupTrainingId: null,
+            groupTrainingMaxParticipants: null,
+            groupTrainingCurrentParticipants: null,
+            groupTrainingAvailableSlots: null,
         },
         program: null, // Данные программы (если бронирование через программу)
         client: {
@@ -290,6 +295,13 @@
             };
         }
 
+        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
+        const groupTrainingIdParam = params.get('groupTrainingId');
+        const fromSlotParam = params.get('fromSlot') === 'true';
+        const gtPricePerPersonParam = params.get('gtPricePerPerson');
+        const gtMaxParticipantsParam = params.get('gtMaxParticipants');
+        const gtCurrentParticipantsParam = params.get('gtCurrentParticipants');
+
         // Очищаем state.program если в URL нет programId (чтобы не показывались данные программы из сохраненного состояния)
         if (!programIdParam) {
             state.program = null;
@@ -396,7 +408,61 @@
             }
         }
 
-        // Обычная логика инициализации для тарифов
+        // ПРОВЕРКА: Если переход со слота с групповой тренировкой (fromSlot=true и groupTrainingId)
+        // Используем данные групповой тренировки, а не прайс
+        if (fromSlotParam && groupTrainingIdParam && gtPricePerPersonParam) {
+            const pricePerPerson = parseFloat(gtPricePerPersonParam) || 0;
+            const maxParticipants = parseInt(gtMaxParticipantsParam) || 0;
+            const currentParticipants = parseInt(gtCurrentParticipantsParam) || 0;
+            const availableSlots = maxParticipants - currentParticipants;
+            
+            // Ограничиваем количество участников доступными местами
+            let currentParticipantsCount = Number.isFinite(participantsParam) && participantsParam >= 1 
+                ? Math.min(participantsParam, availableSlots) 
+                : Math.min(1, availableSlots);
+            
+            state.selection = {
+                priceId: null, // Нет priceId, так как это групповая тренировка
+                priceType: 'group',
+                duration: 60, // По умолчанию 60 минут
+                baseParticipants: maxParticipants,
+                currentParticipants: currentParticipantsCount,
+                priceValue: 0,
+                pricePerPerson: pricePerPerson, // Цена из групповой тренировки
+                title: `Групповая тренировка (${currentParticipants}/${maxParticipants} записано)`,
+                description: `Доступно мест: ${availableSlots}`,
+                // Сохраняем информацию о групповой тренировке
+                groupTrainingId: parseInt(groupTrainingIdParam),
+                groupTrainingMaxParticipants: maxParticipants,
+                groupTrainingCurrentParticipants: currentParticipants,
+                groupTrainingAvailableSlots: availableSlots,
+            };
+
+            state.participants = Array.from(
+                { length: currentParticipantsCount },
+                (_, index) => state.participants[index] || { fullName: '', age: '' }
+            );
+
+            if (!state.client.fullName) {
+                state.syncMainParticipant = true;
+            }
+
+            // Если нет presetSlot, сбрасываем слот
+            if (!state.presetSlot) {
+                state.slot = null;
+            }
+            state.availability = [];
+            
+            // Обновляем UI после установки данных
+            setClientFieldValues();
+            renderParticipants();
+            renderSelectionSummary();
+            updateTotalPrice();
+            
+            return; // Выходим, так как данные уже установлены из групповой тренировки
+        }
+
+        // Обычная логика инициализации для тарифов (карточки прайса)
         let price;
         
         // Для групповых тренировок: если в URL указано количество участников, ищем тариф с этим количеством
@@ -710,22 +776,31 @@
 
         participantsContainer.appendChild(fragment);
         
-        // Показываем/скрываем кнопку "Добавить участника" для программ
-        if (state.program && addParticipantBtn) {
-            const maxParticipants = state.program.max_participants || 4;
-            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
-            const availableSlots = maxParticipants - currentBooked;
-            // Можно добавить участников только если есть свободные места
-            // Учитываем что мы уже добавляем участников в этой форме
-            const canAddMore = state.participants.length < availableSlots;
+        // Показываем/скрываем кнопку "Добавить участника"
+        if (addParticipantBtn) {
+            let canAddMore = false;
             
-            if (canAddMore && state.participants.length < maxParticipants) {
+            if (state.program) {
+                // Для программ
+                const maxParticipants = state.program.max_participants || 4;
+                const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+                const availableSlots = maxParticipants - currentBooked;
+                canAddMore = state.participants.length < availableSlots && state.participants.length < maxParticipants;
+            } else if (state.selection.groupTrainingId && state.selection.groupTrainingAvailableSlots !== null) {
+                // Для групповой тренировки на слоте - ограничение по доступным местам
+                const availableSlots = state.selection.groupTrainingAvailableSlots || 0;
+                const maxParticipants = state.selection.groupTrainingMaxParticipants || 0;
+                canAddMore = state.participants.length < availableSlots && state.participants.length < maxParticipants;
+            } else if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+                // Для свободного слота с групповой тренировкой - можно добавить до 8 человек
+                canAddMore = state.participants.length < 8;
+            }
+            
+            if (canAddMore) {
                 addParticipantBtn.style.display = 'block';
             } else {
                 addParticipantBtn.style.display = 'none';
             }
-        } else if (addParticipantBtn) {
-            addParticipantBtn.style.display = 'none';
         }
         
         // Добавляем обработчики для кнопок удаления
@@ -743,27 +818,59 @@
     }
     
     function handleAddParticipant() {
-        if (!state.program) return;
+        let maxAllowed = 0;
+        let availableSlots = 0;
+        let messagePrefix = '';
         
-        const maxParticipants = state.program.max_participants || 4;
-        const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
-        const availableSlots = maxParticipants - currentBooked;
-        
-        // Проверяем доступное количество мест с учетом уже записанных участников
-        if (state.participants.length >= availableSlots) {
-            setMessage(`Недостаточно мест. Доступно: ${availableSlots} мест (уже записано: ${currentBooked} из ${maxParticipants}).`, 'info');
+        if (state.program) {
+            // Для программ
+            const maxParticipants = state.program.max_participants || 4;
+            const currentBooked = (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0;
+            availableSlots = maxParticipants - currentBooked;
+            maxAllowed = maxParticipants;
+            messagePrefix = `Программа "${state.program.name}"`;
+        } else if (state.selection.groupTrainingId && state.selection.groupTrainingAvailableSlots !== null) {
+            // Для групповой тренировки на слоте
+            availableSlots = state.selection.groupTrainingAvailableSlots || 0;
+            maxAllowed = state.selection.groupTrainingMaxParticipants || 0;
+            messagePrefix = `Групповая тренировка`;
+        } else if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+            // Для свободного слота с групповой тренировкой - можно добавить до 8 человек
+            maxAllowed = 8;
+            availableSlots = 8;
+            messagePrefix = `Групповая тренировка`;
+        } else {
+            // Не поддерживается добавление участников
             return;
         }
         
-        if (state.participants.length >= maxParticipants) {
-            setMessage(`Максимальное количество участников: ${maxParticipants}`, 'info');
+        // Проверяем ограничения
+        if (state.participants.length >= availableSlots) {
+            const currentBooked = state.program 
+                ? (state.programTraining && state.programTraining.current_participants) ? Number(state.programTraining.current_participants) : 0
+                : (state.selection.groupTrainingCurrentParticipants || 0);
+            setMessage(`Недостаточно мест. Доступно: ${availableSlots} мест (уже записано: ${currentBooked} из ${maxAllowed}).`, 'info');
+            return;
+        }
+        
+        if (state.participants.length >= maxAllowed) {
+            setMessage(`Максимальное количество участников: ${maxAllowed}`, 'info');
             return;
         }
         
         state.participants.push({ fullName: '', age: '' });
         state.selection.currentParticipants = state.participants.length;
+        
+        // Если это свободный слот без групповой тренировки, пересчитываем цену из прайса
+        if (state.slot && !state.selection.groupTrainingId && state.selection.priceType === 'group') {
+            // Нужно пересчитать цену из прайса для нового количества участников
+            // Но для этого нужно иметь доступ к prices
+            // Пока оставляем текущую цену, пересчет будет при изменении участников
+        }
+        
         renderParticipants();
         updateTotalPrice();
+        renderSelectionSummary();
         scheduleSaveState();
     }
 
@@ -1662,13 +1769,44 @@
                 );
                 if (targetSlot) {
                     state.slot = targetSlot;
+                    // Если на найденном слоте есть групповая тренировка, обновляем данные
+                    if (targetSlot.group_training && !state.selection.groupTrainingId) {
+                        const gt = targetSlot.group_training;
+                        state.selection.pricePerPerson = gt.price_per_person;
+                        state.selection.groupTrainingId = gt.id;
+                        state.selection.groupTrainingMaxParticipants = gt.max_participants;
+                        state.selection.groupTrainingCurrentParticipants = gt.current_participants;
+                        state.selection.groupTrainingAvailableSlots = gt.available_slots;
+                        
+                        // Ограничиваем количество участников доступными местами
+                        const maxAllowed = Math.min(gt.available_slots, gt.max_participants);
+                        if (state.selection.currentParticipants > maxAllowed) {
+                            state.selection.currentParticipants = maxAllowed;
+                            while (state.participants.length > maxAllowed) {
+                                state.participants.pop();
+                            }
+                        }
+                    }
                     // Очищаем presetSlot, так как слот найден
                     delete state.presetSlot;
                 }
             } else if (state.slot) {
                 // Сохраняем текущий выбранный слот, если он доступен
                 const preserved = state.availability.find((slot) => slot.slot_id === state.slot.slot_id);
-                state.slot = preserved || null;
+                if (preserved) {
+                    state.slot = preserved;
+                    // Обновляем информацию о групповой тренировке, если она есть
+                    if (preserved.group_training) {
+                        const gt = preserved.group_training;
+                        state.selection.pricePerPerson = gt.price_per_person;
+                        state.selection.groupTrainingId = gt.id;
+                        state.selection.groupTrainingMaxParticipants = gt.max_participants;
+                        state.selection.groupTrainingCurrentParticipants = gt.current_participants;
+                        state.selection.groupTrainingAvailableSlots = gt.available_slots;
+                    }
+                } else {
+                    state.slot = null;
+                }
             }
 
             renderAvailability();
@@ -2089,7 +2227,9 @@
         attachListeners();
         scheduleSaveState();
 
-        if (state.date && !state.program) {
+        // Загружаем availability только если нет групповой тренировки
+        // (для групповых тренировок все данные уже есть в URL и state)
+        if (state.date && !state.program && !state.selection.groupTrainingId) {
             loadAvailability();
         }
     })();

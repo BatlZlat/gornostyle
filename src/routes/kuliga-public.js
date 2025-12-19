@@ -232,7 +232,8 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             return acc;
         }, {});
 
-        // Добавляем слоты
+        // Добавляем слоты (только те, на которых НЕТ групповых тренировок)
+        // Слоты с групповыми тренировками будут показаны только как групповые тренировки
         slots.forEach((slot) => {
             const dateKey = formatDate(slot.date);
             if (!scheduleByInstructor[slot.instructor_id]) return;
@@ -241,21 +242,17 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             }
             // Проверяем, есть ли на этом слоте групповая тренировка
             const trainingOnSlot = groupTrainings.find(gt => gt.slot_id === slot.id);
-            scheduleByInstructor[slot.instructor_id][dateKey].push({
-                id: slot.id,
-                startTime: slot.start_time,
-                endTime: slot.end_time,
-                status: slot.status,
-                type: 'slot',
-                // Если на слоте есть групповая тренировка, добавляем её данные
-                groupTraining: trainingOnSlot ? {
-                    id: trainingOnSlot.id,
-                    programId: trainingOnSlot.program_id || null,
-                    maxParticipants: trainingOnSlot.max_participants,
-                    currentParticipants: trainingOnSlot.current_participants,
-                    pricePerPerson: trainingOnSlot.price_per_person
-                } : null
-            });
+            // Показываем слот только если на нем НЕТ групповой тренировки
+            // (групповые тренировки будут показаны отдельно ниже)
+            if (!trainingOnSlot) {
+                scheduleByInstructor[slot.instructor_id][dateKey].push({
+                    id: slot.id,
+                    startTime: slot.start_time,
+                    endTime: slot.end_time,
+                    status: slot.status,
+                    type: 'slot'
+                });
+            }
         });
 
         // Добавляем групповые тренировки (даже если slot_id = null)
