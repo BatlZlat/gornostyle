@@ -211,7 +211,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 ),
                 pool.query(
                     `SELECT id, instructor_id, slot_id, date, start_time, end_time, status, sport_type, 
-                            max_participants, current_participants, price_per_person, description, program_id
+                            max_participants, current_participants, price_per_person, description, program_id, level
                      FROM kuliga_group_trainings
                      WHERE instructor_id = ANY($1)
                        AND date BETWEEN $2 AND $3
@@ -274,7 +274,8 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 currentParticipants: training.current_participants,
                 pricePerPerson: training.price_per_person,
                 description: training.description,
-                programId: training.program_id || null
+                programId: training.program_id || null,
+                level: training.level || null
             });
         });
 
