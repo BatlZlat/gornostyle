@@ -127,7 +127,11 @@
                 .filter((price) => price.type !== 'individual')
                 .map((price) => {
                     const participants = Math.max(1, Number(price.participants) || 1);
-                    const perPerson = Number(price.price) / participants;
+                    // Для 8 участников цена в прайсе уже является ценой за человека
+                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                    const perPerson = participants === 8 
+                        ? Number(price.price) 
+                        : Number(price.price) / participants;
                     return { ...price, participants, perPerson };
                 })
                 .sort((a, b) => a.participants - b.participants); // Сортировка по количеству участников по возрастанию
@@ -143,7 +147,11 @@
                 const isGroup = price.type !== 'individual';
                 const participants = Math.max(1, Number(price.participants) || 1);
                 const priceValue = Number(price.price) || 0;
-                const pricePerPerson = isGroup ? Math.ceil(priceValue / participants) : priceValue;
+                // Для 8 участников цена в прайсе уже является ценой за человека
+                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                const pricePerPerson = isGroup 
+                    ? (participants === 8 ? priceValue : Math.ceil(priceValue / participants))
+                    : priceValue;
                 const totalPrice = isGroup ? Math.ceil(pricePerPerson * participants) : priceValue;
 
                 if (!isGroup) {

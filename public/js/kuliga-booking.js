@@ -459,8 +459,11 @@
         if (price.type === 'group') {
             // Если тариф найден для нужного количества участников, используем его цену
             if (Number(price.participants) === currentParticipants) {
-                // Цена в тарифе - это общая стоимость группы, делим на количество участников
-                pricePerPerson = Number(price.price) / currentParticipants;
+                // Для 8 участников цена в прайсе уже является ценой за человека
+                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                pricePerPerson = Number(price.participants) === 8 
+                    ? Number(price.price)
+                    : Number(price.price) / currentParticipants;
             } else {
                 // Если тариф для другого количества, ищем правильный тариф
                 const correctPrice = prices.find((item) => 
@@ -470,10 +473,17 @@
                 );
                 if (correctPrice) {
                     price = correctPrice; // Обновляем тариф на правильный
-                    pricePerPerson = Number(correctPrice.price) / currentParticipants;
+                    // Для 8 участников цена в прайсе уже является ценой за человека
+                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                    pricePerPerson = Number(correctPrice.participants) === 8
+                        ? Number(correctPrice.price)
+                        : Number(correctPrice.price) / currentParticipants;
                 } else {
                     // Если не нашли, используем пропорциональный расчет (не идеально, но лучше чем ничего)
-                    pricePerPerson = (Number(price.price) / participantsFromPrice);
+                    // Для 8 участников цена в прайсе уже является ценой за человека
+                    pricePerPerson = Number(price.participants) === 8
+                        ? Number(price.price)
+                        : (Number(price.price) / participantsFromPrice);
                 }
             }
         } else {
