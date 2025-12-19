@@ -197,6 +197,69 @@ router.get('/api/kuliga/instructors', async (req, res) => {
 
         const instructorIds = instructorsResult.rows.map((i) => i.id);
         let slots = [];
+        // Функция для освобождения мест из устаревших транзакций
+        const releaseExpiredHolds = async () => {
+            try {
+                // Находим транзакции со статусом pending старше 5 минут, где бронирование не создано
+                const expiredTransactions = await pool.query(
+                    `SELECT id, provider_raw_data
+                     FROM kuliga_transactions
+                     WHERE booking_id IS NULL
+                       AND status = 'pending'
+                       AND created_at < NOW() - INTERVAL '5 minutes'`
+                );
+
+                if (expiredTransactions.rows.length === 0) {
+                    return;
+                }
+
+                console.log(`🔍 Найдено ${expiredTransactions.rows.length} устаревших транзакций для освобождения мест`);
+
+                for (const transaction of expiredTransactions.rows) {
+                    try {
+                        const rawData = transaction.provider_raw_data;
+                        if (!rawData || typeof rawData !== 'object') continue;
+
+                        const bookingData = rawData.bookingData;
+                        if (!bookingData || !bookingData.group_training_id || !bookingData.participants_count) {
+                            continue;
+                        }
+
+                        const groupTrainingId = bookingData.group_training_id;
+                        const participantsCount = Number(bookingData.participants_count) || 1;
+
+                        // Освобождаем места в групповой тренировке
+                        await pool.query(
+                            `UPDATE kuliga_group_trainings
+                             SET current_participants = GREATEST(0, current_participants - $1),
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $2`,
+                            [participantsCount, groupTrainingId]
+                        );
+
+                        // Помечаем транзакцию как failed
+                        await pool.query(
+                            `UPDATE kuliga_transactions
+                             SET status = 'failed',
+                                 provider_status = 'Expired: автоматически освобождено после 5 минут ожидания'
+                             WHERE id = $1`,
+                            [transaction.id]
+                        );
+
+                        console.log(`🔓 Освобождено ${participantsCount} мест в групповой тренировке #${groupTrainingId} (транзакция #${transaction.id} истекла)`);
+                    } catch (error) {
+                        console.error(`❌ Ошибка при освобождении мест для транзакции #${transaction.id}:`, error);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Ошибка при освобождении устаревших броней:', error);
+                // Не прерываем выполнение основного запроса
+            }
+        };
+
+        // Освобождаем устаревшие брони перед загрузкой данных
+        await releaseExpiredHolds();
+
         let groupTrainings = [];
 
         if (instructorIds.length > 0) {
