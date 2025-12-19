@@ -952,10 +952,18 @@
         participantsContainer.querySelectorAll('.kuliga-participant-remove').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 const index = Number(btn.dataset.index);
-                if (index > 0 && state.participants.length > index) {
+                if (index > 0 && index < state.participants.length) {
+                    // Удаляем участника
                     state.participants.splice(index, 1);
+                    // Обновляем количество участников в selection
+                    state.selection.currentParticipants = state.participants.length;
+                    // Перерисовываем список участников
                     renderParticipants();
+                    // Обновляем цену
                     updateTotalPrice();
+                    // Обновляем сводку выбора
+                    renderSelectionSummary();
+                    // Сохраняем состояние
                     scheduleSaveState();
                 }
             });
@@ -1020,10 +1028,12 @@
     }
 
     function updateTotalPrice() {
-        // Для программ считаем по количеству реальных участников
-        const count = state.program 
-            ? Math.max(1, state.participants.length || 1)
-            : Math.max(1, state.selection.currentParticipants);
+        // Всегда используем актуальное количество участников из массива state.participants
+        const count = Math.max(1, state.participants.length || 1);
+        
+        // Обновляем currentParticipants в selection для консистентности
+        state.selection.currentParticipants = count;
+        
         const total =
             state.program
                 ? state.selection.pricePerPerson * count
