@@ -31,8 +31,8 @@
             <h1>Служба инструкторов Горностайл72</h1>
             <p>Профессиональные занятия по горным лыжам и сноуборду на естественном склоне. Подготовим к поездке в горы, обучим с нуля и поможем уверенно и безопасно прогрессировать.</p>
             <div class="kuliga-hero__actions">
-                <a href="/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking?priceType=individual" class="kuliga-button kuliga-button--primary">Записаться на тренировку</a>
-                <a href="#instructors" class="kuliga-button kuliga-button--ghost">Посмотреть инструкторов</a>
+                <a href="#instructors" class="kuliga-button kuliga-button--primary">Записаться на тренировку</a>
+                <a href="#prices" class="kuliga-button kuliga-button--ghost">Посмотреть прайс</a>
             </div>
             <div class="kuliga-hero__details">
                 <div><i class="fa-solid fa-location-dot"></i> База отдыха «Кулига-Клуб» и Воронинские горки</div>
@@ -114,6 +114,16 @@
             <div class="kuliga-section__header">
                 <h2>Инструкторы Горностайл72</h2>
                 <p>Все инструкторы сертифицированы, проходят подготовку на нашем всесезонном тренажёре и регулярно повышают квалификацию. Работаем на базе отдыха «Кулига-Клуб» и на Воронинских горках.</p>
+            </div>
+            <div class="kuliga-instructors-hint" style="max-width: 1080px; margin: 0 auto 32px; padding: 20px; background: #f8f9fa; border-left: 4px solid #2196f3; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #1976d2; font-size: 1.1rem;">Как записаться к инструктору:</h3>
+                <ul style="margin: 12px 0 0; padding-left: 20px; color: #495057;">
+                    <li style="margin-bottom: 8px;"><strong>Выберите инструктора</strong> из списка ниже и нажмите на него, чтобы открыть расписание</li>
+                    <li style="margin-bottom: 8px;"><strong>Выберите свободный слот</strong> в календаре инструктора (отмечен <span style="color: #10b981; font-weight: 600;">зелёным</span>)</li>
+                    <li style="margin-bottom: 8px;"><strong>Слот с групповой тренировкой</strong> отмечен <span style="color: #3b82f6; font-weight: 600;">синим</span> — можно присоединиться к уже набранной группе</li>
+                    <li style="margin-bottom: 8px;"><strong>Занятые слоты</strong> отмечены <span style="color: #ef4444; font-weight: 600;">красным</span> и недоступны для записи</li>
+                    <li>На свободный слот можно записаться <strong>одному или всей семьёй</strong> (до 8 человек) — цена формируется автоматически</li>
+                </ul>
             </div>
             <div id="kuligaInstructors" class="kuliga-instructors" aria-live="polite"></div>
         </section>
@@ -200,6 +210,7 @@
         });
     </script>
     <script src="/js/location-mapper.js"></script>
+    <script src="/js/kuliga-slot-modals.js" defer></script>
     <script src="/js/kuliga.js" defer></script>
     <%- include('partials/analytics'); %>
 </body>

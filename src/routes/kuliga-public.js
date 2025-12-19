@@ -211,7 +211,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 ),
                 pool.query(
                     `SELECT id, instructor_id, slot_id, date, start_time, end_time, status, sport_type, 
-                            max_participants, current_participants, price_per_person, description
+                            max_participants, current_participants, price_per_person, description, program_id
                      FROM kuliga_group_trainings
                      WHERE instructor_id = ANY($1)
                        AND date BETWEEN $2 AND $3
@@ -239,12 +239,22 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             if (!scheduleByInstructor[slot.instructor_id][dateKey]) {
                 scheduleByInstructor[slot.instructor_id][dateKey] = [];
             }
+            // Проверяем, есть ли на этом слоте групповая тренировка
+            const trainingOnSlot = groupTrainings.find(gt => gt.slot_id === slot.id);
             scheduleByInstructor[slot.instructor_id][dateKey].push({
                 id: slot.id,
                 startTime: slot.start_time,
                 endTime: slot.end_time,
                 status: slot.status,
-                type: 'slot'
+                type: 'slot',
+                // Если на слоте есть групповая тренировка, добавляем её данные
+                groupTraining: trainingOnSlot ? {
+                    id: trainingOnSlot.id,
+                    programId: trainingOnSlot.program_id || null,
+                    maxParticipants: trainingOnSlot.max_participants,
+                    currentParticipants: trainingOnSlot.current_participants,
+                    pricePerPerson: trainingOnSlot.price_per_person
+                } : null
             });
         });
 
@@ -257,6 +267,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             }
             scheduleByInstructor[training.instructor_id][dateKey].push({
                 id: training.id,
+                slotId: training.slot_id,
                 startTime: training.start_time,
                 endTime: training.end_time,
                 status: training.status,
@@ -265,7 +276,8 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 maxParticipants: training.max_participants,
                 currentParticipants: training.current_participants,
                 pricePerPerson: training.price_per_person,
-                description: training.description
+                description: training.description,
+                programId: training.program_id || null
             });
         });
 
