@@ -478,23 +478,7 @@
                     return timeStr.substring(0, 5); // Берем первые 5 символов (HH:mm)
                 };
                 
-                // Если есть время, отображаем его как выбранное
-                if (timeSlotsContainer) {
-                    // Создаем визуальное представление времени
-                    timeSlotsContainer.innerHTML = `
-                        <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 0.95rem; color: #1976d2; text-align: center;">
-                            <strong>${formatTime(startTimeParam)}${endTimeParam ? ` - ${formatTime(endTimeParam)}` : ''}</strong>
-                            <br>
-                            <small>Дата и время предзаполнены</small>
-                        </div>
-                    `;
-                }
-                
-                // Показываем карточку инструктора, если есть данные
-                if (instructorIdParam) {
-                    // Можно загрузить данные инструктора, но для простоты оставим как есть
-                    renderInstructorCard(state.slot);
-                }
+                // Время будет отображаться в renderGroupTrainingInfo() в bootstrap
             } else {
                 // Если нет presetSlot, сбрасываем слот
                 if (!state.presetSlot) {
@@ -1071,6 +1055,36 @@
                 dateDisplay.textContent = formattedDate;
                 dateDisplay.style.display = 'block';
             }
+        } else if (state.selection && state.selection.groupTrainingId && state.date) {
+            // Для групповых тренировок на слотах - та же логика, что и для программ
+            const dateField = dateInput.closest('.kuliga-field');
+            if (dateField) {
+                // Скрываем input
+                dateInput.style.display = 'none';
+                dateInput.disabled = true;
+                dateInput.removeAttribute('required');
+                
+                // Проверяем, не создан ли уже блок с датой
+                let dateDisplay = dateField.querySelector('.kuliga-date-display');
+                if (!dateDisplay) {
+                    // Создаем блок для отображения даты
+                    dateDisplay = document.createElement('div');
+                    dateDisplay.className = 'kuliga-date-display';
+                    dateDisplay.style.cssText = 'padding: 12px 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1rem; font-weight: 600; color: #1976d2;';
+                    dateInput.parentNode.insertBefore(dateDisplay, dateInput.nextSibling);
+                }
+                
+                // Форматируем и отображаем дату
+                const dateObj = new Date(state.date + 'T00:00:00');
+                const formattedDate = dateObj.toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    weekday: 'long'
+                });
+                dateDisplay.textContent = formattedDate;
+                dateDisplay.style.display = 'block';
+            }
         } else {
             // Для обычных тренировок или программ без даты показываем поле ввода
             const dateField = dateInput.closest('.kuliga-field');
@@ -1251,15 +1265,31 @@
             return;
         }
         
+        // Для групповых тренировок на слотах тоже запрещаем изменение даты
+        if (state.selection && state.selection.groupTrainingId && state.date) {
+            // Восстанавливаем исходную дату
+            if (datePickerInstance) {
+                datePickerInstance.setDate(state.date, false);
+            } else {
+                dateInput.value = state.date;
+            }
+            return;
+        }
+        
         const newDate = datePickerInstance ? datePickerInstance.input.value : dateInput.value;
         state.date = newDate;
         state.slot = null;
         state.availability = [];
-        renderAvailability();
-        scheduleSaveState();
-        if (state.date) {
-            loadAvailability();
+        
+        // Не загружаем availability для групповых тренировок на слотах
+        const isGroupTrainingOnSlot = state.selection && state.selection.groupTrainingId;
+        if (!isGroupTrainingOnSlot) {
+            renderAvailability();
+            if (state.date) {
+                loadAvailability();
+            }
         }
+        scheduleSaveState();
     }
 
     function renderAvailability() {
@@ -2271,6 +2301,27 @@
                     dateInput.setAttribute('required', 'required');
                 }
             }
+        } else if (state.selection && state.selection.groupTrainingId) {
+            // Для групповых тренировок на слотах применяем аналогичную логику
+            renderGroupTrainingInfo();
+            
+            // Скрываем и отключаем выбор локации для групповых тренировок на слотах
+            if (locationSelect) {
+                const locationField = locationSelect.closest('.kuliga-field');
+                if (locationField) {
+                    locationField.style.display = 'none';
+                }
+                locationSelect.disabled = true;
+                locationSelect.removeAttribute('required');
+            }
+            
+            // Скрываем radio-кнопки выбора вида спорта для групповых тренировок на слотах
+            sportRadios.forEach((radio) => {
+                const radioContainer = radio.closest('.kuliga-choice');
+                if (radioContainer) {
+                    radioContainer.style.display = 'none';
+                }
+            });
         } else {
             renderAvailability();
             // Показываем выбор локации для обычных тренировок
@@ -2305,9 +2356,10 @@
         attachListeners();
         scheduleSaveState();
 
-        // Загружаем availability только если нет групповой тренировки
-        // (для групповых тренировок все данные уже есть в URL и state)
-        if (state.date && !state.program && !state.selection.groupTrainingId) {
+        // Загружаем availability только если нет программы и групповой тренировки на слоте
+        // (для программ и групповых тренировок все данные уже есть в URL и state)
+        const isGroupTrainingOnSlot = state.selection && state.selection.groupTrainingId;
+        if (state.date && !state.program && !isGroupTrainingOnSlot) {
             loadAvailability();
         }
     })();
@@ -2377,6 +2429,71 @@
             }
             if (availabilityMessage) {
                 availabilityMessage.style.display = '';
+            }
+        }
+    }
+    
+    function renderGroupTrainingInfo() {
+        // Для групповых тренировок на слотах заменяем "Свободные слоты" на фиксированное время
+        if (state.selection && state.selection.groupTrainingId && timeSlotsContainer && state.slot) {
+            const timeStr = state.slot.start_time ? formatTime(state.slot.start_time) : '';
+            const endTimeStr = state.slot.end_time ? formatTime(state.slot.end_time) : '';
+            const displayTime = endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
+            
+            // Всегда меняем метку на "Время тренировки" для групповых тренировок
+            let timeSlotLabel = timeSlotsContainer.closest('label');
+            if (!timeSlotLabel) {
+                timeSlotLabel = timeSlotsContainer.parentElement;
+            }
+            
+            if (timeSlotLabel) {
+                const labelSpan = timeSlotLabel.querySelector('span');
+                if (labelSpan) {
+                    labelSpan.textContent = 'Время тренировки *';
+                } else {
+                    const firstChild = timeSlotLabel.firstChild;
+                    if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+                        firstChild.textContent = 'Время тренировки *';
+                    }
+                }
+            }
+            
+            // Показываем фиксированное время
+            if (displayTime) {
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 1.1rem; font-weight: 600; color: #1976d2; text-align: center;">
+                        ${displayTime}
+                    </div>
+                `;
+            } else {
+                timeSlotsContainer.innerHTML = `
+                    <div style="padding: 16px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; font-size: 0.95rem; color: #856404; text-align: center;">
+                        Время тренировки будет указано администратором
+                    </div>
+                `;
+            }
+            
+            // Скрываем сообщение о доступности, так как время фиксировано
+            if (availabilityMessage) {
+                availabilityMessage.innerHTML = '';
+                availabilityMessage.style.display = 'none';
+            }
+            
+            // Показываем карточку инструктора, если есть данные
+            if (state.slot && state.slot.instructor_name) {
+                renderInstructorCard(state.slot);
+            } else if (instructorCard && state.slot) {
+                // Если есть slot, но нет имени инструктора, можно попробовать загрузить
+                // Пока просто скрываем
+                instructorCard.hidden = true;
+                instructorCard.style.display = 'none';
+            }
+        } else if (timeSlotsContainer && state.selection && state.selection.groupTrainingId) {
+            // Если нет данных о слоте, но есть групповая тренировка, скрываем контейнер
+            timeSlotsContainer.innerHTML = '';
+            if (availabilityMessage) {
+                availabilityMessage.innerHTML = '';
+                availabilityMessage.style.display = 'none';
             }
         }
     }
