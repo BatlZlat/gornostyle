@@ -163,7 +163,7 @@
 
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #334155;">
-                        Количество участников (можно записаться всей семьёй, до 8 человек):
+                        Количество участников (можно записаться всей семьёй, или большой дружной компанией, до 8 человек):
                     </label>
                     <div style="display: flex; gap: 12px; align-items: center;">
                         <button type="button" class="slot-modal-btn-minus" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer; font-size: 1.2rem;" ${participantsCount <= 1 ? 'disabled' : ''}>−</button>

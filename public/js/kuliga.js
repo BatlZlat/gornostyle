@@ -513,6 +513,9 @@
                                                         const clickableClass = isClickable ? 'kuliga-slot--clickable' : '';
                                                         const cursorStyle = isClickable ? 'cursor: pointer;' : '';
                                                         
+                                                        // Определяем статус для групповых тренировок (чтобы был правильный класс)
+                                                        const displayStatus = slot.type === 'group_training' ? 'group' : slot.status;
+                                                        
                                                         // Собираем данные о слоте для передачи в модальное окно
                                                         // Для групповых тренировок используем данные из самого слота
                                                         let slotData;
@@ -558,12 +561,12 @@
                                                             ? `data-slot-data="${encodeURIComponent(JSON.stringify(slotData))}"` 
                                                             : '';
                                                         return `
-                                                            <span class="kuliga-slot ${statusClasses[slot.status] || ''} ${clickableClass}" 
+                                                            <span class="kuliga-slot ${statusClasses[displayStatus] || ''} ${clickableClass}" 
                                                                   ${dataAttrs}
                                                                   style="${cursorStyle}"
                                                                   title="${isClickable ? 'Нажмите для записи на тренировку' : ''}">
                                                                 <span class="kuliga-slot__time">${formatTime(slot.startTime)}</span>
-                                                                <span class="kuliga-slot__status"> — ${statusLabels[slot.status] || ''}</span>
+                                                                <span class="kuliga-slot__status"> — ${statusLabels[displayStatus] || ''}</span>
                                                             </span>
                                                         `;
                                                     }).join('');

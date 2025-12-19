@@ -447,10 +447,61 @@
                 state.syncMainParticipant = true;
             }
 
-            // Если нет presetSlot, сбрасываем слот
-            if (!state.presetSlot) {
-                state.slot = null;
+            // Устанавливаем дату и время для предзаполнения
+            if (dateParam) {
+                state.date = dateParam;
+                // Предзаполняем поле даты
+                const dateInput = document.getElementById('kuligaDate');
+                if (dateInput) {
+                    dateInput.value = dateParam;
+                }
             }
+            
+            // Если есть startTime и endTime, создаем объект слота для отображения
+            if (startTimeParam) {
+                const endTimeParam = params.get('endTime');
+                // Создаем минимальный объект слота для отображения
+                state.slot = {
+                    slot_id: parseInt(slotIdParam) || null,
+                    instructor_id: parseInt(instructorIdParam) || null,
+                    start_time: startTimeParam,
+                    end_time: endTimeParam || startTimeParam,
+                    instructor_name: '', // Будет заполнено при загрузке availability, если нужно
+                    instructor_photo_url: '',
+                    instructor_sport_type: state.sportType || 'ski',
+                    instructor_description: '',
+                };
+                
+                // Функция для форматирования времени
+                const formatTime = (timeStr) => {
+                    if (!timeStr) return '';
+                    return timeStr.substring(0, 5); // Берем первые 5 символов (HH:mm)
+                };
+                
+                // Если есть время, отображаем его как выбранное
+                if (timeSlotsContainer) {
+                    // Создаем визуальное представление времени
+                    timeSlotsContainer.innerHTML = `
+                        <div style="padding: 16px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; font-size: 0.95rem; color: #1976d2; text-align: center;">
+                            <strong>${formatTime(startTimeParam)}${endTimeParam ? ` - ${formatTime(endTimeParam)}` : ''}</strong>
+                            <br>
+                            <small>Дата и время предзаполнены</small>
+                        </div>
+                    `;
+                }
+                
+                // Показываем карточку инструктора, если есть данные
+                if (instructorIdParam) {
+                    // Можно загрузить данные инструктора, но для простоты оставим как есть
+                    renderInstructorCard(state.slot);
+                }
+            } else {
+                // Если нет presetSlot, сбрасываем слот
+                if (!state.presetSlot) {
+                    state.slot = null;
+                }
+            }
+            
             state.availability = [];
             
             // Обновляем UI после установки данных
@@ -648,6 +699,33 @@
             ];
             
             selectionDetails.innerHTML = details.join('');
+            updateParticipantsHint();
+            updateTotalPrice();
+            return;
+        }
+        
+        // Если это групповая тренировка на слоте (без priceId, но с groupTrainingId)
+        if (!state.selection.priceId && state.selection.groupTrainingId) {
+            const {
+                pricePerPerson,
+                duration,
+                groupTrainingMaxParticipants,
+                groupTrainingCurrentParticipants,
+            } = state.selection;
+            
+            selectionTitle.textContent = 'Групповая тренировка';
+            
+            // Форматируем уровень (используем максимальное количество участников как индикатор уровня)
+            const level = groupTrainingMaxParticipants || '—';
+            
+            const details = [
+                `<span><i class="fa-regular fa-clock"></i>${duration || 60} мин.</span>`,
+                `<span><i class="fa-solid fa-users"></i>Уровень: ${level}</span>`,
+                `<span><i class="fa-solid fa-coins"></i>Цена за человека: ${formatCurrency(pricePerPerson || 0)}</span>`,
+            ];
+            
+            selectionDetails.innerHTML = details.join('');
+            
             updateParticipantsHint();
             updateTotalPrice();
             return;
