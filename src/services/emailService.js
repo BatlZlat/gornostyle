@@ -20,9 +20,9 @@ class EmailService {
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
             },
             // Увеличиваем timeout для стабильности соединения
-            connectionTimeout: 10000, // 10 секунд (было 60)
-            greetingTimeout: 10000,   // 10 секунд (было 30)
-            socketTimeout: 30000,     // 30 секунд (было 60)
+            connectionTimeout: 30000, // 30 секунд
+            greetingTimeout: 30000,   // 30 секунд
+            socketTimeout: 60000,     // 60 секунд
             // Дополнительные настройки для надежности
             tls: {
                 rejectUnauthorized: false // Для тестирования
@@ -494,8 +494,8 @@ class EmailService {
             const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
             const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
             
-            // Для Yandex адресов того же аккаунта увеличиваем таймаут еще больше
-            const timeout = isYandexSameAccount ? 30000 : (isYandexEmail ? 20000 : 10000);
+            // Увеличиваем таймаут для всех адресов (было слишком мало для медленных соединений)
+            const timeout = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : 30000);
             
             if (isYandexSameAccount) {
                 console.log(`⏱️  Yandex адрес того же аккаунта, увеличенный таймаут: ${timeout/1000} сек`);
