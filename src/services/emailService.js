@@ -494,10 +494,15 @@ class EmailService {
             const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
             const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
             
-            // Увеличиваем таймаут для всех адресов (было слишком мало для медленных соединений)
-            const timeout = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : 30000);
+            // Увеличиваем таймаут для всех адресов
+            // Для mail.ru и других внешних доменов может потребоваться больше времени из-за антиспам проверок
+            const isMailRu = recipientEmail.includes('@mail.ru');
+            const isGmail = recipientEmail.includes('@gmail.com');
+            const timeout = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
             
-            if (isYandexSameAccount) {
+            if (isMailRu) {
+                console.log(`⏱️  Mail.ru адрес, увеличенный таймаут: ${timeout/1000} сек`);
+            } else if (isYandexSameAccount) {
                 console.log(`⏱️  Yandex адрес того же аккаунта, увеличенный таймаут: ${timeout/1000} сек`);
             }
             
@@ -511,7 +516,49 @@ class EmailService {
             console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
             return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
         } catch (smtpError) {
-            console.error(`❌ Ошибка SMTP Yandex:`, smtpError.message);
+            console.error(`❌ Ошибка SMTP Yandex (порт 465):`, smtpError.message);
+            
+            // Пробуем альтернативный порт 587 с STARTTLS при любой ошибке
+            console.log('🔄 Пробуем альтернативный порт 587 (STARTTLS)...');
+            try {
+                const transporter587 = nodemailer.createTransport({
+                    host: 'smtp.yandex.ru',
+                    port: 587,
+                    secure: false, // STARTTLS
+                    requireTLS: true,
+                    auth: {
+                        user: process.env.EMAIL_USER || 'batl-zlat@yandex.ru',
+                        pass: process.env.EMAIL_PASS || ''
+                    },
+                    connectionTimeout: 30000,
+                    greetingTimeout: 30000,
+                    socketTimeout: 60000,
+                    tls: {
+                        rejectUnauthorized: false
+                    }
+                });
+
+                // Используем тот же таймаут, что и для порта 465
+                const isYandexEmail = recipientEmail.includes('@yandex.ru');
+                const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
+                const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
+                const isMailRu = recipientEmail.includes('@mail.ru');
+                const isGmail = recipientEmail.includes('@gmail.com');
+                const timeout587 = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
+
+                const sendPromise587 = transporter587.sendMail(mailOptions);
+                const timeoutPromise587 = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`SMTP timeout (порт 587): отправка заняла более ${timeout587/1000} секунд`)), timeout587)
+                );
+
+                const result587 = await Promise.race([sendPromise587, timeoutPromise587]);
+                console.log('✅ Email отправлен успешно через SMTP Yandex (порт 587), messageId:', result587.messageId);
+                transporter587.close();
+                return { success: true, messageId: result587.messageId, response: result587.response, service: 'smtp-587' };
+            } catch (smtp587Error) {
+                console.error(`❌ Ошибка SMTP Yandex (порт 587):`, smtp587Error.message);
+                // Продолжаем с оригинальной ошибкой для дальнейшей обработки
+            }
             
             // Для Yandex адресов того же аккаунта пробуем еще раз с увеличенным таймаутом
             const isYandexEmail = recipientEmail.includes('@yandex.ru');
