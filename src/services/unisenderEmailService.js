@@ -40,7 +40,8 @@ class UnisenderEmailService {
 
             console.log(`📧 Попытка отправки email через Unisender API на ${recipientEmail}...`);
 
-            // Подготавливаем данные для API
+            // Подготавливаем данные для API Unisender
+            // Формат: https://www.unisender.com/ru/support/api/messages/sendemail/
             const emailData = {
                 api_key: this.apiKey,
                 email: recipientEmail,
@@ -48,8 +49,8 @@ class UnisenderEmailService {
                 sender_email: this.fromEmail,
                 subject: subject,
                 body: htmlContent,
-                list_id: '', // Для транзакционных писем не требуется
                 format: 'html'
+                // list_id не требуется для транзакционных писем
             };
 
             // Если есть вложения, конвертируем их в base64
@@ -85,23 +86,31 @@ class UnisenderEmailService {
             }
 
             // Отправляем запрос к Unisender API
+            // Метод: sendEmail (для транзакционных писем)
             const result = await this.makeApiRequest('sendEmail', emailData);
 
+            console.log('📋 Полный ответ Unisender:', JSON.stringify(result, null, 2));
+
+            // Unisender возвращает {result: {email_id: "...", ...}, error: null} при успехе
+            // или {error: "текст ошибки", result: null} при ошибке
             if (result.error) {
-                console.error(`❌ Unisender вернул ошибку: ${result.error}`);
-                return { success: false, error: result.error };
+                const errorMsg = typeof result.error === 'string' ? result.error : JSON.stringify(result.error);
+                console.error(`❌ Unisender вернул ошибку: ${errorMsg}`);
+                return { success: false, error: errorMsg };
             }
 
-            if (result.result && result.result.email_id) {
-                console.log(`✅ Email отправлен успешно через Unisender, email_id: ${result.result.email_id}`);
+            if (result.result) {
+                const emailId = result.result.email_id || result.result.job_id || result.result;
+                console.log(`✅ Email отправлен успешно через Unisender, email_id: ${emailId}`);
                 return { 
                     success: true, 
-                    messageId: result.result.email_id, 
-                    service: 'unisender' 
+                    messageId: emailId, 
+                    service: 'unisender',
+                    result: result.result
                 };
             } else {
                 console.error(`❌ Unisender вернул некорректный ответ:`, result);
-                return { success: false, error: 'Unisender вернул некорректный ответ' };
+                return { success: false, error: 'Unisender вернул некорректный ответ (нет result и error)' };
             }
 
         } catch (error) {
