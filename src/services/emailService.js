@@ -484,6 +484,18 @@ class EmailService {
                 attachments: attachments
             };
 
+            // Формируем mailOptions один раз, чтобы использовать в обеих попытках
+            const mailOptions = {
+                from: {
+                    name: 'Горностайл72',
+                    address: emailUser
+                },
+                to: recipientEmail,
+                subject: subject,
+                html: htmlContent,
+                attachments: attachments
+            };
+
             console.log(`📧 Попытка отправки email через SMTP Yandex на ${recipientEmail}...`);
             console.log(`📧 От кого: ${mailOptions.from.address} (${mailOptions.from.name})`);
             console.log(`📧 Тема: ${mailOptions.subject}`);
@@ -521,6 +533,18 @@ class EmailService {
             // Пробуем альтернативный порт 587 с STARTTLS при любой ошибке
             console.log('🔄 Пробуем альтернативный порт 587 (STARTTLS)...');
             try {
+                // Формируем mailOptions для порта 587
+                const mailOptions587 = {
+                    from: {
+                        name: 'Горностайл72',
+                        address: emailUser
+                    },
+                    to: recipientEmail,
+                    subject: subject,
+                    html: htmlContent,
+                    attachments: attachments
+                };
+
                 const transporter587 = nodemailer.createTransport({
                     host: 'smtp.yandex.ru',
                     port: 587,
@@ -546,7 +570,7 @@ class EmailService {
                 const isGmail = recipientEmail.includes('@gmail.com');
                 const timeout587 = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
 
-                const sendPromise587 = transporter587.sendMail(mailOptions);
+                const sendPromise587 = transporter587.sendMail(mailOptions587);
                 const timeoutPromise587 = new Promise((_, reject) => 
                     setTimeout(() => reject(new Error(`SMTP timeout (порт 587): отправка заняла более ${timeout587/1000} секунд`)), timeout587)
                 );
