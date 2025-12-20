@@ -601,13 +601,21 @@ class EmailService {
                 const resendResult = await this.resendService.resend.emails.send(emailData);
                 
                 console.log('📋 Полный ответ Resend:', JSON.stringify(resendResult, null, 2));
+                
+                // Проверяем наличие ошибки в ответе
+                if (resendResult?.error) {
+                    const errorMsg = resendResult.error.message || 'Ошибка Resend';
+                    console.error(`❌ Resend вернул ошибку: ${errorMsg}`);
+                    throw new Error(errorMsg);
+                }
+                
                 const messageId = resendResult?.data?.id || resendResult?.id || null;
                 if (messageId) {
                     console.log('✅ Email отправлен успешно через Resend, messageId:', messageId);
                     return { success: true, messageId: messageId, service: 'resend' };
                 } else {
-                    console.warn('⚠️ Resend вернул успешный ответ, но messageId отсутствует. Ответ:', resendResult);
-                    return { success: true, messageId: null, service: 'resend', warning: 'messageId отсутствует в ответе' };
+                    console.error('❌ Resend вернул ответ без messageId и без ошибки. Ответ:', resendResult);
+                    throw new Error('Resend вернул некорректный ответ: отсутствует messageId');
                 }
             } else {
                 console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');
