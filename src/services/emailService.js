@@ -3,11 +3,13 @@ const fs = require('fs').promises;
 const path = require('path');
 // const SendGridEmailService = require('./sendGridEmailService'); // Временно отключен
 const ResendEmailService = require('./resendEmailService');
+const UnisenderEmailService = require('./unisenderEmailService');
 
 class EmailService {
     constructor() {
-        // Инициализируем Resend сервис как основной
+        // Инициализируем сервисы для fallback
         this.resendService = new ResendEmailService();
+        this.unisenderService = new UnisenderEmailService();
         // this.sendGridService = new SendGridEmailService(); // Временно отключен
         
         // Создаем transporter для отправки email
@@ -142,7 +144,7 @@ class EmailService {
             return { success: true, messageId: result.messageId };
 
         } catch (error) {
-            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
+            console.error(`❌ Ошибка при отправке email на ${recipientEmail} через SMTP:`, error.message);
             
             // Детальная информация об ошибке для отладки
             if (error.code) {
@@ -150,6 +152,19 @@ class EmailService {
             }
             if (error.response) {
                 console.error(`Ответ сервера: ${error.response}`);
+            }
+            
+            // Fallback на Unisender (работает через HTTPS, не требует SMTP портов)
+            console.log(`🔄 Пробуем отправить через Unisender API (работает через HTTPS, не требует SMTP портов)...`);
+            try {
+                const unisenderResult = await this.unisenderService.sendCertificateEmail(recipientEmail, certificateData);
+                if (unisenderResult.success) {
+                    return unisenderResult;
+                } else {
+                    console.error(`❌ Unisender не смог отправить письмо: ${unisenderResult.error}`);
+                }
+            } catch (unisenderError) {
+                console.error(`❌ Ошибка при попытке отправки через Unisender:`, unisenderError.message);
             }
             
             return { success: false, error: error.message };
@@ -473,17 +488,6 @@ class EmailService {
                 throw new Error('EMAIL_PASS не настроен');
             }
 
-            const mailOptions = {
-                from: {
-                    name: 'Горностайл72',
-                    address: emailUser
-                },
-                to: recipientEmail,
-                subject: subject,
-                html: htmlContent,
-                attachments: attachments
-            };
-
             // Формируем mailOptions один раз, чтобы использовать в обеих попытках
             const mailOptions = {
                 from: {
@@ -508,12 +512,14 @@ class EmailService {
             
             // Увеличиваем таймаут для всех адресов
             // Для mail.ru и других внешних доменов может потребоваться больше времени из-за антиспам проверок
-            const isMailRu = recipientEmail.includes('@mail.ru');
+            const isMailRu = recipientEmail.includes('@mail.ru') || recipientEmail.includes('@inbox.ru') || recipientEmail.includes('@list.ru') || recipientEmail.includes('@bk.ru');
             const isGmail = recipientEmail.includes('@gmail.com');
             const timeout = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
             
+            // ВАЖНО: Mail.ru блокирует исходящие SMTP соединения, поэтому для mail.ru лучше использовать Resend
             if (isMailRu) {
-                console.log(`⏱️  Mail.ru адрес, увеличенный таймаут: ${timeout/1000} сек`);
+                console.log(`⏱️  Mail.ru адрес обнаружен (${timeout/1000} сек таймаут)`);
+                console.log(`⚠️  ВНИМАНИЕ: Mail.ru может блокировать SMTP соединения. Если отправка не удастся, будет использован Resend.`);
             } else if (isYandexSameAccount) {
                 console.log(`⏱️  Yandex адрес того же аккаунта, увеличенный таймаут: ${timeout/1000} сек`);
             }
@@ -592,7 +598,7 @@ class EmailService {
             if (isYandexSameAccount && smtpError.message.includes('timeout')) {
                 console.log(`🔄 Повторная попытка отправки через SMTP для Yandex адреса того же аккаунта с увеличенным таймаутом...`);
                 try {
-                    const mailOptions = {
+                    const retryMailOptions = {
                         from: {
                             name: 'Горностайл72',
                             address: emailUser
@@ -603,7 +609,7 @@ class EmailService {
                         attachments: attachments
                     };
                     
-                    const sendPromise = this.transporter.sendMail(mailOptions);
+                    const sendPromise = this.transporter.sendMail(retryMailOptions);
                     const timeoutPromise = new Promise((_, reject) => 
                         setTimeout(() => reject(new Error('SMTP timeout: повторная попытка также не удалась')), 40000)
                     );
@@ -616,12 +622,24 @@ class EmailService {
                     console.log(`🔄 Пробуем отправить через Resend как последний fallback...`);
                 }
             } else {
-                console.log(`🔄 Пробуем отправить через Resend как fallback...`);
+                console.log(`🔄 Пробуем альтернативный сервис как fallback...`);
             }
             
-            // Fallback на Resend только если SMTP полностью не работает
+            // Fallback на Unisender (работает в России, через HTTPS, не требует SMTP портов)
+            console.log(`🔄 Пробуем отправить через Unisender API (работает через HTTPS, не требует SMTP портов)...`);
+            try {
+                const unisenderResult = await this.unisenderService.sendEmail(recipientEmail, subject, htmlContent, attachments);
+                if (unisenderResult.success) {
+                    return unisenderResult;
+                } else {
+                    console.error(`❌ Unisender не смог отправить письмо: ${unisenderResult.error}`);
+                }
+            } catch (unisenderError) {
+                console.error(`❌ Ошибка при попытке отправки через Unisender:`, unisenderError.message);
+            }
+            
+            // Последний fallback на Resend (если настроен)
             // ВАЖНО: Resend в тестовом режиме может отправлять только на верифицированные адреса
-            // Поэтому это только крайний случай, основной метод - SMTP
             return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments, smtpError);
         }
     }
