@@ -512,10 +512,20 @@ router.post(
                     
                 } else if (bookingData.booking_type === 'group') {
                     // ГРУППОВОЕ БРОНИРОВАНИЕ: Проверяем доступность мест в групповой тренировке
+                    // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
                     const groupTrainingCheck = await client.query(
-                        `SELECT id, current_participants, max_participants, status, instructor_id
-                         FROM kuliga_group_trainings
-                         WHERE id = $1
+                        `SELECT 
+                                kgt.id, 
+                                COALESCE((
+                                    SELECT SUM(kb.participants_count)
+                                    FROM kuliga_bookings kb
+                                    WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                                ), 0)::INTEGER as current_participants,
+                                kgt.max_participants, 
+                                kgt.status, 
+                                kgt.instructor_id
+                         FROM kuliga_group_trainings kgt
+                         WHERE kgt.id = $1
                          FOR UPDATE`,
                         [bookingData.group_training_id]
                     );
@@ -528,7 +538,7 @@ router.post(
                         // Возвращаем временно забронированные места
                         await pool.query(
                             `UPDATE kuliga_group_trainings
-                             SET current_participants = current_participants - $1,
+                             SET current_participants = GREATEST(0, current_participants - $1),
                                  updated_at = CURRENT_TIMESTAMP
                              WHERE id = $2`,
                             [bookingData.participants_count, bookingData.group_training_id]
@@ -564,7 +574,7 @@ router.post(
                         // Возвращаем временно забронированные места
                         await pool.query(
                             `UPDATE kuliga_group_trainings
-                             SET current_participants = current_participants - $1,
+                             SET current_participants = GREATEST(0, current_participants - $1),
                                  updated_at = CURRENT_TIMESTAMP
                              WHERE id = $2`,
                             [bookingData.participants_count, bookingData.group_training_id]
@@ -589,19 +599,24 @@ router.post(
                         return res.status(200).send('OK');
                     }
                     
-                    // Проверяем доступность мест (счетчик уже увеличен временно, но проверяем на всякий случай)
-                    if (groupTraining.current_participants > groupTraining.max_participants) {
+                    // Проверяем доступность мест (используем пересчитанное current_participants + временное резервирование)
+                    // Учитываем, что места уже временно забронированы (current_participants в таблице увеличен)
+                    // Но мы проверяем по реальному количеству confirmed бронирований
+                    const realCurrentParticipants = groupTraining.current_participants;
+                    const participantsToAdd = Number(bookingData.participants_count) || 1;
+                    
+                    if (realCurrentParticipants + participantsToAdd > groupTraining.max_participants) {
                         await client.query('ROLLBACK');
-                        errorMessage = `Недостаточно мест в групповой тренировке #${bookingData.group_training_id}`;
+                        errorMessage = `Недостаточно мест в групповой тренировке #${bookingData.group_training_id} (занято: ${realCurrentParticipants}/${groupTraining.max_participants}, требуется: ${participantsToAdd})`;
                         console.error(`⚠️ ${errorMessage}`);
                         
                         // Возвращаем временно забронированные места
                         await pool.query(
                             `UPDATE kuliga_group_trainings
-                             SET current_participants = current_participants - $1,
+                             SET current_participants = GREATEST(0, current_participants - $1),
                                  updated_at = CURRENT_TIMESTAMP
                              WHERE id = $2`,
-                            [bookingData.participants_count, bookingData.group_training_id]
+                            [participantsToAdd, bookingData.group_training_id]
                         );
                         
                         await logWebhook({
