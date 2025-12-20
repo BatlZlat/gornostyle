@@ -8,7 +8,7 @@
 require('dotenv').config();
 const readline = require('readline');
 const EmailService = require('../src/services/emailService');
-const EmailTemplateService = require('../src/services/email-template-service');
+const emailTemplateService = require('../src/services/email-template-service');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -121,7 +121,7 @@ async function main() {
         }
 
         // Формируем данные для шаблона
-        const emailTemplateService = new EmailTemplateService();
+        // emailTemplateService уже является экземпляром (не классом)
         
         // Парсим дату для формата YYYY-MM-DD (нужно для внутренней обработки в шаблоне)
         // Пытаемся распарсить русскую дату "19 декабря 2025" -> "2025-12-19"
