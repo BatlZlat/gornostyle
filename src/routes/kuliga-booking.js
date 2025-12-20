@@ -390,11 +390,27 @@ const createGroupBooking = async (req, res) => {
                 // Если слот уже в статусе 'group' или 'booked', значит групповая тренировка уже создана
                 if (slot.status === 'group') {
                     // Групповая тренировка уже создана на этот слот - используем её
+                    // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
                     const existingGroupTraining = await client.query(
-                        `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
-                                price_per_person, max_participants, current_participants, status, location
-                         FROM kuliga_group_trainings
-                         WHERE slot_id = $1 AND date = $2
+                        `SELECT 
+                                kgt.id, 
+                                kgt.instructor_id, 
+                                kgt.slot_id, 
+                                kgt.date, 
+                                kgt.start_time, 
+                                kgt.end_time, 
+                                kgt.sport_type,
+                                kgt.price_per_person, 
+                                kgt.max_participants, 
+                                COALESCE((
+                                    SELECT SUM(kb.participants_count)
+                                    FROM kuliga_bookings kb
+                                    WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                                ), 0)::INTEGER as current_participants,
+                                kgt.status, 
+                                kgt.location
+                         FROM kuliga_group_trainings kgt
+                         WHERE kgt.slot_id = $1 AND kgt.date = $2
                          FOR UPDATE`,
                         [slot.slot_id, date]
                     );
@@ -492,11 +508,27 @@ const createGroupBooking = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Не выбрано групповое занятие. Выберите слот или существующую групповую тренировку.' });
         } else {
             // Используем существующую групповую тренировку
+            // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
             const groupResult = await client.query(
-                `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
-                        price_per_person, max_participants, current_participants, status, location
-                 FROM kuliga_group_trainings
-                 WHERE id = $1
+                `SELECT 
+                        kgt.id, 
+                        kgt.instructor_id, 
+                        kgt.slot_id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time, 
+                        kgt.sport_type,
+                        kgt.price_per_person, 
+                        kgt.max_participants, 
+                        COALESCE((
+                            SELECT SUM(kb.participants_count)
+                            FROM kuliga_bookings kb
+                            WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                        ), 0)::INTEGER as current_participants,
+                        kgt.status, 
+                        kgt.location
+                 FROM kuliga_group_trainings kgt
+                 WHERE kgt.id = $1
                  FOR UPDATE`,
                 [groupTrainingIdToUse]
             );
@@ -514,7 +546,7 @@ const createGroupBooking = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Запись на это занятие временно недоступна' });
         }
 
-        // Проверяем доступность мест (без учета временных резервов, так как их еще нет)
+        // Проверяем доступность мест (используем пересчитанное current_participants из подтверждённых бронирований)
         if (training.current_participants + safeCount > training.max_participants) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: 'Недостаточно мест в группе' });
@@ -1418,13 +1450,24 @@ const createProgramBooking = async (req, res) => {
 
         // НОВАЯ ЛОГИКА: Ищем уже созданную тренировку из программы
         // Программы автоматически генерируют тренировки без инструктора
+        // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
         const existingTrainingResult = await client.query(
-            `SELECT id, current_participants, max_participants, status, instructor_id, price_per_person
-             FROM kuliga_group_trainings
-             WHERE program_id = $1 
-               AND date = $2 
-               AND start_time = $3
-               AND status IN ('open', 'confirmed')
+            `SELECT 
+                    kgt.id, 
+                    COALESCE((
+                        SELECT SUM(kb.participants_count)
+                        FROM kuliga_bookings kb
+                        WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                    ), 0)::INTEGER as current_participants,
+                    kgt.max_participants, 
+                    kgt.status, 
+                    kgt.instructor_id, 
+                    kgt.price_per_person
+             FROM kuliga_group_trainings kgt
+             WHERE kgt.program_id = $1 
+               AND kgt.date = $2 
+               AND kgt.start_time = $3
+               AND kgt.status IN ('open', 'confirmed')
              FOR UPDATE`,
             [programId, dateStr, startTimeStr]
         );
@@ -1443,7 +1486,7 @@ const createProgramBooking = async (req, res) => {
 
         const groupTraining = existingTrainingResult.rows[0];
 
-        // Проверяем наличие мест (без учета временных резервов, так как их еще нет)
+        // Проверяем наличие мест (используем пересчитанное current_participants из подтверждённых бронирований)
         if (groupTraining.current_participants + safeCount > groupTraining.max_participants) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: 'Недостаточно мест в группе' });
