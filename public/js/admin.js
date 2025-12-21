@@ -2251,7 +2251,15 @@ async function editKuligaInstructorForTrainersPage(id) {
                     }
                     
                     const photoResult = await photoResponse.json();
-                    photoUrl = photoResult.data?.photo_url || photoResult.photo_url;
+                    // API возвращает { success: true, photoUrl }
+                    photoUrl = photoResult.photoUrl || photoResult.data?.photo_url || photoResult.photo_url;
+                    
+                    if (!photoUrl) {
+                        console.error('❌ photoUrl не найден в ответе API:', photoResult);
+                        throw new Error('Не удалось получить URL загруженного фото');
+                    }
+                    
+                    console.log('✅ Фото загружено, photoUrl:', photoUrl);
                 }
                 
                 // Обновляем остальные данные инструктора

@@ -567,24 +567,60 @@ router.post('/instructors/:id/upload-photo', upload.single('photo'), async (req,
             .webp({ quality: 85, effort: 6 })
             .toFile(outputPath);
 
+        console.log(`✅ Файл успешно сохранен на диск: ${outputPath}`);
+        console.log(`📊 Проверка существования файла: ${fs.existsSync(outputPath) ? 'ФАЙЛ СУЩЕСТВУЕТ' : 'ФАЙЛ НЕ НАЙДЕН!'}`);
+
         const timestamp = Date.now();
         const photoUrl = `/images/kuliga/${filename}?v=${timestamp}`;
 
-        console.log(`💾 Обновление photo_url в БД: ${photoUrl}`);
+        console.log(`💾 Обновление photo_url в БД для инструктора ID: ${id}`);
+        console.log(`   Новый photo_url: ${photoUrl}`);
+
+        // Проверяем текущее значение photo_url перед обновлением
+        const checkResult = await pool.query(
+            'SELECT id, full_name, photo_url FROM kuliga_instructors WHERE id = $1',
+            [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+            console.error(`❌ Инструктор с ID ${id} не найден в БД!`);
+            return res.status(404).json({ success: false, error: 'Инструктор не найден' });
+        }
+        
+        console.log(`   Текущий photo_url в БД: ${checkResult.rows[0].photo_url || 'НЕТ'}`);
 
         const updateResult = await pool.query(
             `UPDATE kuliga_instructors
              SET photo_url = $1, updated_at = CURRENT_TIMESTAMP
              WHERE id = $2
-             RETURNING id, full_name, photo_url`,
+             RETURNING id, full_name, photo_url, updated_at`,
             [photoUrl, id]
         );
 
         if (updateResult.rows.length > 0) {
-            console.log(`✅ photo_url успешно обновлен в БД для инструктора ${updateResult.rows[0].full_name}`);
-            console.log(`   Проверка: photo_url в БД = ${updateResult.rows[0].photo_url}`);
+            const updated = updateResult.rows[0];
+            console.log(`✅ photo_url успешно обновлен в БД для инструктора ${updated.full_name}`);
+            console.log(`   Проверка после UPDATE: photo_url в БД = ${updated.photo_url}`);
+            console.log(`   updated_at = ${updated.updated_at}`);
+            
+            // Дополнительная проверка - читаем еще раз из БД для подтверждения
+            const verifyResult = await pool.query(
+                'SELECT photo_url FROM kuliga_instructors WHERE id = $1',
+                [id]
+            );
+            
+            if (verifyResult.rows.length > 0) {
+                console.log(`   Проверка чтением из БД: photo_url = ${verifyResult.rows[0].photo_url || 'НЕТ'}`);
+                
+                if (verifyResult.rows[0].photo_url !== photoUrl) {
+                    console.error(`❌ ОШИБКА: photo_url в БД не совпадает с тем, что мы установили!`);
+                    console.error(`   Ожидали: ${photoUrl}`);
+                    console.error(`   Получили: ${verifyResult.rows[0].photo_url}`);
+                }
+            }
         } else {
-            console.warn(`⚠️  Инструктор с ID ${id} не найден при обновлении photo_url`);
+            console.error(`❌ UPDATE не вернул строки. Инструктор с ID ${id} не был обновлен!`);
+            return res.status(500).json({ success: false, error: 'Не удалось обновить photo_url в БД' });
         }
 
         res.json({ success: true, photoUrl });
