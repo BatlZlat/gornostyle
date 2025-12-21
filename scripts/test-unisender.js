@@ -14,6 +14,9 @@ async function main() {
     if (!recipientEmail) {
         console.error('❌ Ошибка: Укажите email получателя');
         console.log('Использование: node scripts/test-unisender.js <email_получателя>');
+        console.log('');
+        console.log('⚠️  ВАЖНО: На бесплатном тарифе Unisender можно отправлять только на');
+        console.log('   подтвержденные email адреса в вашем аккаунте!');
         process.exit(1);
     }
 

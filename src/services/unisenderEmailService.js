@@ -19,6 +19,10 @@ class UnisenderEmailService {
             console.log('✅ Unisender инициализирован');
         }
         
+        // ВАЖНО: Email отправителя должен быть подтвержден в Unisender!
+        // Обычно это email, с которым вы регистрировались в Unisender
+        // Можно использовать переменную UNISENDER_FROM_EMAIL, но по умолчанию 
+        // лучше использовать email, который точно подтвержден в аккаунте
         this.fromEmail = process.env.UNISENDER_FROM_EMAIL || process.env.EMAIL_USER || 'batl-zlat@yandex.ru';
         this.fromName = process.env.UNISENDER_FROM_NAME || 'Горностайл72';
         this.apiUrl = 'https://api.unisender.com/ru/api';
