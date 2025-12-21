@@ -556,6 +556,26 @@
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
                         </div>
+                        <div class="kuliga-schedule__nav kuliga-schedule__nav--mobile-week">
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--prev-week-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="prev-week"
+                                    ${weekOffset === 0 ? 'disabled' : ''}
+                                    aria-label="Предыдущая неделя">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <div class="kuliga-schedule__week-title kuliga-schedule__week-title--mobile">
+                                <span class="kuliga-schedule__week-range">${formatWeekRange(days)}</span>
+                                ${weekOffset === 0 ? '<span class="kuliga-schedule__week-badge">Текущая неделя</span>' : ''}
+                            </div>
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next-week-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="next-week"
+                                    ${weekOffset >= 4 ? 'disabled' : ''}
+                                    aria-label="Следующая неделя">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
                         <div class="kuliga-schedule__wrapper">
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--prev-mobile" 
                                     data-instructor-id="${instructor.id}" 
@@ -736,7 +756,7 @@
     };
 
     const initScheduleNavigation = () => {
-        // Навигация по неделям (десктоп)
+        // Навигация по неделям (десктоп и мобильная версия)
         document.querySelectorAll('[data-action="prev-week"], [data-action="next-week"]').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -760,19 +780,32 @@
             });
         });
         
-        // Обновляем состояние кнопок навигации
+        // Обновляем состояние кнопок навигации (десктоп и мобильная версия)
         document.querySelectorAll('.kuliga-schedule').forEach((scheduleEl) => {
             const weekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
             const instructorId = scheduleEl.getAttribute('data-instructor-id');
             
-            const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]`);
-            const nextBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"]`);
+            // Обновляем кнопки для десктоп версии
+            const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]:not(.kuliga-schedule__nav-btn--prev-week-mobile):not(.kuliga-schedule__nav-btn--next-week-mobile)`);
+            const nextBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"]:not(.kuliga-schedule__nav-btn--prev-week-mobile):not(.kuliga-schedule__nav-btn--next-week-mobile)`);
+            
+            // Обновляем кнопки для мобильной версии
+            const prevBtnMobile = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"].kuliga-schedule__nav-btn--prev-week-mobile`);
+            const nextBtnMobile = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"].kuliga-schedule__nav-btn--next-week-mobile`);
+            
             if (prevBtn) {
                 prevBtn.disabled = weekOffset === 0;
             }
             if (nextBtn) {
                 // Можно листать на месяц вперед (до weekOffset = 4)
                 nextBtn.disabled = weekOffset >= 4;
+            }
+            if (prevBtnMobile) {
+                prevBtnMobile.disabled = weekOffset === 0;
+            }
+            if (nextBtnMobile) {
+                // Можно листать на месяц вперед (до weekOffset = 4)
+                nextBtnMobile.disabled = weekOffset >= 4;
             }
         });
 
