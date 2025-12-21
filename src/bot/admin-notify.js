@@ -12,7 +12,7 @@ const TelegramBot = require('node-telegram-bot-api');
 // Создаем экземпляр бота для уведомлений администратора
 const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
-// Создаем экземпляр бота для уведомлений инструкторов Кулиги
+// Создаем экземпляр бота для уведомлений инструкторов
 let instructorBot = null;
 if (process.env.KULIGA_INSTRUKTOR_BOT) {
     try {
@@ -737,7 +737,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
         });
         
         if (!instructorBot) {
-            console.log('[NOTIFY] ❌ Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            console.log('[NOTIFY] ❌ Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)');
             return;
         }
 
@@ -825,7 +825,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
 async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
     try {
         if (!instructorBot) {
-            console.log('Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            console.log('Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)');
             return;
         }
 

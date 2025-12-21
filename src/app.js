@@ -58,12 +58,12 @@ try {
     console.error('❌ Ошибка при запуске клиентского бота:', error.message);
 }
 
-// Импортируем бота инструкторов Кулиги (если токен настроен)
+// Импортируем бота инструкторов (если токен настроен)
 if (process.env.KULIGA_INSTRUKTOR_BOT) {
     require('./bot/kuliga-instructor-bot');
-    console.log('✅ Бот инструкторов Кулиги запущен');
+    console.log('✅ Бот инструкторов запущен');
 } else {
-    console.log('⚠️ Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+    console.log('⚠️ Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)');
 }
 
 // Запускаем обработчик очереди email
