@@ -381,15 +381,41 @@
         });
     };
 
-    // Найти первый день с расписанием для инструктора
+    // Проверить, есть ли у дня расписание (только будущие дни с доступными или групповыми слотами)
+    const hasScheduleForDay = (instructor, dayIso) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dayDate = new Date(dayIso + 'T00:00:00');
+        
+        // Пропускаем прошедшие дни
+        if (dayDate < today) {
+            return false;
+        }
+        
+        const daySchedule = instructor.schedule[dayIso] || [];
+        return daySchedule.length > 0 && daySchedule.some(slot => 
+            slot.status === 'available' || slot.status === 'group' || slot.type === 'group_training'
+        );
+    };
+
+    // Проверить, есть ли у инструктора хотя бы один день с расписанием
+    const hasAnySchedule = (instructor, days) => {
+        return days.some(day => hasScheduleForDay(instructor, day.iso));
+    };
+
+    // Найти первый день с расписанием для инструктора (только будущие дни)
     const findFirstDayWithSchedule = (instructor, days) => {
         for (let i = 0; i < days.length; i++) {
-            const daySchedule = instructor.schedule[days[i].iso] || [];
-            if (daySchedule.length > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group')) {
+            if (hasScheduleForDay(instructor, days[i].iso)) {
                 return i;
             }
         }
         return 0; // Если нет расписания, начинаем с первого дня
+    };
+
+    // Фильтровать дни для мобильной версии: только будущие дни с расписанием
+    const filterDaysForMobile = (instructor, days) => {
+        return days.filter(day => hasScheduleForDay(instructor, day.iso));
     };
 
     const renderInstructors = async (weekOffset = 0) => {
@@ -412,17 +438,26 @@
                 return;
             }
 
+            // Фильтруем инструкторов: показываем только тех, у кого есть расписание (для всех версий)
+            const filteredInstructors = instructors.filter(instructor => hasAnySchedule(instructor, days));
+
+            if (!filteredInstructors.length) {
+                container.innerHTML = '<div class="kuliga-empty">Нет доступных инструкторов с расписанием на ближайшее время.</div>';
+                return;
+            }
+
             const fragment = document.createDocumentFragment();
 
-            instructors.forEach((instructor) => {
+            filteredInstructors.forEach((instructor) => {
                 const card = document.createElement('article');
                 card.className = 'kuliga-instructor-card';
 
                 const photoUrl = instructor.photo_url || 'https://via.placeholder.com/160x160/1e293b/ffffff?text=GS72';
                 const sportLabel = sportLabels[instructor.sport_type] || 'Инструктор';
 
-                // Находим первый день с расписанием для мобильной версии
-                const firstDayIndex = findFirstDayWithSchedule(instructor, days);
+                // Для мобильной версии фильтруем дни: только будущие дни с расписанием
+                const daysToRender = isMobile ? filterDaysForMobile(instructor, days) : days;
+                const firstDayIndex = isMobile ? 0 : findFirstDayWithSchedule(instructor, days);
 
                 card.innerHTML = `
                     <header class="kuliga-instructor__header">
@@ -449,6 +484,7 @@
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="next-week"
+                                    ${weekOffset >= 4 ? 'disabled' : ''}
                                     aria-label="Следующая неделя">
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
@@ -461,7 +497,7 @@
                                 <i class="fa-solid fa-chevron-left"></i>
                             </button>
                             <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
-                                ${days.map((day, index) => {
+                                ${daysToRender.map((day, index) => {
                                     const daySchedule = instructor.schedule[day.iso] || [];
                                     // Фильтруем только видимые слоты (доступные и групповые тренировки)
                                     const visibleSlots = daySchedule.filter(slot => 
@@ -643,7 +679,14 @@
                 if (!scheduleEl) return;
 
                 const currentWeekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
-                const newWeekOffset = action === 'prev-week' ? currentWeekOffset - 1 : currentWeekOffset + 1;
+                let newWeekOffset;
+                
+                if (action === 'prev-week') {
+                    newWeekOffset = Math.max(0, currentWeekOffset - 1);
+                } else {
+                    // Можно листать на месяц вперед (до weekOffset = 4, т.е. 4 недели)
+                    newWeekOffset = Math.min(4, currentWeekOffset + 1);
+                }
 
                 // Перезагружаем всех инструкторов с новым weekOffset
                 await renderInstructors(newWeekOffset);
@@ -656,8 +699,13 @@
             const instructorId = scheduleEl.getAttribute('data-instructor-id');
             
             const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]`);
+            const nextBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"]`);
             if (prevBtn) {
                 prevBtn.disabled = weekOffset === 0;
+            }
+            if (nextBtn) {
+                // Можно листать на месяц вперед (до weekOffset = 4)
+                nextBtn.disabled = weekOffset >= 4;
             }
         });
 
