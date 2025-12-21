@@ -556,6 +556,7 @@
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
                         </div>
+                        ${isMobile ? `
                         <div class="kuliga-schedule__nav kuliga-schedule__nav--mobile-week">
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--prev-week-mobile" 
                                     data-instructor-id="${instructor.id}" 
@@ -576,13 +577,16 @@
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
                         </div>
+                        ` : ''}
                         <div class="kuliga-schedule__wrapper">
+                            ${isMobile ? `
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--prev-mobile" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="prev-day"
                                     aria-label="Предыдущий день">
                                 <i class="fa-solid fa-chevron-left"></i>
                             </button>
+                            ` : ''}
                             <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
                                 ${daysToRender.map((day, index) => {
                                     const daySchedule = instructor.schedule[day.iso] || [];
@@ -700,12 +704,14 @@
                                     `;
                                 }).join('')}
                             </div>
+                            ${isMobile ? `
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--next-mobile" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="next-day"
                                     aria-label="Следующий день">
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
+                            ` : ''}
                         </div>
                     </div>
                 `;
