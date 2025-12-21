@@ -834,11 +834,89 @@
         window.location.href = bookingUrl.toString();
     }
 
+    // Функция для отправки событий в Яндекс.Метрику
+    function trackYandexMetrika(goalName, params = {}) {
+        if (window.ym && window.KULIGA_ANALYTICS && window.KULIGA_ANALYTICS.yandexMetrikaId) {
+            try {
+                window.ym(window.KULIGA_ANALYTICS.yandexMetrikaId, 'reachGoal', goalName, params);
+            } catch (e) {
+                console.warn('Ошибка отправки события в Яндекс.Метрику:', e);
+            }
+        }
+    }
+
+    // Функция для отправки событий в Google Analytics
+    function trackGoogleAnalytics(eventName, params = {}) {
+        if (window.gtag) {
+            try {
+                window.gtag('event', eventName, params);
+            } catch (e) {
+                console.warn('Ошибка отправки события в Google Analytics:', e);
+            }
+        }
+    }
+
+    // Отслеживание просмотра страницы инструкторов
+    function trackPageView() {
+        trackYandexMetrika('instructor_page_view', {
+            page_url: window.location.href,
+            page_title: 'Страница инструкторов'
+        });
+        trackGoogleAnalytics('page_view', {
+            page_title: 'Страница инструкторов',
+            page_location: window.location.href
+        });
+    }
+
+    // Отслеживание клика по кнопке записи
+    function trackBookingButtonClick() {
+        trackYandexMetrika('booking_button_click', {
+            button_location: 'hero_section'
+        });
+        trackGoogleAnalytics('button_click', {
+            button_name: 'Записаться на тренировку',
+            button_location: 'hero_section'
+        });
+    }
+
+    // Отслеживание просмотра инструкторов
+    function trackInstructorsView() {
+        trackYandexMetrika('instructors_list_view');
+        trackGoogleAnalytics('instructors_view', {
+            event_category: 'engagement'
+        });
+    }
+
+    // Отслеживание просмотра цен
+    function trackPricesView() {
+        trackYandexMetrika('prices_view');
+        trackGoogleAnalytics('prices_view', {
+            event_category: 'engagement'
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
+        // Отслеживание просмотра страницы
+        trackPageView();
+
         renderPriceList();
         renderProgramsAndSchedule();
         renderInstructors();
         initBookingButton();
+
+        // Отслеживание просмотра инструкторов после загрузки
+        setTimeout(() => {
+            trackInstructorsView();
+            trackPricesView();
+        }, 2000);
+
+        // Отслеживание клика по кнопке записи в hero секции
+        const bookingButtons = document.querySelectorAll('a[href*="booking"], .kuliga-button--primary');
+        bookingButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                trackBookingButtonClick();
+            });
+        });
 
         // Обработчик фильтра по локации
         const locationFilter = document.getElementById('kuligaLocationFilter');
@@ -846,6 +924,12 @@
             locationFilter.addEventListener('change', (e) => {
                 const selectedLocation = e.target.value || null;
                 renderProgramsAndSchedule(selectedLocation);
+                
+                // Отслеживание фильтрации по локации
+                trackYandexMetrika('location_filter_change', { location: selectedLocation || 'all' });
+                trackGoogleAnalytics('location_filter', {
+                    filter_value: selectedLocation || 'all'
+                });
             });
         }
     });
