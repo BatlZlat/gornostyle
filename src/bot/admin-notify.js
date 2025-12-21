@@ -1852,7 +1852,14 @@ async function notifyInstructorSlotsCreated({
     count
 }) {
     try {
-        if (!instructorBot || !instructor_telegram_id) {
+        // Проверяем наличие бота и telegram_id инструктора
+        if (!instructorBot) {
+            console.log('[NOTIFY] ⚠️ Бот инструкторов не инициализирован, уведомление не отправлено');
+            return;
+        }
+        
+        if (!instructor_telegram_id) {
+            console.log(`[NOTIFY] ⚠️ У инструктора ${instructor_name} не указан telegram_id, уведомление не отправлено`);
             return;
         }
 
@@ -1867,10 +1874,11 @@ async function notifyInstructorSlotsCreated({
             message += `⏰ *Время:* ${times.join(', ')}\n`;
         }
         
+        // Отправляем уведомление только указанному инструктору
         await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
-        console.log(`✅ Уведомление о создании слотов отправлено инструктору ${instructor_name}`);
+        console.log(`[NOTIFY] ✅ Уведомление о создании слотов отправлено инструктору ${instructor_name} (telegram_id: ${instructor_telegram_id})`);
     } catch (error) {
-        console.error('Ошибка при отправке уведомления инструктору о создании слотов:', error);
+        console.error(`[NOTIFY] ❌ Ошибка при отправке уведомления инструктору ${instructor_name} (telegram_id: ${instructor_telegram_id}):`, error);
     }
 }
 
