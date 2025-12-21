@@ -381,8 +381,17 @@
         });
     };
 
-    // Проверить, есть ли у дня расписание (только будущие дни с доступными или групповыми слотами)
+    // Проверить, есть ли у дня расписание (любые слоты - свободные, занятые, групповые)
+    // Используется для проверки наличия расписания у инструктора
     const hasScheduleForDay = (instructor, dayIso) => {
+        const daySchedule = instructor.schedule[dayIso] || [];
+        // Проверяем наличие любых слотов (available, booked, blocked, group и т.д.)
+        return daySchedule.length > 0;
+    };
+
+    // Проверить, есть ли у дня расписание для отображения (только будущие дни с доступными или групповыми слотами)
+    // Используется для отображения дней в мобильной версии
+    const hasVisibleScheduleForDay = (instructor, dayIso) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const dayDate = new Date(dayIso + 'T00:00:00');
@@ -398,31 +407,50 @@
         );
     };
 
-    // Проверить, есть ли у инструктора хотя бы один день с расписанием
+    // Проверить, есть ли у инструктора хотя бы одно расписание (любые слоты) на будущие даты (>= сегодня)
     const hasAnySchedule = (instructor, days) => {
-        return days.some(day => hasScheduleForDay(instructor, day.iso));
+        const schedule = instructor.schedule || {};
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Проверяем весь объект schedule - ищем хотя бы одну дату с непустым массивом слотов, которая >= сегодня
+        return Object.keys(schedule).some(dateIso => {
+            const dayDate = new Date(dateIso + 'T00:00:00');
+            // Проверяем только будущие даты (включая сегодня)
+            if (dayDate < today) {
+                return false;
+            }
+            
+            const daySchedule = schedule[dateIso] || [];
+            // Проверяем наличие любых слотов (available, booked, blocked, group и т.д.)
+            return daySchedule.length > 0;
+        });
     };
 
-    // Найти первый день с расписанием для инструктора (только будущие дни)
+    // Найти первый день с расписанием для инструктора (только будущие дни с доступными/групповыми слотами)
     const findFirstDayWithSchedule = (instructor, days) => {
         for (let i = 0; i < days.length; i++) {
-            if (hasScheduleForDay(instructor, days[i].iso)) {
+            if (hasVisibleScheduleForDay(instructor, days[i].iso)) {
                 return i;
             }
         }
         return 0; // Если нет расписания, начинаем с первого дня
     };
 
-    // Фильтровать дни для мобильной версии: только будущие дни с расписанием
+    // Фильтровать дни для мобильной версии: только будущие дни с доступными или групповыми слотами
     const filterDaysForMobile = (instructor, days) => {
-        return days.filter(day => hasScheduleForDay(instructor, day.iso));
+        return days.filter(day => hasVisibleScheduleForDay(instructor, day.iso));
     };
+
+    // Сохраняем список ID инструкторов с расписанием на месяц вперед (>= сегодня)
+    let instructorsWithScheduleIds = new Set();
 
     const renderInstructors = async (weekOffset = 0) => {
         const container = document.getElementById('kuligaInstructors');
         if (!container) return;
 
         try {
+            // Загружаем данные для текущей недели
             const url = weekOffset !== 0 
                 ? `${API_ENDPOINTS.instructors}?weekOffset=${weekOffset}`
                 : API_ENDPOINTS.instructors;
@@ -438,8 +466,45 @@
                 return;
             }
 
-            // Фильтруем инструкторов: показываем только тех, у кого есть расписание (для всех версий)
-            const filteredInstructors = instructors.filter(instructor => hasAnySchedule(instructor, days));
+            // Загружаем данные на месяц вперед (4 недели: weekOffset 0-4) параллельно для определения инструкторов с расписанием
+            // Обновляем список при первой загрузке или при возврате на первую неделю
+            if (instructorsWithScheduleIds.size === 0 || weekOffset === 0) {
+                const monthPromises = [];
+                for (let i = 0; i <= 4; i++) {
+                    if (i === weekOffset) {
+                        // Используем уже загруженные данные для текущей недели
+                        monthPromises.push(Promise.resolve({ days, instructors }));
+                    } else {
+                        monthPromises.push(
+                            fetchJson(i === 0 ? API_ENDPOINTS.instructors : `${API_ENDPOINTS.instructors}?weekOffset=${i}`)
+                                .then(res => res.success ? res.data : null)
+                                .catch(() => null)
+                        );
+                    }
+                }
+
+                const monthData = await Promise.all(monthPromises);
+                
+                // Собираем все уникальные инструкторы с расписанием на будущее (>= сегодня)
+                instructorsWithScheduleIds = new Set();
+                
+                monthData.forEach((weekData) => {
+                    if (!weekData || !weekData.instructors) return;
+                    
+                    weekData.instructors.forEach((instructor) => {
+                        // Проверяем, есть ли у инструктора расписание на будущее (>= сегодня)
+                        if (hasAnySchedule(instructor, weekData.days)) {
+                            instructorsWithScheduleIds.add(instructor.id);
+                        }
+                    });
+                });
+            }
+
+            // Показываем всех инструкторов, у кого есть расписание на будущее (>= сегодня)
+            // даже если на текущей отображаемой неделе у них нет слотов
+            const filteredInstructors = instructors.filter(instructor => 
+                instructorsWithScheduleIds.has(instructor.id)
+            );
 
             if (!filteredInstructors.length) {
                 container.innerHTML = '<div class="kuliga-empty">Нет доступных инструкторов с расписанием на ближайшее время.</div>';
@@ -447,6 +512,8 @@
             }
 
             const fragment = document.createDocumentFragment();
+
+            const isMobile = window.innerWidth <= 767;
 
             filteredInstructors.forEach((instructor) => {
                 const card = document.createElement('article');
