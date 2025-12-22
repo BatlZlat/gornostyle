@@ -746,9 +746,45 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             return;
         }
 
+        // Получаем процент админа из базы данных, если не передан
+        let adminPercentage = null;
+        if (trainingData.admin_percentage !== null && trainingData.admin_percentage !== undefined) {
+            adminPercentage = Number(trainingData.admin_percentage);
+        } else {
+            // Если процент не передан, получаем его из базы данных
+            try {
+                // Используем общий pool из db/index.js
+                const { pool } = require('../db');
+                
+                // Пытаемся найти инструктора по instructor_id или instructor_telegram_id
+                let instructorRes = null;
+                if (trainingData.instructor_id) {
+                    instructorRes = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
+                        [trainingData.instructor_id]
+                    );
+                } else if (trainingData.instructor_telegram_id) {
+                    instructorRes = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE telegram_id = $1',
+                        [trainingData.instructor_telegram_id]
+                    );
+                }
+                
+                if (instructorRes && instructorRes.rows.length > 0) {
+                    adminPercentage = instructorRes.rows[0].admin_percentage !== null && instructorRes.rows[0].admin_percentage !== undefined
+                        ? Number(instructorRes.rows[0].admin_percentage)
+                        : 20; // По умолчанию 20%, если в БД null
+                } else {
+                    adminPercentage = 20; // По умолчанию 20%, если инструктор не найден
+                }
+            } catch (dbError) {
+                console.error('[NOTIFY] ⚠️ Ошибка при получении admin_percentage из БД:', dbError);
+                adminPercentage = 20; // По умолчанию 20% при ошибке
+            }
+        }
+
         // Рассчитываем сумму для инструктора (за вычетом процента админа)
         const totalPrice = Number(trainingData.price);
-        const adminPercentage = Number(trainingData.admin_percentage || 20);
         const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
 
         // Определяем тип тренировки
