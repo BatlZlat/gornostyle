@@ -40,6 +40,23 @@ const formatPaymentDescription = ({ bookingType, location, sportType, date, time
     return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
 };
 
+const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+const ADMIN_TELEGRAM_USERNAME = process.env.ADMIN_TELEGRAM_USERNAME
+    ? process.env.ADMIN_TELEGRAM_USERNAME.replace(/^@/, '')
+    : '';
+
+const buildAdminContactSuffix = () => {
+    const parts = [];
+    if (ADMIN_TELEGRAM_USERNAME) {
+        parts.push(`Telegram: https://t.me/${ADMIN_TELEGRAM_USERNAME}`);
+    }
+    if (ADMIN_PHONE) {
+        parts.push(`Телефон: ${ADMIN_PHONE}`);
+    }
+    if (!parts.length) return '';
+    return ` Свяжитесь с администратором (${parts.join(', ')}).`;
+};
+
 // Нормализуем ФИО: приводим к нижнему регистру, убираем лишние пробелы
 const normalizeFullName = (name = '') =>
     name
@@ -61,6 +78,27 @@ const convertLevelToNumber = (level) => {
     if (levelMap[normalized]) return levelMap[normalized];
     const parsed = parseInt(normalized, 10);
     return Number.isNaN(parsed) ? null : parsed;
+};
+
+// Определение типа тренировки по описанию
+const determineTrainingTypeFromDescription = (description = '') => {
+    const desc = description.toString().trim().toLowerCase();
+    if (!desc) return 'general';
+    const childrenKeywords = ['дети', 'детск', 'для детей', 'детская', 'ребёнок', 'ребенок'];
+    const adultsKeywords = ['взрослые', 'взросл', 'для взрослых', 'взрослая'];
+    if (desc.startsWith('детская тренировка') || childrenKeywords.some((k) => desc.includes(k))) {
+        return 'children';
+    }
+    if (desc.startsWith('взрослая тренировка') || adultsKeywords.some((k) => desc.includes(k))) {
+        return 'adults';
+    }
+    return 'general';
+};
+
+const getAgeByBirthYear = (birthYear) => {
+    if (!Number.isInteger(birthYear)) return null;
+    const currentYear = moment.tz(TIMEZONE).year();
+    return currentYear - birthYear;
 };
 
 /**
@@ -446,9 +484,11 @@ const createGroupBooking = async (req, res) => {
                             s.status,
                             s.location AS slot_location,
                             i.full_name AS instructor_name,
-                            i.sport_type AS instructor_sport_type
+                            i.sport_type AS instructor_sport_type,
+                            kgt.description AS group_description
                      FROM kuliga_schedule_slots s
                      JOIN kuliga_instructors i ON i.id = s.instructor_id
+                     LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id AND kgt.date = $2
                      WHERE s.id = $1 AND s.date = $2
                      FOR UPDATE`,
                     [slotId, date]
@@ -549,7 +589,7 @@ const createGroupBooking = async (req, res) => {
                         min_participants, max_participants, current_participants, status, location
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, 'open', $11)
                     RETURNING id, instructor_id, slot_id, date, start_time, end_time, sport_type,
-                            level, price_per_person, max_participants, current_participants, status, location`,
+                            level, description, price_per_person, max_participants, current_participants, status, location`,
                     [
                         slot.instructor_id,
                         slot.slot_id,
@@ -566,6 +606,7 @@ const createGroupBooking = async (req, res) => {
                 );
 
                 training = newGroupTrainingResult.rows[0];
+                training.description = slot.group_description || training.description || null;
                 groupTrainingIdToUse = training.id;
 
                 // Обновляем статус слота на 'group'
@@ -595,6 +636,7 @@ const createGroupBooking = async (req, res) => {
                             kgt.end_time, 
                             kgt.sport_type,
                             kgt.level,
+                            kgt.description,
                             kgt.price_per_person, 
                             kgt.max_participants, 
                             COALESCE((
@@ -644,6 +686,7 @@ const createGroupBooking = async (req, res) => {
 
         // Конвертируем требуемый уровень тренировки в число
         const trainingLevel = convertLevelToNumber(training.level);
+        const trainingType = determineTrainingTypeFromDescription(training.description);
 
         // Обрабатываем участников: поддерживаем как массив объектов {fullName, birthYear}, так и массив строк
         let namesArray = [];
@@ -705,10 +748,16 @@ const createGroupBooking = async (req, res) => {
                     : fallbackBirthYear;
 
                 let participantLevel = null;
+                let participantAge = null;
 
                 // Если это сам заказчик
                 if (normalizedParticipant && normalizedParticipant === normalizedClientName) {
                     participantLevel = clientSkillLevel;
+                    if (birthDate) {
+                        participantAge = moment().diff(moment(birthDate), 'years');
+                    } else if (participantBirthYear) {
+                        participantAge = getAgeByBirthYear(participantBirthYear);
+                    }
                 } else {
                     // Пытаемся найти ребенка по ФИО
                     const child = await findChildByFullName(
@@ -719,6 +768,29 @@ const createGroupBooking = async (req, res) => {
                     );
                     if (child) {
                         participantLevel = Number(child.skill_level) || 0;
+                        if (child.birth_date) {
+                            participantAge = moment().diff(moment(child.birth_date), 'years');
+                        }
+                    }
+                    if (!participantAge && participantBirthYear) {
+                        participantAge = getAgeByBirthYear(participantBirthYear);
+                    }
+                }
+
+                if (trainingType === 'children') {
+                    if (participantAge === null) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `Для детской тренировки укажите год рождения участника "${participant.fullName}".`,
+                        });
+                    }
+                    if (participantAge >= 18) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `Для детской тренировки участник "${participant.fullName}" слишком взрослый (возраст ${participantAge}). Укажите ребенка.`,
+                        });
                     }
                 }
 
@@ -730,7 +802,7 @@ const createGroupBooking = async (req, res) => {
                             : `Уровень участника: ${participantLevel}`;
                     return res.status(400).json({
                         success: false,
-                        error: `Для участника "${participant.fullName}" требуется уровень не ниже ${trainingLevel}. ${foundText}. Зарегистрируйтесь в боте и попросите администратора присвоить уровень.`,
+                        error: `Для участника "${participant.fullName}" требуется уровень не ниже ${trainingLevel}. ${foundText}.${buildAdminContactSuffix()}`,
                     });
                 }
             }
@@ -940,6 +1012,7 @@ const createIndividualBooking = async (req, res) => {
         consentConfirmed,
         paymentMethod = 'card', // 'card' | 'sbp'
         groupTrainingLevel = null,
+        trainingType = null,
     } = req.body || {};
 
     if (!consentConfirmed) {
@@ -1051,8 +1124,9 @@ const createIndividualBooking = async (req, res) => {
 
         await ensurePrivacyConsent(clientRecord.id, client);
 
-        // Проверка уровня для индивидуальной/групповой брони, если передан требуемый уровень (например, слот с уровнем)
+        // Проверка уровня и возраста, если передан требуемый уровень и тип тренировки
         const requiredLevel = convertLevelToNumber(groupTrainingLevel);
+        const resolvedTrainingType = trainingType || 'general';
         if (requiredLevel !== null && requiredLevel >= 2) {
             const clientLevelResult = await client.query(
                 'SELECT COALESCE(skill_level, 1) AS skill_level FROM clients WHERE id = $1',
@@ -1069,9 +1143,15 @@ const createIndividualBooking = async (req, res) => {
                     : fallbackBirthYear;
 
                 let participantLevel = null;
+                let participantAge = null;
 
                 if (normalizedParticipant && normalizedParticipant === normalizedClientName) {
                     participantLevel = clientSkillLevel;
+                    if (birthDate) {
+                        participantAge = moment().diff(moment(birthDate), 'years');
+                    } else if (participantBirthYear) {
+                        participantAge = getAgeByBirthYear(participantBirthYear);
+                    }
                 } else {
                     const child = await findChildByFullName(
                         clientRecord.id,
@@ -1081,6 +1161,29 @@ const createIndividualBooking = async (req, res) => {
                     );
                     if (child) {
                         participantLevel = Number(child.skill_level) || 0;
+                        if (child.birth_date) {
+                            participantAge = moment().diff(moment(child.birth_date), 'years');
+                        }
+                    }
+                    if (!participantAge && participantBirthYear) {
+                        participantAge = getAgeByBirthYear(participantBirthYear);
+                    }
+                }
+
+                if (resolvedTrainingType === 'children') {
+                    if (participantAge === null) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `Для детской тренировки укажите год рождения участника "${participant.fullName}".`,
+                        });
+                    }
+                    if (participantAge >= 18) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `Для детской тренировки участник "${participant.fullName}" слишком взрослый (возраст ${participantAge}). Укажите ребенка.`,
+                        });
                     }
                 }
 
@@ -1092,7 +1195,7 @@ const createIndividualBooking = async (req, res) => {
                             : `Уровень участника: ${participantLevel}`;
                     return res.status(400).json({
                         success: false,
-                        error: `Для участника "${participant.fullName}" требуется уровень не ниже ${requiredLevel}. ${foundText}. Зарегистрируйтесь в боте и попросите администратора присвоить уровень.`,
+                        error: `Для участника "${participant.fullName}" требуется уровень не ниже ${requiredLevel}. ${foundText}.${buildAdminContactSuffix()}`,
                     });
                 }
             }
