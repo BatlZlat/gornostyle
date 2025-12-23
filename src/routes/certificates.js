@@ -179,11 +179,11 @@ router.post('/purchase', async (req, res) => {
                 design_id: design_id
             };
             
-            // Генерируем JPG из веб-страницы сертификата
+            // Генерируем JPG используя метод предпросмотра (более надежный и красивый)
             try {
-                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber);
+                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber, certificateData);
                 pdfUrl = jpgResult.jpg_url; // Используем только JPG
-                console.log(`✅ JPG сертификат создан: ${pdfUrl}`);
+                console.log(`✅ JPG сертификат создан (метод предпросмотра): ${pdfUrl}`);
             } catch (jpgError) {
                 console.error('Ошибка при генерации JPG сертификата:', jpgError);
                 throw jpgError; // Не используем fallback на PDF
