@@ -231,7 +231,9 @@
     </script>
     <script>
         window.KULIGA_BOOKING_CONFIG = {
-            botUsername: "<%= kuligaClientBotUsername || '' %>"
+            botUsername: "<%= kuligaClientBotUsername || '' %>",
+            adminPhone: "<%= adminPhone || '' %>",
+            adminTelegramUsername: "<%= adminTelegramUsername ? adminTelegramUsername.replace(/^@/, '') : '' %>"
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>

@@ -342,6 +342,24 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             if (!scheduleByInstructor[training.instructor_id][dateKey]) {
                 scheduleByInstructor[training.instructor_id][dateKey] = [];
             }
+            
+            // Преобразуем уровень в числовой формат
+            let skillLevel = null;
+            if (training.level !== null && training.level !== undefined) {
+                if (typeof training.level === 'number') {
+                    skillLevel = training.level;
+                } else if (typeof training.level === 'string') {
+                    // Преобразуем текстовый уровень в число
+                    const levelMap = {
+                        'beginner': 1,
+                        'intermediate': 2,
+                        'advanced': 3
+                    };
+                    const levelLower = training.level.toLowerCase();
+                    skillLevel = levelMap[levelLower] || parseInt(training.level) || null;
+                }
+            }
+            
             scheduleByInstructor[training.instructor_id][dateKey].push({
                 id: training.id,
                 slotId: training.slot_id,
@@ -355,7 +373,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 pricePerPerson: training.price_per_person,
                 description: training.description,
                 programId: training.program_id || null,
-                level: training.level || null
+                level: skillLevel  // Передаем уже преобразованный числовой уровень
             });
         });
 

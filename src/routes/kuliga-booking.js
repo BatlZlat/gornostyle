@@ -1186,16 +1186,24 @@ router.get('/availability', async (req, res) => {
                     i.photo_url AS instructor_photo_url,
                     i.description AS instructor_description,
                     i.is_active AS instructor_active,
-                    s.location
+                    s.location,
+                    kgt.id AS group_training_id,
+                    kgt.level AS group_training_level,
+                    kgt.description AS group_training_description,
+                    kgt.max_participants AS group_training_max_participants,
+                    COALESCE((
+                        SELECT SUM(kb.participants_count)
+                        FROM kuliga_bookings kb
+                        WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                    ), 0)::INTEGER AS group_training_current_participants
              FROM kuliga_schedule_slots s
              JOIN kuliga_instructors i ON i.id = s.instructor_id
              LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id 
                  AND kgt.status IN ('open', 'confirmed')
              WHERE s.date = $1
-               AND s.status = 'available'
+               AND s.status IN ('available', 'group')  -- Включаем слоты с групповыми тренировками
                AND i.is_active = TRUE
                AND (i.sport_type = $2 OR i.sport_type = 'both')
-               AND kgt.id IS NULL  -- Исключаем слоты, связанные с групповыми тренировками
                AND (s.hold_until IS NULL OR s.hold_until < NOW())`; // Исключаем слоты с активным hold
         const params = [date, normalizedSport];
         
@@ -1231,17 +1239,44 @@ router.get('/availability', async (req, res) => {
                 }
                 return true;
             })
-            .map((slot) => ({
-                slot_id: slot.slot_id,
-                instructor_id: slot.instructor_id,
-                date: slot.date,
-                start_time: slot.start_time,
-                end_time: slot.end_time,
-                instructor_name: slot.instructor_name,
-                instructor_sport_type: slot.instructor_sport_type,
-                instructor_photo_url: slot.instructor_photo_url,
-                instructor_description: slot.instructor_description,
-            }));
+            .map((slot) => {
+                // Преобразуем уровень групповой тренировки в числовой формат
+                let skillLevel = null;
+                if (slot.group_training_level) {
+                    if (typeof slot.group_training_level === 'number') {
+                        skillLevel = slot.group_training_level;
+                    } else if (typeof slot.group_training_level === 'string') {
+                        // Преобразуем текстовый уровень в число
+                        const levelMap = {
+                            'beginner': 1,
+                            'intermediate': 2,
+                            'advanced': 3
+                        };
+                        const levelLower = slot.group_training_level.toLowerCase();
+                        skillLevel = levelMap[levelLower] || parseInt(slot.group_training_level) || null;
+                    }
+                }
+
+                return {
+                    slot_id: slot.slot_id,
+                    instructor_id: slot.instructor_id,
+                    date: slot.date,
+                    start_time: slot.start_time,
+                    end_time: slot.end_time,
+                    instructor_name: slot.instructor_name,
+                    instructor_sport_type: slot.instructor_sport_type,
+                    instructor_photo_url: slot.instructor_photo_url,
+                    instructor_description: slot.instructor_description,
+                    // Информация о групповой тренировке, если она есть на слоте
+                    group_training: slot.group_training_id ? {
+                        id: slot.group_training_id,
+                        level: skillLevel,
+                        description: slot.group_training_description || null,
+                        max_participants: slot.group_training_max_participants || null,
+                        current_participants: slot.group_training_current_participants || 0
+                    } : null
+                };
+            });
 
         return res.json({ success: true, data: available });
     } catch (error) {

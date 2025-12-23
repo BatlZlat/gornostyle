@@ -491,6 +491,13 @@
             setTimeout(scrollToTop, 100);
         });
     </script>
+    <script>
+        window.KULIGA_BOOKING_CONFIG = {
+            botUsername: "<%= kuligaClientBotUsername || botUsername || '' %>",
+            adminPhone: "<%= adminPhone || '' %>",
+            adminTelegramUsername: "<%= adminTelegramUsername ? adminTelegramUsername.replace(/^@/, '') : '' %>"
+        };
+    </script>
     <script src="/js/location-mapper.js"></script>
     <script src="/js/kuliga-slot-modals.js" defer></script>
     <script src="/js/kuliga.js" defer></script>
