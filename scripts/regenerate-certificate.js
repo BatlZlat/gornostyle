@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const path = require('path');
+const fs = require('fs').promises;
 
 const pool = new Pool({
     host: process.env.DB_HOST,
@@ -19,12 +20,15 @@ async function regenerateCertificate(certificateNumber) {
         // Получаем данные сертификата из базы
         const certResult = await client.query(
             `SELECT 
+                c.id,
                 c.certificate_number, 
                 c.nominal_value, 
                 c.recipient_name, 
                 c.message, 
                 c.design_id, 
                 c.expiry_date,
+                c.pdf_url,
+                c.image_url,
                 cd.name as design_name
             FROM certificates c 
             LEFT JOIN certificate_designs cd ON c.design_id = cd.id 
@@ -39,13 +43,15 @@ async function regenerateCertificate(certificateNumber) {
         
         const cert = certResult.rows[0];
         console.log(`✅ Сертификат найден:`);
+        console.log(`   ID: ${cert.id}`);
         console.log(`   Номинал: ${cert.nominal_value} руб.`);
         console.log(`   Получатель: ${cert.recipient_name || 'не указан'}`);
         console.log(`   Сообщение: ${cert.message || 'не указано'}`);
         console.log(`   Дизайн: ${cert.design_name} (ID: ${cert.design_id})`);
-        console.log(`   Срок действия до: ${cert.expiry_date}\n`);
+        console.log(`   Срок действия до: ${new Date(cert.expiry_date).toLocaleString('ru-RU')}`);
+        console.log(`   Текущий URL: ${cert.image_url || cert.pdf_url || 'не указан'}\n`);
         
-        // Формируем данные для генерации
+        // Формируем данные для генерации (используем новую логику предпросмотра)
         const certificateData = {
             certificate_number: cert.certificate_number,
             nominal_value: parseFloat(cert.nominal_value),
@@ -55,11 +61,31 @@ async function regenerateCertificate(certificateNumber) {
             design_id: cert.design_id
         };
         
-        console.log('🖼️  Генерация JPG файла...\n');
-        
-        // Генерируем JPG (модуль экспортирует экземпляр, а не класс)
+        // Загружаем генератор (модуль экспортирует экземпляр)
         const generator = require('../src/services/certificateJpgGenerator');
         
+        console.log('🗑️  Удаление старого файла (если существует)...');
+        
+        // Удаляем старый файл перед генерацией нового
+        const oldFilePath = path.join(generator.outputDir, `certificate_${certificateNumber}.jpg`);
+        
+        try {
+            await fs.access(oldFilePath);
+            await fs.unlink(oldFilePath);
+            console.log(`   ✅ Старый файл удален: ${oldFilePath}\n`);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                console.warn(`   ⚠️  Не удалось удалить старый файл: ${error.message}`);
+            } else {
+                console.log(`   ℹ️  Старый файл не найден (это нормально)\n`);
+            }
+        }
+        
+        console.log('🖼️  Генерация JPG файла (используется метод предпросмотра)...\n');
+        
+        // Генерируем JPG используя новую логику предпросмотра
+        // Передаем certificateData, чтобы использовался метод generateCertificateJpgFromHTMLForPurchase
+        // Этот метод использует ту же логику, что и предварительный просмотр - более надежный и красивый
         const jpgResult = await generator.generateCertificateJpgForEmail(
             certificateNumber,
             certificateData
@@ -74,10 +100,11 @@ async function regenerateCertificate(certificateNumber) {
                 [jpgResult.jpg_url, certificateNumber]
             );
             
-            console.log(`✅ URL файла обновлен в базе данных\n`);
+            console.log(`✅ URL файла обновлен в базе данных`);
             console.log(`📁 Файл сохранен в: public/generated/certificates/certificate_${certificateNumber}.jpg\n`);
         } else {
             console.log(`❌ Не удалось создать JPG файл\n`);
+            throw new Error('Не удалось получить URL созданного файла');
         }
         
     } catch (error) {
