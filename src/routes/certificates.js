@@ -2572,6 +2572,119 @@ async function previewHandler(req, res) {
 // Добавляем обработчик в роутер (для защищенных маршрутов)
 router.post('/preview', previewHandler);
 
+// ADM-8. Пересоздание изображения сертификата (для админа)
+router.post('/admin/regenerate/:certificateNumber', verifyToken, async (req, res) => {
+    try {
+        const { certificateNumber } = req.params;
+        
+        // Валидация номера сертификата
+        if (!certificateNumber || !/^[0-9]{6}$/.test(certificateNumber)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Неверный формат номера сертификата. Номер должен состоять из 6 цифр.',
+                code: 'INVALID_CERTIFICATE_NUMBER'
+            });
+        }
+        
+        // Получаем данные сертификата из базы
+        const certResult = await pool.query(
+            `SELECT 
+                c.id,
+                c.certificate_number, 
+                c.nominal_value, 
+                c.recipient_name, 
+                c.message, 
+                c.design_id, 
+                c.expiry_date,
+                c.pdf_url,
+                c.image_url,
+                cd.name as design_name
+            FROM certificates c 
+            LEFT JOIN certificate_designs cd ON c.design_id = cd.id 
+            WHERE c.certificate_number = $1`,
+            [certificateNumber]
+        );
+        
+        if (certResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: `Сертификат ${certificateNumber} не найден в базе данных`,
+                code: 'CERTIFICATE_NOT_FOUND'
+            });
+        }
+        
+        const cert = certResult.rows[0];
+        
+        // Формируем данные для генерации (используем новую логику предпросмотра)
+        const certificateData = {
+            certificate_number: cert.certificate_number,
+            nominal_value: parseFloat(cert.nominal_value),
+            recipient_name: cert.recipient_name,
+            message: cert.message,
+            expiry_date: cert.expiry_date,
+            design_id: cert.design_id
+        };
+        
+        // Загружаем генератор
+        const certificateJpgGenerator = require('../services/certificateJpgGenerator');
+        const path = require('path');
+        const fs = require('fs').promises;
+        
+        // Удаляем старый файл перед генерацией нового
+        const oldFilePath = path.join(certificateJpgGenerator.outputDir, `certificate_${certificateNumber}.jpg`);
+        try {
+            await fs.access(oldFilePath);
+            await fs.unlink(oldFilePath);
+            console.log(`✅ Старый файл сертификата ${certificateNumber} удален`);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                console.warn(`⚠️ Не удалось удалить старый файл сертификата: ${error.message}`);
+            }
+        }
+        
+        // Генерируем JPG используя новую логику предпросмотра
+        const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(
+            certificateNumber,
+            certificateData
+        );
+        
+        if (!jpgResult.jpg_url) {
+            return res.status(500).json({
+                success: false,
+                error: 'Не удалось создать JPG файл сертификата',
+                code: 'GENERATION_FAILED'
+            });
+        }
+        
+        // Обновляем URL в базе данных
+        await pool.query(
+            'UPDATE certificates SET pdf_url = $1, image_url = $1 WHERE certificate_number = $2',
+            [jpgResult.jpg_url, certificateNumber]
+        );
+        
+        console.log(`✅ Сертификат ${certificateNumber} пересоздан успешно`);
+        
+        res.json({
+            success: true,
+            message: 'Сертификат успешно пересоздан',
+            certificate: {
+                id: cert.id,
+                certificate_number: cert.certificate_number,
+                image_url: jpgResult.jpg_url
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка при пересоздании сертификата:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Внутренняя ошибка сервера при пересоздании сертификата',
+            code: 'INTERNAL_ERROR',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = router;
 module.exports.registerHandler = registerHandler;
 module.exports.previewHandler = previewHandler;
