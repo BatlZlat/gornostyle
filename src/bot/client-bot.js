@@ -11196,7 +11196,7 @@ async function showPersonalCabinet(chatId) {
         message += `*Информация о вас:*\n`;
         message += `👤 *ФИО:* ${client.full_name}\n`;
         message += `📅 *Дата рождения:* ${formattedBirthDate} (${clientAge} лет)\n`;
-        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/5\n`;
+        message += `🎿 *Уровень катания:* ${client.skill_level || 'Не указан'}/10\n`;
         message += `📊 *Статистика тренировок:*\n`;
         message += `   • Индивидуальных: ${clientStats.individual_count || 0}\n`;
         message += `   • Групповых: ${clientStats.group_count || 0}\n`;
@@ -11213,7 +11213,7 @@ async function showPersonalCabinet(chatId) {
                 message += `\n*Человек ${index + 1}:*\n`;
                 message += `👤 *ФИО:* ${child.full_name}\n`;
                 message += `📅 *Дата рождения:* ${childBirthDate} (${childAge} лет)\n`;
-                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/5\n`;
+                message += `🎿 *Уровень катания:* ${child.skill_level || 'Не указан'}/10\n`;
                 message += `📊 *Статистика тренировок:*\n`;
                 message += `   • Индивидуальных: ${stats.individual_count || 0}\n`;
                 message += `   • Групповых: ${stats.group_count || 0}\n`;
