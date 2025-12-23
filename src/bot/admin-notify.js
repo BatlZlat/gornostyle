@@ -1899,11 +1899,29 @@ async function notifyInstructorSlotsCreated({
             return;
         }
 
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        let dateDisplay = '';
+        
+        // Проверяем, является ли date диапазоном дат (содержит " - ")
+        if (typeof date === 'string' && date.includes(' - ')) {
+            // Это диапазон дат (массовое создание)
+            const [fromDate, toDate] = date.split(' - ').map(d => d.trim());
+            const fromFormatted = formatDate(fromDate);
+            const toFormatted = formatDate(toDate);
+            
+            // Получаем дни недели для обеих дат
+            const fromDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(fromDate).getDay()];
+            const toDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(toDate).getDay()];
+            
+            dateDisplay = `${fromFormatted} (${fromDayOfWeek}) - ${toFormatted} (${toDayOfWeek})`;
+        } else {
+            // Одна дата
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+            const formattedDate = formatDate(date);
+            dateDisplay = `${formattedDate} (${dayOfWeek})`;
+        }
         
         let message = `✅ *Созданы слоты в расписании*\n\n`;
-        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📅 *Дата:* ${dateDisplay}\n`;
         message += `📊 *Количество:* ${count} слотов\n`;
         
         if (times && times.length > 0 && times.length <= 10) {
@@ -1928,12 +1946,30 @@ async function notifyAdminSlotsCreated({
     times
 }) {
     try {
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        let dateDisplay = '';
+        
+        // Проверяем, является ли date диапазоном дат (содержит " - ")
+        if (typeof date === 'string' && date.includes(' - ')) {
+            // Это диапазон дат (массовое создание)
+            const [fromDate, toDate] = date.split(' - ').map(d => d.trim());
+            const fromFormatted = formatDate(fromDate);
+            const toFormatted = formatDate(toDate);
+            
+            // Получаем дни недели для обеих дат
+            const fromDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(fromDate).getDay()];
+            const toDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(toDate).getDay()];
+            
+            dateDisplay = `${fromFormatted} (${fromDayOfWeek}) - ${toFormatted} (${toDayOfWeek})`;
+        } else {
+            // Одна дата
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+            const formattedDate = formatDate(date);
+            dateDisplay = `${formattedDate} (${dayOfWeek})`;
+        }
         
         let message = `📅 *Инструктор создал слоты в расписании*\n\n`;
         message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
-        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📅 *Дата:* ${dateDisplay}\n`;
         message += `📊 *Количество:* ${count} слотов\n`;
         
         if (times && times.length > 0 && times.length <= 10) {
