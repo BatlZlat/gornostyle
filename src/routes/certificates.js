@@ -154,8 +154,8 @@ router.post('/purchase', async (req, res) => {
             INSERT INTO certificates (
                 certificate_number, purchaser_id, recipient_name,
                 nominal_value, design_id, status, expiry_date, activation_date,
-                message, purchase_date, pdf_url, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                message, purchase_date, pdf_url, image_url, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING *
         `;
 
@@ -163,8 +163,9 @@ router.post('/purchase', async (req, res) => {
         const now = new Date();
         const expiryDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // +1 год в миллисекундах
 
-        // Генерируем только PDF сертификата
+        // Генерируем JPG сертификата используя метод предпросмотра
         let pdfUrl = null;
+        let imageUrl = null;
         
         try {
             const certificateJpgGenerator = require('../services/certificateJpgGenerator');
@@ -183,6 +184,7 @@ router.post('/purchase', async (req, res) => {
             try {
                 const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateNumber, certificateData);
                 pdfUrl = jpgResult.jpg_url; // Используем только JPG
+                imageUrl = jpgResult.jpg_url; // Сохраняем и в image_url
                 console.log(`✅ JPG сертификат создан (метод предпросмотра): ${pdfUrl}`);
             } catch (jpgError) {
                 console.error('Ошибка при генерации JPG сертификата:', jpgError);
@@ -205,7 +207,8 @@ router.post('/purchase', async (req, res) => {
             null, // activation_date
             message || null,
             now, // purchase_date
-            pdfUrl // pdf_url
+            pdfUrl, // pdf_url
+            imageUrl // image_url
         ]);
 
         const certificate = certificateResult.rows[0];

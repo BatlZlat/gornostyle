@@ -50,7 +50,7 @@ class EmailService {
                 return { success: false, error: 'EMAIL_PASS не настроен' };
             }
 
-            const { certificateId, certificateCode, recipientName, amount, message, pdfUrl } = certificateData;
+            const { certificateId, certificateCode, recipientName, amount, message, pdfUrl, imageUrl } = certificateData;
 
             // Генерируем простое HTML содержимое письма
             const htmlContent = this.generateSimpleCertificateEmailHTML(certificateData);
@@ -58,10 +58,13 @@ class EmailService {
             // Подготавливаем вложения
             const attachments = [];
             
-            // Сначала проверяем, есть ли уже созданный файл в pdfUrl (файл создан при покупке)
+            // Используем imageUrl (приоритет) или pdfUrl (fallback) - оба содержат путь к JPG
+            const imageUrlToUse = imageUrl || pdfUrl;
+            
+            // Сначала проверяем, есть ли уже созданный файл (файл создан при покупке)
             let fileFound = false;
-            if (pdfUrl) {
-                const existingFilePath = path.join(__dirname, '../../public', pdfUrl);
+            if (imageUrlToUse) {
+                const existingFilePath = path.join(__dirname, '../../public', imageUrlToUse);
                 // Пытаемся найти существующий файл с повторными попытками
                 for (let attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -85,36 +88,70 @@ class EmailService {
                 }
             }
             
-            // Если файл не найден, генерируем JPG заново
+            // Если файл не найден, генерируем JPG заново используя данные из БД
             if (!fileFound) {
                 try {
                     const certificateJpgGenerator = require('./certificateJpgGenerator');
-                    const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateCode);
+                    const { pool } = require('../db');
                     
-                    if (jpgResult.jpg_url) {
-                        const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);
+                    // Получаем данные сертификата из БД для генерации
+                    const certResult = await pool.query(
+                        `SELECT 
+                            c.certificate_number, 
+                            c.nominal_value, 
+                            c.recipient_name, 
+                            c.message, 
+                            c.design_id, 
+                            c.expiry_date
+                        FROM certificates c 
+                        WHERE c.certificate_number = $1`,
+                        [certificateCode]
+                    );
+                    
+                    if (certResult.rows.length > 0) {
+                        const cert = certResult.rows[0];
+                        const certificateDataForGeneration = {
+                            certificate_number: cert.certificate_number,
+                            nominal_value: parseFloat(cert.nominal_value),
+                            recipient_name: cert.recipient_name,
+                            message: cert.message,
+                            expiry_date: cert.expiry_date,
+                            design_id: cert.design_id
+                        };
                         
-                        // Пытаемся найти сгенерированный JPG файл с повторными попытками
-                        for (let attempt = 1; attempt <= 3; attempt++) {
-                            try {
-                                await fs.access(jpgPath);
-                                attachments.push({
-                                    filename: `Сертификат_${certificateCode}.jpg`,
-                                    path: jpgPath,
-                                    contentType: 'image/jpeg'
-                                });
-                                console.log(`📎 JPG вложение добавлено (сгенерировано): ${jpgPath}`);
-                                fileFound = true;
-                                break;
-                            } catch (error) {
-                                if (attempt < 3) {
-                                    console.log(`⏳ Сгенерированный JPG файл не найден (попытка ${attempt}/3), ожидание...`);
-                                    await new Promise(resolve => setTimeout(resolve, 1000));
-                                } else {
-                                    console.warn(`⚠️  Сгенерированный JPG файл не найден после 3 попыток: ${jpgPath}`);
+                        // Генерируем используя новый метод предпросмотра
+                        const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(
+                            certificateCode,
+                            certificateDataForGeneration
+                        );
+                        
+                        if (jpgResult.jpg_url) {
+                            const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);
+                            
+                            // Пытаемся найти сгенерированный JPG файл с повторными попытками
+                            for (let attempt = 1; attempt <= 3; attempt++) {
+                                try {
+                                    await fs.access(jpgPath);
+                                    attachments.push({
+                                        filename: `Сертификат_${certificateCode}.jpg`,
+                                        path: jpgPath,
+                                        contentType: 'image/jpeg'
+                                    });
+                                    console.log(`📎 JPG вложение добавлено (сгенерировано методом предпросмотра): ${jpgPath}`);
+                                    fileFound = true;
+                                    break;
+                                } catch (error) {
+                                    if (attempt < 3) {
+                                        console.log(`⏳ Сгенерированный JPG файл не найден (попытка ${attempt}/3), ожидание...`);
+                                        await new Promise(resolve => setTimeout(resolve, 1000));
+                                    } else {
+                                        console.warn(`⚠️  Сгенерированный JPG файл не найден после 3 попыток: ${jpgPath}`);
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        console.warn(`⚠️  Сертификат ${certificateCode} не найден в БД для генерации`);
                     }
                 } catch (jpgError) {
                     console.error('❌ Ошибка при генерации JPG для email:', jpgError);
