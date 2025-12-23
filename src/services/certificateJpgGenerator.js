@@ -46,8 +46,14 @@ class CertificateJpgGenerator {
                     '--single-process',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
-                ]
+                    '--disable-renderer-backgrounding',
+                    '--lang=ru-RU,ru,en-US,en'
+                ],
+                env: {
+                    ...process.env,
+                    FONTCONFIG_FILE: '/etc/fonts/fonts.conf',
+                    FONTCONFIG_PATH: '/etc/fonts'
+                }
             });
         }
         return this.browser;
@@ -445,25 +451,36 @@ class CertificateJpgGenerator {
                         -webkit-print-color-adjust: exact !important;
                         color-adjust: exact !important;
                         print-color-adjust: exact !important;
-                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
                     }
                     
                     .certificate-number {
                         color: #FFD700 !important;
+                        font-family: 'Courier New', monospace !important;
                     }
                     
                     .certificate-amount {
                         color: #FFD700 !important;
                     }
                     
+                    .certificate-value {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+                    
+                    .certificate-value * {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+                    
                     .certificate-expiry {
                         color: #FFFFFF !important;
                     }
                     
-                    /* Принудительное отображение эмодзи */
-                    .certificate-title, .certificate-value, .certificate-recipient, .certificate-message, .certificate-expiry {
-                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
-                        font-variant-emoji: emoji !important;
+                    /* Поддержка эмодзи как fallback для элементов с эмодзи */
+                    .certificate-title, .info-label {
+                        font-family: 'Segoe UI', 'Arial', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
                     }
                 `;
                 document.head.appendChild(style);
