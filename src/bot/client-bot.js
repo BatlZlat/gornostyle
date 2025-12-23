@@ -22,6 +22,47 @@ function getLocationDisplayName(location) {
     return locationNames[location] || 'База отдыха «Кулига-Клуб»';
 }
 
+// Функция для преобразования уровня из текстового формата в числовой
+function convertLevelToNumber(level) {
+    if (level === null || level === undefined) {
+        return null;
+    }
+    if (typeof level === 'number') {
+        return level;
+    }
+    if (typeof level === 'string') {
+        const levelLower = level.toLowerCase().trim();
+        const levelMap = {
+            'beginner': 1,
+            'intermediate': 2,
+            'advanced': 3
+        };
+        if (levelMap[levelLower]) {
+            return levelMap[levelLower];
+        }
+        const parsed = parseInt(levelLower);
+        if (!isNaN(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+}
+
+// Функция для определения типа тренировки по описанию
+function determineTrainingTypeFromDescription(description = '') {
+    const desc = description.toString().trim().toLowerCase();
+    if (!desc) return 'general';
+    const childrenKeywords = ['дети', 'детск', 'для детей', 'детская', 'ребёнок', 'ребенок'];
+    const adultsKeywords = ['взрослые', 'взросл', 'для взрослых', 'взрослая'];
+    if (desc.startsWith('детская тренировка') || childrenKeywords.some((k) => desc.includes(k))) {
+        return 'children';
+    }
+    if (desc.startsWith('взрослая тренировка') || adultsKeywords.some((k) => desc.includes(k))) {
+        return 'adults';
+    }
+    return 'general';
+}
+
 // Настройка подключения к БД
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || undefined,
@@ -4852,10 +4893,12 @@ async function handleTextMessage(msg) {
                 const client = clientResult.rows[0];
                 const clientAge = Math.floor(client.age);
 
-                // Определяем тип тренировки по названию группы
-                const isChildrenTraining = selectedTraining.group_name?.toLowerCase().includes('дети');
-                const isAdultTraining = selectedTraining.group_name?.toLowerCase().includes('взрослые');
-                const isGeneralTraining = !isChildrenTraining && !isAdultTraining;
+                // Определяем тип тренировки по описанию (как на сайте)
+                const trainingDescription = selectedTraining.description || '';
+                const trainingType = determineTrainingTypeFromDescription(trainingDescription);
+                const isChildrenTraining = trainingType === 'children';
+                const isAdultTraining = trainingType === 'adults';
+                const isGeneralTraining = trainingType === 'general';
 
                 // Проверяем возрастные ограничения
                 if (isChildrenTraining) {
@@ -5025,7 +5068,8 @@ async function handleTextMessage(msg) {
                 message += `⏰ *Время:* ${timeStr}\n`;
                 message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
                 message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
-                message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
+                const trainingLevelDisplay = convertLevelToNumber(selectedTraining.level || selectedTraining.group_name);
+                message += `📊 *Уровень:* ${trainingLevelDisplay !== null ? trainingLevelDisplay : '-'}/10\n`;
                 const location = selectedTraining.location || state.data?.location || 'kuliga';
                 message += `🏔️ *Место:* ${getLocationDisplayName(location)}\n`;
                 if (selectedTraining.trainer_name) {
@@ -5036,8 +5080,8 @@ async function handleTextMessage(msg) {
 
                 // Добавляем блок про уровень
                 const clientLevel = client.skill_level || 0;
-                const requiredLevel = selectedTraining.skill_level || 0;
-                if (clientLevel >= requiredLevel) {
+                const requiredLevel = convertLevelToNumber(selectedTraining.level || selectedTraining.group_name) || 0;
+                if (requiredLevel === null || clientLevel >= requiredLevel) {
                     message += `✅ Ваш текущий уровень: ${clientLevel}/10 — вы можете записаться на эту тренировку! Отличный выбор! 😎🎿\n\n`;
                 } else {
                     message += `⚠️ Ваш уровень: ${clientLevel}/10. Для этой тренировки требуется уровень ${requiredLevel}/10.\n`;
@@ -5126,7 +5170,8 @@ async function handleTextMessage(msg) {
                 message += `⏰ *Время:* ${timeStr}\n`;
                 message += `👥 *Группа:* ${selectedTraining.group_name || 'Групповая тренировка'}\n`;
                 message += `👥 *Мест:* ${selectedTraining.current_participants || 0}/${selectedTraining.max_participants}\n`;
-                message += `📊 *Уровень:* ${selectedTraining.skill_level || '-'}/10\n`;
+                const trainingLevelDisplay = convertLevelToNumber(selectedTraining.level || selectedTraining.group_name);
+                message += `📊 *Уровень:* ${trainingLevelDisplay !== null ? trainingLevelDisplay : '-'}/10\n`;
                 const location = selectedTraining.location || state.data?.location || 'kuliga';
                 message += `🏔️ *Место:* ${getLocationDisplayName(location)}\n`;
                 if (selectedTraining.trainer_name) {
@@ -5191,22 +5236,32 @@ async function handleTextMessage(msg) {
 
             // Проверяем уровень подготовки ребенка
             const childLevel = selectedChild.skill_level || 0;
-            const requiredLevel = selectedTraining.skill_level || 0;
-            if (childLevel < requiredLevel) {
-                return bot.sendMessage(chatId,
-                    `❌ Нельзя записать ребенка на эту тренировку.\n\n` +
-                    `Уровень подготовки ребенка (${childLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n` +
-                    `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока уровень подготовки ребенка повысится.`,
-                    {
-                        reply_markup: {
-                            keyboard: [
-                                ['🏔️ Выбрать другую тренировку'],
-                                ['🔙 Назад в меню']
-                            ],
-                            resize_keyboard: true
-                        }
+            const requiredLevel = convertLevelToNumber(selectedTraining.level || selectedTraining.group_name);
+            if (requiredLevel !== null && requiredLevel >= 2 && childLevel < requiredLevel) {
+                const adminPhone = process.env.ADMIN_PHONE || '';
+                const adminTelegramUsername = process.env.ADMIN_TELEGRAM_USERNAME || '';
+                
+                let errorMessage = `❌ Нельзя записать ребенка на эту тренировку.\n\n`;
+                errorMessage += `Уровень подготовки ребенка ${selectedChild.full_name} (${childLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n`;
+                errorMessage += `Для записи на эту тренировку необходим уровень ${requiredLevel}.\n\n`;
+                errorMessage += `Обратитесь к администратору для повышения уровня:\n`;
+                if (adminTelegramUsername) {
+                    errorMessage += `• Telegram: ${adminTelegramUsername.replace(/^@/, '')}\n`;
+                }
+                if (adminPhone) {
+                    errorMessage += `• Телефон: ${adminPhone}\n`;
+                }
+                errorMessage += `\nИли выберите тренировку с подходящим уровнем.`;
+                
+                return bot.sendMessage(chatId, errorMessage, {
+                    reply_markup: {
+                        keyboard: [
+                            ['🏔️ Выбрать другую тренировку'],
+                            ['🔙 Назад в меню']
+                        ],
+                        resize_keyboard: true
                     }
-                );
+                });
             }
 
             // Получаем баланс клиента
@@ -5317,9 +5372,11 @@ async function handleTextMessage(msg) {
                 try {
                     await client.query('BEGIN');
 
-                    // Получаем данные клиента
+                    // Получаем данные клиента с birth_date для расчета возраста
                     const clientResult = await client.query(
-                        `SELECT c.*, COALESCE(w.balance, 0) as balance 
+                        `SELECT c.*, 
+                            EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birth_date)) as age,
+                            COALESCE(w.balance, 0) as balance 
                         FROM clients c 
                         LEFT JOIN wallets w ON c.id = w.client_id 
                         WHERE c.id = $1`,
@@ -5383,22 +5440,105 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    // Проверяем уровень подготовки (для клиента или ребенка)
+                    // Определяем тип тренировки по описанию
+                    const trainingDescription = selectedTraining.description || '';
+                    const trainingType = determineTrainingTypeFromDescription(trainingDescription);
+                    const isChildrenTraining = trainingType === 'children';
+                    const isAdultTraining = trainingType === 'adults';
+                    
+                    // Получаем возраст участника
+                    let participantAge = null;
                     let participantLevel = 0;
                     let participantName = clientData.full_name;
                     
                     if (state.data.selected_child) {
-                        // Если выбран ребенок, проверяем его уровень
+                        // Если выбран ребенок, проверяем его возраст и уровень
                         participantLevel = state.data.selected_child.skill_level || 0;
                         participantName = state.data.selected_child.full_name;
+                        // Возраст ребенка уже должен быть рассчитан, но для безопасности получаем из базы
+                        const childAgeResult = await client.query(
+                            `SELECT EXTRACT(YEAR FROM AGE(CURRENT_DATE, birth_date)) as age
+                             FROM children WHERE id = $1`,
+                            [state.data.selected_child.id]
+                        );
+                        participantAge = childAgeResult.rows[0] ? Math.floor(childAgeResult.rows[0].age) : null;
                     } else {
-                        // Если выбран клиент, проверяем его уровень
+                        // Если выбран клиент, проверяем его возраст и уровень
                         participantLevel = clientData.skill_level || 0;
+                        participantAge = clientData.age ? Math.floor(clientData.age) : null;
+                    }
+                    
+                    // Проверяем возрастные ограничения
+                    if (isChildrenTraining && participantAge !== null && participantAge >= 18) {
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId,
+                            `❌ Нельзя записаться на эту тренировку.\n\n` +
+                            `Это детская тренировка, предназначена для детей до 18 лет.\n\n` +
+                            `Выберите взрослую тренировку или тренировку без возрастных ограничений.`,
+                            {
+                                reply_markup: {
+                                    keyboard: [
+                                        ['🎿 Выбрать другую тренировку'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+                    
+                    if (isAdultTraining && participantAge !== null && participantAge < 18) {
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId,
+                            `❌ Нельзя записаться на эту тренировку.\n\n` +
+                            `Это взрослая тренировка, предназначена для участников от 18 лет.\n\n` +
+                            `Выберите детскую тренировку или тренировку без возрастных ограничений.`,
+                            {
+                                reply_markup: {
+                                    keyboard: [
+                                        ['🎿 Выбрать другую тренировку'],
+                                        ['🔙 Назад в меню']
+                                    ],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
                     }
                     
                     // Для kuliga_group_trainings уровень хранится в поле level как текст, не как число
-                    // Пока пропускаем проверку уровня (можно добавить позже)
-                    // const requiredLevel = selectedTraining.level || 0;
+                    // Преобразуем уровень тренировки в числовой формат
+                    const trainingLevelRaw = selectedTraining.level || selectedTraining.group_name; // Используем level, если доступен, иначе group_name
+                    const requiredLevel = convertLevelToNumber(trainingLevelRaw);
+                    
+                    // Проверяем уровень только если уровень тренировки указан и >= 2
+                    if (requiredLevel !== null && requiredLevel >= 2 && participantLevel < requiredLevel) {
+                        const adminPhone = process.env.ADMIN_PHONE || '';
+                        const adminTelegramUsername = process.env.ADMIN_TELEGRAM_USERNAME || '';
+                        const adminTelegramLink = adminTelegramUsername ? `https://t.me/${adminTelegramUsername.replace(/^@/, '')}` : '';
+                        
+                        let errorMessage = `❌ Нельзя записаться на эту тренировку.\n\n`;
+                        errorMessage += `Уровень подготовки ${participantName} (${participantLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n`;
+                        errorMessage += `Для записи на эту тренировку необходим уровень ${requiredLevel}.\n\n`;
+                        errorMessage += `Обратитесь к администратору для повышения уровня:\n`;
+                        if (adminTelegramLink) {
+                            errorMessage += `• Telegram: ${adminTelegramUsername.replace(/^@/, '')}\n`;
+                        }
+                        if (adminPhone) {
+                            errorMessage += `• Телефон: ${adminPhone}\n`;
+                        }
+                        errorMessage += `\nИли выберите тренировку с подходящим уровнем.`;
+                        
+                        await client.query('ROLLBACK');
+                        return bot.sendMessage(chatId, errorMessage, {
+                            reply_markup: {
+                                keyboard: [
+                                    ['🎿 Выбрать другую тренировку'],
+                                    ['🔙 Назад в меню']
+                                ],
+                                resize_keyboard: true
+                            }
+                        });
+                    }
 
                     // Проверяем количество участников в kuliga_group_trainings
                     const trainingCheck = await client.query(
@@ -13031,6 +13171,7 @@ async function showAvailableGroupTrainings(chatId, clientId, location = 'kuliga'
                 kgt.start_time,
                 kgt.end_time,
                 kgt.sport_type,
+                kgt.level,
                 kgt.level as group_name,
                 kgt.description,
                 kgt.price_per_person as price,
@@ -14509,7 +14650,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         await client.query('BEGIN');
 
         const clientResult = await client.query(
-            `SELECT c.id, c.full_name, c.phone, c.email, c.birth_date, w.id as wallet_id, w.balance
+            `SELECT c.id, c.full_name, c.phone, c.email, c.birth_date, c.skill_level, w.id as wallet_id, w.balance
              FROM clients c
              LEFT JOIN wallets w ON c.id = w.client_id
              WHERE c.id = $1`,
@@ -14540,7 +14681,7 @@ async function createKuligaExistingGroupBooking(chatId, state) {
 
         const trainingResult = await client.query(
             `SELECT id, instructor_id, date, start_time, end_time, sport_type,
-                    price_per_person, max_participants
+                    price_per_person, max_participants, level, description
              FROM kuliga_group_trainings
              WHERE id = $1
              FOR UPDATE`,
@@ -14553,6 +14694,111 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         }
 
         const training = trainingResult.rows[0];
+        
+        // Получаем список участников
+        const participants = state.data.selected_participants || [];
+        
+        // Определяем тип тренировки по описанию
+        const trainingDescription = training.description || '';
+        const trainingType = determineTrainingTypeFromDescription(trainingDescription);
+        const isChildrenTraining = trainingType === 'children';
+        const isAdultTraining = trainingType === 'adults';
+        
+        // Проверяем возрастные ограничения для каждого участника
+        for (const participant of participants) {
+            const participantAge = participant.age !== null && participant.age !== undefined ? participant.age : null;
+            
+            // Проверяем возрастные ограничения
+            if (isChildrenTraining && participantAge !== null && participantAge >= 18) {
+                await client.query('ROLLBACK');
+                return bot.sendMessage(chatId,
+                    `❌ Нельзя записаться на эту тренировку.\n\n` +
+                    `Это детская тренировка, предназначена для детей до 18 лет.\n\n` +
+                    `Участник ${participant.fullName} (${participantAge} лет) не соответствует возрастным требованиям.\n\n` +
+                    `Выберите взрослую тренировку или тренировку без возрастных ограничений.`,
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['🎿 Выбрать другую тренировку'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+            
+            if (isAdultTraining && participantAge !== null && participantAge < 18) {
+                await client.query('ROLLBACK');
+                return bot.sendMessage(chatId,
+                    `❌ Нельзя записаться на эту тренировку.\n\n` +
+                    `Это взрослая тренировка, предназначена для участников от 18 лет.\n\n` +
+                    `Участник ${participant.fullName} (${participantAge} лет) не соответствует возрастным требованиям.\n\n` +
+                    `Выберите детскую тренировку или тренировку без возрастных ограничений.`,
+                    {
+                        reply_markup: {
+                            keyboard: [
+                                ['🎿 Выбрать другую тренировку'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        }
+        
+        // Проверяем уровень подготовки для каждого участника
+        const trainingLevelRaw = training.level;
+        const requiredLevel = convertLevelToNumber(trainingLevelRaw);
+        
+        if (requiredLevel !== null && requiredLevel >= 2) {
+            for (const participant of participants) {
+                let participantLevel = 0;
+                let participantName = participant.fullName;
+                
+                // Получаем уровень участника
+                if (participant.childId) {
+                    // Это ребенок
+                    const childResult = await client.query(
+                        'SELECT skill_level FROM children WHERE id = $1',
+                        [participant.childId]
+                    );
+                    participantLevel = childResult.rows[0]?.skill_level || 0;
+                } else {
+                    // Это взрослый клиент
+                    participantLevel = clientData.skill_level || 0;
+                }
+                
+                if (participantLevel < requiredLevel) {
+                    const adminPhone = process.env.ADMIN_PHONE || '';
+                    const adminTelegramUsername = process.env.ADMIN_TELEGRAM_USERNAME || '';
+                    
+                    let errorMessage = `❌ Нельзя записаться на эту тренировку.\n\n`;
+                    errorMessage += `Уровень подготовки участника ${participantName} (${participantLevel}) ниже требуемого уровня тренировки (${requiredLevel}).\n\n`;
+                    errorMessage += `Для записи на эту тренировку необходим уровень ${requiredLevel}.\n\n`;
+                    errorMessage += `Обратитесь к администратору для повышения уровня:\n`;
+                    if (adminTelegramUsername) {
+                        errorMessage += `• Telegram: ${adminTelegramUsername.replace(/^@/, '')}\n`;
+                    }
+                    if (adminPhone) {
+                        errorMessage += `• Телефон: ${adminPhone}\n`;
+                    }
+                    errorMessage += `\nИли выберите тренировку с подходящим уровнем.`;
+                    
+                    await client.query('ROLLBACK');
+                    return bot.sendMessage(chatId, errorMessage, {
+                        reply_markup: {
+                            keyboard: [
+                                ['🎿 Выбрать другую тренировку'],
+                                ['🔙 Назад в меню']
+                            ],
+                            resize_keyboard: true
+                        }
+                    });
+                }
+            }
+        }
 
         // Пересчитываем текущее количество участников из бронирований
         const participantsCountResult = await client.query(
@@ -14564,7 +14810,6 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         );
         
         const currentParticipants = participantsCountResult.rows[0]?.current_participants || 0;
-        const participants = state.data.selected_participants || [];
         const newParticipantsCount = participants.length;
 
         if (currentParticipants + newParticipantsCount > training.max_participants) {
