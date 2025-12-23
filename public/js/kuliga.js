@@ -521,6 +521,13 @@
 
                 const photoUrl = instructor.photo_url || 'https://via.placeholder.com/160x160/1e293b/ffffff?text=GS72';
                 const sportLabel = sportLabels[instructor.sport_type] || 'Инструктор';
+                
+                // Формируем название локации для отображения
+                const locationDisplayName = instructor.location === 'vorona' 
+                    ? 'Воронинские горки' 
+                    : (instructor.location === 'kuliga' || !instructor.location) 
+                        ? 'Кулига' 
+                        : instructor.location;
 
                 // Для мобильной версии фильтруем дни: только будущие дни с расписанием
                 const daysToRender = isMobile ? filterDaysForMobile(instructor, days) : days;
@@ -532,6 +539,7 @@
                         <div class="kuliga-instructor__info">
                             <h3>${instructor.full_name}</h3>
                             <span class="kuliga-instructor__sport"><i class="fa-solid fa-person-skiing"></i> ${sportLabel}</span>
+                            <span class="kuliga-instructor__location"><i class="fa-solid fa-location-dot"></i> ${locationDisplayName}</span>
                             ${instructor.description ? `<p class="kuliga-instructor__description">${instructor.description}</p>` : ''}
                         </div>
                     </header>
@@ -665,7 +673,8 @@
                                                                     maxParticipants: slot.maxParticipants || 0,
                                                                     currentParticipants: slot.currentParticipants || 0,
                                                                     pricePerPerson: slot.pricePerPerson || 0,
-                                                                    level: slot.level || null
+                                                                    level: slot.level || null,
+                                                                    description: slot.description || null
                                                                 }
                                                             };
                                                         } else {

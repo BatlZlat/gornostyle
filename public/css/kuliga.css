@@ -663,6 +663,15 @@
     text-transform: uppercase;
 }
 
+.kuliga-instructor__location {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--kuliga-gray-600);
+    font-weight: 500;
+}
+
 .kuliga-instructor__description {
     margin: 0;
     font-size: 0.95rem;

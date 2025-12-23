@@ -260,12 +260,63 @@
     /**
      * Тип 3: Модальное окно для групповой тренировки (с ограничением участников)
      */
+    /**
+     * Определяет тип тренировки по description
+     * @param {string} description - Описание тренировки
+     * @returns {Object} { type: 'children'|'adults'|'general', label: string }
+     */
+    function determineTrainingType(description) {
+        if (!description || typeof description !== 'string') {
+            return { type: 'general', label: '' };
+        }
+
+        const descLower = description.trim().toLowerCase();
+
+        // Проверяем начало описания (стандартный формат)
+        if (descLower.startsWith('детская тренировка')) {
+            return { type: 'children', label: '👶 Детская тренировка' };
+        }
+        if (descLower.startsWith('взрослая тренировка')) {
+            return { type: 'adults', label: '👤 Взрослая тренировка' };
+        }
+
+        // Проверяем наличие ключевых слов
+        const childrenKeywords = ['дети', 'детск', 'для детей', 'детская', 'ребёнок', 'ребенок'];
+        const adultsKeywords = ['взрослые', 'взросл', 'для взрослых', 'взрослая'];
+
+        for (const keyword of childrenKeywords) {
+            if (descLower.includes(keyword)) {
+                return { type: 'children', label: '👶 Детская тренировка' };
+            }
+        }
+
+        for (const keyword of adultsKeywords) {
+            if (descLower.includes(keyword)) {
+                return { type: 'adults', label: '👤 Взрослая тренировка' };
+            }
+        }
+
+        return { type: 'general', label: '' };
+    }
+
     function showGroupTrainingBookingModal(slotData) {
         const groupTraining = slotData.groupTraining || {};
         const maxParticipants = groupTraining.maxParticipants || 0;
         const currentParticipants = groupTraining.currentParticipants || 0;
         const availableSlots = maxParticipants - currentParticipants;
         const pricePerPerson = parseFloat(groupTraining.pricePerPerson) || 0;
+        // Берем description из groupTraining, если его нет - пробуем из slotData напрямую
+        const description = groupTraining.description || slotData.description || '';
+        
+        // Отладочный вывод
+        console.log('🔍 showGroupTrainingBookingModal:', {
+            slotData,
+            groupTraining,
+            description
+        });
+        
+        // Определяем тип тренировки
+        const trainingType = determineTrainingType(description);
 
         const modal = document.createElement('div');
         modal.className = 'kuliga-slot-booking-modal';
@@ -304,6 +355,12 @@
             <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
                 <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b;">Запись на групповую тренировку</h2>
                 
+                ${trainingType.label ? `
+                <div style="margin-bottom: 24px; padding: 16px; background: ${trainingType.type === 'children' ? '#e3f2fd' : trainingType.type === 'adults' ? '#fff3e0' : '#f5f5f5'}; border-left: 4px solid ${trainingType.type === 'children' ? '#2196f3' : trainingType.type === 'adults' ? '#ff9800' : '#9e9e9e'}; border-radius: 8px;">
+                    <p style="margin: 0; font-weight: 600; color: #1e293b; font-size: 1.1rem;">${trainingType.label}</p>
+                </div>
+                ` : ''}
+                
                 <div style="margin-bottom: 24px; padding: 16px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 8px;">
                     <p style="margin: 4px 0;"><strong>Записано участников:</strong> ${currentParticipants} из ${maxParticipants}</p>
                     <p style="margin: 4px 0;"><strong>Свободных мест:</strong> ${availableSlots}</p>
@@ -314,6 +371,7 @@
                     <p style="margin: 8px 0;"><strong>Время:</strong> ${formatTime(slotData.startTime)}${slotData.endTime ? ` - ${formatTime(slotData.endTime)}` : ''}</p>
                     <p style="margin: 8px 0;"><strong>Место:</strong> ${slotData.location === 'kuliga' ? 'База отдыха «Кулига-Клуб»' : 'Воронинские горки'}</p>
                     <p style="margin: 8px 0;"><strong>Цена за человека:</strong> ${formatCurrency(pricePerPerson)}</p>
+                    ${description ? `<p style="margin: 8px 0;"><strong>Описание:</strong> ${description}</p>` : ''}
                 </div>
 
                 <div style="margin-bottom: 24px;">
