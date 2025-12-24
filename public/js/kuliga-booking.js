@@ -610,11 +610,8 @@
         if (price.type === 'group') {
             // Если тариф найден для нужного количества участников, используем его цену
             if (Number(price.participants) === currentParticipants) {
-                // Для 8 участников цена в прайсе уже является ценой за человека
-                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                pricePerPerson = Number(price.participants) === 8 
-                    ? Number(price.price)
-                    : Number(price.price) / currentParticipants;
+                // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                pricePerPerson = Number(price.price) / currentParticipants;
             } else {
                 // Если тариф для другого количества, ищем правильный тариф
                 const correctPrice = prices.find((item) => 
