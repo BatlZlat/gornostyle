@@ -6722,6 +6722,20 @@ async function handleTextMessage(msg) {
 
             if (msg.text === '✅ Записаться') {
                 const state = userStates.get(chatId);
+                
+                if (!state || !state.data || !state.data.selected_session) {
+                    console.error('❌ Ошибка: состояние или данные тренировки не найдены');
+                    return bot.sendMessage(chatId,
+                        '❌ Произошла ошибка. Пожалуйста, начните запись заново через меню.',
+                        {
+                            reply_markup: {
+                                keyboard: [['🔙 Назад в меню']],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                }
+                
                 const selectedSession = state.data.selected_session;
                 const client = await pool.connect();
 
@@ -6738,17 +6752,59 @@ async function handleTextMessage(msg) {
                     );
                     
                     if (!clientResult.rows[0]) {
+                        await client.query('ROLLBACK');
+                        client.release();
                         throw new Error('Клиент не найден');
                     }
                     
                     const clientData = clientResult.rows[0];
                     const balance = parseFloat(clientData.balance || 0);
-                    const price = parseFloat(selectedSession.price);
+                    const price = parseFloat(selectedSession.price || 0);
+
+                    // Проверяем уровень подготовки для взрослых ПЕРЕД проверкой баланса
+                    if (!state.data.selected_child) {
+                        const clientSkillLevel = parseInt(clientData.skill_level) || 0;
+                        const requiredSkillLevel = parseInt(selectedSession.skill_level) || 0;
+                        
+                        if (clientSkillLevel < requiredSkillLevel) {
+                            try {
+                                await client.query('ROLLBACK');
+                            } catch (rollbackError) {
+                                console.error('Ошибка при откате транзакции при проверке уровня:', rollbackError);
+                            }
+                            // НЕ освобождаем клиент здесь - finally блок сделает это
+                            try {
+                                const result = await bot.sendMessage(chatId,
+                                    `❌ Нельзя записаться на эту тренировку.\n\n` +
+                                    `Ваш уровень подготовки (${clientSkillLevel}) ниже требуемого уровня тренировки (${requiredSkillLevel}).\n\n` +
+                                    `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока ваш уровень подготовки повысится.`,
+                                    {
+                                        reply_markup: {
+                                            keyboard: [
+                                                ['🎿 Выбрать другую тренировку'],
+                                                ['🔙 Назад в меню']
+                                            ],
+                                            resize_keyboard: true
+                                        }
+                                    }
+                                );
+                                return result;
+                            } catch (sendError) {
+                                console.error('Ошибка при отправке сообщения о недостаточном уровне:', sendError);
+                                // Не пробрасываем ошибку дальше, просто возвращаемся
+                                return null;
+                            }
+                        }
+                    }
 
                     // Проверяем баланс
                     if (balance < price) {
-                        await client.query('ROLLBACK');
-                        client.release();
+                        try {
+                            await client.query('ROLLBACK');
+                        } catch (rollbackError) {
+                            console.error('Ошибка при откате транзакции при проверке баланса:', rollbackError);
+                        }
+                        // НЕ освобождаем клиент здесь - finally блок сделает это
                         
                         // Вычисляем разницу
                         const difference = price - balance;
@@ -6757,48 +6813,44 @@ async function handleTextMessage(msg) {
                         state.data.current_balance = balance;
                         state.data.price_difference = difference;
                         state.data.price = price;
+                        state.data.price_total = price;
                         state.data.selected_session = selectedSession;
                         state.step = 'simulator_group_payment_choice';
                         userStates.set(chatId, state);
                         
-                        return bot.sendMessage(chatId,
-                            `❌ <b>Недостаточно средств</b>\n\n` +
-                            `💰 Требуется: <b>${price.toFixed(2)} ₽</b>\n` +
-                            `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
-                            `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
-                            `Нажмите кнопку ниже для оплаты недостающей суммы:`,
-                            {
-                                parse_mode: 'HTML',
-                                reply_markup: {
-                                    keyboard: [
-                                        ['💳 Оплатить'],
-                                        ['🔙 Назад в меню']
-                                    ],
-                                    resize_keyboard: true
+                        try {
+                            console.log('[DEBUG] Отправка сообщения о недостатке средств для групповой тренировки на тренажере');
+                            const result = await bot.sendMessage(chatId,
+                                `❌ <b>Недостаточно средств</b>\n\n` +
+                                `💰 Требуется: <b>${price.toFixed(2)} ₽</b>\n` +
+                                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
+                                `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
+                                `Нажмите кнопку ниже для оплаты недостающей суммы:`,
+                                {
+                                    parse_mode: 'HTML',
+                                    reply_markup: {
+                                        keyboard: [
+                                            ['💳 Оплатить'],
+                                            ['🔙 Назад в меню']
+                                        ],
+                                        resize_keyboard: true
+                                    }
                                 }
-                            }
-                        );
+                            );
+                            console.log('[DEBUG] Сообщение о недостатке средств успешно отправлено, возвращаем результат');
+                            // Явно возвращаем результат, чтобы остановить выполнение
+                            // finally блок освободит клиент
+                            return result;
+                        } catch (sendError) {
+                            console.error('❌ Ошибка при отправке сообщения о недостатке средств:', sendError);
+                            console.error('❌ Stack trace:', sendError.stack);
+                            // Не пробрасываем ошибку дальше, просто возвращаемся
+                            // finally блок освободит клиент
+                            return null;
+                        }
                     }
 
-                    // Проверяем уровень подготовки для взрослых
-                    if (!state.data.selected_child && clientData.skill_level < selectedSession.skill_level) {
-                        await client.query('ROLLBACK');
-                        return bot.sendMessage(chatId,
-                            `❌ Нельзя записаться на эту тренировку.\n\n` +
-                            `Ваш уровень подготовки (${clientData.skill_level}) ниже требуемого уровня тренировки (${selectedSession.skill_level}).\n\n` +
-                            `Пожалуйста, выберите тренировку с подходящим уровнем или подождите, пока ваш уровень подготовки повысится.`,
-                            {
-                                reply_markup: {
-                                    keyboard: [
-                                        ['🎿 Выбрать другую тренировку'],
-                                        ['🔙 Назад в меню']
-                                    ],
-                                    resize_keyboard: true
-                                }
-                            }
-                        );
-                    }
-
+                    // Если баланс достаточен, продолжаем выполнение
                     // Проверяем количество участников
                     const participantsResult = await client.query(
                         'SELECT COUNT(*) as count FROM session_participants WHERE session_id = $1 AND status = $2',
@@ -6935,11 +6987,17 @@ async function handleTextMessage(msg) {
                     });
 
                 } catch (error) {
-                    await client.query('ROLLBACK');
+                    try {
+                        await client.query('ROLLBACK');
+                    } catch (rollbackError) {
+                        console.error('Ошибка при откате транзакции:', rollbackError);
+                    }
                     console.error('Ошибка при записи на групповую тренировку:', error, {
-                        session_id: selectedSession.id,
-                        client_id: state.data.client_id,
-                        child_id: state.data.selected_child ? state.data.selected_child.id : null
+                        session_id: selectedSession?.id,
+                        client_id: state?.data?.client_id,
+                        child_id: state?.data?.selected_child ? state.data.selected_child.id : null,
+                        error_message: error.message,
+                        error_stack: error.stack
                     });
                     return bot.sendMessage(chatId,
                         '❌ Произошла ошибка при записи на тренировку. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
@@ -6951,7 +7009,9 @@ async function handleTextMessage(msg) {
                         }
                     );
                 } finally {
-                    client.release();
+                    if (client) {
+                        client.release();
+                    }
                 }
             }
             break;
