@@ -1128,72 +1128,8 @@ router.post(
                     const participantId = newParticipantResult.rows[0].id;
                     console.log(`✅ Участник групповой тренировки на тренажере #${participantId} создан после успешной оплаты (transaction #${transactionId})`);
                 } else if (bookingData.booking_type === 'group') {
-                    // Проверяем доступность мест перед созданием бронирования
-                    const groupTrainingCheck = await client.query(
-                        `SELECT current_participants, max_participants, status
-                         FROM kuliga_group_trainings
-                         WHERE id = $1
-                         FOR UPDATE`,
-                        [bookingData.group_training_id]
-                    );
-                    
-                    if (groupTrainingCheck.rows.length === 0) {
-                        await client.query('ROLLBACK');
-                        errorMessage = `Групповая тренировка #${bookingData.group_training_id} не найдена`;
-                        console.error(`⚠️ ${errorMessage}`);
-                        
-                        await logWebhook({
-                            provider: providerName,
-                            webhookType,
-                            paymentId,
-                            orderId,
-                            bookingId: null,
-                            status,
-                            amount,
-                            paymentMethod,
-                            rawPayload: payload,
-                            headers,
-                            signatureValid: true,
-                            processed: false,
-                            errorMessage
-                        });
-                        
-                        // Отправляем уведомление клиенту и возвращаем средства
-                        await this.handleBookingUnavailable(transaction, bookingData, errorMessage, amount);
-                        
-                        return res.status(200).send('OK');
-                    }
-                    
-                    const groupTraining = groupTrainingCheck.rows[0];
-                    const availableSpots = groupTraining.max_participants - groupTraining.current_participants;
-                    
-                    if (availableSpots < bookingData.participants_count) {
-                        await client.query('ROLLBACK');
-                        errorMessage = `Недостаточно мест в групповой тренировке #${bookingData.group_training_id}. Доступно: ${availableSpots}, требуется: ${bookingData.participants_count}`;
-                        console.error(`⚠️ ${errorMessage}`);
-                        
-                        await logWebhook({
-                            provider: providerName,
-                            webhookType,
-                            paymentId,
-                            orderId,
-                            bookingId: null,
-                            status,
-                            amount,
-                            paymentMethod,
-                            rawPayload: payload,
-                            headers,
-                            signatureValid: true,
-                            processed: false,
-                            errorMessage
-                        });
-                        
-                        // Отправляем уведомление клиенту и возвращаем средства
-                        await handleBookingUnavailable(transaction, bookingData, errorMessage, amount, client, providerName, webhookType, paymentId, orderId, status, paymentMethod, payload, headers);
-                        
-                        return res.status(200).send('OK');
-                    }
-                    
+                    // Места уже проверены и подтверждены выше (строки 930-976)
+                    // Создаем запрос INSERT для групповой тренировки
                     insertQuery = `INSERT INTO kuliga_bookings (
                         client_id,
                         booking_type,
