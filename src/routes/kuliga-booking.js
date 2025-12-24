@@ -494,7 +494,7 @@ const createGroupBooking = async (req, res) => {
                      JOIN kuliga_instructors i ON i.id = s.instructor_id
                      LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id AND kgt.date = $2
                      WHERE s.id = $1 AND s.date = $2
-                     FOR UPDATE`,
+                     FOR UPDATE OF s, i`,
                     [slotId, date]
                 );
 
