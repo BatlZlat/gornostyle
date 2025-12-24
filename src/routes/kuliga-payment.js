@@ -493,6 +493,39 @@ router.post(
                         [transactionId]
                     );
                     
+                    // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                    try {
+                        const rawData = transaction.provider_raw_data || {};
+                        if (rawData.source === 'bot' && rawData.walletRefillData) {
+                            const bot = require('../bot/client-bot').bot;
+                            const clientResult = await client.query(
+                                'SELECT telegram_id FROM clients WHERE id = $1',
+                                [rawData.walletRefillData.client_id]
+                            );
+                            
+                            if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                const telegramId = clientResult.rows[0].telegram_id;
+                                const amount = rawData.walletRefillData.amount || 0;
+                                
+                                let message = `❌ <b>Пополнение кошелька не удалось</b>\n\n`;
+                                message += `💰 Сумма: ${amount.toFixed(2)} ₽\n`;
+                                if (isRefunded) {
+                                    message += `💳 Статус: Возврат средств\n\n`;
+                                    message += `Средства были возвращены. Если деньги списались, они вернутся на ваш счет в течение нескольких дней.`;
+                                } else {
+                                    message += `💳 Статус: Платеж отклонен\n\n`;
+                                    message += `Пожалуйста, проверьте данные карты и попробуйте снова.`;
+                                }
+                                
+                                await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                console.log(`✅ Уведомление о неудачном пополнении отправлено клиенту (telegram_id: ${telegramId})`);
+                            }
+                        }
+                    } catch (telegramError) {
+                        console.error('❌ Ошибка при отправке уведомления в Telegram о неудачном пополнении:', telegramError);
+                        // Не прерываем выполнение
+                    }
+                    
                     await client.query('COMMIT');
                     processed = true;
                     console.log(`❌ Пополнение кошелька не удалось (transaction #${transactionId})`);
@@ -1095,6 +1128,72 @@ router.post(
                     const participantId = newParticipantResult.rows[0].id;
                     console.log(`✅ Участник групповой тренировки на тренажере #${participantId} создан после успешной оплаты (transaction #${transactionId})`);
                 } else if (bookingData.booking_type === 'group') {
+                    // Проверяем доступность мест перед созданием бронирования
+                    const groupTrainingCheck = await client.query(
+                        `SELECT current_participants, max_participants, status
+                         FROM kuliga_group_trainings
+                         WHERE id = $1
+                         FOR UPDATE`,
+                        [bookingData.group_training_id]
+                    );
+                    
+                    if (groupTrainingCheck.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        errorMessage = `Групповая тренировка #${bookingData.group_training_id} не найдена`;
+                        console.error(`⚠️ ${errorMessage}`);
+                        
+                        await logWebhook({
+                            provider: providerName,
+                            webhookType,
+                            paymentId,
+                            orderId,
+                            bookingId: null,
+                            status,
+                            amount,
+                            paymentMethod,
+                            rawPayload: payload,
+                            headers,
+                            signatureValid: true,
+                            processed: false,
+                            errorMessage
+                        });
+                        
+                        // Отправляем уведомление клиенту и возвращаем средства
+                        await this.handleBookingUnavailable(transaction, bookingData, errorMessage, amount);
+                        
+                        return res.status(200).send('OK');
+                    }
+                    
+                    const groupTraining = groupTrainingCheck.rows[0];
+                    const availableSpots = groupTraining.max_participants - groupTraining.current_participants;
+                    
+                    if (availableSpots < bookingData.participants_count) {
+                        await client.query('ROLLBACK');
+                        errorMessage = `Недостаточно мест в групповой тренировке #${bookingData.group_training_id}. Доступно: ${availableSpots}, требуется: ${bookingData.participants_count}`;
+                        console.error(`⚠️ ${errorMessage}`);
+                        
+                        await logWebhook({
+                            provider: providerName,
+                            webhookType,
+                            paymentId,
+                            orderId,
+                            bookingId: null,
+                            status,
+                            amount,
+                            paymentMethod,
+                            rawPayload: payload,
+                            headers,
+                            signatureValid: true,
+                            processed: false,
+                            errorMessage
+                        });
+                        
+                        // Отправляем уведомление клиенту и возвращаем средства
+                        await handleBookingUnavailable(transaction, bookingData, errorMessage, amount, client, providerName, webhookType, paymentId, orderId, status, paymentMethod, payload, headers);
+                        
+                        return res.status(200).send('OK');
+                    }
+                    
                     insertQuery = `INSERT INTO kuliga_bookings (
                         client_id,
                         booking_type,
@@ -1608,6 +1707,34 @@ router.post(
                                 [bookingData.participants_count, bookingData.group_training_id]
                             );
                             console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (платеж не прошел)`);
+                        } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                            // Групповое бронирование на тренажере: возвращаем место
+                            await client.query(
+                                `UPDATE training_sessions
+                                 SET current_participants = GREATEST(current_participants - 1, 0),
+                                     status = CASE 
+                                         WHEN current_participants <= 1 THEN 'scheduled'
+                                         ELSE status
+                                     END,
+                                     updated_at = CURRENT_TIMESTAMP
+                                 WHERE id = $1`,
+                                [bookingData.group_id]
+                            );
+                            console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (платеж не прошел)`);
+                        } else if (bookingData.booking_type === 'individual_simulator') {
+                            // Индивидуальное бронирование на тренажере: освобождаем слоты в schedule
+                            if (bookingData.simulator_id && bookingData.date && bookingData.start_time && bookingData.duration) {
+                                await client.query(
+                                    `UPDATE schedule
+                                     SET is_booked = FALSE, updated_at = CURRENT_TIMESTAMP
+                                     WHERE simulator_id = $1
+                                       AND date = $2
+                                       AND start_time >= $3
+                                       AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                                    [bookingData.simulator_id, bookingData.date, bookingData.start_time, bookingData.duration]
+                                );
+                                console.log(`🔓 Слоты на тренажере освобождены (платеж не прошел)`);
+                            }
                         }
                     }
                     
@@ -1684,6 +1811,34 @@ router.post(
                                 [bookingData.participants_count, bookingData.group_training_id]
                             );
                             console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (возврат средств)`);
+                        } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                            // Групповое бронирование на тренажере: возвращаем место
+                            await client.query(
+                                `UPDATE training_sessions
+                                 SET current_participants = GREATEST(current_participants - 1, 0),
+                                     status = CASE 
+                                         WHEN current_participants <= 1 THEN 'scheduled'
+                                         ELSE status
+                                     END,
+                                     updated_at = CURRENT_TIMESTAMP
+                                 WHERE id = $1`,
+                                [bookingData.group_id]
+                            );
+                            console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (возврат средств)`);
+                        } else if (bookingData.booking_type === 'individual_simulator') {
+                            // Индивидуальное бронирование на тренажере: освобождаем слоты в schedule
+                            if (bookingData.simulator_id && bookingData.date && bookingData.start_time && bookingData.duration) {
+                                await client.query(
+                                    `UPDATE schedule
+                                     SET is_booked = FALSE, updated_at = CURRENT_TIMESTAMP
+                                     WHERE simulator_id = $1
+                                       AND date = $2
+                                       AND start_time >= $3
+                                       AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                                    [bookingData.simulator_id, bookingData.date, bookingData.start_time, bookingData.duration]
+                                );
+                                console.log(`🔓 Слоты на тренажере освобождены (возврат средств)`);
+                            }
                         }
                     }
                     
@@ -1722,6 +1877,65 @@ router.post(
                                     console.error(`❌ Ошибка отправки email о возврате клиенту ${bookingData.client_name} на ${bookingData.client_email}: ${emailResult.error}`);
                                 }
                             }
+                            
+                            // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                            if (rawData.source === 'bot' && bookingData && bookingData.client_id) {
+                                try {
+                                    const bot = require('../bot/client-bot').bot;
+                                    const clientResult = await pool.query(
+                                        'SELECT telegram_id FROM clients WHERE id = $1',
+                                        [bookingData.client_id]
+                                    );
+                                    
+                                    if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                        const telegramId = clientResult.rows[0].telegram_id;
+                                        
+                                        // Форматируем дату и время
+                                        const formatDate = (dateStr) => {
+                                            const date = new Date(dateStr);
+                                            const day = date.getDate().toString().padStart(2, '0');
+                                            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                            const year = date.getFullYear();
+                                            return `${day}.${month}.${year}`;
+                                        };
+                                        
+                                        const formatTime = (timeStr) => {
+                                            if (!timeStr) return '';
+                                            const time = timeStr.toString();
+                                            return time.substring(0, 5);
+                                        };
+                                        
+                                        const dateFormatted = formatDate(bookingData.date);
+                                        const timeFormatted = formatTime(bookingData.start_time);
+                                        const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                        let bookingTypeText;
+                                        if (bookingData.booking_type === 'individual') {
+                                            bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'individual_simulator') {
+                                            bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                                        } else if (bookingData.booking_type === 'group') {
+                                            bookingTypeText = 'Групповое занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'group_simulator') {
+                                            bookingTypeText = 'Групповое занятие (тренажер)';
+                                        } else {
+                                            bookingTypeText = 'Занятие';
+                                        }
+                                        
+                                        let message = `💰 <b>Возврат средств за тренировку</b>\n\n`;
+                                        message += `📅 Дата: ${dateFormatted}\n`;
+                                        message += `⏰ Время: ${timeFormatted}\n`;
+                                        message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                        message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                                        message += `💳 <b>Средства возвращены</b>\n\n`;
+                                        message += `Если деньги списались, они вернутся на ваш счет в течение нескольких дней.`;
+                                        
+                                        await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                        console.log(`✅ Уведомление о возврате средств отправлено клиенту (telegram_id: ${telegramId})`);
+                                    }
+                                } catch (telegramError) {
+                                    console.error('❌ Ошибка при отправке уведомления в Telegram о возврате средств:', telegramError);
+                                }
+                            }
                         } catch (emailError) {
                             console.error('Ошибка отправки email о возврате клиенту:', emailError);
                         }
@@ -1756,6 +1970,82 @@ router.post(
                             [bookingData.participants_count, bookingData.group_training_id]
                         );
                         console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (платёж провалился)`);
+                    } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                        // Групповое бронирование на тренажере: возвращаем место
+                        await client.query(
+                            `UPDATE training_sessions
+                             SET current_participants = GREATEST(current_participants - 1, 0),
+                                 status = CASE 
+                                     WHEN current_participants <= 1 THEN 'scheduled'
+                                     ELSE status
+                                 END,
+                                 hold_until = NULL,
+                                 hold_transaction_id = NULL,
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $1`,
+                            [bookingData.group_id]
+                        );
+                        console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (платёж провалился)`);
+                    }
+                    
+                    // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                    try {
+                        if (rawData.source === 'bot' && bookingData.client_id) {
+                            const bot = require('../bot/client-bot').bot;
+                            const clientResult = await client.query(
+                                'SELECT telegram_id FROM clients WHERE id = $1',
+                                [bookingData.client_id]
+                            );
+                            
+                            if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                const telegramId = clientResult.rows[0].telegram_id;
+                                
+                                // Форматируем дату и время
+                                const formatDate = (dateStr) => {
+                                    const date = new Date(dateStr);
+                                    const day = date.getDate().toString().padStart(2, '0');
+                                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                    const year = date.getFullYear();
+                                    return `${day}.${month}.${year}`;
+                                };
+                                
+                                const formatTime = (timeStr) => {
+                                    if (!timeStr) return '';
+                                    const time = timeStr.toString();
+                                    return time.substring(0, 5);
+                                };
+                                
+                                const dateFormatted = formatDate(bookingData.date);
+                                const timeFormatted = formatTime(bookingData.start_time);
+                                const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                let bookingTypeText;
+                                if (bookingData.booking_type === 'individual') {
+                                    bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                                } else if (bookingData.booking_type === 'individual_simulator') {
+                                    bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                                } else if (bookingData.booking_type === 'group') {
+                                    bookingTypeText = 'Групповое занятие (естественный склон)';
+                                } else if (bookingData.booking_type === 'group_simulator') {
+                                    bookingTypeText = 'Групповое занятие (тренажер)';
+                                } else {
+                                    bookingTypeText = 'Занятие';
+                                }
+                                
+                                let message = `❌ <b>Оплата тренировки не удалась</b>\n\n`;
+                                message += `📅 Дата: ${dateFormatted}\n`;
+                                message += `⏰ Время: ${timeFormatted}\n`;
+                                message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                                message += `💳 <b>Платеж отклонен банком</b>\n\n`;
+                                message += `Пожалуйста, проверьте данные карты и попробуйте записаться снова.`;
+                                
+                                await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                console.log(`✅ Уведомление о неудачной оплате отправлено клиенту (telegram_id: ${telegramId})`);
+                            }
+                        }
+                    } catch (telegramError) {
+                        console.error('❌ Ошибка при отправке уведомления в Telegram о неудачной оплате:', telegramError);
+                        // Не прерываем выполнение
                     }
                 }
             }
@@ -1977,5 +2267,102 @@ router.post('/test-webhook', async (req, res) => {
         });
     }
 });
+
+/**
+ * Обрабатывает случай, когда бронирование недоступно (места/слоты уже заняты)
+ * Отправляет уведомление клиенту и инициирует возврат средств
+ */
+async function handleBookingUnavailable(transaction, bookingData, errorMessage, amount, client, providerName, webhookType, paymentId, orderId, status, paymentMethod, payload, headers) {
+    try {
+        // Обновляем статус транзакции на 'failed'
+        await client.query(
+            `UPDATE kuliga_transactions 
+             SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [transaction.id]
+        );
+        
+        await client.query('COMMIT');
+        
+        // Инициируем возврат средств через провайдера
+        try {
+            const provider = PaymentProviderFactory.create();
+            if (provider && typeof provider.refund === 'function') {
+                await provider.refund(paymentId, amount, 'Места/слоты уже заняты');
+                console.log(`💰 Инициирован возврат средств для транзакции #${transaction.id}`);
+            }
+        } catch (refundError) {
+            console.error(`❌ Ошибка при инициировании возврата средств для транзакции #${transaction.id}:`, refundError);
+            // Не прерываем выполнение, продолжаем отправку уведомлений
+        }
+        
+        // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+        const rawData = transaction.provider_raw_data || {};
+        if (rawData.source === 'bot' && bookingData && bookingData.client_id) {
+            try {
+                const bot = require('../bot/client-bot').bot;
+                const clientResult = await pool.query(
+                    'SELECT telegram_id FROM clients WHERE id = $1',
+                    [bookingData.client_id]
+                );
+                
+                if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                    const telegramId = clientResult.rows[0].telegram_id;
+                    
+                    // Форматируем дату и время
+                    const formatDate = (dateStr) => {
+                        const date = new Date(dateStr);
+                        const day = date.getDate().toString().padStart(2, '0');
+                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                        const year = date.getFullYear();
+                        return `${day}.${month}.${year}`;
+                    };
+                    
+                    const formatTime = (timeStr) => {
+                        if (!timeStr) return '';
+                        const time = timeStr.toString();
+                        return time.substring(0, 5);
+                    };
+                    
+                    const dateFormatted = formatDate(bookingData.date);
+                    const timeFormatted = formatTime(bookingData.start_time);
+                    const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                    let bookingTypeText;
+                    if (bookingData.booking_type === 'individual') {
+                        bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                    } else if (bookingData.booking_type === 'individual_simulator') {
+                        bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                    } else if (bookingData.booking_type === 'group') {
+                        bookingTypeText = 'Групповое занятие (естественный склон)';
+                    } else if (bookingData.booking_type === 'group_simulator') {
+                        bookingTypeText = 'Групповое занятие (тренажер)';
+                    } else {
+                        bookingTypeText = 'Занятие';
+                    }
+                    
+                    let message = `❌ <b>Бронирование недоступно</b>\n\n`;
+                    message += `📅 Дата: ${dateFormatted}\n`;
+                    message += `⏰ Время: ${timeFormatted}\n`;
+                    message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                    message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                    message += `⚠️ <b>К сожалению, места/слоты уже заняты</b>\n\n`;
+                    message += `Средства будут возвращены на ваш счет в течение нескольких дней.\n\n`;
+                    message += `Пожалуйста, выберите другое время для записи.`;
+                    
+                    await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                    console.log(`✅ Уведомление о недоступности бронирования отправлено клиенту (telegram_id: ${telegramId})`);
+                }
+            } catch (telegramError) {
+                console.error('❌ Ошибка при отправке уведомления в Telegram о недоступности бронирования:', telegramError);
+            }
+        }
+        
+        console.log(`✅ Обработана недоступность бронирования для транзакции #${transaction.id}`);
+        
+    } catch (error) {
+        console.error(`❌ Ошибка при обработке недоступности бронирования для транзакции #${transaction.id}:`, error);
+        throw error;
+    }
+}
 
 module.exports = router;
