@@ -843,6 +843,13 @@ const createGroupBooking = async (req, res) => {
 
         const pricePerPerson = Number(training.price_per_person);
         const totalPrice = pricePerPerson * safeCount;
+        
+        console.log(`💰 [GroupBooking] Расчет цены:`, {
+            pricePerPerson,
+            safeCount,
+            totalPrice,
+            training_price_per_person: training.price_per_person
+        });
 
         // НОВАЯ ЛОГИКА: Бронирование создаётся ТОЛЬКО после успешной оплаты
         // 1. НЕ создаём бронирование сразу
@@ -923,7 +930,8 @@ const createGroupBooking = async (req, res) => {
         const paymentMethod = req.body.paymentMethod || 'card';
         try {
             const provider = PaymentProviderFactory.create();
-            payment = await provider.initPayment({
+            
+            const paymentParams = {
                 orderId: `gornostyle72-winter-${transactionId}`, // Используем transactionId вместо bookingId
                 amount: totalPrice,
                 description,
@@ -933,16 +941,23 @@ const createGroupBooking = async (req, res) => {
                 items: [
                     {
                         Name: `Групповая тренировка (${safeCount} чел.)`,
-                        Price: Math.round(pricePerPerson * 100),
+                        Price: pricePerPerson,  // В рублях, провайдер сам умножит на 100
                         Quantity: safeCount,
-                        Amount: Math.round(totalPrice * 100),
+                        Amount: totalPrice,  // В рублях, провайдер сам умножит на 100
                         Tax: 'none',
                         PaymentMethod: 'full_payment',
                         PaymentObject: 'service',
                     },
                 ],
                 paymentMethod: paymentMethod,
+            };
+            
+            console.log(`📤 [GroupBooking] Отправка параметров оплаты:`, {
+                amount: paymentParams.amount,
+                items: paymentParams.items
             });
+            
+            payment = await provider.initPayment(paymentParams);
         } catch (paymentError) {
             // При ошибке инициализации платежа помечаем транзакцию как failed
             // И ВОЗВРАЩАЕМ места в групповой тренировке
@@ -1417,9 +1432,9 @@ const createIndividualBooking = async (req, res) => {
                 items: [
                     {
                         Name: `${price.type === 'individual' ? 'Индивидуальная' : 'Групповая'} тренировка (${participantsCount} чел.)`,
-                        Price: Math.round(pricePerPerson * 100),
+                        Price: pricePerPerson,  // В рублях, провайдер сам умножит на 100
                         Quantity: participantsCount,
-                        Amount: Math.round(totalPrice * 100),
+                        Amount: totalPrice,  // В рублях, провайдер сам умножит на 100
                         Tax: 'none',
                         PaymentMethod: 'full_payment',
                         PaymentObject: 'service',
@@ -2110,9 +2125,9 @@ const createProgramBooking = async (req, res) => {
                 items: [
                     {
                         Name: `Программа "${program.name}" (${safeCount} чел.)`,
-                        Price: Math.round(pricePerPerson * 100),
+                        Price: pricePerPerson,  // В рублях, провайдер сам умножит на 100
                         Quantity: safeCount,
-                        Amount: Math.round(totalPrice * 100),
+                        Amount: totalPrice,  // В рублях, провайдер сам умножит на 100
                         Tax: 'none',
                         PaymentMethod: 'full_payment',
                         PaymentObject: 'service',
