@@ -1542,6 +1542,238 @@ async function handleTextMessage(msg) {
         }
     }
 
+    // Обработка выбора оплаты для "своей группы"
+    if (state && state.step === 'kuliga_own_group_payment_choice') {
+        if (msg.text === '💳 Оплатить') {
+            // Подготавливаем данные для бронирования и оплаты
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Получаем данные клиента
+                const clientResult = await client.query(
+                    `SELECT c.id, c.full_name, c.phone, c.email, w.id as wallet_id
+                     FROM clients c
+                     LEFT JOIN wallets w ON c.id = w.client_id
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+
+                if (!clientResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    return bot.sendMessage(chatId, '❌ Клиент не найден.');
+                }
+
+                const clientData = clientResult.rows[0];
+                const participants = state.data.selected_participants || [];
+                const participantsNames = participants.map(p => p.fullName);
+                const participantsBirthYears = participants.map(p => p.birthYear);
+
+                // Получаем location из state или используем значение по умолчанию
+                const location = state.data.location || 'kuliga';
+
+                // Временно блокируем слот (если он указан)
+                if (state.data.selected_slot_id) {
+                    // Проверяем, не занят ли слот
+                    const slotCheck = await client.query(
+                        `SELECT id, status FROM kuliga_schedule_slots 
+                         WHERE id = $1 AND status IN ('available', 'group')
+                         FOR UPDATE`,
+                        [state.data.selected_slot_id]
+                    );
+
+                    if (slotCheck.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        client.release();
+                        return bot.sendMessage(chatId,
+                            '❌ Слот уже занят. Пожалуйста, выберите другое время.',
+                            {
+                                reply_markup: {
+                                    keyboard: [['🔙 Назад в меню']],
+                                    resize_keyboard: true
+                                }
+                            }
+                        );
+                    }
+
+                    // Блокируем слот
+                    await client.query(
+                        `UPDATE kuliga_schedule_slots
+                         SET status = 'hold', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [state.data.selected_slot_id]
+                    );
+                }
+
+                await client.query('COMMIT');
+                client.release();
+
+                // Подготавливаем bookingData для "своей группы"
+                const bookingData = {
+                    client_id: state.data.client_id,
+                    booking_type: 'group',
+                    group_training_id: null, // Будет создана новая групповая тренировка
+                    date: state.data.selected_date,
+                    start_time: state.data.selected_start_time,
+                    end_time: state.data.selected_end_time,
+                    sport_type: state.data.selected_sport,
+                    location: location,
+                    participants_count: participants.length,
+                    participants_names: participantsNames,
+                    participants_birth_years: participantsBirthYears,
+                    price_total: parseFloat(state.data.total_price || 0),
+                    price_per_person: parseFloat(state.data.price_per_person || 0),
+                    client_name: clientData.full_name,
+                    client_phone: clientData.phone,
+                    client_email: clientData.email,
+                    slot_id: state.data.selected_slot_id || null,
+                    instructor_id: state.data.selected_instructor_id || null,
+                    is_own_group: true // Флаг для "своей группы"
+                };
+
+                // Сохраняем bookingData в состоянии для использования после оплаты
+                state.data.booking_data = bookingData;
+                state.step = 'kuliga_own_group_payment_pending';
+                userStates.set(chatId, state);
+
+                // Инициируем оплату
+                return await initTrainingPayment(chatId, state, bookingData);
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                client.release();
+                console.error('❌ Ошибка при подготовке оплаты групповой тренировки (своя группа):', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        } else if (msg.text === '🔙 Назад в меню') {
+            userStates.delete(chatId);
+            return showMainMenu(chatId);
+        }
+    }
+
+    // Обработка выбора оплаты для записи через выбор тренировки
+    if (state && state.step === 'natural_slope_group_payment_choice') {
+        if (msg.text === '💳 Оплатить') {
+            // Подготавливаем данные для бронирования и оплаты
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Получаем данные клиента
+                const clientResult = await client.query(
+                    `SELECT c.id, c.full_name, c.phone, c.email, w.id as wallet_id
+                     FROM clients c
+                     LEFT JOIN wallets w ON c.id = w.client_id
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+
+                if (!clientResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    return bot.sendMessage(chatId, '❌ Клиент не найден.');
+                }
+
+                const clientData = clientResult.rows[0];
+                const selectedTraining = state.data.selected_training;
+                const pricePerPerson = parseFloat(selectedTraining.price || 0);
+                
+                // Определяем участника
+                let participantName = clientData.full_name;
+                let participantBirthYear = null;
+                if (state.data.selected_child) {
+                    participantName = state.data.selected_child.full_name;
+                    // Получаем год рождения ребенка
+                    const childResult = await client.query(
+                        'SELECT birth_date FROM children WHERE id = $1',
+                        [state.data.selected_child.id]
+                    );
+                    if (childResult.rows.length) {
+                        participantBirthYear = new Date(childResult.rows[0].birth_date).getFullYear();
+                    }
+                } else {
+                    // Получаем год рождения клиента
+                    const clientBirthResult = await client.query(
+                        'SELECT birth_date FROM clients WHERE id = $1',
+                        [state.data.client_id]
+                    );
+                    if (clientBirthResult.rows.length) {
+                        participantBirthYear = new Date(clientBirthResult.rows[0].birth_date).getFullYear();
+                    }
+                }
+
+                // Получаем location
+                const location = selectedTraining.location || state.data.location || 'kuliga';
+
+                // Временно блокируем места (увеличиваем current_participants)
+                await client.query(
+                    `UPDATE kuliga_group_trainings
+                     SET current_participants = current_participants + 1
+                     WHERE id = $1`,
+                    [selectedTraining.id]
+                );
+
+                await client.query('COMMIT');
+                client.release();
+
+                // Подготавливаем bookingData
+                const bookingData = {
+                    client_id: state.data.client_id,
+                    booking_type: 'group',
+                    group_training_id: selectedTraining.id,
+                    date: selectedTraining.date,
+                    start_time: selectedTraining.start_time,
+                    end_time: selectedTraining.end_time,
+                    sport_type: selectedTraining.sport_type,
+                    location: location,
+                    participants_count: 1,
+                    participants_names: [participantName],
+                    participants_birth_years: participantBirthYear ? [participantBirthYear] : null,
+                    price_total: pricePerPerson,
+                    price_per_person: pricePerPerson,
+                    client_name: clientData.full_name,
+                    client_phone: clientData.phone,
+                    client_email: clientData.email,
+                    program_name: selectedTraining.description || null
+                };
+
+                // Сохраняем bookingData в состоянии для использования после оплаты
+                state.data.booking_data = bookingData;
+                state.step = 'natural_slope_group_payment_pending';
+                userStates.set(chatId, state);
+
+                // Инициируем оплату
+                return await initTrainingPayment(chatId, state, bookingData);
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                client.release();
+                console.error('❌ Ошибка при подготовке оплаты групповой тренировки (выбор тренировки):', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        } else if (msg.text === '🔙 Назад в меню') {
+            userStates.delete(chatId);
+            return showMainMenu(chatId);
+        }
+    }
+
     // Обработка выбора суммы пополнения кошелька
     if (state && state.step === 'wallet_refill_select_amount') {
         const amountMatch = msg.text.match(/^💵 (\d+(?:\s?\d+)?)\s?₽$/);
@@ -5626,16 +5858,23 @@ async function handleTextMessage(msg) {
                     // Проверяем баланс только если нет абонемента
                     if (!useSubscription && balance < pricePerPerson) {
                         await client.query('ROLLBACK');
+                        client.release();
+                        
+                        // Сохраняем состояние для обработки выбора способа оплаты
+                        state.step = 'natural_slope_group_payment_choice';
+                        state.data.selected_training = selectedTraining;
+                        userStates.set(chatId, state);
+                        
                         return bot.sendMessage(chatId,
-                            `❌ Недостаточно средств на балансе.\n\n` +
-                            `Требуется: ${pricePerPerson.toFixed(2)} руб.\n` +
-                            `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                            `Пожалуйста, пополните баланс.`,
+                            `❌ <b>Недостаточно средств</b>\n\n` +
+                            `💰 Требуется: <b>${pricePerPerson.toFixed(2)} ₽</b>\n` +
+                            `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
+                            `Нажмите кнопку ниже для оплаты:`,
                             {
+                                parse_mode: 'HTML',
                                 reply_markup: {
                                     keyboard: [
-                                        ['💳 Пополнить баланс'],
-                                        // ['🎫 Абонементы'], // Временно закомментировано
+                                        ['💳 Оплатить'],
                                         ['🔙 Назад в меню']
                                     ],
                                     resize_keyboard: true
@@ -15049,14 +15288,23 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         // Проверяем баланс
         if (balance < totalPrice) {
             await client.query('ROLLBACK');
+            
+            // Сохраняем состояние для обработки выбора способа оплаты
+            state.step = 'kuliga_own_group_payment_choice';
+            userStates.set(chatId, state);
+            
             return bot.sendMessage(chatId,
-                `❌ На вашем балансе недостаточно средств.\n\n` +
-                `Требуется: ${totalPrice.toFixed(2)} руб.\n` +
-                `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                `Пополните баланс и попробуйте снова.`,
+                `❌ <b>Недостаточно средств</b>\n\n` +
+                `💰 Требуется: <b>${totalPrice.toFixed(2)} ₽</b>\n` +
+                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
+                `Нажмите кнопку ниже для оплаты:`,
                 {
+                    parse_mode: 'HTML',
                     reply_markup: {
-                        keyboard: [['💳 Пополнить баланс'], ['🔙 Назад в меню']],
+                        keyboard: [
+                            ['💳 Оплатить'],
+                            ['🔙 Назад в меню']
+                        ],
                         resize_keyboard: true
                     }
                 }

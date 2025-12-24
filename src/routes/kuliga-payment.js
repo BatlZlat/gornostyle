@@ -688,6 +688,125 @@ router.post(
                     console.log(`🔓 Слот #${bookingData.slot_id}: ${slotStatus} → booked`);
                     
                 } else if (bookingData.booking_type === 'group') {
+                    let groupTrainingId = bookingData.group_training_id;
+                    
+                    // Если это "своя группа" (group_training_id === null), создаем новую групповую тренировку
+                    if (!groupTrainingId && bookingData.is_own_group) {
+                        console.log(`🔨 Создание новой групповой тренировки для "своей группы" (transaction #${transactionId})`);
+                        
+                        // Проверяем, не занят ли слот другой групповой тренировкой
+                        if (bookingData.slot_id) {
+                            const existingTrainingCheck = await client.query(
+                                `SELECT id, status, current_participants, max_participants
+                                 FROM kuliga_group_trainings
+                                 WHERE slot_id = $1
+                                   AND date = $2
+                                   AND start_time = $3
+                                   AND status IN ('open', 'confirmed')
+                                 FOR UPDATE`,
+                                [bookingData.slot_id, bookingData.date, bookingData.start_time]
+                            );
+                            
+                            if (existingTrainingCheck.rows.length > 0) {
+                                // Слот уже занят групповой тренировкой - используем существующую
+                                const existingTraining = existingTrainingCheck.rows[0];
+                                groupTrainingId = existingTraining.id;
+                                
+                                // Проверяем, есть ли свободные места
+                                const freePlaces = existingTraining.max_participants - existingTraining.current_participants;
+                                if (freePlaces < bookingData.participants_count) {
+                                    await client.query('ROLLBACK');
+                                    errorMessage = `В этой групповой тренировке недостаточно свободных мест (доступно: ${freePlaces}, требуется: ${bookingData.participants_count})`;
+                                    console.error(`⚠️ ${errorMessage}`);
+                                    
+                                    await logWebhook({
+                                        provider: providerName,
+                                        webhookType,
+                                        paymentId,
+                                        orderId,
+                                        bookingId: null,
+                                        status,
+                                        amount,
+                                        paymentMethod,
+                                        rawPayload: payload,
+                                        headers,
+                                        signatureValid: true,
+                                        processed: false,
+                                        errorMessage
+                                    });
+                                    
+                                    return res.status(200).send('OK');
+                                }
+                                
+                                console.log(`✅ Используем существующую групповую тренировку #${groupTrainingId}`);
+                            } else {
+                                // Создаем новую закрытую групповую тренировку
+                                const participantsCount = bookingData.participants_count || 1;
+                                const maxParticipants = Math.max(participantsCount, 4); // Минимум 4 места
+                                
+                                const groupTrainingResult = await client.query(
+                                    `INSERT INTO kuliga_group_trainings (
+                                        instructor_id, slot_id, date, start_time, end_time,
+                                        sport_type, level, description, price_per_person,
+                                        min_participants, max_participants, current_participants,
+                                        status, is_private, location
+                                    ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10, 'confirmed', TRUE, $11)
+                                    RETURNING id`,
+                                    [
+                                        bookingData.instructor_id || null,
+                                        bookingData.slot_id,
+                                        bookingData.date,
+                                        bookingData.start_time,
+                                        bookingData.end_time,
+                                        bookingData.sport_type,
+                                        bookingData.price_per_person || 0,
+                                        participantsCount,
+                                        maxParticipants,
+                                        participantsCount,
+                                        bookingData.location || 'kuliga'
+                                    ]
+                                );
+                                
+                                groupTrainingId = groupTrainingResult.rows[0].id;
+                                
+                                // Обновляем статус слота
+                                await client.query(
+                                    `UPDATE kuliga_schedule_slots
+                                     SET status = 'group', updated_at = CURRENT_TIMESTAMP
+                                     WHERE id = $1`,
+                                    [bookingData.slot_id]
+                                );
+                                
+                                console.log(`✅ Создана новая закрытая групповая тренировка #${groupTrainingId} для слота #${bookingData.slot_id}`);
+                            }
+                        } else {
+                            await client.query('ROLLBACK');
+                            errorMessage = `Для "своей группы" требуется slot_id`;
+                            console.error(`⚠️ ${errorMessage}`);
+                            
+                            await logWebhook({
+                                provider: providerName,
+                                webhookType,
+                                paymentId,
+                                orderId,
+                                bookingId: null,
+                                status,
+                                amount,
+                                paymentMethod,
+                                rawPayload: payload,
+                                headers,
+                                signatureValid: true,
+                                processed: false,
+                                errorMessage
+                            });
+                            
+                            return res.status(200).send('OK');
+                        }
+                        
+                        // Обновляем bookingData с созданным group_training_id
+                        bookingData.group_training_id = groupTrainingId;
+                    }
+                    
                     // ГРУППОВОЕ БРОНИРОВАНИЕ: Проверяем доступность мест в групповой тренировке
                     // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
                     const groupTrainingCheck = await client.query(
@@ -704,7 +823,7 @@ router.post(
                          FROM kuliga_group_trainings kgt
                          WHERE kgt.id = $1
                          FOR UPDATE`,
-                        [bookingData.group_training_id]
+                        [groupTrainingId]
                     );
                     
                     if (!groupTrainingCheck.rows.length) {
