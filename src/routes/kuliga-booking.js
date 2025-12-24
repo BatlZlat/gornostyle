@@ -110,12 +110,16 @@ const findChildByFullName = async (parentId, fullName, birthYear, trx) => {
     const normalizedSearch = normalizeFullName(fullName);
     if (!normalizedSearch) return null;
 
+    console.log(`[findChildByFullName] Ищем ребенка: parentId=${parentId}, fullName="${fullName}", normalized="${normalizedSearch}", birthYear=${birthYear}`);
+
     const { rows } = await trx.query(
         `SELECT id, full_name, birth_date, skill_level
          FROM children
          WHERE parent_id = $1`,
         [parentId]
     );
+
+    console.log(`[findChildByFullName] Найдено детей в БД:`, rows.map(r => ({ full_name: r.full_name, skill_level: r.skill_level, birth_date: r.birth_date })));
 
     let bestMatch = null;
     let bestScore = -1;
@@ -779,8 +783,10 @@ const createGroupBooking = async (req, res) => {
                         participantBirthYear,
                         client
                     );
+                    console.log(`[createGroupBooking] Результат поиска ребенка "${participant.fullName}":`, child ? { id: child.id, skill_level: child.skill_level, birth_date: child.birth_date } : 'НЕ НАЙДЕН');
                     if (child) {
                         participantLevel = Number(child.skill_level) || 0;
+                        console.log(`[createGroupBooking] Уровень ребенка после Number(): ${participantLevel}, тип: ${typeof participantLevel}`);
                         if (child.birth_date) {
                             participantAge = moment().diff(moment(child.birth_date), 'years');
                         }
@@ -806,6 +812,17 @@ const createGroupBooking = async (req, res) => {
                         });
                     }
                 }
+
+                // ДИАГНОСТИКА: Логируем значения перед проверкой
+                console.log(`[createGroupBooking] Проверка уровня для "${participant.fullName}":`, {
+                    participantLevel,
+                    trainingLevel,
+                    participantLevelType: typeof participantLevel,
+                    trainingLevelType: typeof trainingLevel,
+                    isNull: participantLevel === null,
+                    isLess: participantLevel < trainingLevel,
+                    willBlock: participantLevel === null || participantLevel < trainingLevel
+                });
 
                 if (participantLevel === null || participantLevel < trainingLevel) {
                     await client.query('ROLLBACK');
