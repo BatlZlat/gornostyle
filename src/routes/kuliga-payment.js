@@ -225,8 +225,15 @@ router.post(
             console.error('❌ orderId не определён после всех попыток, полный payload:', JSON.stringify(payload, null, 2));
         }
 
-        // Поддерживаем новый формат gornostyle72-winter-{id} и старый kuliga-{id} для обратной совместимости
-        if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && !orderId.startsWith('kuliga-'))) {
+        // Поддерживаем форматы:
+        // - gornostyle72-winter-{id} - для бронирований
+        // - gornostyle72-wallet-{id} - для пополнения кошелька
+        // - kuliga-tx-{id} - старый формат транзакций
+        // - kuliga-{id} - очень старый формат (booking_id)
+        if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && 
+                         !orderId.startsWith('gornostyle72-wallet-') && 
+                         !orderId.startsWith('kuliga-tx-') && 
+                         !orderId.startsWith('kuliga-'))) {
             console.warn(`⚠️ Получен callback ${providerName} с неподдерживаемым OrderId:`, orderId);
             
             // Логируем неподдерживаемый webhook
@@ -254,8 +261,11 @@ router.post(
         // Если нет - создаём бронирование из provider_raw_data
         let transactionId;
         if (orderId.startsWith('gornostyle72-winter-')) {
-            // Новый формат: gornostyle72-winter-{transactionId}
+            // Новый формат: gornostyle72-winter-{transactionId} - для бронирований
             transactionId = Number(orderId.replace('gornostyle72-winter-', ''));
+        } else if (orderId.startsWith('gornostyle72-wallet-')) {
+            // Формат: gornostyle72-wallet-{transactionId} - для пополнения кошелька
+            transactionId = Number(orderId.replace('gornostyle72-wallet-', ''));
         } else if (orderId.startsWith('kuliga-tx-')) {
             // Старый формат: kuliga-tx-{transactionId}
             transactionId = Number(orderId.replace('kuliga-tx-', ''));
@@ -285,7 +295,7 @@ router.post(
 
             // Находим транзакцию
             const transactionResult = await client.query(
-                `SELECT id, booking_id, client_id, amount, status as tx_status, provider_raw_data
+                `SELECT id, booking_id, client_id, amount, status as tx_status, type, provider_raw_data
                  FROM kuliga_transactions
                  WHERE id = $1
                  FOR UPDATE`,
@@ -326,6 +336,7 @@ router.post(
 
             const transaction = transactionResult.rows[0];
             bookingId = transaction.booking_id;
+            const transactionType = transaction.type || 'payment';
 
             // Определяем статус платежа
             const isSuccess = status === 'SUCCESS';
@@ -334,12 +345,163 @@ router.post(
             const isPending = status === 'PENDING';
 
             console.log(`📝 Обрабатываем вебхук для transaction #${transactionId}:`, {
+                transactionType,
                 bookingId,
                 paymentStatus: status,
                 isSuccess,
                 isFailed,
                 isRefunded
             });
+
+            // ОБРАБОТКА ПОПОЛНЕНИЯ КОШЕЛЬКА
+            if (transactionType === 'wallet_refill') {
+                if (isSuccess) {
+                    console.log(`💰 Пополнение кошелька успешно (transaction #${transactionId})`);
+                    
+                    // Извлекаем данные пополнения
+                    let rawData = {};
+                    try {
+                        if (typeof transaction.provider_raw_data === 'string') {
+                            rawData = JSON.parse(transaction.provider_raw_data);
+                        } else if (transaction.provider_raw_data) {
+                            rawData = transaction.provider_raw_data;
+                        }
+                    } catch (parseError) {
+                        console.error(`❌ [Webhook] Ошибка парсинга provider_raw_data для пополнения кошелька:`, parseError);
+                        rawData = {};
+                    }
+                    
+                    const walletRefillData = rawData.walletRefillData;
+                    
+                    if (!walletRefillData || !walletRefillData.client_id) {
+                        await client.query('ROLLBACK');
+                        errorMessage = `Данные пополнения кошелька не найдены в транзакции #${transactionId}`;
+                        console.error(`⚠️ ${errorMessage}`);
+                        
+                        await logWebhook({
+                            provider: providerName,
+                            webhookType,
+                            paymentId,
+                            orderId,
+                            bookingId: null,
+                            status,
+                            amount,
+                            paymentMethod,
+                            rawPayload: payload,
+                            headers,
+                            signatureValid: true,
+                            processed: false,
+                            errorMessage
+                        });
+                        
+                        return res.status(200).send('OK');
+                    }
+                    
+                    // Пополняем баланс кошелька
+                    await client.query(
+                        `UPDATE wallets 
+                         SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                         WHERE client_id = $2`,
+                        [transaction.amount, walletRefillData.client_id]
+                    );
+                    
+                    // Получаем wallet_id для создания транзакции
+                    const walletResult = await client.query(
+                        'SELECT id FROM wallets WHERE client_id = $1',
+                        [walletRefillData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        
+                        // Создаем запись в transactions
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+                             VALUES ($1, $2, 'refill', $3, CURRENT_TIMESTAMP)`,
+                            [walletId, transaction.amount, `Пополнение через интернет-эквайринг`]
+                        );
+                    }
+                    
+                    // Обновляем статус транзакции
+                    await client.query(
+                        `UPDATE kuliga_transactions 
+                         SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [transactionId]
+                    );
+                    
+                    await client.query('COMMIT');
+                    
+                    // Отправляем уведомление клиенту в Telegram
+                    try {
+                        const clientResult = await pool.query(
+                            'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+                            [walletRefillData.client_id]
+                        );
+                        
+                        if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                            const { telegram_id, full_name } = clientResult.rows[0];
+                            
+                            // Получаем новый баланс
+                            const balanceResult = await pool.query(
+                                'SELECT balance FROM wallets WHERE client_id = $1',
+                                [walletRefillData.client_id]
+                            );
+                            const newBalance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                            
+                            const bot = require('../bot/client-bot').bot;
+                            await bot.sendMessage(
+                                telegram_id,
+                                `✅ <b>Кошелек успешно пополнен!</b>\n\n` +
+                                `💰 Сумма пополнения: ${transaction.amount.toFixed(2)} ₽\n` +
+                                `💵 Новый баланс: ${newBalance.toFixed(2)} ₽\n\n` +
+                                `Спасибо за пополнение! Теперь вы можете использовать средства для покупки сертификатов и оплаты тренировок.`,
+                                { parse_mode: 'HTML' }
+                            );
+                            
+                            console.log(`✅ Уведомление о пополнении кошелька отправлено клиенту ${full_name} (telegram_id: ${telegram_id})`);
+                        }
+                    } catch (notifyError) {
+                        console.error('❌ Ошибка при отправке уведомления о пополнении кошелька:', notifyError);
+                        // Не прерываем выполнение, так как основная операция успешна
+                    }
+                    
+                    processed = true;
+                    console.log(`✅ Пополнение кошелька обработано успешно (transaction #${transactionId})`);
+                    
+                } else if (isFailed || isRefunded) {
+                    // Обновляем статус транзакции на failed
+                    await client.query(
+                        `UPDATE kuliga_transactions 
+                         SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [transactionId]
+                    );
+                    
+                    await client.query('COMMIT');
+                    processed = true;
+                    console.log(`❌ Пополнение кошелька не удалось (transaction #${transactionId})`);
+                }
+                
+                // Логируем webhook
+                await logWebhook({
+                    provider: providerName,
+                    webhookType,
+                    paymentId,
+                    orderId,
+                    bookingId: null,
+                    status,
+                    amount,
+                    paymentMethod,
+                    rawPayload: payload,
+                    headers,
+                    signatureValid: true,
+                    processed,
+                    errorMessage: null
+                });
+                
+                return res.status(200).send('OK');
+            }
 
             // НОВАЯ ЛОГИКА: Если оплата успешна и бронирование ещё не создано - создаём его
             if (isSuccess && !bookingId) {

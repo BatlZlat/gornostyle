@@ -9,6 +9,7 @@ const axios = require('axios');
 const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscriptionUsage } = require('../services/subscription-helper');
 const { normalizePhone } = require('../utils/phone-normalizer');
 const moment = require('moment-timezone');
+const { PaymentProviderFactory } = require('../services/payment/paymentProvider');
 
 // Функция для получения названия места по location
 function getLocationDisplayName(location) {
@@ -1428,6 +1429,80 @@ async function handleTextMessage(msg) {
             );
             return;
         }
+    }
+
+    // Обработка выбора суммы пополнения кошелька
+    if (state && state.step === 'wallet_refill_select_amount') {
+        const amountMatch = msg.text.match(/^💵 (\d+(?:\s?\d+)?)\s?₽$/);
+        if (amountMatch) {
+            // Извлекаем сумму, убирая пробелы
+            const amountStr = amountMatch[1].replace(/\s/g, '');
+            const amount = parseFloat(amountStr);
+            if (!isNaN(amount) && amount > 0) {
+                return await handleWalletRefillPayment(chatId, state, amount);
+            }
+        } else if (msg.text === '💵 Другая сумма') {
+            // Запрашиваем ввод произвольной суммы
+            state.step = 'wallet_refill_custom_amount';
+            userStates.set(chatId, state);
+            return bot.sendMessage(chatId,
+                '💵 <b>Введите сумму пополнения</b>\n\n' +
+                'Минимальная сумма: 100 ₽\n' +
+                'Максимальная сумма: 100 000 ₽',
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        keyboard: [['🔙 Назад']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        } else if (msg.text === '🔙 Назад') {
+            userStates.delete(chatId);
+            return bot.sendMessage(chatId,
+                'Вы вернулись в главное меню.',
+                {
+                    reply_markup: {
+                        keyboard: [
+                            ['🎿 Записаться на тренировку'],
+                            ['📋 Мои записи'],
+                            ['🎁 Сертификаты', '💰 Кошелек']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+    }
+
+    // Обработка ввода произвольной суммы пополнения
+    if (state && state.step === 'wallet_refill_custom_amount') {
+        if (msg.text === '🔙 Назад') {
+            state.step = 'wallet_refill_select_amount';
+            userStates.set(chatId, state);
+            return await handleTopUpBalance(chatId, state.data.client_id);
+        }
+        
+        // Парсим сумму (может быть с пробелами, запятыми и т.д.)
+        const amountStr = msg.text.replace(/[^\d.,]/g, '').replace(',', '.');
+        const amount = parseFloat(amountStr);
+        
+        if (isNaN(amount) || amount < 100 || amount > 100000) {
+            return bot.sendMessage(chatId,
+                '❌ Неверная сумма.\n\n' +
+                'Минимальная сумма: 100 ₽\n' +
+                'Максимальная сумма: 100 000 ₽\n\n' +
+                'Пожалуйста, введите корректную сумму.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+        
+        return await handleWalletRefillPayment(chatId, state, amount);
     }
 
     // Обработка кнопки "Мои записи" независимо от состояния
@@ -11142,7 +11217,7 @@ function formatDate(dateStr) {
 async function handleTopUpBalance(chatId, clientId) {
     try {
         const clientResult = await pool.query(
-            'SELECT c.id, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
+            'SELECT c.id, c.phone, c.email, w.wallet_number, w.balance FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
             [clientId]
         );
 
@@ -11158,36 +11233,30 @@ async function handleTopUpBalance(chatId, clientId) {
             );
         }
 
-        const { wallet_number: walletNumber, balance } = clientResult.rows[0];
+        const { wallet_number: walletNumber, balance, phone, email } = clientResult.rows[0];
         const formattedWalletNumber = formatWalletNumber(walletNumber);
         const formattedBalance = parseFloat(balance).toFixed(2);
 
+        // Сохраняем состояние для обработки выбора суммы
+        const state = userStates.get(chatId) || {};
+        state.step = 'wallet_refill_select_amount';
+        state.data = { ...state.data, client_id: clientId, client_phone: phone, client_email: email };
+        userStates.set(chatId, state);
+
         const message = 
             '<b>💳 Пополнение баланса</b>\n\n' +
-            `<b>Номер кошелька:</b> <code>${formattedWalletNumber}</code>\n` +
-            '⚠️ <b>ВАЖНО:</b> Нажмите на номер кошелька выше, чтобы скопировать его в буфер обмена. При пополнении баланса обязательно вставьте номер кошелька в комментарий к платежу! для автоматического и быстрого пополнения баланса.\n\n' +
             `<b>Текущий баланс:</b> ${formattedBalance} руб.\n\n` +
-            '<b>Способы пополнения:</b>\n\n' +
-            '1️⃣ <b>Для клиентов Сбербанка:</b>\n' +
-            `Переведите необходимую сумму по СБП по ссылке, в комментарии к платежу обязательно укажите номер вашего кошелька:\n${process.env.PAYMENT_LINK}\n\n` +
-            '2️⃣ <b>Для клиентов ВТБ и других банков:</b>\n' +
-            'Переведите деньги на номер телефона:\n' +
-            '<code>+79123924956</code>\n' +
-            'Получатель: Тебякин Данила Юрьевич\n\n' +
-            '<b>⚠️ Важно:</b>\n' +
-            '• В комментарии к платежу <b>обязательно</b> укажите номер вашего кошелька\n' +
-            '• Для быстрого копирования номера кошелька просто кликните по нему выше\n\n' +
-            '<b>❓ Если деньги не зачислились:</b>\n' +
-            '• Для переводов по номеру телефона: если средства не поступили в течение 10-15 минут\n' +
-            `Свяжитесь с нами:\n` +
-            `• Напишите в Telegram администратору\n` +
-            `• Или позвоните по телефону: ${process.env.ADMIN_PHONE}\n\n` +
-            'Мы оперативно проверим ваш платеж и зачислим средства на счет!';
+            '<b>Выберите сумму пополнения:</b>';
 
         await bot.sendMessage(chatId, message, {
             parse_mode: 'HTML',
             reply_markup: {
-                keyboard: [['🔙 Назад в меню']],
+                keyboard: [
+                    ['💵 1 000 ₽', '💵 2 000 ₽'],
+                    ['💵 5 000 ₽', '💵 10 000 ₽'],
+                    ['💵 Другая сумма'],
+                    ['🔙 Назад в меню']
+                ],
                 resize_keyboard: true
             }
         });
@@ -11202,6 +11271,162 @@ async function handleTopUpBalance(chatId, clientId) {
                 }
             }
         );
+    }
+}
+
+/**
+ * Создание платежа для пополнения кошелька через интернет-эквайринг
+ */
+async function handleWalletRefillPayment(chatId, state, amount) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const clientId = state.data.client_id;
+        const clientPhone = state.data.client_phone || null;
+        const clientEmail = state.data.client_email || null;
+
+        // Получаем данные клиента для проверки
+        const clientResult = await client.query(
+            'SELECT c.id, c.full_name, w.id as wallet_id FROM clients c JOIN wallets w ON c.id = w.client_id WHERE c.id = $1',
+            [clientId]
+        );
+
+        if (!clientResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return bot.sendMessage(chatId,
+                '❌ Ошибка: кошелек не найден. Пожалуйста, обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+        const clientData = clientResult.rows[0];
+
+        // Создаем транзакцию для пополнения кошелька
+        const description = `Пополнение кошелька на ${amount.toFixed(2)} руб.`;
+        const walletRefillData = {
+            client_id: clientId,
+            amount: amount,
+            wallet_id: clientData.wallet_id
+        };
+
+        const transactionResult = await client.query(
+            `INSERT INTO kuliga_transactions (
+                client_id, 
+                booking_id, 
+                type, 
+                amount, 
+                status, 
+                description,
+                provider_raw_data
+            )
+             VALUES ($1, NULL, 'wallet_refill', $2, 'pending', $3, $4)
+             RETURNING id`,
+            [clientId, amount, description, JSON.stringify({ walletRefillData })]
+        );
+
+        const transactionId = transactionResult.rows[0].id;
+
+        await client.query('COMMIT');
+
+        // Создаем платеж через PaymentProvider
+        try {
+            const provider = PaymentProviderFactory.create();
+            const payment = await provider.initPayment({
+                orderId: `gornostyle72-wallet-${transactionId}`,
+                amount: amount,
+                description: description,
+                customerPhone: clientPhone,
+                customerEmail: clientEmail,
+                clientId: clientId,
+                items: [{
+                    Name: 'Пополнение кошелька',
+                    Price: Math.round(amount * 100),
+                    Quantity: 1,
+                    Amount: Math.round(amount * 100),
+                    Tax: 'none',
+                    PaymentMethod: 'full_payment',
+                    PaymentObject: 'service'
+                }],
+                paymentMethod: 'card' // По умолчанию карта, можно добавить выбор
+            });
+
+            // Обновляем транзакцию с данными платежа
+            await client.query(
+                `UPDATE kuliga_transactions 
+                 SET provider_payment_id = $1, 
+                     provider_raw_data = $2
+                 WHERE id = $3`,
+                [
+                    payment.paymentId || null,
+                    JSON.stringify({ walletRefillData, paymentData: payment.rawData || {} }),
+                    transactionId
+                ]
+            );
+
+            // Сохраняем transactionId в состоянии для отслеживания
+            state.data.wallet_refill_transaction_id = transactionId;
+            userStates.set(chatId, state);
+
+            // Отправляем сообщение с кнопкой для перехода на оплату
+            const message = 
+                `💳 <b>Оплата пополнения кошелька</b>\n\n` +
+                `💰 Сумма: ${amount.toFixed(2)} ₽\n\n` +
+                `Нажмите на кнопку ниже, чтобы перейти к оплате:`;
+
+            await bot.sendMessage(chatId, message, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: '💳 Оплатить',
+                            url: payment.paymentURL
+                        }
+                    ]],
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            });
+
+        } catch (paymentError) {
+            console.error('❌ Ошибка при создании платежа для пополнения кошелька:', paymentError);
+            
+            // Обновляем статус транзакции на failed
+            await client.query(
+                `UPDATE kuliga_transactions SET status = 'failed' WHERE id = $1`,
+                [transactionId]
+            );
+
+            return bot.sendMessage(chatId,
+                '❌ Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('❌ Ошибка при создании транзакции пополнения кошелька:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    } finally {
+        client.release();
     }
 }
 
