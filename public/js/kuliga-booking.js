@@ -624,17 +624,12 @@
                 );
                 if (correctPrice) {
                     price = correctPrice; // Обновляем тариф на правильный
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                    pricePerPerson = Number(correctPrice.participants) === 8
-                        ? Number(correctPrice.price)
-                        : Number(correctPrice.price) / currentParticipants;
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                    pricePerPerson = Number(correctPrice.price) / currentParticipants;
                 } else {
-                    // Если не нашли, используем пропорциональный расчет (не идеально, но лучше чем ничего)
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    pricePerPerson = Number(price.participants) === 8
-                        ? Number(price.price)
-                        : (Number(price.price) / participantsFromPrice);
+                    // Если не нашли, используем пропорциональный расчет
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                    pricePerPerson = Number(price.price) / participantsFromPrice;
                 }
             }
         } else {
