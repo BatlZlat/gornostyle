@@ -19,7 +19,7 @@ const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).forma
  * Форматирует название платежа для чека
  * @param {Object} params
  * @param {string} params.bookingType - 'individual' или 'group'
- * @param {string} params.location - 'kuliga' или 'vorona'
+ * @param {string} params.location - 'kuliga' или 'vorona' (не используется в описании)
  * @param {string} params.sportType - 'ski' или 'snowboard'
  * @param {string} params.date - Дата тренировки
  * @param {string} params.time - Время тренировки
@@ -28,16 +28,15 @@ const formatTime = (time) => (time ? moment.tz(time, 'HH:mm:ss', TIMEZONE).forma
  */
 const formatPaymentDescription = ({ bookingType, location, sportType, date, time, programName }) => {
     const bookingTypeText = bookingType === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
-    const locationText = location === 'vorona' ? 'Воронинские горки' : 'Кулига Клаб';
     const sportText = sportType === 'ski' ? 'Лыжи' : 'Сноуборд';
     const dateFormatted = formatDate(date);
     const timeFormatted = formatTime(time);
     
     if (programName) {
-        return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${programName}, ${dateFormatted} ${timeFormatted}`;
+        return `Горностайл72, ${bookingTypeText}, ${sportText}, ${programName}, ${dateFormatted} ${timeFormatted}`;
     }
     
-    return `Горностайл72, ${bookingTypeText}, ${locationText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
+    return `Горностайл72, ${bookingTypeText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
 };
 
 const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
