@@ -344,8 +344,23 @@ router.post(
             const isRefunded = status === 'REFUNDED';
             const isPending = status === 'PENDING';
 
+            // Проверяем, является ли это пополнением кошелька
+            // Пополнение кошелька: booking_id = NULL и есть walletRefillData в provider_raw_data
+            let isWalletRefill = false;
+            if (!bookingId) {
+                try {
+                    const rawData = typeof transaction.provider_raw_data === 'string' 
+                        ? JSON.parse(transaction.provider_raw_data) 
+                        : transaction.provider_raw_data;
+                    isWalletRefill = !!(rawData && rawData.walletRefillData);
+                } catch (e) {
+                    // Игнорируем ошибки парсинга
+                }
+            }
+
             console.log(`📝 Обрабатываем вебхук для transaction #${transactionId}:`, {
                 transactionType,
+                isWalletRefill,
                 bookingId,
                 paymentStatus: status,
                 isSuccess,
@@ -354,7 +369,7 @@ router.post(
             });
 
             // ОБРАБОТКА ПОПОЛНЕНИЯ КОШЕЛЬКА
-            if (transactionType === 'wallet_refill') {
+            if (isWalletRefill) {
                 if (isSuccess) {
                     console.log(`💰 Пополнение кошелька успешно (transaction #${transactionId})`);
                     
@@ -1488,6 +1503,159 @@ router.post(
         
         // При критической ошибке отвечаем 500, чтобы банк повторил попытку
         res.status(500).send('ERROR');
+    }
+});
+
+/**
+ * Тестовый endpoint для ручной отправки webhook'а (только для разработки)
+ * Используется для тестирования после реальной оплаты на localhost
+ * 
+ * Вариант 1: Указать transactionId (рекомендуется)
+ * curl -X POST http://localhost:8080/api/kuliga/payment/test-webhook \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"transactionId": 123, "status": "SUCCESS"}'
+ * 
+ * Вариант 2: Указать orderId напрямую
+ * curl -X POST http://localhost:8080/api/kuliga/payment/test-webhook \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"orderId": "gornostyle72-wallet-123", "status": "SUCCESS"}'
+ */
+router.post('/test-webhook', async (req, res) => {
+    // Разрешаем только в development режиме
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ error: 'Test endpoint disabled in production' });
+    }
+
+    try {
+        const { transactionId, orderId, status = 'SUCCESS', paymentMethod = 'card' } = req.body;
+
+        let finalOrderId = orderId;
+        let finalPaymentId = null;
+        let finalAmount = null;
+
+        // Если указан transactionId, получаем данные из БД
+        if (transactionId) {
+            const txResult = await pool.query(
+                `SELECT id, amount, provider_payment_id, provider_order_id, type
+                 FROM kuliga_transactions
+                 WHERE id = $1`,
+                [transactionId]
+            );
+
+            if (!txResult.rows.length) {
+                return res.status(404).json({ error: `Транзакция #${transactionId} не найдена` });
+            }
+
+            const tx = txResult.rows[0];
+            finalOrderId = tx.provider_order_id || `gornostyle72-wallet-${transactionId}`;
+            finalPaymentId = tx.provider_payment_id || `test-payment-${transactionId}`;
+            finalAmount = tx.amount;
+
+            console.log(`🧪 [Test Webhook] Найдена транзакция #${transactionId}:`, {
+                orderId: finalOrderId,
+                paymentId: finalPaymentId,
+                amount: finalAmount,
+                type: tx.type
+            });
+        } else if (!orderId) {
+            return res.status(400).json({ 
+                error: 'Необходимо указать либо transactionId, либо orderId',
+                example: {
+                    transactionId: 123,
+                    status: 'SUCCESS'
+                }
+            });
+        }
+
+        // Формируем payload в формате Точка Банк (JWT формат не нужен для теста)
+        const mockPayload = {
+            orderId: finalOrderId,
+            paymentId: finalPaymentId || `test-${Date.now()}`,
+            operationId: finalPaymentId || `test-op-${Date.now()}`,
+            status: status,
+            amount: finalAmount || 0,
+            paymentMethod: paymentMethod,
+            mock: true
+        };
+
+        console.log('🧪 [Test Webhook] Отправляю webhook:', mockPayload);
+
+        // Создаем фиктивный запрос для обработчика webhook
+        const mockReq = {
+            body: Buffer.from(JSON.stringify(mockPayload)),
+            headers: {
+                'content-type': 'application/json',
+                'x-test-webhook': 'true'
+            }
+        };
+
+        // Создаем фиктивный response объект
+        let responseSent = false;
+        const mockRes = {
+            status: (code) => ({
+                send: (data) => {
+                    if (!responseSent) {
+                        responseSent = true;
+                        console.log(`🧪 [Test Webhook] Response: ${code}`, data);
+                        res.status(code).send(data);
+                    }
+                },
+                json: (data) => {
+                    if (!responseSent) {
+                        responseSent = true;
+                        console.log(`🧪 [Test Webhook] Response: ${code}`, data);
+                        res.status(code).json(data);
+                    }
+                }
+            }),
+            send: (data) => {
+                if (!responseSent) {
+                    responseSent = true;
+                    console.log(`🧪 [Test Webhook] Response: 200`, data);
+                    res.status(200).send(data);
+                }
+            },
+            json: (data) => {
+                if (!responseSent) {
+                    responseSent = true;
+                    console.log(`🧪 [Test Webhook] Response: 200`, data);
+                    res.status(200).json(data);
+                }
+            }
+        };
+
+        // Вызываем основной обработчик webhook напрямую
+        const callbackHandler = router.stack.find(
+            layer => layer.route && 
+                     layer.route.path === '/callback' && 
+                     layer.route.methods.post
+        );
+
+        if (callbackHandler && callbackHandler.route) {
+            // Вызываем middleware обработчика
+            const handler = callbackHandler.route.stack[0].handle;
+            await handler(mockReq, mockRes);
+            
+            // Если обработчик не отправил ответ, отправляем свой
+            if (!responseSent) {
+                res.status(200).json({
+                    success: true,
+                    message: 'Test webhook processed',
+                    orderId: finalOrderId,
+                    status
+                });
+            }
+        } else {
+            console.error('⚠️ [Test Webhook] Не удалось найти обработчик /callback');
+            res.status(500).json({ error: 'Handler not found' });
+        }
+
+    } catch (error) {
+        console.error('❌ [Test Webhook] Ошибка:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            message: error.message
+        });
     }
 });
 

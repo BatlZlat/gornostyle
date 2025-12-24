@@ -9,7 +9,7 @@ const axios = require('axios');
 const { checkAndUseSubscription, returnSubscriptionSession, checkTrainingSubscriptionUsage } = require('../services/subscription-helper');
 const { normalizePhone } = require('../utils/phone-normalizer');
 const moment = require('moment-timezone');
-const { PaymentProviderFactory } = require('../services/payment/paymentProvider');
+const PaymentProviderFactory = require('../services/payment/paymentProvider');
 
 // Функция для получения названия места по location
 function getLocationDisplayName(location) {
@@ -11308,7 +11308,9 @@ async function handleWalletRefillPayment(chatId, state, amount) {
         const clientData = clientResult.rows[0];
 
         // Создаем транзакцию для пополнения кошелька
-        const description = `Пополнение кошелька на ${amount.toFixed(2)} руб.`;
+        // Используем type='payment', так как это тоже платеж
+        // Различаем по booking_id=NULL и наличию walletRefillData в provider_raw_data
+        const description = `Горностайл72, Пополнение кошелька, ${amount.toFixed(2)} руб.`;
         const walletRefillData = {
             client_id: clientId,
             amount: amount,
@@ -11325,7 +11327,7 @@ async function handleWalletRefillPayment(chatId, state, amount) {
                 description,
                 provider_raw_data
             )
-             VALUES ($1, NULL, 'wallet_refill', $2, 'pending', $3, $4)
+             VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
             [clientId, amount, description, JSON.stringify({ walletRefillData })]
         );
@@ -11345,7 +11347,7 @@ async function handleWalletRefillPayment(chatId, state, amount) {
                 customerEmail: clientEmail,
                 clientId: clientId,
                 items: [{
-                    Name: 'Пополнение кошелька',
+                    Name: `Горностайл72, Пополнение кошелька`,
                     Price: Math.round(amount * 100),
                     Quantity: 1,
                     Amount: Math.round(amount * 100),
@@ -11387,9 +11389,7 @@ async function handleWalletRefillPayment(chatId, state, amount) {
                             text: '💳 Оплатить',
                             url: payment.paymentURL
                         }
-                    ]],
-                    keyboard: [['🔙 Назад в меню']],
-                    resize_keyboard: true
+                    ]]
                 }
             });
 
