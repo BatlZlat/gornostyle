@@ -127,11 +127,8 @@
                 .filter((price) => price.type !== 'individual')
                 .map((price) => {
                     const participants = Math.max(1, Number(price.participants) || 1);
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                    const perPerson = participants === 8 
-                        ? Number(price.price) 
-                        : Number(price.price) / participants;
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы (для всех количеств участников)
+                    const perPerson = Number(price.price) / participants;
                     return { ...price, participants, perPerson };
                 })
                 .sort((a, b) => a.participants - b.participants); // Сортировка по количеству участников по возрастанию
@@ -147,12 +144,11 @@
                 const isGroup = price.type !== 'individual';
                 const participants = Math.max(1, Number(price.participants) || 1);
                 const priceValue = Number(price.price) || 0;
-                // Для 8 участников цена в прайсе уже является ценой за человека
-                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                // Цена в прайсе - это всегда ОБЩАЯ цена группы (для всех количеств участников)
                 const pricePerPerson = isGroup 
-                    ? (participants === 8 ? priceValue : Math.ceil(priceValue / participants))
+                    ? Math.ceil(priceValue / participants)
                     : priceValue;
-                const totalPrice = isGroup ? Math.ceil(pricePerPerson * participants) : priceValue;
+                const totalPrice = isGroup ? priceValue : priceValue; // Для группы используем исходную цену
 
                 if (!isGroup) {
                     card.classList.add('kuliga-price-card--highlight');
