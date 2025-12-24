@@ -588,7 +588,12 @@ router.post(
                 }
                 
                 // Разделяем логику для индивидуальных и групповых бронирований
-                if (bookingData.booking_type === 'individual') {
+                if (bookingData.booking_type === 'individual_natural_slope') {
+                    // Индивидуальные тренировки на тренажере (естественный склон)
+                    // Не нужно обрабатывать слоты, так как они создаются в individual_training_sessions
+                    // Триггер автоматически забронирует слоты
+                    console.log(`✅ Индивидуальная тренировка на тренажере будет создана после оплаты (transaction #${transactionId})`);
+                } else if (bookingData.booking_type === 'individual') {
                     // ИНДИВИДУАЛЬНОЕ БРОНИРОВАНИЕ: Проверяем статус слота
                     // Может быть 'hold' (наш hold) или 'available' (hold истёк или снят фоновой джобой)
                     const slotCheck = await client.query(
@@ -1097,18 +1102,55 @@ router.post(
                         bookingData.price_per_person,
                         bookingData.location
                     ];
+                } else if (bookingData.booking_type === 'individual_natural_slope') {
+                    // Индивидуальные тренировки на тренажере (естественный склон)
+                    // Создаем запись в individual_training_sessions
+                    const startTime = bookingData.start_time;
+                    const duration = bookingData.duration || 60;
+                    
+                    insertQuery = `INSERT INTO individual_training_sessions (
+                        client_id, child_id, equipment_type, with_trainer,
+                        duration, preferred_date, preferred_time, simulator_id, price
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING id`;
+                    
+                    insertParams = [
+                        bookingData.client_id,
+                        bookingData.child_id || null,
+                        bookingData.equipment_type || 'ski',
+                        bookingData.with_trainer || false,
+                        duration,
+                        bookingData.date,
+                        startTime,
+                        bookingData.simulator_id || null,
+                        bookingData.price_total
+                    ];
+                    
+                    const newTrainingResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newTrainingResult.rows || !newTrainingResult.rows[0]) {
+                        throw new Error('INSERT INTO individual_training_sessions не вернул id');
+                    }
+                    
+                    // Для individual_training_sessions bookingId будет null, так как это не kuliga_bookings
+                    bookingId = null;
+                    const trainingSessionId = newTrainingResult.rows[0].id;
+                    console.log(`✅ Индивидуальная тренировка на тренажере #${trainingSessionId} создана после успешной оплаты (transaction #${transactionId})`);
                 } else {
                     throw new Error(`Неизвестный тип бронирования: ${bookingData.booking_type}`);
                 }
                 
-                const newBookingResult = await client.query(insertQuery, insertParams);
-                
-                if (!newBookingResult.rows || !newBookingResult.rows[0]) {
-                    throw new Error('INSERT INTO kuliga_bookings не вернул id');
+                // Создаем бронирование только для kuliga_bookings
+                if (bookingData.booking_type !== 'individual_natural_slope') {
+                    const newBookingResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newBookingResult.rows || !newBookingResult.rows[0]) {
+                        throw new Error('INSERT INTO kuliga_bookings не вернул id');
+                    }
+                    
+                    bookingId = newBookingResult.rows[0].id;
+                    console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 }
-                
-                bookingId = newBookingResult.rows[0].id;
-                console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 
                 // booking_id будет обновлен в основном запросе UPDATE транзакции ниже
                 
@@ -1298,13 +1340,25 @@ router.post(
                                     const dateFormatted = formatDate(bookingData.date);
                                     const timeFormatted = formatTime(bookingData.start_time);
                                     const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
-                                    const bookingTypeText = bookingData.booking_type === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
+                                    
+                                    let bookingTypeText;
+                                    if (bookingData.booking_type === 'individual_natural_slope') {
+                                        bookingTypeText = 'Индивидуальное занятие на тренажере';
+                                    } else if (bookingData.booking_type === 'individual') {
+                                        bookingTypeText = 'Индивидуальное занятие';
+                                    } else {
+                                        bookingTypeText = 'Групповое занятие';
+                                    }
                                     
                                     let message = `✅ <b>Тренировка успешно оплачена и забронирована!</b>\n\n`;
                                     message += `📅 Дата: ${dateFormatted}\n`;
                                     message += `⏰ Время: ${timeFormatted}\n`;
                                     message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
                                     message += `💰 Сумма: ${bookingData.price_total.toFixed(2)} ₽\n`;
+                                    
+                                    if (bookingData.duration) {
+                                        message += `⏱ Длительность: ${bookingData.duration} минут\n`;
+                                    }
                                     
                                     if (bookingData.participants_count > 1) {
                                         message += `👥 Участников: ${bookingData.participants_count}\n`;
