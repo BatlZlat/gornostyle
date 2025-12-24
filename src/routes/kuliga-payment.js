@@ -938,6 +938,73 @@ router.post(
                     console.log(`✅ Места в групповой тренировке #${bookingData.group_training_id} подтверждены (transaction #${transactionId})`);
                 }
                 
+                // Обработка частичной оплаты (если есть разница)
+                if (bookingData.is_partial_payment && bookingData.price_difference) {
+                    console.log(`💰 Обработка частичной оплаты: разница ${bookingData.price_difference} ₽, текущий баланс ${bookingData.current_balance} ₽`);
+                    
+                    // Получаем wallet_id клиента
+                    const walletResult = await client.query(
+                        `SELECT w.id FROM wallets w WHERE w.client_id = $1`,
+                        [bookingData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        
+                        // Зачисляем разницу на кошелек
+                        await client.query(
+                            `UPDATE wallets 
+                             SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                             WHERE id = $2`,
+                            [bookingData.price_difference, walletId]
+                        );
+                        
+                        // Создаем транзакцию пополнения для разницы
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description)
+                             VALUES ($1, $2, 'refill', $3)`,
+                            [
+                                walletId,
+                                bookingData.price_difference,
+                                `Пополнение кошелька (доплата за тренировку)`
+                            ]
+                        );
+                        
+                        console.log(`✅ Зачислено ${bookingData.price_difference} ₽ на кошелек клиента #${bookingData.client_id}`);
+                    }
+                }
+                
+                // Списываем полную сумму с кошелька (если это оплата из бота)
+                if (rawData.source === 'bot') {
+                    const walletResult = await client.query(
+                        `SELECT w.id FROM wallets w WHERE w.client_id = $1`,
+                        [bookingData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        const fullPrice = bookingData.price_total;
+                        
+                        // Списываем полную сумму с кошелька
+                        await client.query(
+                            `UPDATE wallets 
+                             SET balance = balance - $1, last_updated = CURRENT_TIMESTAMP 
+                             WHERE id = $2`,
+                            [fullPrice, walletId]
+                        );
+                        
+                        // Создаем транзакцию списания
+                        const description = `Групповая тренировка Кулига: ${bookingData.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${bookingData.date}, ${String(bookingData.start_time).substring(0, 5)}`;
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description)
+                             VALUES ($1, $2, 'payment', $3)`,
+                            [walletId, -fullPrice, description]
+                        );
+                        
+                        console.log(`✅ Списано ${fullPrice} ₽ с кошелька клиента #${bookingData.client_id}`);
+                    }
+                }
+                
                 // Создаём бронирование
                 console.log(`🔨 Параметры для создания бронирования (transaction #${transactionId}):`, {
                     client_id: bookingData.client_id,

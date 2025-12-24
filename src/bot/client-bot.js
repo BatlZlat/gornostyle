@@ -5860,6 +5860,13 @@ async function handleTextMessage(msg) {
                         await client.query('ROLLBACK');
                         client.release();
                         
+                        // Вычисляем разницу
+                        const difference = pricePerPerson - balance;
+                        
+                        // Сохраняем информацию о балансе и разнице в состоянии
+                        state.data.current_balance = balance;
+                        state.data.price_difference = difference;
+                        
                         // Сохраняем состояние для обработки выбора способа оплаты
                         state.step = 'natural_slope_group_payment_choice';
                         state.data.selected_training = selectedTraining;
@@ -5868,8 +5875,9 @@ async function handleTextMessage(msg) {
                         return bot.sendMessage(chatId,
                             `❌ <b>Недостаточно средств</b>\n\n` +
                             `💰 Требуется: <b>${pricePerPerson.toFixed(2)} ₽</b>\n` +
-                            `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
-                            `Нажмите кнопку ниже для оплаты:`,
+                            `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
+                            `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
+                            `Нажмите кнопку ниже для оплаты недостающей суммы:`,
                             {
                                 parse_mode: 'HTML',
                                 reply_markup: {
@@ -11880,6 +11888,18 @@ async function initTrainingPayment(chatId, state, bookingData) {
 
         const { client_id, price_total, booking_type, date, start_time, sport_type, location, client_name, client_phone, client_email } = bookingData;
 
+        // Проверяем, есть ли разница для доплаты
+        const priceDifference = state.data.price_difference || null;
+        const currentBalance = state.data.current_balance || null;
+        const amountToPay = priceDifference !== null ? priceDifference : price_total;
+        
+        // Сохраняем информацию о разнице в bookingData для webhook
+        if (priceDifference !== null) {
+            bookingData.price_difference = priceDifference;
+            bookingData.current_balance = currentBalance;
+            bookingData.is_partial_payment = true;
+        }
+
         // Формируем описание платежа для чека
         const formatDate = (dateStr) => {
             const date = new Date(dateStr);
@@ -11908,6 +11928,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
         }
 
         // Создаем транзакцию
+        // В amount сохраняем сумму, которую нужно оплатить (разницу или полную сумму)
         const transactionResult = await client.query(
             `INSERT INTO kuliga_transactions (
                 client_id, 
@@ -11920,7 +11941,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
             )
              VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
              RETURNING id`,
-            [client_id, price_total, description, JSON.stringify({ bookingData, source: 'bot' })]
+            [client_id, amountToPay, description, JSON.stringify({ bookingData, source: 'bot' })]
         );
 
         const transactionId = transactionResult.rows[0].id;
@@ -11940,9 +11961,9 @@ async function initTrainingPayment(chatId, state, bookingData) {
                     : `Горностайл72, Групповое занятие, ${sportText}`;
                 items.push({
                     Name: itemName,
-                    Price: Math.round(price_total * 100),
+                    Price: Math.round(amountToPay * 100),
                     Quantity: bookingData.participants_count || 1,
-                    Amount: Math.round(price_total * 100),
+                    Amount: Math.round(amountToPay * 100),
                     Tax: 'none',
                     PaymentMethod: 'full_payment',
                     PaymentObject: 'service'
@@ -11951,9 +11972,9 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 // Для индивидуальных тренировок
                 items.push({
                     Name: `Горностайл72, Индивидуальное занятие, ${sportText}`,
-                    Price: Math.round(price_total * 100),
+                    Price: Math.round(amountToPay * 100),
                     Quantity: 1,
-                    Amount: Math.round(price_total * 100),
+                    Amount: Math.round(amountToPay * 100),
                     Tax: 'none',
                     PaymentMethod: 'full_payment',
                     PaymentObject: 'service'
@@ -11962,7 +11983,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
 
             const payment = await provider.initPayment({
                 orderId: `gornostyle72-winter-${transactionId}`,
-                amount: price_total,
+                amount: amountToPay,
                 description: description,
                 customerPhone: client_phone,
                 customerEmail: client_email,
@@ -11991,13 +12012,27 @@ async function initTrainingPayment(chatId, state, bookingData) {
             userStates.set(chatId, state);
 
             // Отправляем сообщение с кнопкой для перехода на оплату
-            const message = 
-                `💳 <b>Оплата тренировки</b>\n\n` +
-                `💰 Сумма: <b>${price_total.toFixed(2)} ₽</b>\n\n` +
-                `📅 Дата: ${dateFormatted}\n` +
-                `⏰ Время: ${timeFormatted}\n\n` +
-                `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
-                `✅ После успешной оплаты тренировка будет автоматически забронирована.`;
+            // Формируем сообщение в зависимости от того, оплачивается разница или полная сумма
+            let message;
+            if (priceDifference !== null) {
+                message = 
+                    `💳 <b>Оплата недостающей суммы</b>\n\n` +
+                    `💰 К доплате: <b>${amountToPay.toFixed(2)} ₽</b>\n` +
+                    `💵 Уже на балансе: <b>${currentBalance.toFixed(2)} ₽</b>\n` +
+                    `📊 Итого требуется: <b>${price_total.toFixed(2)} ₽</b>\n\n` +
+                    `📅 Дата: ${dateFormatted}\n` +
+                    `⏰ Время: ${timeFormatted}\n\n` +
+                    `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
+                    `✅ После успешной оплаты недостающая сумма будет зачислена на ваш кошелек, и тренировка будет автоматически забронирована.`;
+            } else {
+                message = 
+                    `💳 <b>Оплата тренировки</b>\n\n` +
+                    `💰 Сумма: <b>${amountToPay.toFixed(2)} ₽</b>\n\n` +
+                    `📅 Дата: ${dateFormatted}\n` +
+                    `⏰ Время: ${timeFormatted}\n\n` +
+                    `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
+                    `✅ После успешной оплаты тренировка будет автоматически забронирована.`;
+            }
 
             // Отправляем сообщение с inline кнопкой оплаты
             await bot.sendMessage(chatId, message, {
@@ -12005,7 +12040,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 reply_markup: {
                     inline_keyboard: [[
                         {
-                            text: `💳 Оплатить ${price_total.toFixed(0)} ₽`,
+                            text: `💳 Оплатить ${amountToPay.toFixed(0)} ₽`,
                             url: payment.paymentURL
                         }
                     ]]
@@ -15289,6 +15324,13 @@ async function createKuligaOwnGroupBooking(chatId, state) {
         if (balance < totalPrice) {
             await client.query('ROLLBACK');
             
+            // Вычисляем разницу
+            const difference = totalPrice - balance;
+            
+            // Сохраняем информацию о балансе и разнице в состоянии
+            state.data.current_balance = balance;
+            state.data.price_difference = difference;
+            
             // Сохраняем состояние для обработки выбора способа оплаты
             state.step = 'kuliga_own_group_payment_choice';
             userStates.set(chatId, state);
@@ -15296,8 +15338,9 @@ async function createKuligaOwnGroupBooking(chatId, state) {
             return bot.sendMessage(chatId,
                 `❌ <b>Недостаточно средств</b>\n\n` +
                 `💰 Требуется: <b>${totalPrice.toFixed(2)} ₽</b>\n` +
-                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
-                `Нажмите кнопку ниже для оплаты:`,
+                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
+                `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
+                `Нажмите кнопку ниже для оплаты недостающей суммы:`,
                 {
                     parse_mode: 'HTML',
                     reply_markup: {
@@ -15581,6 +15624,13 @@ async function createKuligaExistingGroupBooking(chatId, state) {
         if (balance < totalPrice) {
             await client.query('ROLLBACK');
             
+            // Вычисляем разницу
+            const difference = totalPrice - balance;
+            
+            // Сохраняем информацию о балансе и разнице в состоянии
+            state.data.current_balance = balance;
+            state.data.price_difference = difference;
+            
             // Сохраняем состояние для обработки выбора способа оплаты
             state.step = 'kuliga_group_payment_choice';
             userStates.set(chatId, state);
@@ -15588,8 +15638,9 @@ async function createKuligaExistingGroupBooking(chatId, state) {
             return bot.sendMessage(chatId,
                 `❌ <b>Недостаточно средств</b>\n\n` +
                 `💰 Требуется: <b>${totalPrice.toFixed(2)} ₽</b>\n` +
-                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
-                `Нажмите кнопку ниже для оплаты:`,
+                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
+                `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
+                `Нажмите кнопку ниже для оплаты недостающей суммы:`,
                 {
                     parse_mode: 'HTML',
                     reply_markup: {
