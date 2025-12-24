@@ -236,11 +236,15 @@ async function validateDateWithHumor(dateStr, trainingType = 'individual') {
     // Сначала проверяем корректность формата
     const date = validateDate(dateStr);
     if (!date) {
-        return {
-            valid: false,
-            message: '❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\nНапример: 25.12.2024',
-            date: null
-        };
+            // Получаем завтрашнюю дату в часовом поясе Екатеринбурга
+            const tomorrow = moment.tz('Asia/Yekaterinburg').add(1, 'days');
+            const tomorrowFormatted = tomorrow.format('DD.MM.YYYY');
+            
+            return {
+                valid: false,
+                message: `❌ Неверный формат даты. Пожалуйста, используйте формат ДД.ММ.ГГГГ\nНапример: ${tomorrowFormatted}`,
+                date: null
+            };
     }
 
     // Получаем текущую дату в часовом поясе Екатеринбурга
@@ -4016,11 +4020,16 @@ async function handleTextMessage(msg) {
                     state.data.price = priceResult.rows[0].price;
                     userStates.set(chatId, state);
 
+                    // Получаем завтрашнюю дату в часовом поясе Екатеринбурга
+                    const moment = require('moment-timezone');
+                    const tomorrow = moment.tz('Asia/Yekaterinburg').add(1, 'days');
+                    const tomorrowFormatted = tomorrow.format('DD.MM.YYYY');
+                    
                     return bot.sendMessage(chatId,
-                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                        'Например: 25.12.2024',
+                        `📅 <b>Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:</b>\n\n` +
+                        `Например: <code>${tomorrowFormatted}</code>`,
                         {
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
@@ -4488,11 +4497,16 @@ async function handleTextMessage(msg) {
                     state.data.price = priceResult.rows[0].price;
                     userStates.set(chatId, state);
 
+                    // Получаем завтрашнюю дату в часовом поясе Екатеринбурга
+                    const moment = require('moment-timezone');
+                    const tomorrow = moment.tz('Asia/Yekaterinburg').add(1, 'days');
+                    const tomorrowFormatted = tomorrow.format('DD.MM.YYYY');
+                    
                     return bot.sendMessage(chatId,
-                        '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                        'Например: 25.12.2024',
+                        `📅 <b>Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:</b>\n\n` +
+                        `Например: <code>${tomorrowFormatted}</code>`,
                         {
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
                             reply_markup: {
                                 keyboard: [['🔙 Назад в меню']],
                                 resize_keyboard: true
@@ -5146,11 +5160,15 @@ async function handleTextMessage(msg) {
                 step: 'suggest_preferred_date',
                 data: { ...state.data, skill_level: level }
             });
+            // Получаем завтрашнюю дату в часовом поясе Екатеринбурга
+            const tomorrow = moment.tz('Asia/Yekaterinburg').add(1, 'days');
+            const tomorrowFormatted = tomorrow.format('DD.MM.YYYY');
+            
             return bot.sendMessage(chatId,
-                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                'Например: 25.12.2024',
+                `📅 <b>Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:</b>\n\n` +
+                `Например: <code>${tomorrowFormatted}</code>`,
                 {
-                    parse_mode: 'Markdown',
+                    parse_mode: 'HTML',
                     reply_markup: {
                         keyboard: [['🔙 Назад в меню']],
                         resize_keyboard: true
@@ -11269,11 +11287,15 @@ bot.on('callback_query', async (callbackQuery) => {
             state.step = 'preferred_date';
             userStates.set(chatId, state);
             await bot.answerCallbackQuery(callbackQuery.id);
+            // Получаем завтрашнюю дату в часовом поясе Екатеринбурга
+            const tomorrow = moment.tz('Asia/Yekaterinburg').add(1, 'days');
+            const tomorrowFormatted = tomorrow.format('DD.MM.YYYY');
+            
             return bot.sendMessage(chatId,
-                '📅 *Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:*\n\n' +
-                'Например: 25.12.2024',
+                `📅 <b>Выберите предпочтительную дату в формате ДД.ММ.ГГГГ:</b>\n\n` +
+                `Например: <code>${tomorrowFormatted}</code>`,
                 {
-                    parse_mode: 'Markdown',
+                    parse_mode: 'HTML',
                     reply_markup: {
                         keyboard: [['🔙 Назад в меню']],
                         resize_keyboard: true
