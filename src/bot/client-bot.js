@@ -1597,12 +1597,17 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    // Блокируем слот
+                    // Блокируем слот на 5 минут для оплаты
+                    // Получаем transactionId из состояния, если он есть
+                    const transactionId = state.data.training_payment_transaction_id || null;
                     await client.query(
                         `UPDATE kuliga_schedule_slots
-                         SET status = 'hold', updated_at = CURRENT_TIMESTAMP
-                         WHERE id = $1`,
-                        [state.data.selected_slot_id]
+                         SET status = 'hold',
+                             hold_until = NOW() + INTERVAL '5 minutes',
+                             hold_transaction_id = $1,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $2`,
+                        [transactionId, state.data.selected_slot_id]
                     );
                 }
 
@@ -1818,10 +1823,15 @@ async function handleTextMessage(msg) {
                         );
                     }
 
-                    // Блокируем слот
+                    // Блокируем слот на 5 минут для оплаты
+                    // transactionId будет установлен после создания транзакции в initTrainingPayment
+                    // Пока устанавливаем NULL, потом обновим
                     await client.query(
                         `UPDATE kuliga_schedule_slots
-                         SET status = 'hold', updated_at = CURRENT_TIMESTAMP
+                         SET status = 'hold',
+                             hold_until = NOW() + INTERVAL '5 minutes',
+                             hold_transaction_id = NULL,
+                             updated_at = CURRENT_TIMESTAMP
                          WHERE id = $1`,
                         [slotId]
                     );
@@ -1880,6 +1890,116 @@ async function handleTextMessage(msg) {
                 await client.query('ROLLBACK');
                 client.release();
                 console.error('❌ Ошибка при подготовке оплаты индивидуальной тренировки Кулига:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        } else if (msg.text === '🔙 Назад в меню') {
+            userStates.delete(chatId);
+            return showMainMenu(chatId);
+        }
+    }
+
+    // Обработка выбора оплаты для групповых тренировок на тренажере
+    if (state && state.step === 'simulator_group_payment_choice') {
+        if (msg.text === '💳 Оплатить') {
+            // Подготавливаем данные для бронирования и оплаты
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Получаем данные клиента
+                const clientResult = await client.query(
+                    `SELECT c.id, c.full_name, c.phone, c.email, w.id as wallet_id
+                     FROM clients c
+                     LEFT JOIN wallets w ON c.id = w.client_id
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+
+                if (!clientResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    return bot.sendMessage(chatId, '❌ Клиент не найден.');
+                }
+
+                const clientData = clientResult.rows[0];
+                const selectedSession = state.data.selected_session;
+                const price = parseFloat(state.data.price || 0);
+                
+                // Получаем имя участника
+                let participantName = '';
+                let participantBirthYear = null;
+                if (state.data.selected_child) {
+                    participantName = state.data.selected_child.full_name || '';
+                    // Получаем год рождения ребенка
+                    const childResult = await client.query(
+                        'SELECT birth_date FROM children WHERE id = $1',
+                        [state.data.selected_child.id]
+                    );
+                    if (childResult.rows.length) {
+                        participantBirthYear = new Date(childResult.rows[0].birth_date).getFullYear();
+                    }
+                } else {
+                    participantName = clientData.full_name;
+                    // Получаем год рождения клиента
+                    const clientBirthResult = await client.query(
+                        'SELECT birth_date FROM clients WHERE id = $1',
+                        [state.data.client_id]
+                    );
+                    if (clientBirthResult.rows.length) {
+                        participantBirthYear = new Date(clientBirthResult.rows[0].birth_date).getFullYear();
+                    }
+                }
+
+                await client.query('COMMIT');
+                client.release();
+
+                // Подготавливаем bookingData для групповой тренировки на тренажере
+                const bookingData = {
+                    client_id: state.data.client_id,
+                    booking_type: 'group_simulator', // Специальный тип для групповых тренировок на тренажере
+                    session_id: selectedSession.id,
+                    date: selectedSession.session_date,
+                    start_time: selectedSession.start_time,
+                    end_time: selectedSession.end_time || null,
+                    duration: selectedSession.duration || 60,
+                    sport_type: selectedSession.equipment_type === 'ski' ? 'ski' : 'snowboard',
+                    location: 'simulator',
+                    participants_count: 1,
+                    participants_names: [participantName],
+                    participants_birth_years: participantBirthYear ? [participantBirthYear] : null,
+                    price_total: price,
+                    price_per_person: price,
+                    client_name: clientData.full_name,
+                    client_phone: clientData.phone,
+                    client_email: clientData.email,
+                    // Данные для создания session_participants
+                    child_id: state.data.selected_child ? state.data.selected_child.id : null,
+                    group_name: selectedSession.group_name || null,
+                    trainer_name: selectedSession.trainer_name || null,
+                    simulator_name: selectedSession.simulator_name || null
+                };
+
+                // Сохраняем bookingData в состоянии для использования после оплаты
+                state.data.booking_data = bookingData;
+                state.step = 'simulator_group_payment_pending';
+                userStates.set(chatId, state);
+
+                // Инициируем оплату (используем booking_type='group' для совместимости)
+                bookingData.booking_type = 'group';
+                return await initTrainingPayment(chatId, state, bookingData);
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                client.release();
+                console.error('❌ Ошибка при подготовке оплаты групповой тренировки на тренажере:', error);
                 return bot.sendMessage(chatId,
                     '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
                     {
@@ -6628,15 +6748,30 @@ async function handleTextMessage(msg) {
                     // Проверяем баланс
                     if (balance < price) {
                         await client.query('ROLLBACK');
+                        client.release();
+                        
+                        // Вычисляем разницу
+                        const difference = price - balance;
+                        
+                        // Сохраняем информацию о балансе и разнице в состоянии
+                        state.data.current_balance = balance;
+                        state.data.price_difference = difference;
+                        state.data.price = price;
+                        state.data.selected_session = selectedSession;
+                        state.step = 'simulator_group_payment_choice';
+                        userStates.set(chatId, state);
+                        
                         return bot.sendMessage(chatId,
-                            `❌ Недостаточно средств на балансе.\n\n` +
-                            `Требуется: ${price.toFixed(2)} руб.\n` +
-                            `Доступно: ${balance.toFixed(2)} руб.\n\n` +
-                            `Пожалуйста, пополните баланс и попробуйте записаться снова.`,
+                            `❌ <b>Недостаточно средств</b>\n\n` +
+                            `💰 Требуется: <b>${price.toFixed(2)} ₽</b>\n` +
+                            `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n` +
+                            `💳 К доплате: <b>${difference.toFixed(2)} ₽</b>\n\n` +
+                            `Нажмите кнопку ниже для оплаты недостающей суммы:`,
                             {
+                                parse_mode: 'HTML',
                                 reply_markup: {
                                     keyboard: [
-                                        ['💳 Пополнить баланс'],
+                                        ['💳 Оплатить'],
                                         ['🔙 Назад в меню']
                                     ],
                                     resize_keyboard: true
@@ -10335,7 +10470,7 @@ async function handleTextMessage(msg) {
             // Проверяем, есть ли расписание на выбранную дату
             const conditions = [
                 'ks.date = $1',
-                "ks.status = 'available'",
+                "(ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))",
                 'ki.is_active = TRUE'
             ];
             const params = [selectedDate];
@@ -10362,7 +10497,7 @@ async function handleTextMessage(msg) {
                      FROM kuliga_schedule_slots ks
                      JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
                      WHERE ks.date > $1 
-                       AND ks.status = 'available'
+                       AND (ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))
                        AND ki.is_active = TRUE
                        ${state.data.selected_instructor_id ? 'AND ks.instructor_id = $2' : state.data.selected_sport ? "AND (ki.sport_type = $2 OR ki.sport_type = 'both')" : ''}
                      ORDER BY ks.date 
@@ -12271,6 +12406,16 @@ async function initTrainingPayment(chatId, state, bookingData) {
             state.data.training_payment_transaction_id = transactionId;
             userStates.set(chatId, state);
 
+            // Обновляем hold_transaction_id в слоте, если слот был заблокирован
+            if (bookingData.slot_id) {
+                await pool.query(
+                    `UPDATE kuliga_schedule_slots
+                     SET hold_transaction_id = $1
+                     WHERE id = $2 AND status = 'hold'`,
+                    [transactionId, bookingData.slot_id]
+                );
+            }
+
             // Отправляем сообщение с кнопкой для перехода на оплату
             // Формируем сообщение в зависимости от того, оплачивается разница или полная сумма
             let message;
@@ -14112,7 +14257,7 @@ function getSportTypeDisplay(sportType) {
 // Показ доступных дат (инлайн-календарь) для зимних индивидуальных
 async function showNaturalSlopeAvailableDates(chatId, filters = {}) {
     const conditions = [
-        "ks.status = 'available'",
+        "(ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))",
         'ks.date >= (NOW() AT TIME ZONE \'Asia/Yekaterinburg\')::date',
         'ki.is_active = TRUE',
         // Для текущей даты показываем только если есть слоты, которые еще не начались
@@ -14186,7 +14331,7 @@ async function showNaturalSlopeTimeSlots(chatId, selectedDate, data) {
     try {
         const conditions = [
             'ks.date = $1',
-            "ks.status = 'available'",
+            "(ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))",
             'ki.is_active = TRUE',
             `NOT EXISTS (
                 SELECT 1 FROM kuliga_group_trainings kgt
@@ -14874,7 +15019,7 @@ async function showKuligaAvailableDatesForOwnGroup(chatId, data) {
              JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
              WHERE ks.date >= $1
                AND ks.date <= $2
-               AND ks.status = 'available'
+               AND (ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))
                AND ki.is_active = TRUE
                AND (ki.sport_type = $3 OR ki.sport_type = 'both')
                ${locationFilter}
@@ -14978,7 +15123,7 @@ async function showKuligaTimeSlotsForOwnGroup(chatId, selectedDate, data) {
              FROM kuliga_schedule_slots ks
              JOIN kuliga_instructors ki ON ks.instructor_id = ki.id
              WHERE ks.date = $1
-               AND ks.status = 'available'
+               AND (ks.status = 'available' OR (ks.status = 'hold' AND (ks.hold_until IS NULL OR ks.hold_until < NOW())))
                AND NOT EXISTS (
                    SELECT 1 FROM kuliga_group_trainings kgt
                    WHERE kgt.slot_id = ks.id

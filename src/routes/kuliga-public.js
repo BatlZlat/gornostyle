@@ -269,6 +269,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                      FROM kuliga_schedule_slots
                      WHERE instructor_id = ANY($1)
                        AND date BETWEEN $2 AND $3
+                       AND (status = 'available' OR status = 'group' OR (status = 'hold' AND (hold_until IS NULL OR hold_until < NOW())))
                      ORDER BY date, start_time`,
                     [instructorIds, startDate, endDate]
                 ),

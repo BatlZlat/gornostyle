@@ -1070,6 +1070,30 @@ router.post(
                         bookingData.payer_rides,
                         bookingData.location
                     ];
+                } else if (bookingData.booking_type === 'group_simulator') {
+                    // Групповые тренировки на тренажере
+                    // Создаем запись в session_participants
+                    insertQuery = `INSERT INTO session_participants (
+                        client_id, session_id, child_id, status
+                    ) VALUES ($1, $2, $3, 'confirmed')
+                    RETURNING id`;
+                    
+                    insertParams = [
+                        bookingData.client_id,
+                        bookingData.session_id,
+                        bookingData.child_id || null
+                    ];
+                    
+                    const newParticipantResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newParticipantResult.rows || !newParticipantResult.rows[0]) {
+                        throw new Error('INSERT INTO session_participants не вернул id');
+                    }
+                    
+                    // Для session_participants bookingId будет null, так как это не kuliga_bookings
+                    bookingId = null;
+                    const participantId = newParticipantResult.rows[0].id;
+                    console.log(`✅ Участник групповой тренировки на тренажере #${participantId} создан после успешной оплаты (transaction #${transactionId})`);
                 } else if (bookingData.booking_type === 'group') {
                     insertQuery = `INSERT INTO kuliga_bookings (
                         client_id,
@@ -1141,7 +1165,7 @@ router.post(
                 }
                 
                 // Создаем бронирование только для kuliga_bookings
-                if (bookingData.booking_type !== 'individual_natural_slope') {
+                if (bookingData.booking_type !== 'individual_natural_slope' && bookingData.booking_type !== 'group_simulator') {
                     const newBookingResult = await client.query(insertQuery, insertParams);
                     
                     if (!newBookingResult.rows || !newBookingResult.rows[0]) {
@@ -1344,6 +1368,8 @@ router.post(
                                     let bookingTypeText;
                                     if (bookingData.booking_type === 'individual_natural_slope') {
                                         bookingTypeText = 'Индивидуальное занятие на тренажере';
+                                    } else if (bookingData.booking_type === 'group_simulator') {
+                                        bookingTypeText = 'Групповое занятие на тренажере';
                                     } else if (bookingData.booking_type === 'individual') {
                                         bookingTypeText = 'Индивидуальное занятие';
                                     } else {

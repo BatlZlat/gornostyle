@@ -1501,7 +1501,7 @@ router.get('/availability', async (req, res) => {
              LEFT JOIN kuliga_group_trainings kgt ON kgt.slot_id = s.id 
                  AND kgt.status IN ('open', 'confirmed')
              WHERE s.date = $1
-               AND s.status IN ('available', 'group')  -- Включаем слоты с групповыми тренировками
+               AND (s.status IN ('available', 'group') OR (s.status = 'hold' AND (s.hold_until IS NULL OR s.hold_until < NOW())))  -- Включаем слоты с групповыми тренировками и истекшие hold
                AND i.is_active = TRUE
                AND (i.sport_type = $2 OR i.sport_type = 'both')
                AND (s.hold_until IS NULL OR s.hold_until < NOW())`; // Исключаем слоты с активным hold
@@ -1604,7 +1604,7 @@ router.get('/availability/dates', async (req, res) => {
              JOIN kuliga_instructors i ON i.id = s.instructor_id
              WHERE s.date >= $1::date 
                AND s.date <= $2::date
-               AND s.status = 'available'
+               AND (s.status = 'available' OR (s.status = 'hold' AND (s.hold_until IS NULL OR s.hold_until < NOW())))
                AND i.is_active = TRUE
                AND (i.sport_type = $3 OR i.sport_type = 'both')
                AND EXTRACT(EPOCH FROM (s.end_time - s.start_time)) / 60 >= $4`;
