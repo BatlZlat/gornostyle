@@ -1447,8 +1447,8 @@ async function handleTextMessage(msg) {
             userStates.set(chatId, state);
             return bot.sendMessage(chatId,
                 '💵 <b>Введите сумму пополнения</b>\n\n' +
-                'Минимальная сумма: 100 ₽\n' +
-                'Максимальная сумма: 100 000 ₽',
+                'Минимальная сумма: 1 ₽\n' +
+                'Максимальная сумма: 50 000 ₽',
                 {
                     parse_mode: 'HTML',
                     reply_markup: {
@@ -1487,11 +1487,11 @@ async function handleTextMessage(msg) {
         const amountStr = msg.text.replace(/[^\d.,]/g, '').replace(',', '.');
         const amount = parseFloat(amountStr);
         
-        if (isNaN(amount) || amount < 100 || amount > 100000) {
+        if (isNaN(amount) || amount < 1 || amount > 50000) {
             return bot.sendMessage(chatId,
                 '❌ Неверная сумма.\n\n' +
-                'Минимальная сумма: 100 ₽\n' +
-                'Максимальная сумма: 100 000 ₽\n\n' +
+                'Минимальная сумма: 1 ₽\n' +
+                'Максимальная сумма: 50 000 ₽\n\n' +
                 'Пожалуйста, введите корректную сумму.',
                 {
                     reply_markup: {
@@ -11362,10 +11362,12 @@ async function handleWalletRefillPayment(chatId, state, amount) {
             await client.query(
                 `UPDATE kuliga_transactions 
                  SET provider_payment_id = $1, 
-                     provider_raw_data = $2
-                 WHERE id = $3`,
+                     provider_order_id = $2,
+                     provider_raw_data = $3
+                 WHERE id = $4`,
                 [
                     payment.paymentId || null,
+                    `gornostyle72-wallet-${transactionId}`,
                     JSON.stringify({ walletRefillData, paymentData: payment.rawData || {} }),
                     transactionId
                 ]
@@ -11379,14 +11381,15 @@ async function handleWalletRefillPayment(chatId, state, amount) {
             const message = 
                 `💳 <b>Оплата пополнения кошелька</b>\n\n` +
                 `💰 Сумма: ${amount.toFixed(2)} ₽\n\n` +
-                `Нажмите на кнопку ниже, чтобы перейти к оплате:`;
+                `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
+                `✅ После успешной оплаты средства будут зачислены на ваш кошелек автоматически.`;
 
             await bot.sendMessage(chatId, message, {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [[
                         {
-                            text: '💳 Оплатить',
+                            text: `💳 Оплатить ${amount.toFixed(0)} ₽ →`,
                             url: payment.paymentURL
                         }
                     ]]
