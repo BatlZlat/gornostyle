@@ -481,6 +481,7 @@ const createGroupBooking = async (req, res) => {
                             s.start_time,
                             s.end_time,
                             s.status,
+                            s.hold_until,
                             s.location AS slot_location,
                             i.full_name AS instructor_name,
                             i.sport_type AS instructor_sport_type,
@@ -500,7 +501,7 @@ const createGroupBooking = async (req, res) => {
 
                 const slot = slotResult.rows[0];
 
-                // Проверяем статус слота: должен быть available или hold (hold может быть от предыдущей попытки оплаты)
+                // Проверяем статус слота: должен быть available или hold с истекшим hold_until
                 // Если слот уже в статусе 'group' или 'booked', значит групповая тренировка уже создана
                 if (slot.status === 'group') {
                     // Групповая тренировка уже создана на этот слот - используем её
@@ -541,7 +542,20 @@ const createGroupBooking = async (req, res) => {
                 } else if (slot.status === 'booked') {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ success: false, error: 'Слот уже занят. Выберите другое время.' });
-                } else if (slot.status !== 'available' && slot.status !== 'hold') {
+                } else if (slot.status === 'hold') {
+                    // Проверяем, истек ли hold
+                    if (slot.hold_until) {
+                        const holdUntil = new Date(slot.hold_until);
+                        const now = new Date();
+                        if (holdUntil >= now) {
+                            // Hold еще активен
+                            await client.query('ROLLBACK');
+                            return res.status(400).json({ success: false, error: 'Слот временно заблокирован. Попробуйте через несколько минут.' });
+                        }
+                        // Hold истек, продолжаем как со свободным слотом
+                    }
+                    // Если hold_until отсутствует, считаем hold истекшим, продолжаем
+                } else if (slot.status !== 'available') {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ success: false, error: `Слот недоступен (статус: ${slot.status}). Выберите другое время.` });
                 }
@@ -1207,6 +1221,7 @@ const createIndividualBooking = async (req, res) => {
                     s.start_time,
                     s.end_time,
                     s.status,
+                    s.hold_until,
                     s.location AS slot_location,
                     i.full_name AS instructor_name,
                     i.sport_type AS instructor_sport_type,
@@ -1226,7 +1241,25 @@ const createIndividualBooking = async (req, res) => {
 
         const slot = slotResult.rows[0];
 
-        if (slot.status !== 'available') {
+        // Проверяем статус слота: доступен, если status = 'available' или status = 'hold' с истекшим hold_until
+        let isSlotAvailable = false;
+        if (slot.status === 'available') {
+            isSlotAvailable = true;
+        } else if (slot.status === 'hold') {
+            // Проверяем, истек ли hold
+            if (!slot.hold_until) {
+                // Если hold_until отсутствует, считаем hold истекшим
+                isSlotAvailable = true;
+            } else {
+                const holdUntil = new Date(slot.hold_until);
+                const now = new Date();
+                if (holdUntil < now) {
+                    isSlotAvailable = true;
+                }
+            }
+        }
+
+        if (!isSlotAvailable) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, error: 'Слот уже занят. Выберите другое время.' });
         }
