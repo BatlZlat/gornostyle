@@ -1431,6 +1431,117 @@ async function handleTextMessage(msg) {
         }
     }
 
+    // Обработка выбора способа оплаты групповой тренировки
+    if (state && state.step === 'kuliga_group_payment_choice') {
+        if (msg.text === '💳 Оплатить') {
+            // Подготавливаем данные для бронирования и оплаты
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Получаем данные клиента
+                const clientResult = await client.query(
+                    `SELECT c.id, c.full_name, c.phone, c.email, w.id as wallet_id
+                     FROM clients c
+                     LEFT JOIN wallets w ON c.id = w.client_id
+                     WHERE c.id = $1`,
+                    [state.data.client_id]
+                );
+
+                if (!clientResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    return bot.sendMessage(chatId, '❌ Клиент не найден.');
+                }
+
+                const clientData = clientResult.rows[0];
+
+                // Получаем данные тренировки
+                const trainingResult = await client.query(
+                    `SELECT id, instructor_id, date, start_time, end_time, sport_type,
+                            price_per_person, max_participants, level, description
+                     FROM kuliga_group_trainings
+                     WHERE id = $1
+                     FOR UPDATE`,
+                    [state.data.selected_training_id]
+                );
+
+                if (!trainingResult.rows.length) {
+                    await client.query('ROLLBACK');
+                    client.release();
+                    return bot.sendMessage(chatId, '❌ Групповая тренировка не найдена.');
+                }
+
+                const training = trainingResult.rows[0];
+                const participants = state.data.selected_participants || [];
+                const participantsNames = participants.map(p => p.fullName);
+                const participantsBirthYears = participants.map(p => p.birthYear);
+
+                // Получаем location
+                const trainingLocationResult = await client.query(
+                    'SELECT location FROM kuliga_group_trainings WHERE id = $1',
+                    [state.data.selected_training_id]
+                );
+                const location = trainingLocationResult.rows[0]?.location || state.data.location || 'kuliga';
+
+                // Временно блокируем места (увеличиваем current_participants)
+                const newParticipantsCount = participants.length;
+                await client.query(
+                    `UPDATE kuliga_group_trainings
+                     SET current_participants = current_participants + $1
+                     WHERE id = $2`,
+                    [newParticipantsCount, state.data.selected_training_id]
+                );
+
+                await client.query('COMMIT');
+                client.release();
+
+                // Подготавливаем bookingData
+                const bookingData = {
+                    client_id: state.data.client_id,
+                    booking_type: 'group',
+                    group_training_id: state.data.selected_training_id,
+                    date: training.date,
+                    start_time: training.start_time,
+                    end_time: training.end_time,
+                    sport_type: training.sport_type,
+                    location: location,
+                    participants_count: newParticipantsCount,
+                    participants_names: participantsNames,
+                    participants_birth_years: participantsBirthYears,
+                    price_total: parseFloat(state.data.total_price || 0),
+                    price_per_person: parseFloat(training.price_per_person || 0),
+                    client_name: clientData.full_name,
+                    client_phone: clientData.phone,
+                    client_email: clientData.email,
+                    program_name: training.description || null
+                };
+
+                // Сохраняем bookingData в состоянии для использования после оплаты
+                state.data.booking_data = bookingData;
+                state.step = 'kuliga_group_payment_pending';
+                userStates.set(chatId, state);
+
+                // Инициируем оплату
+                return await initTrainingPayment(chatId, state, bookingData);
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                client.release();
+                console.error('❌ Ошибка при подготовке оплаты групповой тренировки:', error);
+                return bot.sendMessage(chatId,
+                    '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                    {
+                        reply_markup: {
+                            keyboard: [['🔙 Назад в меню']],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+            }
+        }
+    }
+
     // Обработка выбора суммы пополнения кошелька
     if (state && state.step === 'wallet_refill_select_amount') {
         const amountMatch = msg.text.match(/^💵 (\d+(?:\s?\d+)?)\s?₽$/);
@@ -8887,7 +8998,9 @@ async function handleTextMessage(msg) {
                 const endTimeStr = String(training.end_time).substring(0, 5);
                 const sportType = training.sport_type === 'ski' ? '⛷️' : '🏂';
                 const freePlaces = training.max_participants - training.current_participants;
-                const buttonText = `${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест)`;
+                // Сокращаем имя инструктора для кнопки (берем только фамилию)
+                const instructorShortName = training.instructor_name ? training.instructor_name.split(' ')[0] : '';
+                const buttonText = `${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест) ${instructorShortName}`;
 
                 if (index % 2 === 0) {
                     timeButtons.push([buttonText]);
@@ -8904,7 +9017,9 @@ async function handleTextMessage(msg) {
             state.step = 'kuliga_group_existing_time';
             userStates.set(chatId, state);
 
-            const date = moment(selectedDate).tz('Asia/Yekaterinburg');
+            // Правильно обрабатываем дату с учетом часового пояса
+            // Используем полдень, чтобы избежать проблем с часовыми поясами
+            const date = moment.tz(selectedDate + 'T12:00:00', 'Asia/Yekaterinburg');
             const dateStr = date.format('DD.MM.YYYY');
             const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.day()];
 
@@ -8918,11 +9033,16 @@ async function handleTextMessage(msg) {
                 const sportType = training.sport_type === 'ski' ? '⛷️ Лыжи' : '🏂 Сноуборд';
                 const freePlaces = training.max_participants - training.current_participants;
                 const pricePerPerson = parseFloat(training.price_per_person || 0).toFixed(2);
+                const trainingLevel = convertLevelToNumber(training.level);
+                const levelText = trainingLevel !== null ? `📊 Уровень: ${trainingLevel}/10\n` : '';
 
                 message += `• ${timeStr} - ${endTimeStr} ${sportType}\n`;
                 message += `  👨‍🏫 ${training.instructor_name}\n`;
                 const occupiedPlaces = training.current_participants || 0;
                 message += `  👥 Занято мест: ${occupiedPlaces}/${training.max_participants}\n`;
+                if (levelText) {
+                    message += `  ${levelText}`;
+                }
                 if (training.description) {
                     message += `  📝 ${training.description}\n`;
                 }
@@ -8950,7 +9070,9 @@ async function handleTextMessage(msg) {
                 const endTimeStr = String(training.end_time).substring(0, 5);
                 const sportType = training.sport_type === 'ski' ? '⛷️' : '🏂';
                 const freePlaces = training.max_participants - training.current_participants;
-                const buttonText = `${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест)`;
+                // Сокращаем имя инструктора для сравнения (берем только фамилию)
+                const instructorShortName = training.instructor_name ? training.instructor_name.split(' ')[0] : '';
+                const buttonText = `${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест) ${instructorShortName}`;
                 return buttonText === msg.text;
             });
 
@@ -8965,7 +9087,9 @@ async function handleTextMessage(msg) {
                                     const endTimeStr = String(training.end_time).substring(0, 5);
                                     const sportType = training.sport_type === 'ski' ? '⛷️' : '🏂';
                                     const freePlaces = training.max_participants - training.current_participants;
-                                    return [`${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест)`];
+                                    // Сокращаем имя инструктора для кнопки (берем только фамилию)
+                                    const instructorShortName = training.instructor_name ? training.instructor_name.split(' ')[0] : '';
+                                    return [`${timeStr} - ${endTimeStr} ${sportType} (${freePlaces} мест) ${instructorShortName}`];
                                 }),
                                 ['🔙 Назад']
                             ],
@@ -8986,14 +9110,15 @@ async function handleTextMessage(msg) {
             state.data.max_participants = selectedTraining.max_participants;
             state.data.current_participants = selectedTraining.current_participants;
             state.data.training_description = selectedTraining.description;
+            state.data.training_level = selectedTraining.level;
 
             // Переходим к выбору участников
             state.step = 'kuliga_group_existing_participants';
             userStates.set(chatId, state);
 
-            // Получаем список детей клиента
+            // Получаем список детей клиента с уровнями
             const childrenResult = await pool.query(
-                'SELECT id, full_name, birth_date FROM children WHERE parent_id = $1 ORDER BY birth_date',
+                'SELECT id, full_name, birth_date, skill_level FROM children WHERE parent_id = $1 ORDER BY birth_date',
                 [state.data.client_id]
             );
 
@@ -9006,6 +9131,10 @@ async function handleTextMessage(msg) {
             message += `👨‍🏫 Инструктор: ${selectedTraining.instructor_name}\n`;
             const occupiedPlaces = selectedTraining.current_participants || 0;
             message += `👥 Занято мест: ${occupiedPlaces}/${selectedTraining.max_participants}\n`;
+            const trainingLevel = convertLevelToNumber(selectedTraining.level);
+            if (trainingLevel !== null) {
+                message += `📊 Уровень: ${trainingLevel}/10\n`;
+            }
             if (selectedTraining.description) {
                 message += `📝 ${selectedTraining.description}\n`;
             }
@@ -9018,13 +9147,14 @@ async function handleTextMessage(msg) {
                 
                 children.forEach((child, index) => {
                     const age = moment().diff(moment(child.birth_date), 'years');
+                    const skillLevel = child.skill_level || 0;
                     const buttonText = `👶 ${child.full_name} (${age} лет)`;
                     if (index % 2 === 0) {
                         participantButtons.push([buttonText]);
                     } else {
                         participantButtons[participantButtons.length - 1].push(buttonText);
                     }
-                    message += `${index + 2}. ${child.full_name} (${age} лет)\n`;
+                    message += `${index + 2}. ${child.full_name} (${age} лет, уровень ${skillLevel})\n`;
                 });
 
                 participantButtons.push(['🔙 Назад']);
@@ -11472,6 +11602,216 @@ async function handleWalletRefillPayment(chatId, state, amount) {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('❌ Ошибка при создании транзакции пополнения кошелька:', error);
+        return bot.sendMessage(chatId,
+            '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+            {
+                reply_markup: {
+                    keyboard: [['🔙 Назад в меню']],
+                    resize_keyboard: true
+                }
+            }
+        );
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Универсальная функция для инициации оплаты тренировки через интернет-эквайринг
+ * @param {number} chatId - ID чата в Telegram
+ * @param {Object} state - Состояние пользователя
+ * @param {Object} bookingData - Данные для бронирования
+ * @param {string} bookingData.booking_type - 'group' или 'individual'
+ * @param {number} bookingData.client_id - ID клиента
+ * @param {number} bookingData.price_total - Общая стоимость
+ * @param {string} bookingData.date - Дата тренировки
+ * @param {string} bookingData.start_time - Время начала
+ * @param {string} bookingData.sport_type - 'ski' или 'snowboard'
+ * @param {string} bookingData.location - 'kuliga' или 'vorona'
+ * @param {Object} bookingData.client_name - Имя клиента
+ * @param {string} bookingData.client_phone - Телефон клиента
+ * @param {string} bookingData.client_email - Email клиента
+ * @param {Object} bookingData - Дополнительные данные в зависимости от типа тренировки
+ * @returns {Promise<void>}
+ */
+async function initTrainingPayment(chatId, state, bookingData) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const { client_id, price_total, booking_type, date, start_time, sport_type, location, client_name, client_phone, client_email } = bookingData;
+
+        // Формируем описание платежа для чека
+        const formatDate = (dateStr) => {
+            const date = new Date(dateStr);
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
+        };
+
+        const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            const time = timeStr.toString();
+            return time.substring(0, 5);
+        };
+
+        const bookingTypeText = booking_type === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
+        const sportText = sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+        const dateFormatted = formatDate(date);
+        const timeFormatted = formatTime(start_time);
+        
+        let description = `Горностайл72, ${bookingTypeText}, ${sportText}, ${dateFormatted} ${timeFormatted}`;
+        
+        // Для групповых тренировок добавляем название программы, если есть
+        if (booking_type === 'group' && bookingData.program_name) {
+            description = `Горностайл72, ${bookingTypeText}, ${sportText}, ${bookingData.program_name}, ${dateFormatted} ${timeFormatted}`;
+        }
+
+        // Создаем транзакцию
+        const transactionResult = await client.query(
+            `INSERT INTO kuliga_transactions (
+                client_id, 
+                booking_id, 
+                type, 
+                amount, 
+                status, 
+                description,
+                provider_raw_data
+            )
+             VALUES ($1, NULL, 'payment', $2, 'pending', $3, $4)
+             RETURNING id`,
+            [client_id, price_total, description, JSON.stringify({ bookingData, source: 'bot' })]
+        );
+
+        const transactionId = transactionResult.rows[0].id;
+
+        await client.query('COMMIT');
+
+        // Создаем платеж через PaymentProvider
+        try {
+            const provider = PaymentProviderFactory.create();
+            
+            // Формируем items для чека
+            const items = [];
+            if (booking_type === 'group') {
+                // Для групповых тренировок
+                const itemName = bookingData.program_name 
+                    ? `Горностайл72, Групповое занятие, ${sportText}, ${bookingData.program_name}`
+                    : `Горностайл72, Групповое занятие, ${sportText}`;
+                items.push({
+                    Name: itemName,
+                    Price: Math.round(price_total * 100),
+                    Quantity: bookingData.participants_count || 1,
+                    Amount: Math.round(price_total * 100),
+                    Tax: 'none',
+                    PaymentMethod: 'full_payment',
+                    PaymentObject: 'service'
+                });
+            } else {
+                // Для индивидуальных тренировок
+                items.push({
+                    Name: `Горностайл72, Индивидуальное занятие, ${sportText}`,
+                    Price: Math.round(price_total * 100),
+                    Quantity: 1,
+                    Amount: Math.round(price_total * 100),
+                    Tax: 'none',
+                    PaymentMethod: 'full_payment',
+                    PaymentObject: 'service'
+                });
+            }
+
+            const payment = await provider.initPayment({
+                orderId: `gornostyle72-winter-${transactionId}`,
+                amount: price_total,
+                description: description,
+                customerPhone: client_phone,
+                customerEmail: client_email,
+                clientId: client_id,
+                items: items,
+                paymentMethod: 'card'
+            });
+
+            // Обновляем транзакцию с данными платежа
+            await client.query(
+                `UPDATE kuliga_transactions 
+                 SET provider_payment_id = $1, 
+                     provider_order_id = $2,
+                     provider_raw_data = $3
+                 WHERE id = $4`,
+                [
+                    payment.paymentId || null,
+                    `gornostyle72-winter-${transactionId}`,
+                    JSON.stringify({ bookingData, source: 'bot', paymentData: payment.rawData || {} }),
+                    transactionId
+                ]
+            );
+
+            // Сохраняем transactionId в состоянии
+            state.data.training_payment_transaction_id = transactionId;
+            userStates.set(chatId, state);
+
+            // Отправляем сообщение с кнопкой для перехода на оплату
+            const message = 
+                `💳 <b>Оплата тренировки</b>\n\n` +
+                `💰 Сумма: <b>${price_total.toFixed(2)} ₽</b>\n\n` +
+                `📅 Дата: ${dateFormatted}\n` +
+                `⏰ Время: ${timeFormatted}\n\n` +
+                `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
+                `✅ После успешной оплаты тренировка будет автоматически забронирована.`;
+
+            // Отправляем сообщение с inline кнопкой оплаты
+            await bot.sendMessage(chatId, message, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: `💳 Оплатить ${price_total.toFixed(0)} ₽`,
+                            url: payment.paymentURL
+                        }
+                    ]]
+                }
+            });
+
+            // Восстанавливаем меню кнопок
+            try {
+                await bot.sendMessage(chatId, '⬇️', {
+                    reply_markup: {
+                        keyboard: [
+                            ['📝 Записаться на тренировку'],
+                            ['📋 Мои записи'],
+                            ['🎁 Сертификаты', '💰 Кошелек']
+                        ],
+                        resize_keyboard: true
+                    }
+                });
+            } catch (keyboardError) {
+                console.warn('⚠️ Не удалось восстановить keyboard:', keyboardError.message);
+            }
+
+        } catch (paymentError) {
+            console.error('❌ Ошибка при создании платежа для тренировки:', paymentError);
+            
+            // Обновляем статус транзакции на failed
+            await client.query(
+                `UPDATE kuliga_transactions SET status = 'failed' WHERE id = $1`,
+                [transactionId]
+            );
+
+            return bot.sendMessage(chatId,
+                '❌ Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+                {
+                    reply_markup: {
+                        keyboard: [['🔙 Назад в меню']],
+                        resize_keyboard: true
+                    }
+                }
+            );
+        }
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('❌ Ошибка при создании транзакции оплаты тренировки:', error);
         return bot.sendMessage(chatId,
             '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
             {
@@ -14224,8 +14564,12 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null, 
             params.push(location);
         }
 
-        const datesResult = await pool.query(
-            `SELECT DISTINCT kgt.date
+        // Получаем даты и инструкторов одним запросом
+        // Важно: инструктор попадает в список только если его тренировка прошла все проверки (HAVING)
+        const trainingsResult = await pool.query(
+            `SELECT DISTINCT 
+                kgt.date,
+                SPLIT_PART(ki.full_name, ' ', 1) as instructor_surname
              FROM kuliga_group_trainings kgt
              JOIN kuliga_instructors ki ON kgt.instructor_id = ki.id
              LEFT JOIN kuliga_bookings kb ON kgt.id = kb.group_training_id 
@@ -14244,13 +14588,13 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null, 
                        AND kgt.start_time > (NOW() AT TIME ZONE 'Asia/Yekaterinburg')::time
                    )
                )
-             GROUP BY kgt.id, kgt.date, kgt.max_participants
+             GROUP BY kgt.id, kgt.date, kgt.max_participants, ki.full_name
              HAVING COALESCE(SUM(kb.participants_count), 0) < kgt.max_participants
-             ORDER BY kgt.date`,
+             ORDER BY kgt.date, instructor_surname`,
             params
         );
 
-        if (datesResult.rows.length === 0) {
+        if (trainingsResult.rows.length === 0) {
             return bot.sendMessage(chatId,
                 '❌ *На ближайшие 30 дней нет созданных групповых тренировок!*\n\n' +
                 'Попробуйте выбрать вариант "У меня своя группа" или обратитесь к администратору.',
@@ -14264,16 +14608,51 @@ async function showKuligaGroupTrainingDates(chatId, clientId, sportType = null, 
             );
         }
 
-        // Формируем кнопки с датами
+        // Группируем даты и инструкторов
+        // ВАЖНО: Правильно обрабатываем дату из базы данных с учетом часового пояса
+        const datesWithInstructors = new Map();
+        trainingsResult.rows.forEach(row => {
+            // Правильно обрабатываем дату из PostgreSQL (тип DATE)
+            let dateStr;
+            if (row.date instanceof Date) {
+                // Если это объект Date, преобразуем его в момент в нужном часовом поясе
+                // Используем полдень, чтобы избежать проблем с часовыми поясами
+                dateStr = moment.tz(row.date, 'Asia/Yekaterinburg').format('YYYY-MM-DD');
+            } else if (typeof row.date === 'string') {
+                // Если это строка, убираем время если есть
+                dateStr = row.date.split('T')[0].split(' ')[0];
+            } else {
+                // Пытаемся преобразовать в строку
+                dateStr = String(row.date).split('T')[0].split(' ')[0];
+            }
+            
+            if (!datesWithInstructors.has(dateStr)) {
+                datesWithInstructors.set(dateStr, new Set());
+            }
+            if (row.instructor_surname) {
+                datesWithInstructors.get(dateStr).add(row.instructor_surname);
+            }
+        });
+
+        // Формируем кнопки с датами и инструкторами
         const dateButtons = [];
         const dateMap = new Map();
 
-        datesResult.rows.forEach((row, index) => {
-            const date = moment(row.date).tz('Asia/Yekaterinburg');
+        // Получаем уникальные даты из результата запроса
+        const uniqueDates = Array.from(datesWithInstructors.keys()).sort();
+        
+        uniqueDates.forEach((dateKey, index) => {
+            // Создаем момент в часовом поясе Екатеринбурга, используя полдень для избежания смещений
+            const date = moment.tz(dateKey + 'T12:00:00', 'Asia/Yekaterinburg');
             const dateStr = date.format('DD.MM.YYYY');
             const dayName = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][date.day()];
-            const buttonText = `${dateStr} (${dayName})`;
-            dateMap.set(buttonText, row.date);
+            const instructorsSet = datesWithInstructors.get(dateKey) || new Set();
+            const instructorsList = Array.from(instructorsSet).join(', ');
+            const buttonText = instructorsList 
+                ? `${dateStr} (${dayName}) ${instructorsList}`
+                : `${dateStr} (${dayName})`;
+            // Сохраняем дату в формате YYYY-MM-DD для дальнейшего использования
+            dateMap.set(buttonText, dateKey);
             
             if (index % 2 === 0) {
                 dateButtons.push([buttonText]);
@@ -14595,6 +14974,10 @@ async function confirmAndPayKuligaExistingGroupBooking(chatId, state) {
         message += `🏔️ *Место:* ${locationName}\n`;
         const occupiedPlacesAfter = (state.data.current_participants || 0) + participants.length;
         message += `👥 *Занято мест:* ${occupiedPlacesAfter}/${state.data.max_participants}\n`;
+        const trainingLevel = state.data.training_level !== undefined ? convertLevelToNumber(state.data.training_level) : null;
+        if (trainingLevel !== null) {
+            message += `📊 *Уровень:* ${trainingLevel}/10\n`;
+        }
         if (state.data.training_description) {
             message += `📝 *Описание:* ${state.data.training_description}\n`;
         }
@@ -14949,11 +15332,23 @@ async function createKuligaExistingGroupBooking(chatId, state) {
 
         if (balance < totalPrice) {
             await client.query('ROLLBACK');
+            
+            // Сохраняем состояние для обработки выбора способа оплаты
+            state.step = 'kuliga_group_payment_choice';
+            userStates.set(chatId, state);
+            
             return bot.sendMessage(chatId,
-                `❌ Недостаточно средств.\nТребуется: ${totalPrice.toFixed(2)} руб.\nДоступно: ${balance.toFixed(2)} руб.`,
+                `❌ <b>Недостаточно средств</b>\n\n` +
+                `💰 Требуется: <b>${totalPrice.toFixed(2)} ₽</b>\n` +
+                `💵 Доступно: <b>${balance.toFixed(2)} ₽</b>\n\n` +
+                `Нажмите кнопку ниже для оплаты:`,
                 {
+                    parse_mode: 'HTML',
                     reply_markup: {
-                        keyboard: [['💳 Пополнить баланс'], ['🔙 Назад в меню']],
+                        keyboard: [
+                            ['💳 Оплатить'],
+                            ['🔙 Назад в меню']
+                        ],
                         resize_keyboard: true
                     }
                 }

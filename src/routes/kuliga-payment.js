@@ -1081,6 +1081,59 @@ router.post(
                         } else {
                             console.log(`⚠️ Email клиента не указан или невалиден для бронирования #${bookingId}`);
                         }
+
+                        // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                        if (rawData.source === 'bot') {
+                            try {
+                                const bot = require('../bot/client-bot').bot;
+                                const clientResult = await pool.query(
+                                    'SELECT telegram_id FROM clients WHERE id = $1',
+                                    [bookingData.client_id]
+                                );
+                                
+                                if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                    const telegramId = clientResult.rows[0].telegram_id;
+                                    
+                                    // Форматируем дату и время
+                                    const formatDate = (dateStr) => {
+                                        const date = new Date(dateStr);
+                                        const day = date.getDate().toString().padStart(2, '0');
+                                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                        const year = date.getFullYear();
+                                        return `${day}.${month}.${year}`;
+                                    };
+                                    
+                                    const formatTime = (timeStr) => {
+                                        if (!timeStr) return '';
+                                        const time = timeStr.toString();
+                                        return time.substring(0, 5);
+                                    };
+                                    
+                                    const dateFormatted = formatDate(bookingData.date);
+                                    const timeFormatted = formatTime(bookingData.start_time);
+                                    const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                    const bookingTypeText = bookingData.booking_type === 'individual' ? 'Индивидуальное занятие' : 'Групповое занятие';
+                                    
+                                    let message = `✅ <b>Тренировка успешно оплачена и забронирована!</b>\n\n`;
+                                    message += `📅 Дата: ${dateFormatted}\n`;
+                                    message += `⏰ Время: ${timeFormatted}\n`;
+                                    message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                    message += `💰 Сумма: ${bookingData.price_total.toFixed(2)} ₽\n`;
+                                    
+                                    if (bookingData.participants_count > 1) {
+                                        message += `👥 Участников: ${bookingData.participants_count}\n`;
+                                    }
+                                    
+                                    message += `\n🎉 Ждем вас на тренировке!`;
+                                    
+                                    await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                    console.log(`✅ Уведомление в Telegram отправлено клиенту (telegram_id: ${telegramId})`);
+                                }
+                            } catch (telegramError) {
+                                console.error('❌ Ошибка при отправке уведомления в Telegram клиенту:', telegramError);
+                                // Не прерываем выполнение
+                            }
+                        }
                     } catch (notifyError) {
                         console.error('Ошибка при отправке уведомлений после создания бронирования:', notifyError);
                     }
