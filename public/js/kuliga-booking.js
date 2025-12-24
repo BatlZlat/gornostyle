@@ -281,6 +281,10 @@
         const bookingTypeParam = params.get('bookingType'); // individual или group
         const priceTypeParam = params.get('priceType') || params.get('type'); // individual или group (поддерживаем оба параметра для совместимости)
 
+        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
+        const groupTrainingIdParam = params.get('groupTrainingId');
+        const fromSlotParam = params.get('fromSlot') === 'true';
+
         // Если перешли по клику на слот - предзаполняем данные
         if (slotIdParam && dateParam) {
             state.date = dateParam;
@@ -293,11 +297,11 @@
                 instructorId: instructorIdParam ? parseInt(instructorIdParam) : null,
                 startTime: startTimeParam || '',
             };
+            // Если перешли со свободного слота (fromSlot=true и нет groupTrainingId), помечаем это
+            if (fromSlotParam && !groupTrainingIdParam) {
+                state.fromFreeSlot = true; // Флаг, что перешли со свободного (зеленого) слота
+            }
         }
-
-        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
-        const groupTrainingIdParam = params.get('groupTrainingId');
-        const fromSlotParam = params.get('fromSlot') === 'true';
         const gtPricePerPersonParam = params.get('gtPricePerPerson');
         const gtMaxParticipantsParam = params.get('gtMaxParticipants');
         const gtCurrentParticipantsParam = params.get('gtCurrentParticipants');
@@ -2076,7 +2080,17 @@
                 throw new Error(data.error || 'Не удалось загрузить свободные слоты');
             }
 
-            state.availability = data.data || [];
+            let allSlots = data.data || [];
+            
+            // Если перешли со свободного слота, фильтруем только свободные слоты (без групповых тренировок)
+            if (state.fromFreeSlot) {
+                state.availability = allSlots.filter(slot => {
+                    // Показываем только свободные слоты (без group_training)
+                    return !slot.group_training;
+                });
+            } else {
+                state.availability = allSlots;
+            }
 
             // Если есть presetSlot (переход по клику на слот), пытаемся найти и выбрать его
             if (state.presetSlot && !state.slot) {
@@ -2107,6 +2121,22 @@
                     }
                     // Очищаем presetSlot, так как слот найден
                     delete state.presetSlot;
+                } else if (state.fromFreeSlot) {
+                    // Если перешли со свободного слота, но слот не найден в отфильтрованном списке,
+                    // проверяем, не был ли он занят групповой тренировкой
+                    const originalSlot = allSlots.find((slot) => 
+                        slot.slot_id === state.presetSlot.slotId ||
+                        (state.presetSlot.instructorId && slot.instructor_id === state.presetSlot.instructorId && 
+                         slot.start_time === state.presetSlot.startTime)
+                    );
+                    if (originalSlot && originalSlot.group_training) {
+                        // Слот был занят групповой тренировкой - очищаем presetSlot
+                        delete state.presetSlot;
+                    } else if (originalSlot) {
+                        // Слот все еще свободен, но не попал в фильтр - используем его
+                        state.slot = originalSlot;
+                        delete state.presetSlot;
+                    }
                 }
             } else if (state.slot) {
                 // Сохраняем текущий выбранный слот, если он доступен
@@ -2123,7 +2153,22 @@
                         state.selection.groupTrainingAvailableSlots = gt.available_slots;
                     }
                 } else {
-                    state.slot = null;
+                    // Если перешли со свободного слота, но слот не найден в отфильтрованном списке,
+                    // проверяем, не был ли он занят групповой тренировкой
+                    if (state.fromFreeSlot) {
+                        const originalSlot = allSlots.find((slot) => slot.slot_id === state.slot.slot_id);
+                        if (originalSlot && originalSlot.group_training) {
+                            // Слот был занят групповой тренировкой - очищаем выбор
+                            state.slot = null;
+                        } else if (originalSlot) {
+                            // Слот все еще свободен, но не попал в фильтр - оставляем его
+                            state.slot = originalSlot;
+                        } else {
+                            state.slot = null;
+                        }
+                    } else {
+                        state.slot = null;
+                    }
                 }
             }
 
