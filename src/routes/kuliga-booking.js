@@ -57,12 +57,14 @@ const buildAdminContactSuffix = () => {
 };
 
 // Нормализуем ФИО: приводим к нижнему регистру, убираем лишние пробелы
-const normalizeFullName = (name = '') =>
-    name
+const normalizeFullName = (name = '') => {
+    if (!name) return '';
+    return name
         .toString()
         .trim()
         .toLowerCase()
         .replace(/\s+/g, ' ');
+};
 
 // Преобразование текстового уровня тренировки в числовой
 const convertLevelToNumber = (level) => {
@@ -81,6 +83,7 @@ const convertLevelToNumber = (level) => {
 
 // Определение типа тренировки по описанию
 const determineTrainingTypeFromDescription = (description = '') => {
+    if (!description) return 'general';
     const desc = description.toString().trim().toLowerCase();
     if (!desc) return 'general';
     const childrenKeywords = ['дети', 'детск', 'для детей', 'детская', 'ребёнок', 'ребенок'];
