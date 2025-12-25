@@ -80,6 +80,52 @@ router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/fail', (req, r
     });
 });
 
+// Страницы после оплаты для бота (без ссылок на Telegram)
+router.get('/bot/payment/success', async (req, res) => {
+    const orderId = req.query.orderId || req.query.order_id || null;
+    const amount = req.query.amount ? parseFloat(req.query.amount) : null;
+    const orderNumber = req.query.orderNumber || orderId || null;
+    
+    // Получатель по умолчанию
+    const recipient = 'Индивидуальный предприниматель Тебякин Данила Юрьевич';
+    
+    // Если есть orderId, пытаемся получить данные из БД
+    let finalAmount = amount;
+    let finalOrderNumber = orderNumber;
+    
+    if (orderId && !amount) {
+        try {
+            // Пытаемся найти транзакцию по orderId
+            const txResult = await pool.query(
+                `SELECT id, amount, provider_order_id 
+                 FROM kuliga_transactions 
+                 WHERE provider_order_id = $1 OR provider_order_id LIKE $2
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [orderId, `${orderId}%`]
+            );
+            
+            if (txResult.rows.length > 0) {
+                const tx = txResult.rows[0];
+                finalAmount = parseFloat(tx.amount);
+                finalOrderNumber = tx.provider_order_id || orderId;
+            }
+        } catch (error) {
+            console.error('Ошибка при получении данных транзакции:', error);
+        }
+    }
+    
+    res.render('bot-payment-success', {
+        amount: finalAmount,
+        orderNumber: finalOrderNumber,
+        recipient: recipient
+    });
+});
+
+router.get('/bot/payment/fail', (req, res) => {
+    res.render('bot-payment-fail');
+});
+
 router.get('/user-agreement', (req, res) => {
     res.render('user-agreement', {
         pageTitle: 'Пользовательское соглашение - Горностайл72',
@@ -265,10 +311,11 @@ router.get('/api/kuliga/instructors', async (req, res) => {
         if (instructorIds.length > 0) {
             const [slotResult, groupTrainingResult] = await Promise.all([
                 pool.query(
-                    `SELECT id, instructor_id, date, start_time, end_time, status
+                    `SELECT id, instructor_id, date::text as date, start_time, end_time, status, hold_until
                      FROM kuliga_schedule_slots
                      WHERE instructor_id = ANY($1)
                        AND date BETWEEN $2 AND $3
+                       AND (status = 'available' OR status = 'group' OR (status = 'hold' AND (hold_until IS NULL OR hold_until < NOW())))
                      ORDER BY date, start_time`,
                     [instructorIds, startDate, endDate]
                 ),
@@ -302,6 +349,17 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             ]);
             slots = slotResult.rows;
             groupTrainings = groupTrainingResult.rows;
+            
+            // Отладочное логирование
+            console.log(`[kuliga-public] Загружено слотов: ${slots.length}, групповых тренировок: ${groupTrainings.length}`);
+            if (slots.length > 0) {
+                console.log(`[kuliga-public] Примеры слотов:`, slots.slice(0, 3).map(s => ({
+                    id: s.id,
+                    date: s.date,
+                    status: s.status,
+                    hold_until: s.hold_until
+                })));
+            }
         }
 
         const scheduleByInstructor = instructorIds.reduce((acc, id) => {
@@ -315,9 +373,22 @@ router.get('/api/kuliga/instructors', async (req, res) => {
         // Добавляем слоты (только те, на которых НЕТ групповых тренировок)
         // Слоты с групповыми тренировками будут показаны только как групповые тренировки
         slots.forEach((slot) => {
-            const dateKey = formatDate(slot.date);
-            if (!scheduleByInstructor[slot.instructor_id]) return;
+            // Важно: PostgreSQL возвращает date как объект Date, который может быть в UTC
+            // Используем явное форматирование через moment с учетом часового пояса
+            // Если date - это строка в формате YYYY-MM-DD, используем её напрямую
+            let dateKey;
+            if (typeof slot.date === 'string' && slot.date.match(/^\d{4}-\d{2}-\d{2}/)) {
+                dateKey = slot.date.split('T')[0]; // Берем только дату из строки
+            } else {
+                dateKey = formatDate(slot.date);
+            }
+            
+            if (!scheduleByInstructor[slot.instructor_id]) {
+                console.log(`[kuliga-public] Пропуск слота #${slot.id}: инструктор ${slot.instructor_id} не найден в scheduleByInstructor`);
+                return;
+            }
             if (!scheduleByInstructor[slot.instructor_id][dateKey]) {
+                console.log(`[kuliga-public] Создание массива для инструктора ${slot.instructor_id}, дата ${dateKey} (исходная дата: ${slot.date})`);
                 scheduleByInstructor[slot.instructor_id][dateKey] = [];
             }
             // Проверяем, есть ли на этом слоте групповая тренировка
@@ -325,13 +396,37 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             // Показываем слот только если на нем НЕТ групповой тренировки
             // (групповые тренировки будут показаны отдельно ниже)
             if (!trainingOnSlot) {
+                // Нормализуем статус: если hold истек или hold_until отсутствует, показываем как available
+                let normalizedStatus = slot.status;
+                if (slot.status === 'hold') {
+                    // Если hold_until отсутствует или истек, нормализуем в available
+                    if (!slot.hold_until) {
+                        normalizedStatus = 'available';
+                        console.log(`[kuliga-public] Слот #${slot.id} (${slot.date} ${slot.start_time}): hold без hold_until -> available`);
+                    } else {
+                        const holdUntil = new Date(slot.hold_until);
+                        const now = new Date();
+                        if (holdUntil < now) {
+                            normalizedStatus = 'available';
+                            console.log(`[kuliga-public] Слот #${slot.id} (${slot.date} ${slot.start_time}): hold истек -> available`);
+                        } else {
+                            // Если hold еще не истек, не добавляем слот (он не должен отображаться)
+                            console.log(`[kuliga-public] Слот #${slot.id} (${slot.date} ${slot.start_time}): hold активен, пропускаем`);
+                            return; // Пропускаем этот слот
+                        }
+                    }
+                }
+                
+                console.log(`[kuliga-public] Добавление слота #${slot.id} (${slot.date} ${slot.start_time}) для инструктора ${slot.instructor_id}, дата ${dateKey}, статус ${normalizedStatus}`);
                 scheduleByInstructor[slot.instructor_id][dateKey].push({
                     id: slot.id,
                     startTime: slot.start_time,
                     endTime: slot.end_time,
-                    status: slot.status,
+                    status: normalizedStatus,
                     type: 'slot'
                 });
+            } else {
+                console.log(`[kuliga-public] Слот #${slot.id} пропущен: на нем групповая тренировка`);
             }
         });
 
@@ -342,6 +437,24 @@ router.get('/api/kuliga/instructors', async (req, res) => {
             if (!scheduleByInstructor[training.instructor_id][dateKey]) {
                 scheduleByInstructor[training.instructor_id][dateKey] = [];
             }
+            
+            // Преобразуем уровень в числовой формат
+            let skillLevel = null;
+            if (training.level !== null && training.level !== undefined) {
+                if (typeof training.level === 'number') {
+                    skillLevel = training.level;
+                } else if (typeof training.level === 'string') {
+                    // Преобразуем текстовый уровень в число
+                    const levelMap = {
+                        'beginner': 1,
+                        'intermediate': 2,
+                        'advanced': 3
+                    };
+                    const levelLower = training.level.toLowerCase();
+                    skillLevel = levelMap[levelLower] || parseInt(training.level) || null;
+                }
+            }
+            
             scheduleByInstructor[training.instructor_id][dateKey].push({
                 id: training.id,
                 slotId: training.slot_id,
@@ -355,7 +468,7 @@ router.get('/api/kuliga/instructors', async (req, res) => {
                 pricePerPerson: training.price_per_person,
                 description: training.description,
                 programId: training.program_id || null,
-                level: training.level || null
+                level: skillLevel  // Передаем уже преобразованный числовой уровень
             });
         });
 

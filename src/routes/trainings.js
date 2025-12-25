@@ -168,19 +168,6 @@ router.post('/', async (req, res) => {
             return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
         };
 
-        // Формируем текст уведомления для клиентов
-        const clientTrainingText =
-`Друзья! Создана новая *${training.training_type ? 'групповая' : 'индивидуальная'} тренировка*! Присоединяйтесь, в группе тренироваться дешевле и интересней!
-
-👥 *Группа:* ${training.group_name || '-'}
-📅 *Дата:* ${formatDate(training.session_date)}
-⏰ *Время:* ${training.start_time ? training.start_time.slice(0,5) : '-'}
-⏱ *Длительность:* ${training.duration || 60} минут
-👤 *Тренер:* ${training.trainer_name || '-'}
-👥 *Мест:* ${training.max_participants}
-📊 *Уровень:* ${training.skill_level}
-💰 *Стоимость:* ${Number(training.price).toFixed(2)} руб.`;
-
         // Формируем текст уведомления для администраторов
         const adminTrainingText =
 `✅ *Создана новая тренировка!*
@@ -193,21 +180,6 @@ router.post('/', async (req, res) => {
 👥 *Мест:* ${training.max_participants}
 📊 *Уровень:* ${training.skill_level}
 💰 *Стоимость:* ${Number(training.price).toFixed(2)} руб.`;
-
-        // Уведомление клиентам
-        const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-        const clientsResult = await client.query('SELECT telegram_id FROM clients WHERE telegram_id IS NOT NULL');
-        for (const c of clientsResult.rows) {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    chat_id: c.telegram_id, 
-                    text: clientTrainingText,
-                    parse_mode: 'Markdown'
-                })
-            });
-        }
 
         // Отправляем уведомления администраторам
         const ADMIN_BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;

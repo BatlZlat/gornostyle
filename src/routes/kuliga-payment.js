@@ -225,8 +225,15 @@ router.post(
             console.error('❌ orderId не определён после всех попыток, полный payload:', JSON.stringify(payload, null, 2));
         }
 
-        // Поддерживаем новый формат gornostyle72-winter-{id} и старый kuliga-{id} для обратной совместимости
-        if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && !orderId.startsWith('kuliga-'))) {
+        // Поддерживаем форматы:
+        // - gornostyle72-winter-{id} - для бронирований
+        // - gornostyle72-wallet-{id} - для пополнения кошелька
+        // - kuliga-tx-{id} - старый формат транзакций
+        // - kuliga-{id} - очень старый формат (booking_id)
+        if (!orderId || (!orderId.startsWith('gornostyle72-winter-') && 
+                         !orderId.startsWith('gornostyle72-wallet-') && 
+                         !orderId.startsWith('kuliga-tx-') && 
+                         !orderId.startsWith('kuliga-'))) {
             console.warn(`⚠️ Получен callback ${providerName} с неподдерживаемым OrderId:`, orderId);
             
             // Логируем неподдерживаемый webhook
@@ -254,8 +261,11 @@ router.post(
         // Если нет - создаём бронирование из provider_raw_data
         let transactionId;
         if (orderId.startsWith('gornostyle72-winter-')) {
-            // Новый формат: gornostyle72-winter-{transactionId}
+            // Новый формат: gornostyle72-winter-{transactionId} - для бронирований
             transactionId = Number(orderId.replace('gornostyle72-winter-', ''));
+        } else if (orderId.startsWith('gornostyle72-wallet-')) {
+            // Формат: gornostyle72-wallet-{transactionId} - для пополнения кошелька
+            transactionId = Number(orderId.replace('gornostyle72-wallet-', ''));
         } else if (orderId.startsWith('kuliga-tx-')) {
             // Старый формат: kuliga-tx-{transactionId}
             transactionId = Number(orderId.replace('kuliga-tx-', ''));
@@ -285,7 +295,7 @@ router.post(
 
             // Находим транзакцию
             const transactionResult = await client.query(
-                `SELECT id, booking_id, client_id, amount, status as tx_status, provider_raw_data
+                `SELECT id, booking_id, client_id, amount, status as tx_status, type, provider_raw_data
                  FROM kuliga_transactions
                  WHERE id = $1
                  FOR UPDATE`,
@@ -326,6 +336,7 @@ router.post(
 
             const transaction = transactionResult.rows[0];
             bookingId = transaction.booking_id;
+            const transactionType = transaction.type || 'payment';
 
             // Определяем статус платежа
             const isSuccess = status === 'SUCCESS';
@@ -333,13 +344,212 @@ router.post(
             const isRefunded = status === 'REFUNDED';
             const isPending = status === 'PENDING';
 
+            // Проверяем, является ли это пополнением кошелька
+            // Пополнение кошелька: booking_id = NULL и есть walletRefillData в provider_raw_data
+            let isWalletRefill = false;
+            if (!bookingId) {
+                try {
+                    const rawData = typeof transaction.provider_raw_data === 'string' 
+                        ? JSON.parse(transaction.provider_raw_data) 
+                        : transaction.provider_raw_data;
+                    isWalletRefill = !!(rawData && rawData.walletRefillData);
+                } catch (e) {
+                    // Игнорируем ошибки парсинга
+                }
+            }
+
             console.log(`📝 Обрабатываем вебхук для transaction #${transactionId}:`, {
+                transactionType,
+                isWalletRefill,
                 bookingId,
                 paymentStatus: status,
                 isSuccess,
                 isFailed,
                 isRefunded
             });
+
+            // ОБРАБОТКА ПОПОЛНЕНИЯ КОШЕЛЬКА
+            if (isWalletRefill) {
+                if (isSuccess) {
+                    console.log(`💰 Пополнение кошелька успешно (transaction #${transactionId})`);
+                    
+                    // Извлекаем данные пополнения
+                    let rawData = {};
+                    try {
+                        if (typeof transaction.provider_raw_data === 'string') {
+                            rawData = JSON.parse(transaction.provider_raw_data);
+                        } else if (transaction.provider_raw_data) {
+                            rawData = transaction.provider_raw_data;
+                        }
+                    } catch (parseError) {
+                        console.error(`❌ [Webhook] Ошибка парсинга provider_raw_data для пополнения кошелька:`, parseError);
+                        rawData = {};
+                    }
+                    
+                    const walletRefillData = rawData.walletRefillData;
+                    
+                    if (!walletRefillData || !walletRefillData.client_id) {
+                        await client.query('ROLLBACK');
+                        errorMessage = `Данные пополнения кошелька не найдены в транзакции #${transactionId}`;
+                        console.error(`⚠️ ${errorMessage}`);
+                        
+                        await logWebhook({
+                            provider: providerName,
+                            webhookType,
+                            paymentId,
+                            orderId,
+                            bookingId: null,
+                            status,
+                            amount,
+                            paymentMethod,
+                            rawPayload: payload,
+                            headers,
+                            signatureValid: true,
+                            processed: false,
+                            errorMessage
+                        });
+                        
+                        return res.status(200).send('OK');
+                    }
+                    
+                    // Пополняем баланс кошелька
+                    await client.query(
+                        `UPDATE wallets 
+                         SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                         WHERE client_id = $2`,
+                        [transaction.amount, walletRefillData.client_id]
+                    );
+                    
+                    // Получаем wallet_id для создания транзакции
+                    const walletResult = await client.query(
+                        'SELECT id FROM wallets WHERE client_id = $1',
+                        [walletRefillData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        
+                        // Создаем запись в transactions
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description, created_at)
+                             VALUES ($1, $2, 'refill', $3, CURRENT_TIMESTAMP)`,
+                            [walletId, transaction.amount, `Пополнение через интернет-эквайринг`]
+                        );
+                    }
+                    
+                    // Обновляем статус транзакции
+                    await client.query(
+                        `UPDATE kuliga_transactions 
+                         SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [transactionId]
+                    );
+                    
+                    await client.query('COMMIT');
+                    
+                    // Отправляем уведомление клиенту в Telegram
+                    try {
+                        const clientResult = await pool.query(
+                            'SELECT telegram_id, full_name FROM clients WHERE id = $1',
+                            [walletRefillData.client_id]
+                        );
+                        
+                        if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                            const { telegram_id, full_name } = clientResult.rows[0];
+                            
+                            // Получаем новый баланс
+                            const balanceResult = await pool.query(
+                                'SELECT balance FROM wallets WHERE client_id = $1',
+                                [walletRefillData.client_id]
+                            );
+                            const newBalance = parseFloat(balanceResult.rows[0]?.balance || 0);
+                            
+                            const bot = require('../bot/client-bot').bot;
+                            await bot.sendMessage(
+                                telegram_id,
+                                `✅ <b>Кошелек успешно пополнен!</b>\n\n` +
+                                `💰 Сумма пополнения: ${transaction.amount.toFixed(2)} ₽\n` +
+                                `💵 Новый баланс: ${newBalance.toFixed(2)} ₽\n\n` +
+                                `Спасибо за пополнение! Теперь вы можете использовать средства для покупки сертификатов и оплаты тренировок.`,
+                                { parse_mode: 'HTML' }
+                            );
+                            
+                            console.log(`✅ Уведомление о пополнении кошелька отправлено клиенту ${full_name} (telegram_id: ${telegram_id})`);
+                        }
+                    } catch (notifyError) {
+                        console.error('❌ Ошибка при отправке уведомления о пополнении кошелька:', notifyError);
+                        // Не прерываем выполнение, так как основная операция успешна
+                    }
+                    
+                    processed = true;
+                    console.log(`✅ Пополнение кошелька обработано успешно (transaction #${transactionId})`);
+                    
+                } else if (isFailed || isRefunded) {
+                    // Обновляем статус транзакции на failed
+                    await client.query(
+                        `UPDATE kuliga_transactions 
+                         SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $1`,
+                        [transactionId]
+                    );
+                    
+                    // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                    try {
+                        const rawData = transaction.provider_raw_data || {};
+                        if (rawData.source === 'bot' && rawData.walletRefillData) {
+                            const bot = require('../bot/client-bot').bot;
+                            const clientResult = await client.query(
+                                'SELECT telegram_id FROM clients WHERE id = $1',
+                                [rawData.walletRefillData.client_id]
+                            );
+                            
+                            if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                const telegramId = clientResult.rows[0].telegram_id;
+                                const amount = rawData.walletRefillData.amount || 0;
+                                
+                                let message = `❌ <b>Пополнение кошелька не удалось</b>\n\n`;
+                                message += `💰 Сумма: ${amount.toFixed(2)} ₽\n`;
+                                if (isRefunded) {
+                                    message += `💳 Статус: Возврат средств\n\n`;
+                                    message += `Средства были возвращены. Если деньги списались, они вернутся на ваш счет в течение нескольких дней.`;
+                                } else {
+                                    message += `💳 Статус: Платеж отклонен\n\n`;
+                                    message += `Пожалуйста, проверьте данные карты и попробуйте снова.`;
+                                }
+                                
+                                await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                console.log(`✅ Уведомление о неудачном пополнении отправлено клиенту (telegram_id: ${telegramId})`);
+                            }
+                        }
+                    } catch (telegramError) {
+                        console.error('❌ Ошибка при отправке уведомления в Telegram о неудачном пополнении:', telegramError);
+                        // Не прерываем выполнение
+                    }
+                    
+                    await client.query('COMMIT');
+                    processed = true;
+                    console.log(`❌ Пополнение кошелька не удалось (transaction #${transactionId})`);
+                }
+                
+                // Логируем webhook
+                await logWebhook({
+                    provider: providerName,
+                    webhookType,
+                    paymentId,
+                    orderId,
+                    bookingId: null,
+                    status,
+                    amount,
+                    paymentMethod,
+                    rawPayload: payload,
+                    headers,
+                    signatureValid: true,
+                    processed,
+                    errorMessage: null
+                });
+                
+                return res.status(200).send('OK');
+            }
 
             // НОВАЯ ЛОГИКА: Если оплата успешна и бронирование ещё не создано - создаём его
             if (isSuccess && !bookingId) {
@@ -411,7 +621,12 @@ router.post(
                 }
                 
                 // Разделяем логику для индивидуальных и групповых бронирований
-                if (bookingData.booking_type === 'individual') {
+                if (bookingData.booking_type === 'individual_natural_slope') {
+                    // Индивидуальные тренировки на тренажере (естественный склон)
+                    // Не нужно обрабатывать слоты, так как они создаются в individual_training_sessions
+                    // Триггер автоматически забронирует слоты
+                    console.log(`✅ Индивидуальная тренировка на тренажере будет создана после оплаты (transaction #${transactionId})`);
+                } else if (bookingData.booking_type === 'individual') {
                     // ИНДИВИДУАЛЬНОЕ БРОНИРОВАНИЕ: Проверяем статус слота
                     // Может быть 'hold' (наш hold) или 'available' (hold истёк или снят фоновой джобой)
                     const slotCheck = await client.query(
@@ -511,6 +726,125 @@ router.post(
                     console.log(`🔓 Слот #${bookingData.slot_id}: ${slotStatus} → booked`);
                     
                 } else if (bookingData.booking_type === 'group') {
+                    let groupTrainingId = bookingData.group_training_id;
+                    
+                    // Если это "своя группа" (group_training_id === null), создаем новую групповую тренировку
+                    if (!groupTrainingId && bookingData.is_own_group) {
+                        console.log(`🔨 Создание новой групповой тренировки для "своей группы" (transaction #${transactionId})`);
+                        
+                        // Проверяем, не занят ли слот другой групповой тренировкой
+                        if (bookingData.slot_id) {
+                            const existingTrainingCheck = await client.query(
+                                `SELECT id, status, current_participants, max_participants
+                                 FROM kuliga_group_trainings
+                                 WHERE slot_id = $1
+                                   AND date = $2
+                                   AND start_time = $3
+                                   AND status IN ('open', 'confirmed')
+                                 FOR UPDATE`,
+                                [bookingData.slot_id, bookingData.date, bookingData.start_time]
+                            );
+                            
+                            if (existingTrainingCheck.rows.length > 0) {
+                                // Слот уже занят групповой тренировкой - используем существующую
+                                const existingTraining = existingTrainingCheck.rows[0];
+                                groupTrainingId = existingTraining.id;
+                                
+                                // Проверяем, есть ли свободные места
+                                const freePlaces = existingTraining.max_participants - existingTraining.current_participants;
+                                if (freePlaces < bookingData.participants_count) {
+                                    await client.query('ROLLBACK');
+                                    errorMessage = `В этой групповой тренировке недостаточно свободных мест (доступно: ${freePlaces}, требуется: ${bookingData.participants_count})`;
+                                    console.error(`⚠️ ${errorMessage}`);
+                                    
+                                    await logWebhook({
+                                        provider: providerName,
+                                        webhookType,
+                                        paymentId,
+                                        orderId,
+                                        bookingId: null,
+                                        status,
+                                        amount,
+                                        paymentMethod,
+                                        rawPayload: payload,
+                                        headers,
+                                        signatureValid: true,
+                                        processed: false,
+                                        errorMessage
+                                    });
+                                    
+                                    return res.status(200).send('OK');
+                                }
+                                
+                                console.log(`✅ Используем существующую групповую тренировку #${groupTrainingId}`);
+                            } else {
+                                // Создаем новую закрытую групповую тренировку
+                                const participantsCount = bookingData.participants_count || 1;
+                                const maxParticipants = Math.max(participantsCount, 4); // Минимум 4 места
+                                
+                                const groupTrainingResult = await client.query(
+                                    `INSERT INTO kuliga_group_trainings (
+                                        instructor_id, slot_id, date, start_time, end_time,
+                                        sport_type, level, description, price_per_person,
+                                        min_participants, max_participants, current_participants,
+                                        status, is_private, location
+                                    ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10, 'confirmed', TRUE, $11)
+                                    RETURNING id`,
+                                    [
+                                        bookingData.instructor_id || null,
+                                        bookingData.slot_id,
+                                        bookingData.date,
+                                        bookingData.start_time,
+                                        bookingData.end_time,
+                                        bookingData.sport_type,
+                                        bookingData.price_per_person || 0,
+                                        participantsCount,
+                                        maxParticipants,
+                                        participantsCount,
+                                        bookingData.location || 'kuliga'
+                                    ]
+                                );
+                                
+                                groupTrainingId = groupTrainingResult.rows[0].id;
+                                
+                                // Обновляем статус слота
+                                await client.query(
+                                    `UPDATE kuliga_schedule_slots
+                                     SET status = 'group', updated_at = CURRENT_TIMESTAMP
+                                     WHERE id = $1`,
+                                    [bookingData.slot_id]
+                                );
+                                
+                                console.log(`✅ Создана новая закрытая групповая тренировка #${groupTrainingId} для слота #${bookingData.slot_id}`);
+                            }
+                        } else {
+                            await client.query('ROLLBACK');
+                            errorMessage = `Для "своей группы" требуется slot_id`;
+                            console.error(`⚠️ ${errorMessage}`);
+                            
+                            await logWebhook({
+                                provider: providerName,
+                                webhookType,
+                                paymentId,
+                                orderId,
+                                bookingId: null,
+                                status,
+                                amount,
+                                paymentMethod,
+                                rawPayload: payload,
+                                headers,
+                                signatureValid: true,
+                                processed: false,
+                                errorMessage
+                            });
+                            
+                            return res.status(200).send('OK');
+                        }
+                        
+                        // Обновляем bookingData с созданным group_training_id
+                        bookingData.group_training_id = groupTrainingId;
+                    }
+                    
                     // ГРУППОВОЕ БРОНИРОВАНИЕ: Проверяем доступность мест в групповой тренировке
                     // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
                     const groupTrainingCheck = await client.query(
@@ -527,7 +861,7 @@ router.post(
                          FROM kuliga_group_trainings kgt
                          WHERE kgt.id = $1
                          FOR UPDATE`,
-                        [bookingData.group_training_id]
+                        [groupTrainingId]
                     );
                     
                     if (!groupTrainingCheck.rows.length) {
@@ -642,6 +976,73 @@ router.post(
                     console.log(`✅ Места в групповой тренировке #${bookingData.group_training_id} подтверждены (transaction #${transactionId})`);
                 }
                 
+                // Обработка частичной оплаты (если есть разница)
+                if (bookingData.is_partial_payment && bookingData.price_difference) {
+                    console.log(`💰 Обработка частичной оплаты: разница ${bookingData.price_difference} ₽, текущий баланс ${bookingData.current_balance} ₽`);
+                    
+                    // Получаем wallet_id клиента
+                    const walletResult = await client.query(
+                        `SELECT w.id FROM wallets w WHERE w.client_id = $1`,
+                        [bookingData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        
+                        // Зачисляем разницу на кошелек
+                        await client.query(
+                            `UPDATE wallets 
+                             SET balance = balance + $1, last_updated = CURRENT_TIMESTAMP 
+                             WHERE id = $2`,
+                            [bookingData.price_difference, walletId]
+                        );
+                        
+                        // Создаем транзакцию пополнения для разницы
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description)
+                             VALUES ($1, $2, 'refill', $3)`,
+                            [
+                                walletId,
+                                bookingData.price_difference,
+                                `Пополнение кошелька (доплата за тренировку)`
+                            ]
+                        );
+                        
+                        console.log(`✅ Зачислено ${bookingData.price_difference} ₽ на кошелек клиента #${bookingData.client_id}`);
+                    }
+                }
+                
+                // Списываем полную сумму с кошелька (если это оплата из бота)
+                if (rawData.source === 'bot') {
+                    const walletResult = await client.query(
+                        `SELECT w.id FROM wallets w WHERE w.client_id = $1`,
+                        [bookingData.client_id]
+                    );
+                    
+                    if (walletResult.rows.length > 0) {
+                        const walletId = walletResult.rows[0].id;
+                        const fullPrice = bookingData.price_total;
+                        
+                        // Списываем полную сумму с кошелька
+                        await client.query(
+                            `UPDATE wallets 
+                             SET balance = balance - $1, last_updated = CURRENT_TIMESTAMP 
+                             WHERE id = $2`,
+                            [fullPrice, walletId]
+                        );
+                        
+                        // Создаем транзакцию списания
+                        const description = `Групповая тренировка Кулига: ${bookingData.sport_type === 'ski' ? 'лыжи' : 'сноуборд'} ${bookingData.date}, ${String(bookingData.start_time).substring(0, 5)}`;
+                        await client.query(
+                            `INSERT INTO transactions (wallet_id, amount, type, description)
+                             VALUES ($1, $2, 'payment', $3)`,
+                            [walletId, -fullPrice, description]
+                        );
+                        
+                        console.log(`✅ Списано ${fullPrice} ₽ с кошелька клиента #${bookingData.client_id}`);
+                    }
+                }
+                
                 // Создаём бронирование
                 console.log(`🔨 Параметры для создания бронирования (transaction #${transactionId}):`, {
                     client_id: bookingData.client_id,
@@ -702,7 +1103,33 @@ router.post(
                         bookingData.payer_rides,
                         bookingData.location
                     ];
+                } else if (bookingData.booking_type === 'group_simulator') {
+                    // Групповые тренировки на тренажере
+                    // Создаем запись в session_participants
+                    insertQuery = `INSERT INTO session_participants (
+                        client_id, session_id, child_id, status
+                    ) VALUES ($1, $2, $3, 'confirmed')
+                    RETURNING id`;
+                    
+                    insertParams = [
+                        bookingData.client_id,
+                        bookingData.session_id,
+                        bookingData.child_id || null
+                    ];
+                    
+                    const newParticipantResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newParticipantResult.rows || !newParticipantResult.rows[0]) {
+                        throw new Error('INSERT INTO session_participants не вернул id');
+                    }
+                    
+                    // Для session_participants bookingId будет null, так как это не kuliga_bookings
+                    bookingId = null;
+                    const participantId = newParticipantResult.rows[0].id;
+                    console.log(`✅ Участник групповой тренировки на тренажере #${participantId} создан после успешной оплаты (transaction #${transactionId})`);
                 } else if (bookingData.booking_type === 'group') {
+                    // Места уже проверены и подтверждены выше (строки 930-976)
+                    // Создаем запрос INSERT для групповой тренировки
                     insertQuery = `INSERT INTO kuliga_bookings (
                         client_id,
                         booking_type,
@@ -734,18 +1161,55 @@ router.post(
                         bookingData.price_per_person,
                         bookingData.location
                     ];
+                } else if (bookingData.booking_type === 'individual_natural_slope') {
+                    // Индивидуальные тренировки на тренажере (естественный склон)
+                    // Создаем запись в individual_training_sessions
+                    const startTime = bookingData.start_time;
+                    const duration = bookingData.duration || 60;
+                    
+                    insertQuery = `INSERT INTO individual_training_sessions (
+                        client_id, child_id, equipment_type, with_trainer,
+                        duration, preferred_date, preferred_time, simulator_id, price
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING id`;
+                    
+                    insertParams = [
+                        bookingData.client_id,
+                        bookingData.child_id || null,
+                        bookingData.equipment_type || 'ski',
+                        bookingData.with_trainer || false,
+                        duration,
+                        bookingData.date,
+                        startTime,
+                        bookingData.simulator_id || null,
+                        bookingData.price_total
+                    ];
+                    
+                    const newTrainingResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newTrainingResult.rows || !newTrainingResult.rows[0]) {
+                        throw new Error('INSERT INTO individual_training_sessions не вернул id');
+                    }
+                    
+                    // Для individual_training_sessions bookingId будет null, так как это не kuliga_bookings
+                    bookingId = null;
+                    const trainingSessionId = newTrainingResult.rows[0].id;
+                    console.log(`✅ Индивидуальная тренировка на тренажере #${trainingSessionId} создана после успешной оплаты (transaction #${transactionId})`);
                 } else {
                     throw new Error(`Неизвестный тип бронирования: ${bookingData.booking_type}`);
                 }
                 
-                const newBookingResult = await client.query(insertQuery, insertParams);
-                
-                if (!newBookingResult.rows || !newBookingResult.rows[0]) {
-                    throw new Error('INSERT INTO kuliga_bookings не вернул id');
+                // Создаем бронирование только для kuliga_bookings
+                if (bookingData.booking_type !== 'individual_natural_slope' && bookingData.booking_type !== 'group_simulator') {
+                    const newBookingResult = await client.query(insertQuery, insertParams);
+                    
+                    if (!newBookingResult.rows || !newBookingResult.rows[0]) {
+                        throw new Error('INSERT INTO kuliga_bookings не вернул id');
+                    }
+                    
+                    bookingId = newBookingResult.rows[0].id;
+                    console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 }
-                
-                bookingId = newBookingResult.rows[0].id;
-                console.log(`✅ Бронирование #${bookingId} создано после успешной оплаты (transaction #${transactionId})`);
                 
                 // booking_id будет обновлен в основном запросе UPDATE транзакции ниже
                 
@@ -903,6 +1367,73 @@ router.post(
                             }
                         } else {
                             console.log(`⚠️ Email клиента не указан или невалиден для бронирования #${bookingId}`);
+                        }
+
+                        // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                        if (rawData.source === 'bot') {
+                            try {
+                                const bot = require('../bot/client-bot').bot;
+                                const clientResult = await pool.query(
+                                    'SELECT telegram_id FROM clients WHERE id = $1',
+                                    [bookingData.client_id]
+                                );
+                                
+                                if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                    const telegramId = clientResult.rows[0].telegram_id;
+                                    
+                                    // Форматируем дату и время
+                                    const formatDate = (dateStr) => {
+                                        const date = new Date(dateStr);
+                                        const day = date.getDate().toString().padStart(2, '0');
+                                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                        const year = date.getFullYear();
+                                        return `${day}.${month}.${year}`;
+                                    };
+                                    
+                                    const formatTime = (timeStr) => {
+                                        if (!timeStr) return '';
+                                        const time = timeStr.toString();
+                                        return time.substring(0, 5);
+                                    };
+                                    
+                                    const dateFormatted = formatDate(bookingData.date);
+                                    const timeFormatted = formatTime(bookingData.start_time);
+                                    const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                    
+                                    let bookingTypeText;
+                                    if (bookingData.booking_type === 'individual_natural_slope') {
+                                        bookingTypeText = 'Индивидуальное занятие на тренажере';
+                                    } else if (bookingData.booking_type === 'group_simulator') {
+                                        bookingTypeText = 'Групповое занятие на тренажере';
+                                    } else if (bookingData.booking_type === 'individual') {
+                                        bookingTypeText = 'Индивидуальное занятие';
+                                    } else {
+                                        bookingTypeText = 'Групповое занятие';
+                                    }
+                                    
+                                    let message = `✅ <b>Тренировка успешно оплачена и забронирована!</b>\n\n`;
+                                    message += `📅 Дата: ${dateFormatted}\n`;
+                                    message += `⏰ Время: ${timeFormatted}\n`;
+                                    message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                    message += `💰 Сумма: ${bookingData.price_total.toFixed(2)} ₽\n`;
+                                    
+                                    if (bookingData.duration) {
+                                        message += `⏱ Длительность: ${bookingData.duration} минут\n`;
+                                    }
+                                    
+                                    if (bookingData.participants_count > 1) {
+                                        message += `👥 Участников: ${bookingData.participants_count}\n`;
+                                    }
+                                    
+                                    message += `\n🎉 Ждем вас на тренировке!`;
+                                    
+                                    await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                    console.log(`✅ Уведомление в Telegram отправлено клиенту (telegram_id: ${telegramId})`);
+                                }
+                            } catch (telegramError) {
+                                console.error('❌ Ошибка при отправке уведомления в Telegram клиенту:', telegramError);
+                                // Не прерываем выполнение
+                            }
                         }
                     } catch (notifyError) {
                         console.error('Ошибка при отправке уведомлений после создания бронирования:', notifyError);
@@ -1112,6 +1643,34 @@ router.post(
                                 [bookingData.participants_count, bookingData.group_training_id]
                             );
                             console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (платеж не прошел)`);
+                        } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                            // Групповое бронирование на тренажере: возвращаем место
+                            await client.query(
+                                `UPDATE training_sessions
+                                 SET current_participants = GREATEST(current_participants - 1, 0),
+                                     status = CASE 
+                                         WHEN current_participants <= 1 THEN 'scheduled'
+                                         ELSE status
+                                     END,
+                                     updated_at = CURRENT_TIMESTAMP
+                                 WHERE id = $1`,
+                                [bookingData.group_id]
+                            );
+                            console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (платеж не прошел)`);
+                        } else if (bookingData.booking_type === 'individual_simulator') {
+                            // Индивидуальное бронирование на тренажере: освобождаем слоты в schedule
+                            if (bookingData.simulator_id && bookingData.date && bookingData.start_time && bookingData.duration) {
+                                await client.query(
+                                    `UPDATE schedule
+                                     SET is_booked = FALSE, updated_at = CURRENT_TIMESTAMP
+                                     WHERE simulator_id = $1
+                                       AND date = $2
+                                       AND start_time >= $3
+                                       AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                                    [bookingData.simulator_id, bookingData.date, bookingData.start_time, bookingData.duration]
+                                );
+                                console.log(`🔓 Слоты на тренажере освобождены (платеж не прошел)`);
+                            }
                         }
                     }
                     
@@ -1188,6 +1747,34 @@ router.post(
                                 [bookingData.participants_count, bookingData.group_training_id]
                             );
                             console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (возврат средств)`);
+                        } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                            // Групповое бронирование на тренажере: возвращаем место
+                            await client.query(
+                                `UPDATE training_sessions
+                                 SET current_participants = GREATEST(current_participants - 1, 0),
+                                     status = CASE 
+                                         WHEN current_participants <= 1 THEN 'scheduled'
+                                         ELSE status
+                                     END,
+                                     updated_at = CURRENT_TIMESTAMP
+                                 WHERE id = $1`,
+                                [bookingData.group_id]
+                            );
+                            console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (возврат средств)`);
+                        } else if (bookingData.booking_type === 'individual_simulator') {
+                            // Индивидуальное бронирование на тренажере: освобождаем слоты в schedule
+                            if (bookingData.simulator_id && bookingData.date && bookingData.start_time && bookingData.duration) {
+                                await client.query(
+                                    `UPDATE schedule
+                                     SET is_booked = FALSE, updated_at = CURRENT_TIMESTAMP
+                                     WHERE simulator_id = $1
+                                       AND date = $2
+                                       AND start_time >= $3
+                                       AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                                    [bookingData.simulator_id, bookingData.date, bookingData.start_time, bookingData.duration]
+                                );
+                                console.log(`🔓 Слоты на тренажере освобождены (возврат средств)`);
+                            }
                         }
                     }
                     
@@ -1226,6 +1813,65 @@ router.post(
                                     console.error(`❌ Ошибка отправки email о возврате клиенту ${bookingData.client_name} на ${bookingData.client_email}: ${emailResult.error}`);
                                 }
                             }
+                            
+                            // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                            if (rawData.source === 'bot' && bookingData && bookingData.client_id) {
+                                try {
+                                    const bot = require('../bot/client-bot').bot;
+                                    const clientResult = await pool.query(
+                                        'SELECT telegram_id FROM clients WHERE id = $1',
+                                        [bookingData.client_id]
+                                    );
+                                    
+                                    if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                        const telegramId = clientResult.rows[0].telegram_id;
+                                        
+                                        // Форматируем дату и время
+                                        const formatDate = (dateStr) => {
+                                            const date = new Date(dateStr);
+                                            const day = date.getDate().toString().padStart(2, '0');
+                                            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                            const year = date.getFullYear();
+                                            return `${day}.${month}.${year}`;
+                                        };
+                                        
+                                        const formatTime = (timeStr) => {
+                                            if (!timeStr) return '';
+                                            const time = timeStr.toString();
+                                            return time.substring(0, 5);
+                                        };
+                                        
+                                        const dateFormatted = formatDate(bookingData.date);
+                                        const timeFormatted = formatTime(bookingData.start_time);
+                                        const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                        let bookingTypeText;
+                                        if (bookingData.booking_type === 'individual') {
+                                            bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'individual_simulator') {
+                                            bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                                        } else if (bookingData.booking_type === 'group') {
+                                            bookingTypeText = 'Групповое занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'group_simulator') {
+                                            bookingTypeText = 'Групповое занятие (тренажер)';
+                                        } else {
+                                            bookingTypeText = 'Занятие';
+                                        }
+                                        
+                                        let message = `💰 <b>Возврат средств за тренировку</b>\n\n`;
+                                        message += `📅 Дата: ${dateFormatted}\n`;
+                                        message += `⏰ Время: ${timeFormatted}\n`;
+                                        message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                        message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                                        message += `💳 <b>Средства возвращены</b>\n\n`;
+                                        message += `Если деньги списались, они вернутся на ваш счет в течение нескольких дней.`;
+                                        
+                                        await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                        console.log(`✅ Уведомление о возврате средств отправлено клиенту (telegram_id: ${telegramId})`);
+                                    }
+                                } catch (telegramError) {
+                                    console.error('❌ Ошибка при отправке уведомления в Telegram о возврате средств:', telegramError);
+                                }
+                            }
                         } catch (emailError) {
                             console.error('Ошибка отправки email о возврате клиенту:', emailError);
                         }
@@ -1260,6 +1906,82 @@ router.post(
                             [bookingData.participants_count, bookingData.group_training_id]
                         );
                         console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (платёж провалился)`);
+                    } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                        // Групповое бронирование на тренажере: возвращаем место
+                        await client.query(
+                            `UPDATE training_sessions
+                             SET current_participants = GREATEST(current_participants - 1, 0),
+                                 status = CASE 
+                                     WHEN current_participants <= 1 THEN 'scheduled'
+                                     ELSE status
+                                 END,
+                                 hold_until = NULL,
+                                 hold_transaction_id = NULL,
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $1`,
+                            [bookingData.group_id]
+                        );
+                        console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (платёж провалился)`);
+                    }
+                    
+                    // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                    try {
+                        if (rawData.source === 'bot' && bookingData.client_id) {
+                            const bot = require('../bot/client-bot').bot;
+                            const clientResult = await client.query(
+                                'SELECT telegram_id FROM clients WHERE id = $1',
+                                [bookingData.client_id]
+                            );
+                            
+                            if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                const telegramId = clientResult.rows[0].telegram_id;
+                                
+                                // Форматируем дату и время
+                                const formatDate = (dateStr) => {
+                                    const date = new Date(dateStr);
+                                    const day = date.getDate().toString().padStart(2, '0');
+                                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                    const year = date.getFullYear();
+                                    return `${day}.${month}.${year}`;
+                                };
+                                
+                                const formatTime = (timeStr) => {
+                                    if (!timeStr) return '';
+                                    const time = timeStr.toString();
+                                    return time.substring(0, 5);
+                                };
+                                
+                                const dateFormatted = formatDate(bookingData.date);
+                                const timeFormatted = formatTime(bookingData.start_time);
+                                const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                let bookingTypeText;
+                                if (bookingData.booking_type === 'individual') {
+                                    bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                                } else if (bookingData.booking_type === 'individual_simulator') {
+                                    bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                                } else if (bookingData.booking_type === 'group') {
+                                    bookingTypeText = 'Групповое занятие (естественный склон)';
+                                } else if (bookingData.booking_type === 'group_simulator') {
+                                    bookingTypeText = 'Групповое занятие (тренажер)';
+                                } else {
+                                    bookingTypeText = 'Занятие';
+                                }
+                                
+                                let message = `❌ <b>Оплата тренировки не удалась</b>\n\n`;
+                                message += `📅 Дата: ${dateFormatted}\n`;
+                                message += `⏰ Время: ${timeFormatted}\n`;
+                                message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                                message += `💳 <b>Платеж отклонен банком</b>\n\n`;
+                                message += `Пожалуйста, проверьте данные карты и попробуйте записаться снова.`;
+                                
+                                await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                console.log(`✅ Уведомление о неудачной оплате отправлено клиенту (telegram_id: ${telegramId})`);
+                            }
+                        }
+                    } catch (telegramError) {
+                        console.error('❌ Ошибка при отправке уведомления в Telegram о неудачной оплате:', telegramError);
+                        // Не прерываем выполнение
                     }
                 }
             }
@@ -1328,5 +2050,255 @@ router.post(
         res.status(500).send('ERROR');
     }
 });
+
+/**
+ * Тестовый endpoint для ручной отправки webhook'а (только для разработки)
+ * Используется для тестирования после реальной оплаты на localhost
+ * 
+ * Вариант 1: Указать transactionId (рекомендуется)
+ * curl -X POST http://localhost:8080/api/kuliga/payment/test-webhook \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"transactionId": 123, "status": "SUCCESS"}'
+ * 
+ * Вариант 2: Указать orderId напрямую
+ * curl -X POST http://localhost:8080/api/kuliga/payment/test-webhook \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"orderId": "gornostyle72-wallet-123", "status": "SUCCESS"}'
+ */
+router.post('/test-webhook', async (req, res) => {
+    // Разрешаем только в development режиме
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ error: 'Test endpoint disabled in production' });
+    }
+
+    try {
+        const { transactionId, orderId, status = 'SUCCESS', paymentMethod = 'card' } = req.body;
+
+        let finalOrderId = orderId;
+        let finalPaymentId = null;
+        let finalAmount = null;
+
+        // Если указан transactionId, получаем данные из БД
+        if (transactionId) {
+            const txResult = await pool.query(
+                `SELECT id, amount, provider_payment_id, provider_order_id, type
+                 FROM kuliga_transactions
+                 WHERE id = $1`,
+                [transactionId]
+            );
+
+            if (!txResult.rows.length) {
+                return res.status(404).json({ error: `Транзакция #${transactionId} не найдена` });
+            }
+
+            const tx = txResult.rows[0];
+            finalOrderId = tx.provider_order_id || `gornostyle72-wallet-${transactionId}`;
+            finalPaymentId = tx.provider_payment_id || `test-payment-${transactionId}`;
+            finalAmount = tx.amount;
+
+            console.log(`🧪 [Test Webhook] Найдена транзакция #${transactionId}:`, {
+                orderId: finalOrderId,
+                paymentId: finalPaymentId,
+                amount: finalAmount,
+                type: tx.type
+            });
+        } else if (!orderId) {
+            return res.status(400).json({ 
+                error: 'Необходимо указать либо transactionId, либо orderId',
+                example: {
+                    transactionId: 123,
+                    status: 'SUCCESS'
+                }
+            });
+        }
+
+        // Формируем payload в формате Точка Банк (JWT формат не нужен для теста)
+        const mockPayload = {
+            orderId: finalOrderId,
+            paymentId: finalPaymentId || `test-${Date.now()}`,
+            operationId: finalPaymentId || `test-op-${Date.now()}`,
+            status: status,
+            amount: finalAmount || 0,
+            paymentMethod: paymentMethod,
+            mock: true
+        };
+
+        console.log('🧪 [Test Webhook] Отправляю webhook:', mockPayload);
+
+        // Создаем фиктивный запрос для обработчика webhook
+        const mockReq = {
+            body: Buffer.from(JSON.stringify(mockPayload)),
+            headers: {
+                'content-type': 'application/json',
+                'x-test-webhook': 'true'
+            }
+        };
+
+        // Создаем фиктивный response объект
+        let responseSent = false;
+        const mockRes = {
+            status: (code) => ({
+                send: (data) => {
+                    if (!responseSent) {
+                        responseSent = true;
+                        console.log(`🧪 [Test Webhook] Response: ${code}`, data);
+                        res.status(code).send(data);
+                    }
+                },
+                json: (data) => {
+                    if (!responseSent) {
+                        responseSent = true;
+                        console.log(`🧪 [Test Webhook] Response: ${code}`, data);
+                        res.status(code).json(data);
+                    }
+                }
+            }),
+            send: (data) => {
+                if (!responseSent) {
+                    responseSent = true;
+                    console.log(`🧪 [Test Webhook] Response: 200`, data);
+                    res.status(200).send(data);
+                }
+            },
+            json: (data) => {
+                if (!responseSent) {
+                    responseSent = true;
+                    console.log(`🧪 [Test Webhook] Response: 200`, data);
+                    res.status(200).json(data);
+                }
+            }
+        };
+
+        // Вызываем основной обработчик webhook напрямую
+        const callbackHandler = router.stack.find(
+            layer => layer.route && 
+                     layer.route.path === '/callback' && 
+                     layer.route.methods.post
+        );
+
+        if (callbackHandler && callbackHandler.route) {
+            // Вызываем middleware обработчика
+            const handler = callbackHandler.route.stack[0].handle;
+            await handler(mockReq, mockRes);
+            
+            // Если обработчик не отправил ответ, отправляем свой
+            if (!responseSent) {
+                res.status(200).json({
+                    success: true,
+                    message: 'Test webhook processed',
+                    orderId: finalOrderId,
+                    status
+                });
+            }
+        } else {
+            console.error('⚠️ [Test Webhook] Не удалось найти обработчик /callback');
+            res.status(500).json({ error: 'Handler not found' });
+        }
+
+    } catch (error) {
+        console.error('❌ [Test Webhook] Ошибка:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * Обрабатывает случай, когда бронирование недоступно (места/слоты уже заняты)
+ * Отправляет уведомление клиенту и инициирует возврат средств
+ */
+async function handleBookingUnavailable(transaction, bookingData, errorMessage, amount, client, providerName, webhookType, paymentId, orderId, status, paymentMethod, payload, headers) {
+    try {
+        // Обновляем статус транзакции на 'failed'
+        await client.query(
+            `UPDATE kuliga_transactions 
+             SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [transaction.id]
+        );
+        
+        await client.query('COMMIT');
+        
+        // Инициируем возврат средств через провайдера
+        try {
+            const provider = PaymentProviderFactory.create();
+            if (provider && typeof provider.refund === 'function') {
+                await provider.refund(paymentId, amount, 'Места/слоты уже заняты');
+                console.log(`💰 Инициирован возврат средств для транзакции #${transaction.id}`);
+            }
+        } catch (refundError) {
+            console.error(`❌ Ошибка при инициировании возврата средств для транзакции #${transaction.id}:`, refundError);
+            // Не прерываем выполнение, продолжаем отправку уведомлений
+        }
+        
+        // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+        const rawData = transaction.provider_raw_data || {};
+        if (rawData.source === 'bot' && bookingData && bookingData.client_id) {
+            try {
+                const bot = require('../bot/client-bot').bot;
+                const clientResult = await pool.query(
+                    'SELECT telegram_id FROM clients WHERE id = $1',
+                    [bookingData.client_id]
+                );
+                
+                if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                    const telegramId = clientResult.rows[0].telegram_id;
+                    
+                    // Форматируем дату и время
+                    const formatDate = (dateStr) => {
+                        const date = new Date(dateStr);
+                        const day = date.getDate().toString().padStart(2, '0');
+                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                        const year = date.getFullYear();
+                        return `${day}.${month}.${year}`;
+                    };
+                    
+                    const formatTime = (timeStr) => {
+                        if (!timeStr) return '';
+                        const time = timeStr.toString();
+                        return time.substring(0, 5);
+                    };
+                    
+                    const dateFormatted = formatDate(bookingData.date);
+                    const timeFormatted = formatTime(bookingData.start_time);
+                    const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                    let bookingTypeText;
+                    if (bookingData.booking_type === 'individual') {
+                        bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                    } else if (bookingData.booking_type === 'individual_simulator') {
+                        bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                    } else if (bookingData.booking_type === 'group') {
+                        bookingTypeText = 'Групповое занятие (естественный склон)';
+                    } else if (bookingData.booking_type === 'group_simulator') {
+                        bookingTypeText = 'Групповое занятие (тренажер)';
+                    } else {
+                        bookingTypeText = 'Занятие';
+                    }
+                    
+                    let message = `❌ <b>Бронирование недоступно</b>\n\n`;
+                    message += `📅 Дата: ${dateFormatted}\n`;
+                    message += `⏰ Время: ${timeFormatted}\n`;
+                    message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                    message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                    message += `⚠️ <b>К сожалению, места/слоты уже заняты</b>\n\n`;
+                    message += `Средства будут возвращены на ваш счет в течение нескольких дней.\n\n`;
+                    message += `Пожалуйста, выберите другое время для записи.`;
+                    
+                    await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                    console.log(`✅ Уведомление о недоступности бронирования отправлено клиенту (telegram_id: ${telegramId})`);
+                }
+            } catch (telegramError) {
+                console.error('❌ Ошибка при отправке уведомления в Telegram о недоступности бронирования:', telegramError);
+            }
+        }
+        
+        console.log(`✅ Обработана недоступность бронирования для транзакции #${transaction.id}`);
+        
+    } catch (error) {
+        console.error(`❌ Ошибка при обработке недоступности бронирования для транзакции #${transaction.id}:`, error);
+        throw error;
+    }
+}
 
 module.exports = router;

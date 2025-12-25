@@ -330,7 +330,13 @@ window.openKuligaInstructorModal = openKuligaInstructorModal;
 window.closeKuligaInstructorModal = closeKuligaInstructorModal;
 
 async function uploadKuligaInstructorPhoto(instructorId) {
-    if (!kuligaPendingPhotoFile) return null;
+    if (!kuligaPendingPhotoFile) {
+        console.warn('⚠️ Нет файла для загрузки фото');
+        return null;
+    }
+
+    console.log('📤 Загрузка фото для инструктора ID:', instructorId);
+    console.log('📁 Файл:', kuligaPendingPhotoFile.name, 'размер:', kuligaPendingPhotoFile.size, 'bytes');
 
     const formData = new FormData();
     formData.append('photo', kuligaPendingPhotoFile);
@@ -345,12 +351,26 @@ async function uploadKuligaInstructorPhoto(instructorId) {
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'Не удалось загрузить фото');
+        console.error('❌ Ошибка ответа сервера:', response.status, error);
+        throw new Error(error.error || error.message || 'Не удалось загрузить фото');
     }
 
     const data = await response.json();
+    console.log('📥 Ответ от API после загрузки фото:', data);
+    
     kuligaPendingPhotoFile = null;
-    return data.photoUrl;
+    
+    // API возвращает { success: true, photoUrl }
+    // Но также может вернуть { success: true, data: { photo_url: ... } }
+    const photoUrl = data.photoUrl || data.data?.photo_url || data.photo_url;
+    
+    if (!photoUrl) {
+        console.error('❌ photoUrl не найден в ответе API. Полный ответ:', JSON.stringify(data, null, 2));
+        throw new Error('Не удалось получить URL загруженного фото из ответа сервера');
+    }
+    
+    console.log('✅ Получен photoUrl:', photoUrl);
+    return photoUrl;
 }
 
 async function handleKuligaInstructorSubmit(event) {
@@ -366,7 +386,6 @@ async function handleKuligaInstructorSubmit(event) {
         fullName: document.getElementById('kuliga-instructor-name').value.trim(),
         phone: document.getElementById('kuliga-instructor-phone').value.trim(),
         email: document.getElementById('kuliga-instructor-email').value.trim() || null,
-        photoUrl: kuligaRemovePhoto ? null : document.getElementById('kuliga-instructor-photo-url').value || null,
         description: document.getElementById('kuliga-instructor-description').value.trim() || null,
         sportType: document.getElementById('kuliga-instructor-sport').value,
         location: document.getElementById('kuliga-instructor-location').value || 'kuliga',
@@ -374,6 +393,19 @@ async function handleKuligaInstructorSubmit(event) {
         hireDate: document.getElementById('kuliga-instructor-hire-date').value || null,
         isActive: document.getElementById('kuliga-instructor-active').checked,
     };
+    
+    // Если есть новое фото для загрузки, не передаем photoUrl в payload - фото будет загружено отдельно через /upload-photo
+    // Если удаляем фото, передаем null
+    // Если нет нового фото и не удаляем, передаем текущий photoUrl (для сохранения существующего)
+    if (kuligaRemovePhoto) {
+        payload.photoUrl = null;
+    } else if (!kuligaPendingPhotoFile) {
+        // Только если нет нового фото для загрузки, используем текущий photoUrl
+        const currentPhotoUrl = document.getElementById('kuliga-instructor-photo-url').value;
+        if (currentPhotoUrl) {
+            payload.photoUrl = currentPhotoUrl;
+        }
+    }
 
     if (!payload.fullName || !payload.phone || !payload.sportType) {
         alert('Пожалуйста, заполните обязательные поля');

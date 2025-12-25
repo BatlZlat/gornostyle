@@ -2251,7 +2251,15 @@ async function editKuligaInstructorForTrainersPage(id) {
                     }
                     
                     const photoResult = await photoResponse.json();
-                    photoUrl = photoResult.data?.photo_url || photoResult.photo_url;
+                    // API возвращает { success: true, photoUrl }
+                    photoUrl = photoResult.photoUrl || photoResult.data?.photo_url || photoResult.photo_url;
+                    
+                    if (!photoUrl) {
+                        console.error('❌ photoUrl не найден в ответе API:', photoResult);
+                        throw new Error('Не удалось получить URL загруженного фото');
+                    }
+                    
+                    console.log('✅ Фото загружено, photoUrl:', photoUrl);
                 }
                 
                 // Обновляем остальные данные инструктора
@@ -3271,6 +3279,7 @@ async function loadCertificates() {
                             <button class="btn-secondary" onclick="viewCertificateDetail(${cert.id})">Просмотр</button>
                             ${cert.status === 'active' ? `<button class="btn-secondary" onclick="editCertificate(${cert.id})">Редактировать</button>` : ''}
                             ${cert.status === 'active' ? `<button class="btn-secondary" onclick="extendCertificate(${cert.id})">Продлить</button>` : ''}
+                            <button class="btn-secondary" onclick="regenerateCertificate('${cert.certificate_number}')" title="Пересоздать изображение сертификата">🔄 Пересоздать</button>
                         </div>
                     </div>
                 `;
@@ -3502,6 +3511,7 @@ async function viewCertificateDetail(id) {
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid #dee2e6;">
                         ${imagePath ? `<button class="btn-secondary" onclick="downloadCertificateImage('${imagePath}', '${cert.certificate_number}')">📥 Скачать изображение</button>` : ''}
                         ${cert.purchaser && cert.purchaser.email ? `<button class="btn-secondary" onclick="resendCertificate(${id})">📧 Отправить повторно</button>` : ''}
+                        <button class="btn-secondary" onclick="regenerateCertificate('${cert.certificate_number}')" title="Пересоздать изображение сертификата">🔄 Пересоздать</button>
                         ${cert.status === 'active' ? `
                             <button class="btn-secondary" onclick="editCertificate(${id})">✏️ Редактировать</button>
                             <button class="btn-secondary" onclick="extendCertificate(${id})">⏰ Продлить срок</button>
@@ -3593,6 +3603,67 @@ async function resendCertificate(id) {
     } catch (error) {
         console.error('Ошибка при отправке сертификата:', error);
         showError('Ошибка при отправке сертификата: ' + error.message);
+    }
+}
+
+// Пересоздание изображения сертификата
+async function regenerateCertificate(certificateNumber) {
+    if (!confirm(`Пересоздать изображение сертификата #${certificateNumber}?\n\nЭто удалит старое изображение и создаст новое с использованием метода предпросмотра.`)) {
+        return;
+    }
+    
+    try {
+        // Показываем индикатор загрузки
+        showLoading('Пересоздание сертификата...');
+        
+        const response = await fetch(`/api/certificates/admin/regenerate/${certificateNumber}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include' // Для отправки cookies с токеном
+        });
+        
+        const result = await response.json();
+        
+        // Убираем индикатор загрузки
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.remove();
+        }
+        
+        if (result.success) {
+            showSuccess(`Сертификат #${certificateNumber} успешно пересоздан!`);
+            
+            // Если модальное окно открыто, перезагружаем данные сертификата
+            const modal = document.getElementById('certificate-view-modal');
+            if (modal) {
+                // Находим ID сертификата из модального окна
+                const certIdMatch = modal.innerHTML.match(/viewCertificateDetail\((\d+)\)/);
+                if (certIdMatch) {
+                    const certId = certIdMatch[1];
+                    // Закрываем модальное окно и открываем заново для обновления изображения
+                    closeCertificateModal();
+                    setTimeout(() => {
+                        viewCertificateDetail(certId);
+                    }, 500);
+                }
+            }
+            
+            // Перезагружаем список сертификатов, чтобы обновить данные
+            loadCertificates();
+        } else {
+            showError(result.error || 'Ошибка при пересоздании сертификата');
+        }
+    } catch (error) {
+        console.error('Ошибка при пересоздании сертификата:', error);
+        showError('Ошибка при пересоздании сертификата: ' + error.message);
+        
+        // Убираем индикатор загрузки в случае ошибки
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.remove();
+        }
     }
 }
 

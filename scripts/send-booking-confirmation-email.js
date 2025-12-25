@@ -7,6 +7,7 @@
 
 require('dotenv').config();
 const readline = require('readline');
+const { pool } = require('../src/db');
 const EmailService = require('../src/services/emailService');
 const emailTemplateService = require('../src/services/email-template-service');
 
@@ -37,9 +38,31 @@ async function main() {
             throw new Error('Невалидный email адрес');
         }
 
-        const clientName = await question('👤 Имя клиента (для приветствия): ');
-        if (!clientName || !clientName.trim()) {
-            throw new Error('Имя клиента обязательно');
+        // Ищем клиента по email в базе данных (без учета регистра)
+        console.log('\n🔍 Поиск клиента в базе данных...');
+        const clientResult = await pool.query(
+            'SELECT id, full_name, email FROM clients WHERE LOWER(email) = LOWER($1) LIMIT 1',
+            [email.trim()]
+        );
+
+        let clientId = null;
+        let clientName = null;
+
+        if (clientResult.rows.length > 0) {
+            const client = clientResult.rows[0];
+            clientId = client.id;
+            clientName = client.full_name;
+            console.log(`✅ Клиент найден: ID=${clientId}, Имя="${clientName}"`);
+            console.log(`📝 Используем имя из базы данных: "${clientName}"`);
+            console.log(`💡 Если хотите использовать другое имя, введите его ниже (или нажмите Enter для использования "${clientName}")`);
+            const customName = await question(`👤 Имя клиента [${clientName}]: `);
+            clientName = customName.trim() || clientName;
+        } else {
+            console.log('⚠️  Клиент не найден в базе данных по email');
+            clientName = await question('👤 Имя клиента (для приветствия): ');
+            if (!clientName || !clientName.trim()) {
+                throw new Error('Имя клиента обязательно');
+            }
         }
 
         const date = await question('📅 Дата (например: 19 декабря 2025): ');
@@ -71,16 +94,26 @@ async function main() {
             }
         }
 
-        const bookingType = await question('🎯 Тип тренировки (1 - Индивидуальная, 2 - Групповая) [1]: ') || '1';
+        // Функция для извлечения цифры из строки (убирает квадратные скобки и пробелы)
+        const extractNumber = (input) => {
+            if (!input) return '1';
+            const match = input.match(/\[?(\d)\]?/);
+            return match ? match[1] : input.trim() || '1';
+        };
+
+        const bookingTypeInput = await question('🎯 Тип тренировки (1 - Индивидуальная, 2 - Групповая) [1]: ') || '1';
+        const bookingType = extractNumber(bookingTypeInput);
         const bookingTypeText = bookingType === '2' ? 'Групповая тренировка' : 'Индивидуальная тренировка';
 
-        const sportTypeInput = await question('⛷️  Вид спорта (1 - Лыжи, 2 - Сноуборд) [1]: ') || '1';
+        const sportTypeInputRaw = await question('⛷️  Вид спорта (1 - Лыжи, 2 - Сноуборд) [1]: ') || '1';
+        const sportTypeInput = extractNumber(sportTypeInputRaw);
         const sportTypeText = sportTypeInput === '2' ? 'Сноуборд' : 'Лыжи';
         const sportType = sportTypeInput === '2' ? 'snowboard' : 'ski';
 
         const instructorName = await question('👨‍🏫 Инструктор (можно оставить пустым): ') || null;
 
-        const locationInput = await question('📍 Место (1 - Кулига-Клуб, 2 - Воронинские горки) [1]: ') || '1';
+        const locationInputRaw = await question('📍 Место (1 - Кулига-Клуб, 2 - Воронинские горки) [1]: ') || '1';
+        const locationInput = extractNumber(locationInputRaw);
         const locationText = locationInput === '2' ? 'Воронинские горки' : 'Кулига-Клуб';
         const location = locationInput === '2' ? 'vorona' : 'kuliga';
 
@@ -143,7 +176,7 @@ async function main() {
 
         const bookingData = {
             client_name: clientName.trim(),
-            client_id: null, // Для ручной отправки client_id не нужен
+            client_id: clientId, // Используем client_id из базы данных, если найден
             booking_type: bookingType === '2' ? 'group' : 'individual',
             date: dateForTemplate,
             start_time: startTime,
@@ -189,6 +222,12 @@ async function main() {
         process.exit(1);
     } finally {
         rl.close();
+        // Закрываем соединение с базой данных
+        try {
+            await pool.end();
+        } catch (closeError) {
+            // Игнорируем ошибки при закрытии
+        }
     }
 }
 

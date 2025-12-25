@@ -127,11 +127,8 @@
                 .filter((price) => price.type !== 'individual')
                 .map((price) => {
                     const participants = Math.max(1, Number(price.participants) || 1);
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                    const perPerson = participants === 8 
-                        ? Number(price.price) 
-                        : Number(price.price) / participants;
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы (для всех количеств участников)
+                    const perPerson = Number(price.price) / participants;
                     return { ...price, participants, perPerson };
                 })
                 .sort((a, b) => a.participants - b.participants); // Сортировка по количеству участников по возрастанию
@@ -147,12 +144,11 @@
                 const isGroup = price.type !== 'individual';
                 const participants = Math.max(1, Number(price.participants) || 1);
                 const priceValue = Number(price.price) || 0;
-                // Для 8 участников цена в прайсе уже является ценой за человека
-                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
+                // Цена в прайсе - это всегда ОБЩАЯ цена группы (для всех количеств участников)
                 const pricePerPerson = isGroup 
-                    ? (participants === 8 ? priceValue : Math.ceil(priceValue / participants))
+                    ? Math.ceil(priceValue / participants)
                     : priceValue;
-                const totalPrice = isGroup ? Math.ceil(pricePerPerson * participants) : priceValue;
+                const totalPrice = isGroup ? priceValue : priceValue; // Для группы используем исходную цену
 
                 if (!isGroup) {
                     card.classList.add('kuliga-price-card--highlight');
@@ -381,22 +377,76 @@
         });
     };
 
-    // Найти первый день с расписанием для инструктора
+    // Проверить, есть ли у дня расписание (любые слоты - свободные, занятые, групповые)
+    // Используется для проверки наличия расписания у инструктора
+    const hasScheduleForDay = (instructor, dayIso) => {
+        const daySchedule = instructor.schedule[dayIso] || [];
+        // Проверяем наличие любых слотов (available, booked, blocked, group и т.д.)
+        return daySchedule.length > 0;
+    };
+
+    // Проверить, есть ли у дня расписание для отображения (только будущие дни с доступными или групповыми слотами)
+    // Используется для отображения дней в мобильной версии
+    const hasVisibleScheduleForDay = (instructor, dayIso) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dayDate = new Date(dayIso + 'T00:00:00');
+        
+        // Пропускаем прошедшие дни
+        if (dayDate < today) {
+            return false;
+        }
+        
+        const daySchedule = instructor.schedule[dayIso] || [];
+        return daySchedule.length > 0 && daySchedule.some(slot => 
+            slot.status === 'available' || slot.status === 'group' || slot.type === 'group_training'
+        );
+    };
+
+    // Проверить, есть ли у инструктора хотя бы одно расписание (любые слоты) на будущие даты (>= сегодня)
+    const hasAnySchedule = (instructor, days) => {
+        const schedule = instructor.schedule || {};
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Проверяем весь объект schedule - ищем хотя бы одну дату с непустым массивом слотов, которая >= сегодня
+        return Object.keys(schedule).some(dateIso => {
+            const dayDate = new Date(dateIso + 'T00:00:00');
+            // Проверяем только будущие даты (включая сегодня)
+            if (dayDate < today) {
+                return false;
+            }
+            
+            const daySchedule = schedule[dateIso] || [];
+            // Проверяем наличие любых слотов (available, booked, blocked, group и т.д.)
+            return daySchedule.length > 0;
+        });
+    };
+
+    // Найти первый день с расписанием для инструктора (только будущие дни с доступными/групповыми слотами)
     const findFirstDayWithSchedule = (instructor, days) => {
         for (let i = 0; i < days.length; i++) {
-            const daySchedule = instructor.schedule[days[i].iso] || [];
-            if (daySchedule.length > 0 && daySchedule.some(slot => slot.status === 'available' || slot.status === 'group')) {
+            if (hasVisibleScheduleForDay(instructor, days[i].iso)) {
                 return i;
             }
         }
         return 0; // Если нет расписания, начинаем с первого дня
     };
 
+    // Фильтровать дни для мобильной версии: только будущие дни с доступными или групповыми слотами
+    const filterDaysForMobile = (instructor, days) => {
+        return days.filter(day => hasVisibleScheduleForDay(instructor, day.iso));
+    };
+
+    // Сохраняем список ID инструкторов с расписанием на месяц вперед (>= сегодня)
+    let instructorsWithScheduleIds = new Set();
+
     const renderInstructors = async (weekOffset = 0) => {
         const container = document.getElementById('kuligaInstructors');
         if (!container) return;
 
         try {
+            // Загружаем данные для текущей недели
             const url = weekOffset !== 0 
                 ? `${API_ENDPOINTS.instructors}?weekOffset=${weekOffset}`
                 : API_ENDPOINTS.instructors;
@@ -412,17 +462,72 @@
                 return;
             }
 
+            // Загружаем данные на месяц вперед (4 недели: weekOffset 0-4) параллельно для определения инструкторов с расписанием
+            // Обновляем список при первой загрузке или при возврате на первую неделю
+            if (instructorsWithScheduleIds.size === 0 || weekOffset === 0) {
+                const monthPromises = [];
+                for (let i = 0; i <= 4; i++) {
+                    if (i === weekOffset) {
+                        // Используем уже загруженные данные для текущей недели
+                        monthPromises.push(Promise.resolve({ days, instructors }));
+                    } else {
+                        monthPromises.push(
+                            fetchJson(i === 0 ? API_ENDPOINTS.instructors : `${API_ENDPOINTS.instructors}?weekOffset=${i}`)
+                                .then(res => res.success ? res.data : null)
+                                .catch(() => null)
+                        );
+                    }
+                }
+
+                const monthData = await Promise.all(monthPromises);
+                
+                // Собираем все уникальные инструкторы с расписанием на будущее (>= сегодня)
+                instructorsWithScheduleIds = new Set();
+                
+                monthData.forEach((weekData) => {
+                    if (!weekData || !weekData.instructors) return;
+                    
+                    weekData.instructors.forEach((instructor) => {
+                        // Проверяем, есть ли у инструктора расписание на будущее (>= сегодня)
+                        if (hasAnySchedule(instructor, weekData.days)) {
+                            instructorsWithScheduleIds.add(instructor.id);
+                        }
+                    });
+                });
+            }
+
+            // Показываем всех инструкторов, у кого есть расписание на будущее (>= сегодня)
+            // даже если на текущей отображаемой неделе у них нет слотов
+            const filteredInstructors = instructors.filter(instructor => 
+                instructorsWithScheduleIds.has(instructor.id)
+            );
+
+            if (!filteredInstructors.length) {
+                container.innerHTML = '<div class="kuliga-empty">Нет доступных инструкторов с расписанием на ближайшее время.</div>';
+                return;
+            }
+
             const fragment = document.createDocumentFragment();
 
-            instructors.forEach((instructor) => {
+            const isMobile = window.innerWidth <= 767;
+
+            filteredInstructors.forEach((instructor) => {
                 const card = document.createElement('article');
                 card.className = 'kuliga-instructor-card';
 
                 const photoUrl = instructor.photo_url || 'https://via.placeholder.com/160x160/1e293b/ffffff?text=GS72';
                 const sportLabel = sportLabels[instructor.sport_type] || 'Инструктор';
+                
+                // Формируем название локации для отображения
+                const locationDisplayName = instructor.location === 'vorona' 
+                    ? 'Воронинские горки' 
+                    : (instructor.location === 'kuliga' || !instructor.location) 
+                        ? 'Кулига' 
+                        : instructor.location;
 
-                // Находим первый день с расписанием для мобильной версии
-                const firstDayIndex = findFirstDayWithSchedule(instructor, days);
+                // Для мобильной версии фильтруем дни: только будущие дни с расписанием
+                const daysToRender = isMobile ? filterDaysForMobile(instructor, days) : days;
+                const firstDayIndex = isMobile ? 0 : findFirstDayWithSchedule(instructor, days);
 
                 card.innerHTML = `
                     <header class="kuliga-instructor__header">
@@ -430,6 +535,7 @@
                         <div class="kuliga-instructor__info">
                             <h3>${instructor.full_name}</h3>
                             <span class="kuliga-instructor__sport"><i class="fa-solid fa-person-skiing"></i> ${sportLabel}</span>
+                            <span class="kuliga-instructor__location"><i class="fa-solid fa-location-dot"></i> ${locationDisplayName}</span>
                             ${instructor.description ? `<p class="kuliga-instructor__description">${instructor.description}</p>` : ''}
                         </div>
                     </header>
@@ -449,19 +555,44 @@
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="next-week"
+                                    ${weekOffset >= 4 ? 'disabled' : ''}
                                     aria-label="Следующая неделя">
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
                         </div>
+                        ${isMobile ? `
+                        <div class="kuliga-schedule__nav kuliga-schedule__nav--mobile-week">
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--prev-week-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="prev-week"
+                                    ${weekOffset === 0 ? 'disabled' : ''}
+                                    aria-label="Предыдущая неделя">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <div class="kuliga-schedule__week-title kuliga-schedule__week-title--mobile">
+                                <span class="kuliga-schedule__week-range">${formatWeekRange(days)}</span>
+                                ${weekOffset === 0 ? '<span class="kuliga-schedule__week-badge">Текущая неделя</span>' : ''}
+                            </div>
+                            <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--next-week-mobile" 
+                                    data-instructor-id="${instructor.id}" 
+                                    data-action="next-week"
+                                    ${weekOffset >= 4 ? 'disabled' : ''}
+                                    aria-label="Следующая неделя">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        ` : ''}
                         <div class="kuliga-schedule__wrapper">
+                            ${isMobile ? `
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--prev-mobile" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="prev-day"
                                     aria-label="Предыдущий день">
                                 <i class="fa-solid fa-chevron-left"></i>
                             </button>
+                            ` : ''}
                             <div class="kuliga-schedule__days" data-start-index="${firstDayIndex}">
-                                ${days.map((day, index) => {
+                                ${daysToRender.map((day, index) => {
                                     const daySchedule = instructor.schedule[day.iso] || [];
                                     // Фильтруем только видимые слоты (доступные и групповые тренировки)
                                     const visibleSlots = daySchedule.filter(slot => 
@@ -538,7 +669,8 @@
                                                                     maxParticipants: slot.maxParticipants || 0,
                                                                     currentParticipants: slot.currentParticipants || 0,
                                                                     pricePerPerson: slot.pricePerPerson || 0,
-                                                                    level: slot.level || null
+                                                                    level: slot.level || null,
+                                                                    description: slot.description || null
                                                                 }
                                                             };
                                                         } else {
@@ -577,12 +709,14 @@
                                     `;
                                 }).join('')}
                             </div>
+                            ${isMobile ? `
                             <button class="kuliga-schedule__nav-btn kuliga-schedule__nav-btn--mobile kuliga-schedule__nav-btn--next-mobile" 
                                     data-instructor-id="${instructor.id}" 
                                     data-action="next-day"
                                     aria-label="Следующий день">
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -633,7 +767,7 @@
     };
 
     const initScheduleNavigation = () => {
-        // Навигация по неделям (десктоп)
+        // Навигация по неделям (десктоп и мобильная версия)
         document.querySelectorAll('[data-action="prev-week"], [data-action="next-week"]').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -643,21 +777,46 @@
                 if (!scheduleEl) return;
 
                 const currentWeekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
-                const newWeekOffset = action === 'prev-week' ? currentWeekOffset - 1 : currentWeekOffset + 1;
+                let newWeekOffset;
+                
+                if (action === 'prev-week') {
+                    newWeekOffset = Math.max(0, currentWeekOffset - 1);
+                } else {
+                    // Можно листать на месяц вперед (до weekOffset = 4, т.е. 4 недели)
+                    newWeekOffset = Math.min(4, currentWeekOffset + 1);
+                }
 
                 // Перезагружаем всех инструкторов с новым weekOffset
                 await renderInstructors(newWeekOffset);
             });
         });
         
-        // Обновляем состояние кнопок навигации
+        // Обновляем состояние кнопок навигации (десктоп и мобильная версия)
         document.querySelectorAll('.kuliga-schedule').forEach((scheduleEl) => {
             const weekOffset = parseInt(scheduleEl.getAttribute('data-week-offset') || '0', 10);
             const instructorId = scheduleEl.getAttribute('data-instructor-id');
             
-            const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]`);
+            // Обновляем кнопки для десктоп версии
+            const prevBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"]:not(.kuliga-schedule__nav-btn--prev-week-mobile):not(.kuliga-schedule__nav-btn--next-week-mobile)`);
+            const nextBtn = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"]:not(.kuliga-schedule__nav-btn--prev-week-mobile):not(.kuliga-schedule__nav-btn--next-week-mobile)`);
+            
+            // Обновляем кнопки для мобильной версии
+            const prevBtnMobile = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="prev-week"].kuliga-schedule__nav-btn--prev-week-mobile`);
+            const nextBtnMobile = scheduleEl.querySelector(`[data-instructor-id="${instructorId}"][data-action="next-week"].kuliga-schedule__nav-btn--next-week-mobile`);
+            
             if (prevBtn) {
                 prevBtn.disabled = weekOffset === 0;
+            }
+            if (nextBtn) {
+                // Можно листать на месяц вперед (до weekOffset = 4)
+                nextBtn.disabled = weekOffset >= 4;
+            }
+            if (prevBtnMobile) {
+                prevBtnMobile.disabled = weekOffset === 0;
+            }
+            if (nextBtnMobile) {
+                // Можно листать на месяц вперед (до weekOffset = 4)
+                nextBtnMobile.disabled = weekOffset >= 4;
             }
         });
 
@@ -834,11 +993,89 @@
         window.location.href = bookingUrl.toString();
     }
 
+    // Функция для отправки событий в Яндекс.Метрику
+    function trackYandexMetrika(goalName, params = {}) {
+        if (window.ym && window.KULIGA_ANALYTICS && window.KULIGA_ANALYTICS.yandexMetrikaId) {
+            try {
+                window.ym(window.KULIGA_ANALYTICS.yandexMetrikaId, 'reachGoal', goalName, params);
+            } catch (e) {
+                console.warn('Ошибка отправки события в Яндекс.Метрику:', e);
+            }
+        }
+    }
+
+    // Функция для отправки событий в Google Analytics
+    function trackGoogleAnalytics(eventName, params = {}) {
+        if (window.gtag) {
+            try {
+                window.gtag('event', eventName, params);
+            } catch (e) {
+                console.warn('Ошибка отправки события в Google Analytics:', e);
+            }
+        }
+    }
+
+    // Отслеживание просмотра страницы инструкторов
+    function trackPageView() {
+        trackYandexMetrika('instructor_page_view', {
+            page_url: window.location.href,
+            page_title: 'Страница инструкторов'
+        });
+        trackGoogleAnalytics('page_view', {
+            page_title: 'Страница инструкторов',
+            page_location: window.location.href
+        });
+    }
+
+    // Отслеживание клика по кнопке записи
+    function trackBookingButtonClick() {
+        trackYandexMetrika('booking_button_click', {
+            button_location: 'hero_section'
+        });
+        trackGoogleAnalytics('button_click', {
+            button_name: 'Записаться на тренировку',
+            button_location: 'hero_section'
+        });
+    }
+
+    // Отслеживание просмотра инструкторов
+    function trackInstructorsView() {
+        trackYandexMetrika('instructors_list_view');
+        trackGoogleAnalytics('instructors_view', {
+            event_category: 'engagement'
+        });
+    }
+
+    // Отслеживание просмотра цен
+    function trackPricesView() {
+        trackYandexMetrika('prices_view');
+        trackGoogleAnalytics('prices_view', {
+            event_category: 'engagement'
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
+        // Отслеживание просмотра страницы
+        trackPageView();
+
         renderPriceList();
         renderProgramsAndSchedule();
         renderInstructors();
         initBookingButton();
+
+        // Отслеживание просмотра инструкторов после загрузки
+        setTimeout(() => {
+            trackInstructorsView();
+            trackPricesView();
+        }, 2000);
+
+        // Отслеживание клика по кнопке записи в hero секции
+        const bookingButtons = document.querySelectorAll('a[href*="booking"], .kuliga-button--primary');
+        bookingButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                trackBookingButtonClick();
+            });
+        });
 
         // Обработчик фильтра по локации
         const locationFilter = document.getElementById('kuligaLocationFilter');
@@ -846,6 +1083,12 @@
             locationFilter.addEventListener('change', (e) => {
                 const selectedLocation = e.target.value || null;
                 renderProgramsAndSchedule(selectedLocation);
+                
+                // Отслеживание фильтрации по локации
+                trackYandexMetrika('location_filter_change', { location: selectedLocation || 'all' });
+                trackGoogleAnalytics('location_filter', {
+                    filter_value: selectedLocation || 'all'
+                });
             });
         }
     });

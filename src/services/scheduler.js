@@ -20,7 +20,8 @@ class Scheduler {
             scheduledMessages: false,
             programTrainingsGeneration: false,
             certificateExpiration: false,
-            holdCleanup: false
+            holdCleanup: false,
+            paymentTimeout: false
         };
     }
 
@@ -50,6 +51,9 @@ class Scheduler {
         
         // Запускаем задачу очистки истёкших hold
         this.scheduleHoldCleanup();
+        
+        // Запускаем задачу проверки таймаута оплаты
+        this.schedulePaymentTimeout();
         
         console.log(`Планировщик запущен. Активных задач: ${this.tasks.length}`);
     }
@@ -681,6 +685,232 @@ class Scheduler {
         });
 
         console.log('✓ Задача "Очистка hold" настроена на каждые 5 минут');
+    }
+
+    /**
+     * Настраивает задачу проверки таймаута оплаты
+     * Запускается каждые 5 минут
+     * Проверяет транзакции со статусом 'pending' старше 30 минут
+     */
+    schedulePaymentTimeout() {
+        const task = cron.schedule('*/5 * * * *', async () => {
+            // Защита от повторного запуска
+            if (this.isRunning.paymentTimeout) {
+                return;
+            }
+            
+            this.isRunning.paymentTimeout = true;
+            
+            try {
+                console.log(`[${new Date().toISOString()}] 🔍 Проверка таймаута оплаты (транзакции старше 30 минут)...`);
+                
+                // Находим транзакции со статусом 'pending' старше 30 минут, где бронирование не создано
+                const expiredTransactions = await pool.query(
+                    `SELECT id, client_id, provider_raw_data, amount, description
+                     FROM kuliga_transactions
+                     WHERE booking_id IS NULL
+                       AND status = 'pending'
+                       AND created_at < NOW() - INTERVAL '30 minutes'`
+                );
+
+                if (expiredTransactions.rows.length === 0) {
+                    console.log(`[${new Date().toISOString()}] ✅ Просроченных транзакций не найдено`);
+                    return;
+                }
+
+                console.log(`[${new Date().toISOString()}] 🔍 Найдено ${expiredTransactions.rows.length} просроченных транзакций`);
+
+                const bot = require('../bot/client-bot').bot;
+
+                for (const transaction of expiredTransactions.rows) {
+                    const client = await pool.connect();
+                    try {
+                        await client.query('BEGIN');
+                        
+                        // Парсим bookingData из provider_raw_data
+                        let rawData = {};
+                        try {
+                            if (typeof transaction.provider_raw_data === 'string') {
+                                rawData = JSON.parse(transaction.provider_raw_data);
+                            } else if (transaction.provider_raw_data) {
+                                rawData = transaction.provider_raw_data;
+                            }
+                        } catch (parseError) {
+                            console.error(`❌ Ошибка парсинга provider_raw_data для транзакции #${transaction.id}:`, parseError);
+                            await client.query('ROLLBACK');
+                            continue;
+                        }
+                        
+                        const bookingData = rawData.bookingData;
+                        const walletRefillData = rawData.walletRefillData;
+                        
+                        // Освобождаем места/слоты в зависимости от типа транзакции
+                        if (bookingData) {
+                            if (bookingData.slot_id) {
+                                // Индивидуальное бронирование: снимаем hold со слота
+                                await client.query(
+                                    `UPDATE kuliga_schedule_slots
+                                     SET status = 'available',
+                                         hold_until = NULL,
+                                         hold_transaction_id = NULL,
+                                         updated_at = CURRENT_TIMESTAMP
+                                     WHERE id = $1 AND hold_transaction_id = $2`,
+                                    [bookingData.slot_id, transaction.id]
+                                );
+                                console.log(`🔓 Hold снят со слота #${bookingData.slot_id} (таймаут оплаты)`);
+                            } else if (bookingData.group_training_id && bookingData.participants_count) {
+                                // Групповое бронирование: возвращаем места
+                                await client.query(
+                                    `UPDATE kuliga_group_trainings
+                                     SET current_participants = current_participants - $1,
+                                         updated_at = CURRENT_TIMESTAMP
+                                     WHERE id = $2`,
+                                    [bookingData.participants_count, bookingData.group_training_id]
+                                );
+                                console.log(`🔓 Возвращено ${bookingData.participants_count} мест в групповой тренировке #${bookingData.group_training_id} (таймаут оплаты)`);
+                            } else if (bookingData.booking_type === 'group_simulator' && bookingData.group_id) {
+                                // Групповое бронирование на тренажере: возвращаем место
+                                await client.query(
+                                    `UPDATE training_sessions
+                                     SET current_participants = GREATEST(current_participants - 1, 0),
+                                         status = CASE 
+                                             WHEN current_participants <= 1 THEN 'scheduled'
+                                             ELSE status
+                                         END,
+                                         hold_until = NULL,
+                                         hold_transaction_id = NULL,
+                                         updated_at = CURRENT_TIMESTAMP
+                                     WHERE id = $1`,
+                                    [bookingData.group_id]
+                                );
+                                console.log(`🔓 Возвращено место в групповой тренировке на тренажере #${bookingData.group_id} (таймаут оплаты)`);
+                            } else if (bookingData.booking_type === 'individual_simulator') {
+                                // Индивидуальное бронирование на тренажере: освобождаем слоты в schedule
+                                if (bookingData.simulator_id && bookingData.date && bookingData.start_time && bookingData.duration) {
+                                    await client.query(
+                                        `UPDATE schedule
+                                         SET is_booked = FALSE, updated_at = CURRENT_TIMESTAMP
+                                         WHERE simulator_id = $1
+                                           AND date = $2
+                                           AND start_time >= $3
+                                           AND start_time < ($3::time + ($4 * interval '1 minute'))`,
+                                        [bookingData.simulator_id, bookingData.date, bookingData.start_time, bookingData.duration]
+                                    );
+                                    console.log(`🔓 Слоты на тренажере освобождены (таймаут оплаты)`);
+                                }
+                            }
+                        }
+                        
+                        // Обновляем статус транзакции на 'expired'
+                        await client.query(
+                            `UPDATE kuliga_transactions 
+                             SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+                             WHERE id = $1`,
+                            [transaction.id]
+                        );
+                        
+                        await client.query('COMMIT');
+                        
+                        // Отправляем уведомление в Telegram клиенту, если платеж был из бота
+                        if (rawData.source === 'bot' && transaction.client_id) {
+                            try {
+                                const clientResult = await pool.query(
+                                    'SELECT telegram_id FROM clients WHERE id = $1',
+                                    [transaction.client_id]
+                                );
+                                
+                                if (clientResult.rows.length > 0 && clientResult.rows[0].telegram_id) {
+                                    const telegramId = clientResult.rows[0].telegram_id;
+                                    
+                                    let message = '';
+                                    if (walletRefillData) {
+                                        // Пополнение кошелька
+                                        const amount = walletRefillData.amount || 0;
+                                        message = `⏰ <b>Время оплаты истекло</b>\n\n`;
+                                        message += `💰 Сумма пополнения: ${amount.toFixed(2)} ₽\n\n`;
+                                        message += `Время на оплату истекло. Место было освобождено.\n\n`;
+                                        message += `Вы можете попробовать пополнить кошелек снова.`;
+                                    } else if (bookingData) {
+                                        // Бронирование тренировки
+                                        const formatDate = (dateStr) => {
+                                            const date = new Date(dateStr);
+                                            const day = date.getDate().toString().padStart(2, '0');
+                                            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                            const year = date.getFullYear();
+                                            return `${day}.${month}.${year}`;
+                                        };
+                                        
+                                        const formatTime = (timeStr) => {
+                                            if (!timeStr) return '';
+                                            const time = timeStr.toString();
+                                            return time.substring(0, 5);
+                                        };
+                                        
+                                        const dateFormatted = formatDate(bookingData.date);
+                                        const timeFormatted = formatTime(bookingData.start_time);
+                                        const sportText = bookingData.sport_type === 'ski' ? 'Лыжи' : 'Сноуборд';
+                                        let bookingTypeText;
+                                        if (bookingData.booking_type === 'individual') {
+                                            bookingTypeText = 'Индивидуальное занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'individual_simulator') {
+                                            bookingTypeText = 'Индивидуальное занятие (тренажер)';
+                                        } else if (bookingData.booking_type === 'group') {
+                                            bookingTypeText = 'Групповое занятие (естественный склон)';
+                                        } else if (bookingData.booking_type === 'group_simulator') {
+                                            bookingTypeText = 'Групповое занятие (тренажер)';
+                                        } else {
+                                            bookingTypeText = 'Занятие';
+                                        }
+                                        
+                                        message = `⏰ <b>Время оплаты истекло</b>\n\n`;
+                                        message += `📅 Дата: ${dateFormatted}\n`;
+                                        message += `⏰ Время: ${timeFormatted}\n`;
+                                        message += `🎿 Тип: ${bookingTypeText}, ${sportText}\n`;
+                                        message += `💰 Сумма: ${bookingData.price_total?.toFixed(2) || '0.00'} ₽\n\n`;
+                                        message += `Время на оплату истекло (30 минут). Место было освобождено.\n\n`;
+                                        message += `Вы можете попробовать записаться снова.`;
+                                    }
+                                    
+                                    if (message) {
+                                        await bot.sendMessage(telegramId, message, { parse_mode: 'HTML' });
+                                        console.log(`✅ Уведомление о таймауте оплаты отправлено клиенту (telegram_id: ${telegramId}, transaction #${transaction.id})`);
+                                    }
+                                }
+                            } catch (telegramError) {
+                                console.error(`❌ Ошибка при отправке уведомления в Telegram о таймауте оплаты (transaction #${transaction.id}):`, telegramError);
+                            }
+                        }
+                        
+                        console.log(`✅ Транзакция #${transaction.id} помечена как expired`);
+                        
+                    } catch (error) {
+                        await client.query('ROLLBACK');
+                        console.error(`❌ Ошибка при обработке просроченной транзакции #${transaction.id}:`, error);
+                    } finally {
+                        client.release();
+                    }
+                }
+                
+                console.log(`[${new Date().toISOString()}] ✅ Проверка таймаута оплаты завершена. Обработано транзакций: ${expiredTransactions.rows.length}`);
+                
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] ❌ Ошибка при проверке таймаута оплаты:`, error);
+            } finally {
+                this.isRunning.paymentTimeout = false;
+            }
+        }, {
+            scheduled: true,
+            timezone: "Asia/Yekaterinburg"
+        });
+
+        this.tasks.push({
+            name: 'payment_timeout',
+            description: 'Проверка таймаута оплаты (освобождение мест/слотов через 30 минут)',
+            schedule: 'каждые 5 минут',
+            task: task
+        });
+
+        console.log('✓ Задача "Проверка таймаута оплаты" настроена на каждые 5 минут');
     }
 }
 

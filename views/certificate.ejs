@@ -75,15 +75,15 @@
             top: 50%;
             transform: translateY(-50%);
             width: 300px;
-            height: 440px; /* Увеличено на 40px */
+            height: 440px;
             background: rgba(0, 0, 0, 0.7);
             padding: 1.5rem;
             border-radius: 15px;
             backdrop-filter: blur(10px);
-            overflow: hidden; /* Скрываем переполнение */
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* Изменено с растягивания */
+            justify-content: space-between;
         }
 
         .certificate-header {
@@ -91,37 +91,54 @@
         }
 
         .certificate-title {
-            font-size: 1.2rem;
-            font-weight: bold;
+            font-size: 0.95rem;
+            font-weight: 700;
             margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
             text-align: center;
+            font-family: 'Arial', 'Helvetica', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne';
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .certificate-subtitle {
-            font-size: 0.9rem;
+            font-size: 0.65rem;
+            font-weight: 700;
             opacity: 0.9;
             margin-bottom: 1rem;
             text-align: center;
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
         }
 
         .certificate-number {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #FFD700;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #FFD700 !important;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            margin: 0.5rem 0; /* Уменьшен интервал */
+            margin: 0.5rem 0;
             letter-spacing: 0.1em;
             text-align: center;
+            font-family: 'Courier New', monospace !important;
         }
 
         .certificate-value {
-            font-size: 1.8rem;
-            font-weight: bold;
-            margin: 0.5rem 0; /* Уменьшен интервал */
-            color: #FFD700;
+            font-size: 1.55rem !important;
+            font-weight: 700 !important;
+            margin: 0.5rem 0;
+            color: #FFD700 !important;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
             text-align: center;
+            font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+            letter-spacing: 0.1em;
+            white-space: nowrap;
+        }
+        
+        .certificate-value * {
+            color: #FFD700 !important;
+            font-weight: 700 !important;
+            font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
         }
 
         .certificate-design {
@@ -244,6 +261,7 @@
         .info-label {
             font-weight: bold;
             opacity: 0.8;
+            font-family: 'Segoe UI', 'Arial', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne';
         }
 
         .info-value {
@@ -327,27 +345,27 @@
                 <!-- Отступ от границы рамки -->
                 <div style="margin: 1rem 0;">
                     <% if (certificate.recipient_name) { %>
-                        <div style="text-align: left; margin: 0.5rem 0; font-size: 1rem;">
-                            <strong>Кому: <%= certificate.recipient_name %></strong>
+                        <div style="text-align: left; margin: 0.5rem 0; font-size: 0.9rem !important; font-weight: 700; font-family: 'Arial', 'Helvetica', sans-serif;">
+                            Кому: <%= certificate.recipient_name %>
                         </div>
                     <% } %>
 
                     <% if (certificate.message) { %>
-                        <div style="text-align: left; margin: 0.5rem 0; font-size: 0.9rem; font-style: italic;">
+                        <div style="text-align: left; margin: 0.5rem 0; font-size: 0.85rem !important; font-style: italic; font-family: 'Arial', 'Helvetica', sans-serif;">
                             "<%= certificate.message %>"
                         </div>
                     <% } %>
+                </div>
 
-                    <!-- Отступ и дата -->
-                    <div style="text-align: left; margin-top: 1rem; font-size: 0.8rem; opacity: 0.8;">
-                        <% 
-                            let _expiry = certificate.expiry_date;
-                            if (!(_expiry instanceof Date)) { _expiry = new Date(_expiry); }
-                            const _expiryValid = !isNaN(_expiry.getTime());
-                            const _expiryText = _expiryValid ? _expiry.toLocaleDateString('ru-RU') : 'Дата не указана';
-                        %>
-                        Сертификат годен до: <%= _expiryText %>
-                    </div>
+                <!-- Дата годности прижата к низу -->
+                <div style="text-align: center; margin-top: auto; padding-bottom: 0.5rem; font-size: 0.8rem !important; opacity: 0.8; font-family: 'Arial', 'Helvetica', sans-serif;">
+                    <% 
+                        let _expiry = certificate.expiry_date;
+                        if (!(_expiry instanceof Date)) { _expiry = new Date(_expiry); }
+                        const _expiryValid = !isNaN(_expiry.getTime());
+                        const _expiryText = _expiryValid ? _expiry.toLocaleDateString('ru-RU') : 'Дата не указана';
+                    %>
+                    Сертификат годен до: <%= _expiryText %>
                 </div>
             </div>
         </div>

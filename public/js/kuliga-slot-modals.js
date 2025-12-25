@@ -260,12 +260,212 @@
     /**
      * Тип 3: Модальное окно для групповой тренировки (с ограничением участников)
      */
-    function showGroupTrainingBookingModal(slotData) {
+    /**
+     * Показывает модальное окно с уведомлением о требуемом уровне тренировки
+     * @param {number} requiredLevel - Требуемый уровень (2, 3, 4 и т.д.)
+     * @param {string} trainingType - Тип тренировки: 'children', 'adults', 'general'
+     * @returns {Promise} Promise, который резолвится когда пользователь закрыл уведомление
+     */
+    function showSkillLevelNotification(requiredLevel, trainingType = 'general') {
+        return new Promise((resolve) => {
+            const config = window.KULIGA_BOOKING_CONFIG || {};
+            const botUsername = config.botUsername || '';
+            const adminPhone = config.adminPhone || '';
+            const adminTelegramUsername = config.adminTelegramUsername || '';
+            
+            const botLink = botUsername ? `https://t.me/${botUsername.replace(/^@/, '')}` : '#';
+            const adminTelegramLink = adminTelegramUsername ? `https://t.me/${adminTelegramUsername}` : '#';
+            
+            const levelNamesGenitive = {
+                2: 'второго',
+                3: 'третьего',
+                4: 'четвертого',
+                5: 'пятого',
+                6: 'шестого',
+                7: 'седьмого',
+                8: 'восьмого',
+                9: 'девятого',
+                10: 'десятого'
+            };
+            
+            const levelNamesNominative = {
+                2: 'второй',
+                3: 'третий',
+                4: 'четвертый',
+                5: 'пятый',
+                6: 'шестой',
+                7: 'седьмой',
+                8: 'восьмой',
+                9: 'девятый',
+                10: 'десятый'
+            };
+            
+            const levelNameGenitive = levelNamesGenitive[requiredLevel] || `${requiredLevel}-го`;
+            const levelNameNominative = levelNamesNominative[requiredLevel] || `${requiredLevel}-й`;
+            
+            // Определяем текст в зависимости от типа тренировки
+            const isChildrenTraining = trainingType === 'children';
+            const skillsText = isChildrenTraining 
+                ? 'Если у вашего ребенка есть базовые навыки катания:' 
+                : 'Если у вас есть базовые навыки катания:';
+            
+            const modal = document.createElement('div');
+            modal.className = 'kuliga-skill-level-notification';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10001;
+                padding: 20px;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                    <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b; display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 2rem;">⚠️</span>
+                        <span>Тренировка ${levelNameGenitive} уровня</span>
+                    </h2>
+                    
+                    <div style="margin-bottom: 24px; padding: 16px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 8px;">
+                        <p style="margin: 0; font-weight: 600; color: #1e293b;">
+                            Для записи на данную тренировку необходим ${levelNameNominative} уровень подготовки.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="margin-top: 0; margin-bottom: 16px; color: #334155; font-size: 1.1rem;">${skillsText}</h3>
+                        <ol style="margin: 0; padding-left: 24px; color: #475569; line-height: 1.8;">
+                            <li>Зарегистрируйтесь в нашем Telegram-боте: <a href="${botLink}" target="_blank" rel="noopener" style="color: #2196f3; text-decoration: none; font-weight: 600;">${botUsername || 'Telegram-бот'}</a></li>
+                            <li>Напишите администратору с просьбой повысить уровень:
+                                ${adminTelegramUsername ? `<a href="${adminTelegramLink}" target="_blank" rel="noopener" style="color: #2196f3; text-decoration: none; font-weight: 600;">Telegram администратора</a>` : ''}
+                                ${adminPhone ? ` или позвоните: <a href="tel:${adminPhone}" style="color: #2196f3; text-decoration: none; font-weight: 600;">${adminPhone}</a>` : ''}
+                            </li>
+                            <li>После повышения уровня вы сможете записаться на данную тренировку через сайт или телеграм бот.</li>
+                        </ol>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="margin-top: 0; margin-bottom: 16px; color: #334155; font-size: 1.1rem;">Если вы новичок:</h3>
+                        <p style="margin: 0; color: #475569; line-height: 1.8;">
+                            Рекомендуем записаться на индивидуальную или групповую тренировку начального уровня, к любому нашему инструктору в удобное для вас время. 
+                            Это поможет вам освоить базовые навыки и повысить уровень подготовки.
+                        </p>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 32px;">
+                        <button type="button" class="kuliga-notification-close" style="padding: 12px 24px; border: none; border-radius: 8px; background: #2196f3; color: white; cursor: pointer; font-weight: 600;">
+                            Понятно, продолжить
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            const closeBtn = modal.querySelector('.kuliga-notification-close');
+            const closeModal = () => {
+                modal.remove();
+                resolve();
+            };
+            
+            closeBtn.addEventListener('click', closeModal);
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+        });
+    }
+
+    /**
+     * Определяет тип тренировки по description
+     * @param {string} description - Описание тренировки
+     * @returns {Object} { type: 'children'|'adults'|'general', label: string }
+     */
+    function determineTrainingType(description) {
+        if (!description || typeof description !== 'string') {
+            return { type: 'general', label: '' };
+        }
+
+        const descLower = description.trim().toLowerCase();
+
+        // Проверяем начало описания (стандартный формат)
+        if (descLower.startsWith('детская тренировка')) {
+            return { type: 'children', label: '👶 Детская тренировка' };
+        }
+        if (descLower.startsWith('взрослая тренировка')) {
+            return { type: 'adults', label: '👤 Взрослая тренировка' };
+        }
+
+        // Проверяем наличие ключевых слов
+        const childrenKeywords = ['дети', 'детск', 'для детей', 'детская', 'ребёнок', 'ребенок'];
+        const adultsKeywords = ['взрослые', 'взросл', 'для взрослых', 'взрослая'];
+
+        for (const keyword of childrenKeywords) {
+            if (descLower.includes(keyword)) {
+                return { type: 'children', label: '👶 Детская тренировка' };
+            }
+        }
+
+        for (const keyword of adultsKeywords) {
+            if (descLower.includes(keyword)) {
+                return { type: 'adults', label: '👤 Взрослая тренировка' };
+            }
+        }
+
+        return { type: 'general', label: '' };
+    }
+
+    async function showGroupTrainingBookingModal(slotData) {
         const groupTraining = slotData.groupTraining || {};
         const maxParticipants = groupTraining.maxParticipants || 0;
         const currentParticipants = groupTraining.currentParticipants || 0;
         const availableSlots = maxParticipants - currentParticipants;
         const pricePerPerson = parseFloat(groupTraining.pricePerPerson) || 0;
+        // Берем description из groupTraining, если его нет - пробуем из slotData напрямую
+        const description = groupTraining.description || slotData.description || '';
+        
+        // Получаем уровень тренировки
+        let skillLevel = null;
+        if (groupTraining.level !== null && groupTraining.level !== undefined) {
+            if (typeof groupTraining.level === 'number') {
+                skillLevel = groupTraining.level;
+            } else if (typeof groupTraining.level === 'string') {
+                // Преобразуем текстовый уровень в число
+                const levelMap = {
+                    'beginner': 1,
+                    'intermediate': 2,
+                    'advanced': 3
+                };
+                const levelLower = groupTraining.level.toLowerCase();
+                skillLevel = levelMap[levelLower] || parseInt(groupTraining.level) || null;
+            }
+        }
+        
+        // Отладочный вывод
+        console.log('🔍 showGroupTrainingBookingModal:', {
+            slotData,
+            groupTraining,
+            description,
+            skillLevel,
+            'groupTraining.level (raw)': groupTraining.level,
+            'groupTraining.level type': typeof groupTraining.level
+        });
+        
+        // Определяем тип тренировки
+        const trainingType = determineTrainingType(description);
+        
+        // Если уровень >= 2, показываем уведомление перед открытием модального окна
+        if (skillLevel !== null && skillLevel >= 2) {
+            await showSkillLevelNotification(skillLevel, trainingType.type);
+        }
 
         const modal = document.createElement('div');
         modal.className = 'kuliga-slot-booking-modal';
@@ -304,6 +504,12 @@
             <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
                 <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b;">Запись на групповую тренировку</h2>
                 
+                ${trainingType.label ? `
+                <div style="margin-bottom: 24px; padding: 16px; background: ${trainingType.type === 'children' ? '#e3f2fd' : trainingType.type === 'adults' ? '#fff3e0' : '#f5f5f5'}; border-left: 4px solid ${trainingType.type === 'children' ? '#2196f3' : trainingType.type === 'adults' ? '#ff9800' : '#9e9e9e'}; border-radius: 8px;">
+                    <p style="margin: 0; font-weight: 600; color: #1e293b; font-size: 1.1rem;">${trainingType.label}</p>
+                </div>
+                ` : ''}
+                
                 <div style="margin-bottom: 24px; padding: 16px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 8px;">
                     <p style="margin: 4px 0;"><strong>Записано участников:</strong> ${currentParticipants} из ${maxParticipants}</p>
                     <p style="margin: 4px 0;"><strong>Свободных мест:</strong> ${availableSlots}</p>
@@ -314,6 +520,7 @@
                     <p style="margin: 8px 0;"><strong>Время:</strong> ${formatTime(slotData.startTime)}${slotData.endTime ? ` - ${formatTime(slotData.endTime)}` : ''}</p>
                     <p style="margin: 8px 0;"><strong>Место:</strong> ${slotData.location === 'kuliga' ? 'База отдыха «Кулига-Клуб»' : 'Воронинские горки'}</p>
                     <p style="margin: 8px 0;"><strong>Цена за человека:</strong> ${formatCurrency(pricePerPerson)}</p>
+                    ${description ? `<p style="margin: 8px 0;"><strong>Описание:</strong> ${description}</p>` : ''}
                 </div>
 
                 <div style="margin-bottom: 24px;">
@@ -456,7 +663,7 @@
 
             // Если это групповая тренировка (без программы или не удалось загрузить программу)
             if (slotData.status === 'group' || slotData.slotType === 'group_training' || slotData.groupTraining) {
-                showGroupTrainingBookingModal(slotData);
+                await showGroupTrainingBookingModal(slotData);
                 return;
             }
 

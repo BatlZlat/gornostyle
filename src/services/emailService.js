@@ -3,11 +3,13 @@ const fs = require('fs').promises;
 const path = require('path');
 // const SendGridEmailService = require('./sendGridEmailService'); // Временно отключен
 const ResendEmailService = require('./resendEmailService');
+const UnisenderEmailService = require('./unisenderEmailService');
 
 class EmailService {
     constructor() {
-        // Инициализируем Resend сервис как основной
+        // Инициализируем сервисы для fallback
         this.resendService = new ResendEmailService();
+        this.unisenderService = new UnisenderEmailService();
         // this.sendGridService = new SendGridEmailService(); // Временно отключен
         
         // Создаем transporter для отправки email
@@ -20,9 +22,9 @@ class EmailService {
                 pass: process.env.EMAIL_PASS || '' // Пароль приложения Yandex
             },
             // Увеличиваем timeout для стабильности соединения
-            connectionTimeout: 10000, // 10 секунд (было 60)
-            greetingTimeout: 10000,   // 10 секунд (было 30)
-            socketTimeout: 30000,     // 30 секунд (было 60)
+            connectionTimeout: 30000, // 30 секунд
+            greetingTimeout: 30000,   // 30 секунд
+            socketTimeout: 60000,     // 60 секунд
             // Дополнительные настройки для надежности
             tls: {
                 rejectUnauthorized: false // Для тестирования
@@ -48,7 +50,7 @@ class EmailService {
                 return { success: false, error: 'EMAIL_PASS не настроен' };
             }
 
-            const { certificateId, certificateCode, recipientName, amount, message, pdfUrl } = certificateData;
+            const { certificateId, certificateCode, recipientName, amount, message, pdfUrl, imageUrl } = certificateData;
 
             // Генерируем простое HTML содержимое письма
             const htmlContent = this.generateSimpleCertificateEmailHTML(certificateData);
@@ -56,73 +58,108 @@ class EmailService {
             // Подготавливаем вложения
             const attachments = [];
             
-            // Генерируем JPG из веб-страницы сертификата
-            try {
-                const certificateJpgGenerator = require('./certificateJpgGenerator');
-                const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(certificateCode);
-                
-                if (jpgResult.jpg_url) {
-                    const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);
-                    
-                    // Пытаемся найти JPG файл с повторными попытками
-                    let fileFound = false;
-                    for (let attempt = 1; attempt <= 3; attempt++) {
-                        try {
-                            await fs.access(jpgPath);
-                            attachments.push({
-                                filename: `Сертификат_${certificateCode}.jpg`,
-                                path: jpgPath,
-                                contentType: 'image/jpeg'
-                            });
-                            console.log(`📎 JPG вложение добавлено: ${jpgPath}`);
-                            fileFound = true;
-                            break;
-                        } catch (error) {
-                            if (attempt < 3) {
-                                console.log(`⏳ JPG файл не найден (попытка ${attempt}/3), ожидание...`);
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-                            } else {
-                                console.warn(`⚠️  JPG файл не найден после 3 попыток: ${jpgPath}`);
-                            }
+            // Используем imageUrl (приоритет) или pdfUrl (fallback) - оба содержат путь к JPG
+            const imageUrlToUse = imageUrl || pdfUrl;
+            
+            // Сначала проверяем, есть ли уже созданный файл (файл создан при покупке)
+            let fileFound = false;
+            if (imageUrlToUse) {
+                const existingFilePath = path.join(__dirname, '../../public', imageUrlToUse);
+                // Пытаемся найти существующий файл с повторными попытками
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        await fs.access(existingFilePath);
+                        attachments.push({
+                            filename: `Сертификат_${certificateCode}.jpg`,
+                            path: existingFilePath,
+                            contentType: 'image/jpeg'
+                        });
+                        console.log(`📎 JPG вложение добавлено из существующего файла: ${existingFilePath}`);
+                        fileFound = true;
+                        break;
+                    } catch (error) {
+                        if (attempt < 3) {
+                            console.log(`⏳ Существующий файл не найден (попытка ${attempt}/3), ожидание...`);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        } else {
+                            console.log(`⚠️  Существующий файл не найден после 3 попыток, генерируем заново...`);
                         }
                     }
+                }
+            }
+            
+            // Если файл не найден, генерируем JPG заново используя данные из БД
+            if (!fileFound) {
+                try {
+                    const certificateJpgGenerator = require('./certificateJpgGenerator');
+                    const { pool } = require('../db');
                     
-                    if (!fileFound) {
-                        console.warn(`⚠️  JPG сертификат не будет прикреплен к email: ${jpgPath}`);
+                    // Получаем данные сертификата из БД для генерации
+                    const certResult = await pool.query(
+                        `SELECT 
+                            c.certificate_number, 
+                            c.nominal_value, 
+                            c.recipient_name, 
+                            c.message, 
+                            c.design_id, 
+                            c.expiry_date
+                        FROM certificates c 
+                        WHERE c.certificate_number = $1`,
+                        [certificateCode]
+                    );
+                    
+                    if (certResult.rows.length > 0) {
+                        const cert = certResult.rows[0];
+                        const certificateDataForGeneration = {
+                            certificate_number: cert.certificate_number,
+                            nominal_value: parseFloat(cert.nominal_value),
+                            recipient_name: cert.recipient_name,
+                            message: cert.message,
+                            expiry_date: cert.expiry_date,
+                            design_id: cert.design_id
+                        };
+                        
+                        // Генерируем используя новый метод предпросмотра
+                        const jpgResult = await certificateJpgGenerator.generateCertificateJpgForEmail(
+                            certificateCode,
+                            certificateDataForGeneration
+                        );
+                        
+                        if (jpgResult.jpg_url) {
+                            const jpgPath = path.join(__dirname, '../../public', jpgResult.jpg_url);
+                            
+                            // Пытаемся найти сгенерированный JPG файл с повторными попытками
+                            for (let attempt = 1; attempt <= 3; attempt++) {
+                                try {
+                                    await fs.access(jpgPath);
+                                    attachments.push({
+                                        filename: `Сертификат_${certificateCode}.jpg`,
+                                        path: jpgPath,
+                                        contentType: 'image/jpeg'
+                                    });
+                                    console.log(`📎 JPG вложение добавлено (сгенерировано методом предпросмотра): ${jpgPath}`);
+                                    fileFound = true;
+                                    break;
+                                } catch (error) {
+                                    if (attempt < 3) {
+                                        console.log(`⏳ Сгенерированный JPG файл не найден (попытка ${attempt}/3), ожидание...`);
+                                        await new Promise(resolve => setTimeout(resolve, 1000));
+                                    } else {
+                                        console.warn(`⚠️  Сгенерированный JPG файл не найден после 3 попыток: ${jpgPath}`);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        console.warn(`⚠️  Сертификат ${certificateCode} не найден в БД для генерации`);
                     }
-                } else if (jpgResult.pdf_url) {
-                    // Fallback на PDF если JPG не удался
-                    const pdfPath = path.join(__dirname, '../../public', jpgResult.pdf_url);
-                    try {
-                        await fs.access(pdfPath);
-                        attachments.push({
-                            filename: `Сертификат_${certificateCode}.pdf`,
-                            path: pdfPath,
-                            contentType: 'application/pdf'
-                        });
-                        console.log(`📎 PDF вложение добавлено (fallback): ${pdfPath}`);
-                    } catch (error) {
-                        console.warn(`⚠️  Fallback PDF файл не найден: ${pdfPath}`);
-                    }
+                } catch (jpgError) {
+                    console.error('❌ Ошибка при генерации JPG для email:', jpgError);
                 }
-            } catch (error) {
-                console.error('Ошибка при генерации JPG для email:', error);
-                
-                // Fallback на старый PDF если есть
-                if (pdfUrl) {
-                    const pdfPath = path.join(__dirname, '../../public', pdfUrl);
-                    try {
-                        await fs.access(pdfPath);
-                        attachments.push({
-                            filename: `Сертификат_${certificateCode}.pdf`,
-                            path: pdfPath,
-                            contentType: 'application/pdf'
-                        });
-                        console.log(`📎 PDF вложение добавлено (старый fallback): ${pdfPath}`);
-                    } catch (error) {
-                        console.warn(`⚠️  Старый PDF файл не найден: ${pdfPath}`);
-                    }
-                }
+            }
+            
+            if (!fileFound) {
+                console.warn(`⚠️  JPG сертификат не будет прикреплен к email`);
             }
 
             const mailOptions = {
@@ -142,7 +179,7 @@ class EmailService {
             return { success: true, messageId: result.messageId };
 
         } catch (error) {
-            console.error(`❌ Ошибка при отправке email на ${recipientEmail}:`, error.message);
+            console.error(`❌ Ошибка при отправке email на ${recipientEmail} через SMTP:`, error.message);
             
             // Детальная информация об ошибке для отладки
             if (error.code) {
@@ -150,6 +187,19 @@ class EmailService {
             }
             if (error.response) {
                 console.error(`Ответ сервера: ${error.response}`);
+            }
+            
+            // Fallback на Unisender (работает через HTTPS, не требует SMTP портов)
+            console.log(`🔄 Пробуем отправить через Unisender API (работает через HTTPS, не требует SMTP портов)...`);
+            try {
+                const unisenderResult = await this.unisenderService.sendCertificateEmail(recipientEmail, certificateData);
+                if (unisenderResult.success) {
+                    return unisenderResult;
+                } else {
+                    console.error(`❌ Unisender не смог отправить письмо: ${unisenderResult.error}`);
+                }
+            } catch (unisenderError) {
+                console.error(`❌ Ошибка при попытке отправки через Unisender:`, unisenderError.message);
             }
             
             return { success: false, error: error.message };
@@ -473,6 +523,7 @@ class EmailService {
                 throw new Error('EMAIL_PASS не настроен');
             }
 
+            // Формируем mailOptions один раз, чтобы использовать в обеих попытках
             const mailOptions = {
                 from: {
                     name: 'Горностайл72',
@@ -494,10 +545,17 @@ class EmailService {
             const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
             const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
             
-            // Для Yandex адресов того же аккаунта увеличиваем таймаут еще больше
-            const timeout = isYandexSameAccount ? 30000 : (isYandexEmail ? 20000 : 10000);
+            // Увеличиваем таймаут для всех адресов
+            // Для mail.ru и других внешних доменов может потребоваться больше времени из-за антиспам проверок
+            const isMailRu = recipientEmail.includes('@mail.ru') || recipientEmail.includes('@inbox.ru') || recipientEmail.includes('@list.ru') || recipientEmail.includes('@bk.ru');
+            const isGmail = recipientEmail.includes('@gmail.com');
+            const timeout = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
             
-            if (isYandexSameAccount) {
+            // ВАЖНО: Mail.ru блокирует исходящие SMTP соединения, поэтому для mail.ru лучше использовать Resend
+            if (isMailRu) {
+                console.log(`⏱️  Mail.ru адрес обнаружен (${timeout/1000} сек таймаут)`);
+                console.log(`⚠️  ВНИМАНИЕ: Mail.ru может блокировать SMTP соединения. Если отправка не удастся, будет использован Resend.`);
+            } else if (isYandexSameAccount) {
                 console.log(`⏱️  Yandex адрес того же аккаунта, увеличенный таймаут: ${timeout/1000} сек`);
             }
             
@@ -511,7 +569,61 @@ class EmailService {
             console.log('✅ Ответ SMTP сервера:', result.response || 'N/A');
             return { success: true, messageId: result.messageId, response: result.response, service: 'smtp' };
         } catch (smtpError) {
-            console.error(`❌ Ошибка SMTP Yandex:`, smtpError.message);
+            console.error(`❌ Ошибка SMTP Yandex (порт 465):`, smtpError.message);
+            
+            // Пробуем альтернативный порт 587 с STARTTLS при любой ошибке
+            console.log('🔄 Пробуем альтернативный порт 587 (STARTTLS)...');
+            try {
+                // Формируем mailOptions для порта 587
+                const mailOptions587 = {
+                    from: {
+                        name: 'Горностайл72',
+                        address: emailUser
+                    },
+                    to: recipientEmail,
+                    subject: subject,
+                    html: htmlContent,
+                    attachments: attachments
+                };
+
+                const transporter587 = nodemailer.createTransport({
+                    host: 'smtp.yandex.ru',
+                    port: 587,
+                    secure: false, // STARTTLS
+                    requireTLS: true,
+                    auth: {
+                        user: process.env.EMAIL_USER || 'batl-zlat@yandex.ru',
+                        pass: process.env.EMAIL_PASS || ''
+                    },
+                    connectionTimeout: 30000,
+                    greetingTimeout: 30000,
+                    socketTimeout: 60000,
+                    tls: {
+                        rejectUnauthorized: false
+                    }
+                });
+
+                // Используем тот же таймаут, что и для порта 465
+                const isYandexEmail = recipientEmail.includes('@yandex.ru');
+                const knownYandexSameAccountEmails = ['gornostyle72@yandex.ru', 'batl-zlat@yandex.ru'];
+                const isYandexSameAccount = isYandexEmail && knownYandexSameAccountEmails.includes(recipientEmail.toLowerCase());
+                const isMailRu = recipientEmail.includes('@mail.ru');
+                const isGmail = recipientEmail.includes('@gmail.com');
+                const timeout587 = isYandexSameAccount ? 60000 : (isYandexEmail ? 45000 : (isMailRu || isGmail ? 60000 : 45000));
+
+                const sendPromise587 = transporter587.sendMail(mailOptions587);
+                const timeoutPromise587 = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`SMTP timeout (порт 587): отправка заняла более ${timeout587/1000} секунд`)), timeout587)
+                );
+
+                const result587 = await Promise.race([sendPromise587, timeoutPromise587]);
+                console.log('✅ Email отправлен успешно через SMTP Yandex (порт 587), messageId:', result587.messageId);
+                transporter587.close();
+                return { success: true, messageId: result587.messageId, response: result587.response, service: 'smtp-587' };
+            } catch (smtp587Error) {
+                console.error(`❌ Ошибка SMTP Yandex (порт 587):`, smtp587Error.message);
+                // Продолжаем с оригинальной ошибкой для дальнейшей обработки
+            }
             
             // Для Yandex адресов того же аккаунта пробуем еще раз с увеличенным таймаутом
             const isYandexEmail = recipientEmail.includes('@yandex.ru');
@@ -521,7 +633,7 @@ class EmailService {
             if (isYandexSameAccount && smtpError.message.includes('timeout')) {
                 console.log(`🔄 Повторная попытка отправки через SMTP для Yandex адреса того же аккаунта с увеличенным таймаутом...`);
                 try {
-                    const mailOptions = {
+                    const retryMailOptions = {
                         from: {
                             name: 'Горностайл72',
                             address: emailUser
@@ -532,7 +644,7 @@ class EmailService {
                         attachments: attachments
                     };
                     
-                    const sendPromise = this.transporter.sendMail(mailOptions);
+                    const sendPromise = this.transporter.sendMail(retryMailOptions);
                     const timeoutPromise = new Promise((_, reject) => 
                         setTimeout(() => reject(new Error('SMTP timeout: повторная попытка также не удалась')), 40000)
                     );
@@ -545,12 +657,24 @@ class EmailService {
                     console.log(`🔄 Пробуем отправить через Resend как последний fallback...`);
                 }
             } else {
-                console.log(`🔄 Пробуем отправить через Resend как fallback...`);
+                console.log(`🔄 Пробуем альтернативный сервис как fallback...`);
             }
             
-            // Fallback на Resend только если SMTP полностью не работает
+            // Fallback на Unisender (работает в России, через HTTPS, не требует SMTP портов)
+            console.log(`🔄 Пробуем отправить через Unisender API (работает через HTTPS, не требует SMTP портов)...`);
+            try {
+                const unisenderResult = await this.unisenderService.sendEmail(recipientEmail, subject, htmlContent, attachments);
+                if (unisenderResult.success) {
+                    return unisenderResult;
+                } else {
+                    console.error(`❌ Unisender не смог отправить письмо: ${unisenderResult.error}`);
+                }
+            } catch (unisenderError) {
+                console.error(`❌ Ошибка при попытке отправки через Unisender:`, unisenderError.message);
+            }
+            
+            // Последний fallback на Resend (если настроен)
             // ВАЖНО: Resend в тестовом режиме может отправлять только на верифицированные адреса
-            // Поэтому это только крайний случай, основной метод - SMTP
             return await this.sendViaResend(recipientEmail, subject, htmlContent, attachments, smtpError);
         }
     }
@@ -601,13 +725,21 @@ class EmailService {
                 const resendResult = await this.resendService.resend.emails.send(emailData);
                 
                 console.log('📋 Полный ответ Resend:', JSON.stringify(resendResult, null, 2));
+                
+                // Проверяем наличие ошибки в ответе
+                if (resendResult?.error) {
+                    const errorMsg = resendResult.error.message || 'Ошибка Resend';
+                    console.error(`❌ Resend вернул ошибку: ${errorMsg}`);
+                    throw new Error(errorMsg);
+                }
+                
                 const messageId = resendResult?.data?.id || resendResult?.id || null;
                 if (messageId) {
                     console.log('✅ Email отправлен успешно через Resend, messageId:', messageId);
                     return { success: true, messageId: messageId, service: 'resend' };
                 } else {
-                    console.warn('⚠️ Resend вернул успешный ответ, но messageId отсутствует. Ответ:', resendResult);
-                    return { success: true, messageId: null, service: 'resend', warning: 'messageId отсутствует в ответе' };
+                    console.error('❌ Resend вернул ответ без messageId и без ошибки. Ответ:', resendResult);
+                    throw new Error('Resend вернул некорректный ответ: отсутствует messageId');
                 }
             } else {
                 console.warn('⚠️  Resend не настроен (RESEND_API_KEY отсутствует или не инициализирован)');

@@ -12,7 +12,7 @@ const TelegramBot = require('node-telegram-bot-api');
 // Создаем экземпляр бота для уведомлений администратора
 const bot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
-// Создаем экземпляр бота для уведомлений инструкторов Кулиги
+// Создаем экземпляр бота для уведомлений инструкторов
 let instructorBot = null;
 if (process.env.KULIGA_INSTRUKTOR_BOT) {
     try {
@@ -737,7 +737,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
         });
         
         if (!instructorBot) {
-            console.log('[NOTIFY] ❌ Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            console.log('[NOTIFY] ❌ Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)');
             return;
         }
 
@@ -746,9 +746,45 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
             return;
         }
 
+        // Получаем процент админа из базы данных, если не передан
+        let adminPercentage = null;
+        if (trainingData.admin_percentage !== null && trainingData.admin_percentage !== undefined) {
+            adminPercentage = Number(trainingData.admin_percentage);
+        } else {
+            // Если процент не передан, получаем его из базы данных
+            try {
+                // Используем общий pool из db/index.js
+                const { pool } = require('../db');
+                
+                // Пытаемся найти инструктора по instructor_id или instructor_telegram_id
+                let instructorRes = null;
+                if (trainingData.instructor_id) {
+                    instructorRes = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE id = $1',
+                        [trainingData.instructor_id]
+                    );
+                } else if (trainingData.instructor_telegram_id) {
+                    instructorRes = await pool.query(
+                        'SELECT admin_percentage FROM kuliga_instructors WHERE telegram_id = $1',
+                        [trainingData.instructor_telegram_id]
+                    );
+                }
+                
+                if (instructorRes && instructorRes.rows.length > 0) {
+                    adminPercentage = instructorRes.rows[0].admin_percentage !== null && instructorRes.rows[0].admin_percentage !== undefined
+                        ? Number(instructorRes.rows[0].admin_percentage)
+                        : 20; // По умолчанию 20%, если в БД null
+                } else {
+                    adminPercentage = 20; // По умолчанию 20%, если инструктор не найден
+                }
+            } catch (dbError) {
+                console.error('[NOTIFY] ⚠️ Ошибка при получении admin_percentage из БД:', dbError);
+                adminPercentage = 20; // По умолчанию 20% при ошибке
+            }
+        }
+
         // Рассчитываем сумму для инструктора (за вычетом процента админа)
         const totalPrice = Number(trainingData.price);
-        const adminPercentage = Number(trainingData.admin_percentage || 20);
         const instructorEarnings = totalPrice * (1 - adminPercentage / 100);
 
         // Определяем тип тренировки
@@ -825,7 +861,7 @@ async function notifyInstructorKuligaTrainingBooking(trainingData) {
 async function notifyInstructorKuligaTrainingCancellation(cancellationData) {
     try {
         if (!instructorBot) {
-            console.log('Бот инструкторов Кулиги не настроен (KULIGA_INSTRUKTOR_BOT)');
+            console.log('Бот инструкторов не настроен (KULIGA_INSTRUKTOR_BOT)');
             return;
         }
 
@@ -1852,25 +1888,51 @@ async function notifyInstructorSlotsCreated({
     count
 }) {
     try {
-        if (!instructorBot || !instructor_telegram_id) {
+        // Проверяем наличие бота и telegram_id инструктора
+        if (!instructorBot) {
+            console.log('[NOTIFY] ⚠️ Бот инструкторов не инициализирован, уведомление не отправлено');
+            return;
+        }
+        
+        if (!instructor_telegram_id) {
+            console.log(`[NOTIFY] ⚠️ У инструктора ${instructor_name} не указан telegram_id, уведомление не отправлено`);
             return;
         }
 
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        let dateDisplay = '';
+        
+        // Проверяем, является ли date диапазоном дат (содержит " - ")
+        if (typeof date === 'string' && date.includes(' - ')) {
+            // Это диапазон дат (массовое создание)
+            const [fromDate, toDate] = date.split(' - ').map(d => d.trim());
+            const fromFormatted = formatDate(fromDate);
+            const toFormatted = formatDate(toDate);
+            
+            // Получаем дни недели для обеих дат
+            const fromDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(fromDate).getDay()];
+            const toDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(toDate).getDay()];
+            
+            dateDisplay = `${fromFormatted} (${fromDayOfWeek}) - ${toFormatted} (${toDayOfWeek})`;
+        } else {
+            // Одна дата
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+            const formattedDate = formatDate(date);
+            dateDisplay = `${formattedDate} (${dayOfWeek})`;
+        }
         
         let message = `✅ *Созданы слоты в расписании*\n\n`;
-        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📅 *Дата:* ${dateDisplay}\n`;
         message += `📊 *Количество:* ${count} слотов\n`;
         
         if (times && times.length > 0 && times.length <= 10) {
             message += `⏰ *Время:* ${times.join(', ')}\n`;
         }
         
+        // Отправляем уведомление только указанному инструктору
         await instructorBot.sendMessage(instructor_telegram_id, message, { parse_mode: 'Markdown' });
-        console.log(`✅ Уведомление о создании слотов отправлено инструктору ${instructor_name}`);
+        console.log(`[NOTIFY] ✅ Уведомление о создании слотов отправлено инструктору ${instructor_name} (telegram_id: ${instructor_telegram_id})`);
     } catch (error) {
-        console.error('Ошибка при отправке уведомления инструктору о создании слотов:', error);
+        console.error(`[NOTIFY] ❌ Ошибка при отправке уведомления инструктору ${instructor_name} (telegram_id: ${instructor_telegram_id}):`, error);
     }
 }
 
@@ -1884,12 +1946,30 @@ async function notifyAdminSlotsCreated({
     times
 }) {
     try {
-        const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
-        const formattedDate = formatDate(date);
+        let dateDisplay = '';
+        
+        // Проверяем, является ли date диапазоном дат (содержит " - ")
+        if (typeof date === 'string' && date.includes(' - ')) {
+            // Это диапазон дат (массовое создание)
+            const [fromDate, toDate] = date.split(' - ').map(d => d.trim());
+            const fromFormatted = formatDate(fromDate);
+            const toFormatted = formatDate(toDate);
+            
+            // Получаем дни недели для обеих дат
+            const fromDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(fromDate).getDay()];
+            const toDayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(toDate).getDay()];
+            
+            dateDisplay = `${fromFormatted} (${fromDayOfWeek}) - ${toFormatted} (${toDayOfWeek})`;
+        } else {
+            // Одна дата
+            const dayOfWeek = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][new Date(date).getDay()];
+            const formattedDate = formatDate(date);
+            dateDisplay = `${formattedDate} (${dayOfWeek})`;
+        }
         
         let message = `📅 *Инструктор создал слоты в расписании*\n\n`;
         message += `👨‍🏫 *Инструктор:* ${instructor_name}\n`;
-        message += `📅 *Дата:* ${formattedDate} (${dayOfWeek})\n`;
+        message += `📅 *Дата:* ${dateDisplay}\n`;
         message += `📊 *Количество:* ${count} слотов\n`;
         
         if (times && times.length > 0 && times.length <= 10) {

@@ -281,6 +281,10 @@
         const bookingTypeParam = params.get('bookingType'); // individual или group
         const priceTypeParam = params.get('priceType') || params.get('type'); // individual или group (поддерживаем оба параметра для совместимости)
 
+        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
+        const groupTrainingIdParam = params.get('groupTrainingId');
+        const fromSlotParam = params.get('fromSlot') === 'true';
+
         // Если перешли по клику на слот - предзаполняем данные
         if (slotIdParam && dateParam) {
             state.date = dateParam;
@@ -293,11 +297,11 @@
                 instructorId: instructorIdParam ? parseInt(instructorIdParam) : null,
                 startTime: startTimeParam || '',
             };
+            // Если перешли со свободного слота (fromSlot=true и нет groupTrainingId), помечаем это
+            if (fromSlotParam && !groupTrainingIdParam) {
+                state.fromFreeSlot = true; // Флаг, что перешли со свободного (зеленого) слота
         }
-
-        // Проверяем параметры групповой тренировки из URL (при переходе со слота с групповой тренировкой)
-        const groupTrainingIdParam = params.get('groupTrainingId');
-        const fromSlotParam = params.get('fromSlot') === 'true';
+        }
         const gtPricePerPersonParam = params.get('gtPricePerPerson');
         const gtMaxParticipantsParam = params.get('gtMaxParticipants');
         const gtCurrentParticipantsParam = params.get('gtCurrentParticipants');
@@ -606,11 +610,8 @@
         if (price.type === 'group') {
             // Если тариф найден для нужного количества участников, используем его цену
             if (Number(price.participants) === currentParticipants) {
-                // Для 8 участников цена в прайсе уже является ценой за человека
-                // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                pricePerPerson = Number(price.participants) === 8 
-                    ? Number(price.price)
-                    : Number(price.price) / currentParticipants;
+                // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                pricePerPerson = Number(price.price) / currentParticipants;
             } else {
                 // Если тариф для другого количества, ищем правильный тариф
                 const correctPrice = prices.find((item) => 
@@ -620,17 +621,12 @@
                 );
                 if (correctPrice) {
                     price = correctPrice; // Обновляем тариф на правильный
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    // Для остальных (2-7) - это общая цена группы, которую нужно разделить
-                    pricePerPerson = Number(correctPrice.participants) === 8
-                        ? Number(correctPrice.price)
-                        : Number(correctPrice.price) / currentParticipants;
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                    pricePerPerson = Number(correctPrice.price) / currentParticipants;
                 } else {
-                    // Если не нашли, используем пропорциональный расчет (не идеально, но лучше чем ничего)
-                    // Для 8 участников цена в прайсе уже является ценой за человека
-                    pricePerPerson = Number(price.participants) === 8
-                        ? Number(price.price)
-                        : (Number(price.price) / participantsFromPrice);
+                    // Если не нашли, используем пропорциональный расчет
+                    // Цена в прайсе - это всегда ОБЩАЯ цена группы
+                    pricePerPerson = Number(price.price) / participantsFromPrice;
                 }
             }
         } else {
@@ -1444,6 +1440,104 @@
         instructorCard.hidden = false;
     }
 
+    /**
+     * Показывает модальное окно с уведомлением о требуемом уровне тренировки
+     * @param {number} requiredLevel - Требуемый уровень (2, 3, 4 и т.д.)
+     */
+    function showSkillLevelNotification(requiredLevel) {
+        const config = window.KULIGA_BOOKING_CONFIG || {};
+        const botUsername = config.botUsername || '';
+        const adminPhone = config.adminPhone || '';
+        const adminTelegramUsername = config.adminTelegramUsername || '';
+        
+        const botLink = botUsername ? `https://t.me/${botUsername.replace(/^@/, '')}` : '#';
+        const adminTelegramLink = adminTelegramUsername ? `https://t.me/${adminTelegramUsername}` : '#';
+        
+        const levelNames = {
+            2: 'второй',
+            3: 'третий',
+            4: 'четвертый',
+            5: 'пятый',
+            6: 'шестой',
+            7: 'седьмой',
+            8: 'восьмой',
+            9: 'девятый',
+            10: 'десятый'
+        };
+        
+        const levelName = levelNames[requiredLevel] || `${requiredLevel}-й`;
+        
+        const modal = document.createElement('div');
+        modal.className = 'kuliga-skill-level-notification';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10001;
+            padding: 20px;
+        `;
+        
+        modal.innerHTML = `
+            <div style="background: white; border-radius: 12px; padding: 32px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                <h2 style="margin-top: 0; margin-bottom: 24px; color: #1e293b; display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 2rem;">⚠️</span>
+                    <span>Требуется ${levelName} уровень подготовки</span>
+                </h2>
+                
+                <div style="margin-bottom: 24px; padding: 16px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 8px;">
+                    <p style="margin: 0; font-weight: 600; color: #1e293b;">
+                        Для записи на данную тренировку необходим ${levelName} уровень подготовки.
+                    </p>
+                </div>
+                
+                <div style="margin-bottom: 24px;">
+                    <h3 style="margin-top: 0; margin-bottom: 16px; color: #334155; font-size: 1.1rem;">Если у вас есть базовые навыки катания:</h3>
+                    <ol style="margin: 0; padding-left: 24px; color: #475569; line-height: 1.8;">
+                        <li>Зарегистрируйтесь в нашем Telegram-боте: <a href="${botLink}" target="_blank" rel="noopener" style="color: #2196f3; text-decoration: none; font-weight: 600;">${botUsername || 'Telegram-бот'}</a></li>
+                        <li>Напишите администратору с просьбой повысить уровень:
+                            ${adminTelegramUsername ? `<a href="${adminTelegramLink}" target="_blank" rel="noopener" style="color: #2196f3; text-decoration: none; font-weight: 600;">Telegram администратора</a>` : ''}
+                            ${adminPhone ? `или позвоните: <a href="tel:${adminPhone}" style="color: #2196f3; text-decoration: none; font-weight: 600;">${adminPhone}</a>` : ''}
+                        </li>
+                        <li>После повышения уровня вы сможете записаться на данную тренировку</li>
+                    </ol>
+                </div>
+                
+                <div style="margin-bottom: 24px;">
+                    <h3 style="margin-top: 0; margin-bottom: 16px; color: #334155; font-size: 1.1rem;">Если вы новичок:</h3>
+                    <p style="margin: 0; color: #475569; line-height: 1.8;">
+                        Рекомендуем записаться на индивидуальную тренировку к любому нашему инструктору в удобное для вас время. 
+                        Это поможет вам освоить базовые навыки и повысить уровень подготовки.
+                    </p>
+                </div>
+                
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 32px;">
+                    <button type="button" class="kuliga-notification-close" style="padding: 12px 24px; border: none; border-radius: 8px; background: #2196f3; color: white; cursor: pointer; font-weight: 600;">
+                        Понятно, продолжить
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const closeBtn = modal.querySelector('.kuliga-notification-close');
+        closeBtn.addEventListener('click', () => {
+            modal.remove();
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
+
     function handleTimeslotChange(event) {
         const target = event.target;
         if (target.name !== 'kuligaTimeSlot') return;
@@ -1451,7 +1545,15 @@
         const index = Number(target.dataset.index);
         if (Number.isNaN(index) || !state.availability[index]) return;
 
-        state.slot = state.availability[index];
+        const selectedSlot = state.availability[index];
+        
+        // Проверяем, есть ли у слота групповая тренировка с уровнем >= 2
+        if (selectedSlot.group_training && selectedSlot.group_training.level && selectedSlot.group_training.level >= 2) {
+            // Показываем уведомление о требуемом уровне
+            showSkillLevelNotification(selectedSlot.group_training.level);
+        }
+        
+        state.slot = selectedSlot;
         renderInstructorCard(state.slot);
         scheduleSaveState();
     }
@@ -1970,7 +2072,23 @@
                 throw new Error(data.error || 'Не удалось загрузить свободные слоты');
             }
 
-            state.availability = data.data || [];
+            let allSlots = data.data || [];
+            
+            // Фильтруем слоты в зависимости от типа бронирования
+            // 1. Если перешли со свободного слота (зеленый слот на главной)
+            // 2. Если записываемся через карточку прайса на групповую тренировку (priceType=group без groupTrainingId)
+            // В этих случаях показываем только свободные слоты (без групповых тренировок)
+            const isNewGroupBooking = state.selection?.priceType === 'group' && !state.selection?.groupTrainingId;
+            
+            if (state.fromFreeSlot || isNewGroupBooking) {
+                state.availability = allSlots.filter(slot => {
+                    // Показываем только свободные слоты (без group_training)
+                    return !slot.group_training;
+                });
+                console.log(`🔍 Фильтрация для новой групповой тренировки: ${allSlots.length} -> ${state.availability.length} слотов`);
+            } else {
+                state.availability = allSlots;
+            }
 
             // Если есть presetSlot (переход по клику на слот), пытаемся найти и выбрать его
             if (state.presetSlot && !state.slot) {
@@ -2001,6 +2119,22 @@
                     }
                     // Очищаем presetSlot, так как слот найден
                     delete state.presetSlot;
+                } else if (state.fromFreeSlot) {
+                    // Если перешли со свободного слота, но слот не найден в отфильтрованном списке,
+                    // проверяем, не был ли он занят групповой тренировкой
+                    const originalSlot = allSlots.find((slot) => 
+                        slot.slot_id === state.presetSlot.slotId ||
+                        (state.presetSlot.instructorId && slot.instructor_id === state.presetSlot.instructorId && 
+                         slot.start_time === state.presetSlot.startTime)
+                    );
+                    if (originalSlot && originalSlot.group_training) {
+                        // Слот был занят групповой тренировкой - очищаем presetSlot
+                        delete state.presetSlot;
+                    } else if (originalSlot) {
+                        // Слот все еще свободен, но не попал в фильтр - используем его
+                        state.slot = originalSlot;
+                    delete state.presetSlot;
+                    }
                 }
             } else if (state.slot) {
                 // Сохраняем текущий выбранный слот, если он доступен
@@ -2017,7 +2151,22 @@
                         state.selection.groupTrainingAvailableSlots = gt.available_slots;
                     }
                 } else {
+                    // Если перешли со свободного слота, но слот не найден в отфильтрованном списке,
+                    // проверяем, не был ли он занят групповой тренировкой
+                    if (state.fromFreeSlot) {
+                        const originalSlot = allSlots.find((slot) => slot.slot_id === state.slot.slot_id);
+                        if (originalSlot && originalSlot.group_training) {
+                            // Слот был занят групповой тренировкой - очищаем выбор
+                            state.slot = null;
+                        } else if (originalSlot) {
+                            // Слот все еще свободен, но не попал в фильтр - оставляем его
+                            state.slot = originalSlot;
+                } else {
                     state.slot = null;
+                        }
+                    } else {
+                        state.slot = null;
+                    }
                 }
             }
 

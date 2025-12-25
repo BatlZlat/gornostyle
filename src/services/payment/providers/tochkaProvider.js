@@ -26,6 +26,11 @@ class TochkaProvider {
         this.successUrl = process.env.PAYMENT_SUCCESS_URL;
         this.failUrl = process.env.PAYMENT_FAIL_URL;
         this.callbackUrl = process.env.PAYMENT_CALLBACK_URL;
+        
+        // URL для бота (если не указаны, формируем из BASE_URL)
+        const baseUrl = process.env.BASE_URL || 'https://gornostyle72.ru';
+        this.botSuccessUrl = process.env.BOT_PAYMENT_SUCCESS_URL || `${baseUrl}/bot/payment/success`;
+        this.botFailUrl = process.env.BOT_PAYMENT_FAIL_URL || `${baseUrl}/bot/payment/fail`;
 
         // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
         // Пробуем работать без merchantId, так как он опционален
@@ -54,7 +59,8 @@ class TochkaProvider {
         customerEmail,
         items = [],
         paymentMethod = 'card',
-        clientId
+        clientId,
+        isBot = false
     }) {
         // merchantId больше не обязателен - API требует 15 символов, но техподдержка дала 13
         // Пробуем работать без merchantId, так как он опционален
@@ -146,21 +152,33 @@ class TochkaProvider {
                 paymentMode: paymentModes, // Массив способов оплаты
                 paymentLinkId: orderId.length > 45 ? orderId.substring(0, 45) : orderId, // Уникальный номер заказа (до 45 символов)
                 // Опциональные поля
-                // Формируем redirectUrl с clientId если он передан
-                ...(this.successUrl ? { 
+                // Формируем redirectUrl в зависимости от источника (бот или сайт)
+                ...((isBot ? this.botSuccessUrl : this.successUrl) ? { 
                     redirectUrl: (() => {
-                        let successUrl = this.successUrl;
+                        let successUrl = isBot ? this.botSuccessUrl : this.successUrl;
+                        const params = [];
                         if (clientId) {
+                            params.push(`clientId=${encodeURIComponent(clientId)}`);
+                        }
+                        if (orderId) {
+                            params.push(`orderId=${encodeURIComponent(orderId)}`);
+                        }
+                        if (amount) {
+                            params.push(`amount=${encodeURIComponent(amount)}`);
+                        }
+                        if (params.length > 0) {
                             const separator = successUrl.includes('?') ? '&' : '?';
-                            successUrl = `${successUrl}${separator}clientId=${clientId}`;
-                            console.log(`🔗 [Tochka] redirectUrl с clientId: ${successUrl}`);
+                            successUrl = `${successUrl}${separator}${params.join('&')}`;
+                            console.log(`🔗 [Tochka] redirectUrl ${isBot ? '(бот)' : '(сайт)'} с параметрами: ${successUrl}`);
                         } else {
-                            console.warn(`⚠️ [Tochka] clientId не передан в initPayment, redirectUrl без clientId: ${successUrl}`);
+                            console.log(`🔗 [Tochka] redirectUrl ${isBot ? '(бот)' : '(сайт)'}: ${successUrl}`);
                         }
                         return successUrl;
                     })()
                 } : {}),
-                ...(this.failUrl ? { failRedirectUrl: this.failUrl } : {}),
+                ...((isBot ? this.botFailUrl : this.failUrl) ? { 
+                    failRedirectUrl: isBot ? this.botFailUrl : this.failUrl 
+                } : {}),
                 // Email для отправки чека (если указан)
                 ...(customerEmail ? { consumerId: customerEmail } : {}),
             }

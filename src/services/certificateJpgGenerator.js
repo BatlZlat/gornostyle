@@ -46,8 +46,14 @@ class CertificateJpgGenerator {
                     '--single-process',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
-                ]
+                    '--disable-renderer-backgrounding',
+                    '--lang=ru-RU,ru,en-US,en'
+                ],
+                env: {
+                    ...process.env,
+                    FONTCONFIG_FILE: '/etc/fonts/fonts.conf',
+                    FONTCONFIG_PATH: '/etc/fonts'
+                }
             });
         }
         return this.browser;
@@ -445,25 +451,36 @@ class CertificateJpgGenerator {
                         -webkit-print-color-adjust: exact !important;
                         color-adjust: exact !important;
                         print-color-adjust: exact !important;
-                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
                     }
                     
                     .certificate-number {
                         color: #FFD700 !important;
+                        font-family: 'Courier New', monospace !important;
                     }
                     
                     .certificate-amount {
                         color: #FFD700 !important;
                     }
                     
+                    .certificate-value {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+                    
+                    .certificate-value * {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+                    
                     .certificate-expiry {
                         color: #FFFFFF !important;
                     }
                     
-                    /* Принудительное отображение эмодзи */
-                    .certificate-title, .certificate-value, .certificate-recipient, .certificate-message, .certificate-expiry {
-                        font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial', sans-serif !important;
-                        font-variant-emoji: emoji !important;
+                    /* Поддержка эмодзи как fallback для элементов с эмодзи */
+                    .certificate-title, .info-label {
+                        font-family: 'Segoe UI', 'Arial', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
                     }
                 `;
                 document.head.appendChild(style);
@@ -583,8 +600,143 @@ class CertificateJpgGenerator {
         }
     }
 
+    // Метод для генерации JPG из HTML (как в предпросмотре) - используется при покупке
+    async generateCertificateJpgFromHTMLForPurchase(certificateNumber, certificateData) {
+        await this.ensureOutputDir();
+        
+        const outputPath = path.join(this.outputDir, `certificate_${certificateNumber}.jpg`);
+        
+        try {
+            // Используем ту же логику, что и в предпросмотре
+            const html = await this.generateCertificateHTML(certificateData);
+
+            await this.initBrowser();
+            const page = await this.browser.newPage();
+
+            await page.setViewport({
+                width: 1050,
+                height: 495,
+                deviceScaleFactor: 2
+            });
+
+            // Дополнительные настройки для лучшего рендеринга эмодзи и цветов
+            await page.evaluateOnNewDocument(() => {
+                // Устанавливаем кодировку UTF-8
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['ru', 'en']
+                });
+                
+                // Добавляем поддержку эмодзи и принудительное применение цветов
+                const style = document.createElement('style');
+                style.textContent = `
+                    * {
+                        -webkit-font-feature-settings: 'liga' 1, 'kern' 1;
+                        font-feature-settings: 'liga' 1, 'kern' 1;
+                        text-rendering: optimizeLegibility;
+                        -webkit-print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    .certificate-number {
+                        color: #FFD700 !important;
+                        font-family: 'Courier New', monospace !important;
+                        letter-spacing: 0.1em !important;
+                    }
+                    
+                    .certificate-amount {
+                        color: #FFD700 !important;
+                    }
+                    
+                    .certificate-value {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                        letter-spacing: 0.1em !important;
+                    }
+                    
+                    .certificate-value * {
+                        color: #FFD700 !important;
+                        font-weight: 700 !important;
+                        font-family: 'Courier New', monospace, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+
+                    .certificate-expiry {
+                        color: #FFFFFF !important;
+                    }
+                    
+                    /* Поддержка эмодзи как fallback для элементов с эмодзи */
+                    .certificate-title, .certificate-recipient, .certificate-message, .info-label {
+                        font-family: 'Arial', 'Helvetica', sans-serif, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne' !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            });
+
+            await page.setContent(html, {
+                waitUntil: 'networkidle0'
+            });
+
+            // Добавляем те же стили, что и в предпросмотре
+            await page.addStyleTag({
+                content: `
+                    :root {
+                        --certificate-scale: 1 !important;
+                    }
+                    body {
+                        background: transparent !important;
+                        padding: 0 !important;
+                    }
+                    .certificate-viewport {
+                        width: 1050px !important;
+                        height: 494px !important;
+                        border-radius: 0 !important;
+                        box-shadow: none !important;
+                        background: transparent !important;
+                    }
+                `
+            });
+
+            const element = await page.$('.certificate-viewport');
+            if (!element) {
+                await page.close();
+                throw new Error('Не удалось найти .certificate-viewport для генерации сертификата');
+            }
+
+            await element.screenshot({
+                path: outputPath,
+                type: 'jpeg',
+                quality: 90
+            });
+
+            await page.close();
+
+            console.log(`✅ JPG сертификат создан (как в предпросмотре): ${outputPath}`);
+
+            return `/generated/certificates/certificate_${certificateNumber}.jpg`;
+
+        } catch (error) {
+            console.error('Ошибка при генерации JPG из HTML (метод предпросмотра):', error);
+            throw new Error(`Не удалось создать JPG сертификат: ${error.message}`);
+        }
+    }
+
     // Метод для генерации JPG из веб-страницы (для email)
     async generateCertificateJpgForEmail(certificateNumber, certificateData = null) {
+        // Если переданы данные сертификата, используем метод предпросмотра (более надежный)
+        if (certificateData) {
+            try {
+                const jpgUrl = await this.generateCertificateJpgFromHTMLForPurchase(certificateNumber, certificateData);
+                return {
+                    jpg_url: jpgUrl,
+                    pdf_url: null
+                };
+            } catch (error) {
+                console.error('❌ Ошибка при генерации JPG методом предпросмотра:', error);
+                // Fallback на старый метод
+            }
+        }
+        
         try {
             // Сначала пробуем загрузить с веб-страницы
             const jpgUrl = await this.generateCertificateJpgFromWeb(certificateNumber);
