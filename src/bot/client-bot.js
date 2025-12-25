@@ -12430,17 +12430,19 @@ async function initTrainingPayment(chatId, state, bookingData) {
             const provider = PaymentProviderFactory.create();
             
             // Формируем items для чека
+            // ВАЖНО: Провайдер сам умножает Price и Amount на 100, поэтому передаем значения в рублях
             const items = [];
             if (booking_type === 'group') {
                 // Для групповых тренировок
                 const itemName = bookingData.program_name 
                     ? `Горностайл72, Групповое занятие, ${sportText}, ${bookingData.program_name}`
                     : `Горностайл72, Групповое занятие, ${sportText}`;
+                const pricePerPerson = bookingData.price_per_person || (amountToPay / (bookingData.participants_count || 1));
                 items.push({
                     Name: itemName,
-                    Price: Math.round(amountToPay * 100),
+                    Price: pricePerPerson,  // В рублях, провайдер сам умножит на 100
                     Quantity: bookingData.participants_count || 1,
-                    Amount: Math.round(amountToPay * 100),
+                    Amount: amountToPay,  // В рублях, провайдер сам умножит на 100
                     Tax: 'none',
                     PaymentMethod: 'full_payment',
                     PaymentObject: 'service'
@@ -12449,9 +12451,9 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 // Для индивидуальных тренировок
                 items.push({
                     Name: `Горностайл72, Индивидуальное занятие, ${sportText}`,
-                    Price: Math.round(amountToPay * 100),
+                    Price: amountToPay,  // В рублях, провайдер сам умножит на 100
                     Quantity: 1,
-                    Amount: Math.round(amountToPay * 100),
+                    Amount: amountToPay,  // В рублях, провайдер сам умножит на 100
                     Tax: 'none',
                     PaymentMethod: 'full_payment',
                     PaymentObject: 'service'
