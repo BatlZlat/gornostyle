@@ -12471,6 +12471,8 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 paymentMethod: 'card'
             });
 
+            console.log(`💳 [Bot] Платеж успешно создан, начинаем обновление транзакции #${transactionId}`);
+
             // Обновляем транзакцию с данными платежа (используем client, как в пополнении кошелька)
             await client.query(
                 `UPDATE kuliga_transactions 
@@ -12485,6 +12487,8 @@ async function initTrainingPayment(chatId, state, bookingData) {
                     transactionId
                 ]
             );
+
+            console.log(`✅ [Bot] Транзакция #${transactionId} успешно обновлена с provider_payment_id=${payment.paymentId}`);
 
             // Сохраняем transactionId в состоянии
             state.data.training_payment_transaction_id = transactionId;
@@ -12524,6 +12528,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
             }
 
             // Отправляем сообщение с inline кнопкой оплаты
+            console.log(`📨 [Bot] Отправляем сообщение с кнопкой оплаты для чата ${chatId}`);
             await bot.sendMessage(chatId, message, {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -12535,6 +12540,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
                     ]]
                 }
             });
+            console.log(`✅ [Bot] Сообщение с кнопкой оплаты отправлено`);
 
             // Восстанавливаем меню кнопок
             try {
