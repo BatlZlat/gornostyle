@@ -12510,9 +12510,9 @@ async function initTrainingPayment(chatId, state, bookingData) {
             if (priceDifference !== null) {
                 message = 
                     `💳 <b>Оплата недостающей суммы</b>\n\n` +
-                    `💰 К доплате: <b>${amountToPay.toFixed(2)} ₽</b>\n` +
-                    `💵 Уже на балансе: <b>${currentBalance.toFixed(2)} ₽</b>\n` +
-                    `📊 Итого требуется: <b>${price_total.toFixed(2)} ₽</b>\n\n` +
+                    `💰 К доплате: <b>${(amountToPay || 0).toFixed(2)} ₽</b>\n` +
+                    `💵 Уже на балансе: <b>${(currentBalance || 0).toFixed(2)} ₽</b>\n` +
+                    `📊 Итого требуется: <b>${(price_total || 0).toFixed(2)} ₽</b>\n\n` +
                     `📅 Дата: ${dateFormatted}\n` +
                     `⏰ Время: ${timeFormatted}\n\n` +
                     `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
@@ -12520,7 +12520,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
             } else {
                 message = 
                     `💳 <b>Оплата тренировки</b>\n\n` +
-                    `💰 Сумма: <b>${amountToPay.toFixed(2)} ₽</b>\n\n` +
+                    `💰 Сумма: <b>${(amountToPay || 0).toFixed(2)} ₽</b>\n\n` +
                     `📅 Дата: ${dateFormatted}\n` +
                     `⏰ Время: ${timeFormatted}\n\n` +
                     `Нажмите на кнопку ниже, чтобы перейти к оплате.\n\n` +
@@ -12534,7 +12534,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 reply_markup: {
                     inline_keyboard: [[
                         {
-                            text: `💳 Оплатить ${amountToPay.toFixed(0)} ₽`,
+                            text: `💳 Оплатить ${(amountToPay || 0).toFixed(0)} ₽`,
                             url: payment.paymentURL
                         }
                     ]]
