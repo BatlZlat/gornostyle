@@ -12424,6 +12424,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
         const transactionId = transactionResult.rows[0].id;
 
         await client.query('COMMIT');
+        client.release(); // Освобождаем клиент после COMMIT, так как транзакция завершена
 
         // Создаем платеж через PaymentProvider
         try {
@@ -12471,8 +12472,8 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 paymentMethod: 'card'
             });
 
-            // Обновляем транзакцию с данными платежа
-            await client.query(
+            // Обновляем транзакцию с данными платежа (используем pool.query после COMMIT)
+            await pool.query(
                 `UPDATE kuliga_transactions 
                  SET provider_payment_id = $1, 
                      provider_order_id = $2,
@@ -12555,11 +12556,13 @@ async function initTrainingPayment(chatId, state, bookingData) {
         } catch (paymentError) {
             console.error('❌ Ошибка при создании платежа для тренировки:', paymentError);
             
-            // Обновляем статус транзакции на failed
-            await client.query(
+            // Обновляем статус транзакции на failed (используем pool.query, так как client уже освобожден)
+            await pool.query(
                 `UPDATE kuliga_transactions SET status = 'failed' WHERE id = $1`,
                 [transactionId]
-            );
+            ).catch(err => {
+                console.error('❌ Ошибка при обновлении статуса транзакции на failed:', err);
+            });
 
             return bot.sendMessage(chatId,
                 '❌ Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
@@ -12573,7 +12576,14 @@ async function initTrainingPayment(chatId, state, bookingData) {
         }
 
     } catch (error) {
-        await client.query('ROLLBACK');
+        if (client) {
+            try {
+                await client.query('ROLLBACK');
+            } catch (rollbackError) {
+                console.error('❌ Ошибка при ROLLBACK:', rollbackError);
+            }
+            client.release();
+        }
         console.error('❌ Ошибка при создании транзакции оплаты тренировки:', error);
         return bot.sendMessage(chatId,
             '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
@@ -12584,8 +12594,6 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 }
             }
         );
-    } finally {
-        client.release();
     }
 }
 
