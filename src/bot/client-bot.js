@@ -12218,6 +12218,7 @@ async function handleWalletRefillPayment(chatId, state, amount) {
                 customerPhone: clientPhone,
                 customerEmail: clientEmail,
                 clientId: clientId,
+                isBot: true,
                 items: [{
                     Name: `Горностайл72, Пополнение кошелька`,
                     Price: Math.round(amount * 100),
@@ -12467,6 +12468,7 @@ async function initTrainingPayment(chatId, state, bookingData) {
                 customerPhone: client_phone,
                 customerEmail: client_email,
                 clientId: client_id,
+                isBot: true,
                 items: items,
                 paymentMethod: 'card'
             });

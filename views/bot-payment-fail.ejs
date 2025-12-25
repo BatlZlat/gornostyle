@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Платёж не прошёл | Горностайл72</title>
+  <link rel="stylesheet" href="/css/kuliga.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <style>
+    :root {
+      --kuliga-primary: #1e90ff;
+      --kuliga-primary-dark: #0f5db6;
+      --kuliga-red: #e74c3c;
+      --kuliga-red-dark: #c0392b;
+      --kuliga-white: #ffffff;
+      --kuliga-gray-100: #f2f5f9;
+      --kuliga-gray-200: #e2e8f0;
+      --kuliga-gray-500: #64748b;
+      --kuliga-gray-700: #334155;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--kuliga-gray-100);
+      color: var(--kuliga-gray-700);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .payment-modal {
+      background: var(--kuliga-white);
+      max-width: 540px;
+      width: 100%;
+      border-radius: 20px;
+      box-shadow: 0 24px 64px rgba(231, 76, 60, 0.15);
+      padding: 0;
+      overflow: hidden;
+      position: relative;
+      border: 2px solid rgba(231, 76, 60, 0.1);
+    }
+
+    .payment-modal__header {
+      background: linear-gradient(135deg, var(--kuliga-red) 0%, var(--kuliga-red-dark) 100%);
+      padding: 32px 28px;
+      text-align: center;
+      color: var(--kuliga-white);
+      position: relative;
+    }
+
+    .payment-modal__icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      animation: shake 0.5s ease-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      75% { transform: translateX(10px); }
+    }
+
+    .payment-modal__title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    .payment-modal__body {
+      padding: 32px 28px;
+    }
+
+    .payment-message {
+      background: #fef2f2;
+      border-left: 4px solid var(--kuliga-red);
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--kuliga-gray-700);
+    }
+
+    .payment-message__text {
+      margin: 0;
+    }
+
+    .payment-modal__actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 16px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .btn-primary {
+      background: var(--kuliga-primary);
+      color: var(--kuliga-white);
+      box-shadow: 0 8px 24px rgba(30, 144, 255, 0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--kuliga-primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(30, 144, 255, 0.35);
+    }
+
+    .btn-secondary {
+      background: #fee2e2;
+      color: var(--kuliga-red);
+      border: 2px solid #fecaca;
+    }
+
+    .btn-secondary:hover {
+      background: #fecaca;
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 16px;
+      }
+
+      .payment-modal {
+        border-radius: 16px;
+      }
+
+      .payment-modal__header {
+        padding: 24px 20px;
+      }
+
+      .payment-modal__icon {
+        width: 64px;
+        height: 64px;
+        font-size: 32px;
+      }
+
+      .payment-modal__title {
+        font-size: 24px;
+      }
+
+      .payment-modal__body {
+        padding: 24px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="payment-modal">
+    <div class="payment-modal__header">
+      <div class="payment-modal__icon">
+        <i class="fas fa-times"></i>
+      </div>
+      <h1 class="payment-modal__title">Платёж не прошёл</h1>
+    </div>
+
+    <div class="payment-modal__body">
+      <div class="payment-message">
+        <p class="payment-message__text">
+          Возможно, на карте не хватает нужной суммы или ошибка в реквизитах. Попробуйте заплатить другой картой. Если не получится — свяжитесь с продавцом.
+        </p>
+      </div>
+
+      <div class="payment-modal__actions">
+        <button onclick="window.close()" class="btn btn-primary">
+          <i class="fas fa-times"></i>
+          Закрыть
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

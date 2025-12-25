@@ -80,6 +80,52 @@ router.get('/instruktor-po-gornym-lyzham-snoubordy-tyumen/booking/fail', (req, r
     });
 });
 
+// Страницы после оплаты для бота (без ссылок на Telegram)
+router.get('/bot/payment/success', async (req, res) => {
+    const orderId = req.query.orderId || req.query.order_id || null;
+    const amount = req.query.amount ? parseFloat(req.query.amount) : null;
+    const orderNumber = req.query.orderNumber || orderId || null;
+    
+    // Получатель по умолчанию
+    const recipient = 'Индивидуальный предприниматель Тебякин Данила Юрьевич';
+    
+    // Если есть orderId, пытаемся получить данные из БД
+    let finalAmount = amount;
+    let finalOrderNumber = orderNumber;
+    
+    if (orderId && !amount) {
+        try {
+            // Пытаемся найти транзакцию по orderId
+            const txResult = await pool.query(
+                `SELECT id, amount, provider_order_id 
+                 FROM kuliga_transactions 
+                 WHERE provider_order_id = $1 OR provider_order_id LIKE $2
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [orderId, `${orderId}%`]
+            );
+            
+            if (txResult.rows.length > 0) {
+                const tx = txResult.rows[0];
+                finalAmount = parseFloat(tx.amount);
+                finalOrderNumber = tx.provider_order_id || orderId;
+            }
+        } catch (error) {
+            console.error('Ошибка при получении данных транзакции:', error);
+        }
+    }
+    
+    res.render('bot-payment-success', {
+        amount: finalAmount,
+        orderNumber: finalOrderNumber,
+        recipient: recipient
+    });
+});
+
+router.get('/bot/payment/fail', (req, res) => {
+    res.render('bot-payment-fail');
+});
+
 router.get('/user-agreement', (req, res) => {
     res.render('user-agreement', {
         pageTitle: 'Пользовательское соглашение - Горностайл72',
