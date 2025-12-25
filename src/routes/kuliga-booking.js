@@ -466,7 +466,7 @@ const createGroupBooking = async (req, res) => {
 
             // Проверяем, не создана ли уже групповая тренировка на этот слот
             const existingGroupTraining = await client.query(
-                    `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
+                `SELECT id, instructor_id, slot_id, date, start_time, end_time, sport_type,
                             level, price_per_person, max_participants, current_participants, status, location
                  FROM kuliga_group_trainings
                  WHERE slot_id = $1 AND date = $2
@@ -647,28 +647,28 @@ const createGroupBooking = async (req, res) => {
             // Используем существующую групповую тренировку
             // ВАЖНО: Пересчитываем current_participants из реальных подтверждённых бронирований
             const groupResult = await client.query(
-                    `SELECT 
-                            kgt.id, 
-                            kgt.instructor_id, 
-                            kgt.slot_id, 
-                            kgt.date, 
-                            kgt.start_time, 
-                            kgt.end_time, 
-                            kgt.sport_type,
+                `SELECT 
+                        kgt.id, 
+                        kgt.instructor_id, 
+                        kgt.slot_id, 
+                        kgt.date, 
+                        kgt.start_time, 
+                        kgt.end_time, 
+                        kgt.sport_type,
                             kgt.level,
                             kgt.description,
-                            kgt.price_per_person, 
-                            kgt.max_participants, 
-                            COALESCE((
-                                SELECT SUM(kb.participants_count)
-                                FROM kuliga_bookings kb
-                                WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
-                            ), 0)::INTEGER as current_participants,
-                            kgt.status, 
-                            kgt.location
-                     FROM kuliga_group_trainings kgt
-                     WHERE kgt.id = $1
-                     FOR UPDATE`,
+                        kgt.price_per_person, 
+                        kgt.max_participants, 
+                        COALESCE((
+                            SELECT SUM(kb.participants_count)
+                            FROM kuliga_bookings kb
+                            WHERE kb.group_training_id = kgt.id AND kb.status = 'confirmed'
+                        ), 0)::INTEGER as current_participants,
+                        kgt.status, 
+                        kgt.location
+                 FROM kuliga_group_trainings kgt
+                 WHERE kgt.id = $1
+                 FOR UPDATE`,
                 [groupTrainingIdToUse]
             );
 
@@ -1626,15 +1626,15 @@ router.get('/availability', async (req, res) => {
                 }
 
                 return {
-                    slot_id: slot.slot_id,
-                    instructor_id: slot.instructor_id,
-                    date: slot.date,
-                    start_time: slot.start_time,
-                    end_time: slot.end_time,
-                    instructor_name: slot.instructor_name,
-                    instructor_sport_type: slot.instructor_sport_type,
-                    instructor_photo_url: slot.instructor_photo_url,
-                    instructor_description: slot.instructor_description,
+                slot_id: slot.slot_id,
+                instructor_id: slot.instructor_id,
+                date: slot.date,
+                start_time: slot.start_time,
+                end_time: slot.end_time,
+                instructor_name: slot.instructor_name,
+                instructor_sport_type: slot.instructor_sport_type,
+                instructor_photo_url: slot.instructor_photo_url,
+                instructor_description: slot.instructor_description,
                     // Информация о групповой тренировке, если она есть на слоте
                     group_training: slot.group_training_id ? {
                         id: slot.group_training_id,

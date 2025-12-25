@@ -300,7 +300,7 @@
             // Если перешли со свободного слота (fromSlot=true и нет groupTrainingId), помечаем это
             if (fromSlotParam && !groupTrainingIdParam) {
                 state.fromFreeSlot = true; // Флаг, что перешли со свободного (зеленого) слота
-            }
+        }
         }
         const gtPricePerPersonParam = params.get('gtPricePerPerson');
         const gtMaxParticipantsParam = params.get('gtMaxParticipants');
@@ -2133,7 +2133,7 @@
                     } else if (originalSlot) {
                         // Слот все еще свободен, но не попал в фильтр - используем его
                         state.slot = originalSlot;
-                        delete state.presetSlot;
+                    delete state.presetSlot;
                     }
                 }
             } else if (state.slot) {
@@ -2161,8 +2161,8 @@
                         } else if (originalSlot) {
                             // Слот все еще свободен, но не попал в фильтр - оставляем его
                             state.slot = originalSlot;
-                        } else {
-                            state.slot = null;
+                } else {
+                    state.slot = null;
                         }
                     } else {
                         state.slot = null;
